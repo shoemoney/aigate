@@ -96,6 +96,17 @@ Born from three real pains:
   **tools the fleet automatically knows it can reach** — with the budget breaker
   watching. Turns "so many accounts I'd love to use" into "my agents just use them."
 
+## Integrations — meet agents where they live
+aigate is *just an HTTP API + a token vault*, so any agent framework integrates with a thin
+plugin (~a few calls): "give me the best key for `<capability>`" → metered + audited key back.
+Ship first-class plugins for the major frameworks so the whole fleet shares **one vault, one
+budget breaker, one capability registry**:
+- **Hermes** (already the fleet's agent runtime — natural first plugin)
+- **OpenClaw / claw**, LangChain, LlamaIndex, n8n, and raw `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` drop-in.
+
+The plugin *is* the delivery vehicle for the Round-4 capability registry: instead of each
+framework re-implementing key handling, they all ask aigate. Distribution + safety in one move.
+
 ## Non-goals / guardrails
 - **Never** relay/impersonate Claude Code for subscription accounts — selector only.
 - No pooling/reselling access for others. Personal, honest, visible.
