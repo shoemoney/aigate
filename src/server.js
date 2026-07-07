@@ -82,6 +82,17 @@ db.exec(`
     ts       TEXT NOT NULL DEFAULT (datetime('now')),
     account  TEXT, host TEXT, ip TEXT, action TEXT, result TEXT
   );
+  CREATE TABLE IF NOT EXISTS provider_keys (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider     TEXT NOT NULL,
+    label        TEXT DEFAULT '',
+    key_enc      TEXT NOT NULL,
+    key_hint     TEXT,
+    status       TEXT DEFAULT 'working',
+    last_checked TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(provider, key_hint)
+  );
   CREATE INDEX IF NOT EXISTS idx_req_host ON request_log(host);
   CREATE INDEX IF NOT EXISTS idx_req_acct ON request_log(account);
 `);
@@ -108,6 +119,12 @@ const q = {
     max(ts) AS last FROM request_log GROUP BY account`),
   statByHost: db.prepare(`SELECT host, count(*) AS requests, sum(coalesce(tokens,0)) AS tokens,
     max(ts) AS last FROM request_log GROUP BY host ORDER BY requests DESC`),
+  addKey: db.prepare(`INSERT INTO provider_keys(provider,label,key_enc,key_hint,status,last_checked)
+    VALUES(?,?,?,?,?,datetime('now'))
+    ON CONFLICT(provider,key_hint) DO UPDATE SET key_enc=excluded.key_enc, label=excluded.label,
+      status=excluded.status, last_checked=datetime('now')`),
+  listKeys: db.prepare(`SELECT id,provider,label,key_hint,status,last_checked,created_at FROM provider_keys ORDER BY provider,id`),
+  delKey: db.prepare(`DELETE FROM provider_keys WHERE id=?`),
 };
 
 // ---- websocket hub ------------------------------------------------------
@@ -182,6 +199,21 @@ const server = http.createServer(async (req, res) => {
       if (!b.account || !b.setup_token) return json(res, 400, { error: 'account + setup_token required' });
       q.upsertAccount.run(b.account, encrypt(b.setup_token), b.label || '');
       broadcast('accounts', q.listAccounts.all());
+      return json(res, 200, { ok: true });
+    }
+    // --- provider API key registry (encrypted at rest; list never returns secrets) ---
+    if (p === '/api/keys' && req.method === 'GET')
+      return json(res, 200, q.listKeys.all());
+    if (p === '/api/keys' && req.method === 'POST') {
+      const b = await body(req);
+      if (!b.provider || !b.key) return json(res, 400, { error: 'provider + key required' });
+      q.addKey.run(b.provider, b.label || '', encrypt(b.key), b.key.slice(0, 14) + '…', b.status || 'working');
+      broadcast('keys', q.listKeys.all());
+      return json(res, 200, { ok: true });
+    }
+    if (p.startsWith('/api/keys/') && req.method === 'DELETE') {
+      q.delKey.run(Number(p.split('/').pop()));
+      broadcast('keys', q.listKeys.all());
       return json(res, 200, { ok: true });
     }
     if (p.startsWith('/api/accounts/') && req.method === 'DELETE') {
