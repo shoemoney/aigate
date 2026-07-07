@@ -4,12 +4,16 @@
 *every* AI/service key you own, hands them out securely, load-balances where it
 helps, and shows you **live what's using what** so nothing runs away.
 
-Born from two real pains:
+Born from three real pains:
 1. **"Where did I even put that key?"** — accounts scattered across OpenRouter,
    Perplexity, Fireworks, Replicate, AWS, a dozen dashboards signed up for at 1am.
 2. **The $500 surprise** — a default install quietly used Opus 4.8 all night
    instead of the cheap model, and the *billing email* was the first alert. A
    live spend view would've caught it at 2am.
+3. **Latent capacity you don't use** — so many accounts accumulated that just
+   *managing* the keys is a barrier, so you under-use services you already pay for.
+   A frictionless vault turns "ugh, where's that key" into "just use it" — the
+   convenience is what actually unlocks the capacity you're sitting on.
 
 ## The shape (grows one ring at a time — don't build ahead of need)
 
@@ -38,15 +42,30 @@ Born from two real pains:
 
 ### Round 2 — hot layer + spend guard
 - **Redis hot layer** (Redis already runs fleet-wide incl. .10):
+  - **Topology:** master on **.10**, read-replicas on each box reading `localhost`
+    → key/usage reads are local + sub-ms, no network hop; writes centralize on the
+    master and replicate out. Reads tolerate async-replica lag; **atomic budget
+    `INCR` must target the master** so two boxes can't both slip under a cap.
   - **TTL spend/usage counters** — `INCR` + auto-expiring keys per window
     (5-hour key expires in 5h, daily key at midnight). Atomic, self-resetting,
     sub-ms — *this is the budget guard done right.*
   - **Cached "best key"** so the proxy hot path never re-queries SQL.
   - **Pub/sub event bus** — the one `broadcast()` seam becomes a Redis `PUBLISH`;
     dashboard, alerters, phone push, and multi-instance gateways all `SUBSCRIBE`.
-- **Budget guards** — per-key daily/hourly spend caps → alert / auto-disable on
-  runaway. (Would have stopped the $500 night.)
-- SQL (SQLite→Postgres) stays the durable source of truth; Redis is the hot cache.
+- **Budget guards — latching circuit breaker.** Per-key daily/hourly spend caps.
+  On breach the key is set to a **`held` / needs-review** state and **hard-stops**
+  — it does NOT auto-resume when the window rolls over. A human must review *why*
+  it ran away and **explicitly clear the flag** to re-enable. Dashboard surfaces
+  held keys 🚨 with the breach reason + spend. (Would have stopped the $500 night
+  *and* forced me to see which Pi did it before it could spend again.)
+  - schema: `held INTEGER, held_at, held_reason, cleared_by, cleared_at`.
+- **DB backend: SQLite now → MariaDB/Postgres at the multi-instance trigger.** One
+  daemon + SQLite is already "centralized" (clients hit the API, never the DB).
+  Switch to MariaDB/PG (both already run on .10) the moment you want a **2nd aigate
+  instance / HA** or **external tools reading the data directly** — not before. The
+  data layer is a thin prepared-statement object over standard SQL, so it's a
+  contained swap. Redis (above) covers the hot-read need; SQL's job is durable
+  storage + analytics, where the big DB earns it.
 
 ### Round 3 — the universal registry
 - Generalize `accounts` → `keys(provider, ...)`; providers as first-class config.
