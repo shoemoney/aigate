@@ -52,8 +52,13 @@ Born from three real pains:
   - **Cached "best key"** so the proxy hot path never re-queries SQL.
   - **Pub/sub event bus** — the one `broadcast()` seam becomes a Redis `PUBLISH`;
     dashboard, alerters, phone push, and multi-instance gateways all `SUBSCRIBE`.
-- **Budget guards — latching circuit breaker.** Per-key daily/hourly spend caps.
-  On breach the key is set to a **`held` / needs-review** state and **hard-stops**
+- **Budget guards — latching circuit breaker.** Caps keyed by **`provider × model`**
+  (not just per-key) — because one key runs many models at wildly different cost
+  (grok = pennies, nano-banana image loop = $$$). So you can *"let grok run free,
+  hold nano-banana at $5/day"* — surgical, not blunt. (OpenRouter's own limit is
+  key-wide only; per-model is aigate's job since every call flows through it.)
+  Per-key daily/hourly spend caps too. On breach the key/model is set to a
+  **`held` / needs-review** state and **hard-stops**
   — it does NOT auto-resume when the window rolls over. A human must review *why*
   it ran away and **explicitly clear the flag** to re-enable. Dashboard surfaces
   held keys 🚨 with the breach reason + spend. (Would have stopped the $500 night
@@ -72,6 +77,17 @@ Born from three real pains:
 - Per-provider usage pollers (OpenRouter/Anthropic/etc. spend APIs) so idle keys
   stay fresh in the dashboard.
 - One place that knows every key you have, what it costs, and what's using it.
+
+### Round 4 — discovery + the agent capability layer (far horizon)
+- **Inbox discovery sweep** — scan email for billing receipts / signup confirmations
+  → auto-surface every paid service you actually have (the forgotten half). One-time
+  "here's your real account footprint," then pull keys into the vault.
+- **Agent capability registry** — the unlock. `GET /capabilities` returns a
+  machine-readable map of what's available (`OpenRouter{grok,nano-banana,…}`,
+  `Replicate`, `Perplexity`, `AWS`, …). Agents ask *"what do I have access to?"*,
+  request a **metered + audited** key on demand, and dormant subscriptions become
+  **tools the fleet automatically knows it can reach** — with the budget breaker
+  watching. Turns "so many accounts I'd love to use" into "my agents just use them."
 
 ## Non-goals / guardrails
 - **Never** relay/impersonate Claude Code for subscription accounts — selector only.
