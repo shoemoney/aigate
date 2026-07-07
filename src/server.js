@@ -29,6 +29,9 @@ const HOST = process.env.HOST || '0.0.0.0';
 const TOKEN = process.env.AIGATE_TOKEN || '';
 const DB_PATH = process.env.AIGATE_DB || join(__dir, '..', 'data', 'aigate.db');
 const CUTOFF = Number(process.env.AIGATE_HEADROOM_CUTOFF || 95);
+// Optional network gate (defense-in-depth under the bearer token). Comma-sep
+// IPv4 CIDRs, e.g. "192.168.1.0/24". Empty = allow all. Loopback always allowed.
+const ALLOW_CIDR = (process.env.AIGATE_ALLOW_CIDR || '').split(',').map(s => s.trim()).filter(Boolean);
 const ENC_KEY = (process.env.AIGATE_ENCRYPTION_KEY || '').trim();
 
 if (!TOKEN) { console.error('FATAL: set AIGATE_TOKEN'); process.exit(1); }
@@ -124,6 +127,24 @@ const authed = (req) => {
 };
 const clientIp = (req) =>
   (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '';
+const ip2int = (ip) => {
+  const p = String(ip).replace(/^::ffff:/, '').split('.');
+  return p.length === 4 ? (((+p[0] << 24) | (+p[1] << 16) | (+p[2] << 8) | +p[3]) >>> 0) : null;
+};
+function ipAllowed(ip) {
+  if (!ALLOW_CIDR.length) return true;                 // no allowlist → allow all
+  if (ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1') return true;
+  const n = ip2int(ip);
+  if (n === null) return false;                         // non-IPv4 & not loopback → deny when gated
+  for (const c of ALLOW_CIDR) {
+    const [net, b] = c.split('/'); const bits = b === undefined ? 32 : +b;
+    if (net === '0.0.0.0' && bits === 0) return true;
+    const netN = ip2int(net); if (netN === null) continue;
+    const mask = bits === 0 ? 0 : (~((1 << (32 - bits)) - 1)) >>> 0;
+    if ((n & mask) === (netN & mask)) return true;
+  }
+  return false;
+}
 const body = (req) => new Promise((res) => {
   let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => { try { res(b ? JSON.parse(b) : {}); } catch { res({}); } });
 });
@@ -134,6 +155,9 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
+
+  // network gate (defense-in-depth, before anything else)
+  if (!ipAllowed(clientIp(req))) { res.writeHead(403); return res.end('forbidden (network)'); }
 
   // static dashboard (index gated at load; API gated per-request)
   if (req.method === 'GET' && !p.startsWith('/api')) {
@@ -213,7 +237,7 @@ const server = http.createServer(async (req, res) => {
 
 // ws upgrade (token-gated)
 server.on('upgrade', (req, socket, head) => {
-  if (new URL(req.url, 'http://x').pathname !== '/ws' || !authed(req)) { socket.destroy(); return; }
+  if (new URL(req.url, 'http://x').pathname !== '/ws' || !authed(req) || !ipAllowed(clientIp(req))) { socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => {
     ws.send(JSON.stringify({ type: 'accounts', data: q.listAccounts.all(), ts: new Date().toISOString() }));
   });

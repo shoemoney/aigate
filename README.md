@@ -216,6 +216,7 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN`.
 | `HOST` | `0.0.0.0` | bind host |
 | `AIGATE_DB` | `./data/aigate.db` | SQLite path |
 | `AIGATE_HEADROOM_CUTOFF` | `95` | skip accounts whose worst-window % ≥ this |
+| `AIGATE_ALLOW_CIDR` | *(empty = all)* | 🌐 network gate — comma-sep list mixing **CIDRs + single IPs** (`192.168.1.0/24,68.x.x.x`). Loopback always OK. Defense-in-depth under the token. |
 
 ---
 

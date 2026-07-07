@@ -96,6 +96,23 @@ Born from three real pains:
   **tools the fleet automatically knows it can reach** — with the budget breaker
   watching. Turns "so many accounts I'd love to use" into "my agents just use them."
 
+## Caps cascade + per-agent routing (the "sleep well" layer)
+- **Cascade of caps** — a hard ceiling at every level, each a latching breaker:
+  **global $/period → per-provider → per-`provider×model`**. Even if a per-model
+  config is wrong, the **global cap is the backstop that saves you** (esp. with
+  auto-topup providers that silently refill — see below).
+- **⚠️ Auto-topup = no natural floor.** Postpaid/auto-reload providers (OpenRouter
+  reloading $50 increments) *never go dark* — a runaway just refills 10× overnight
+  = the $500 morning. The budget breaker is then the *only* safety net → the global
+  cascade cap is mandatory, not optional.
+- **Per-agent routing & policy** — each agent (identified by its aigate token /
+  agent-id) gets its own lane: which providers/models it may touch, its own budget
+  slice, its own priority tier + preferred/cheap-first models. A background agent
+  routes to cheap models on a small budget; a critical agent gets premium + more.
+  Combined with per-model caps, **an agent literally cannot exceed its lane.**
+- **Network gate** — `AIGATE_ALLOW_CIDR` (shipped in v1): allow-list of CIDRs +
+  single IPs; only your fleet (± a chosen external box) can even reach the daemon.
+
 ## Integrations — meet agents where they live
 aigate is *just an HTTP API + a token vault*, so any agent framework integrates with a thin
 plugin (~a few calls): "give me the best key for `<capability>`" → metered + audited key back.
