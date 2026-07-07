@@ -1,0 +1,8 @@
+services:
+  cclb:
+    build: .
+    container_name: cclb
+    restart: unless-stopped
+    ports: ["20200:20200"]
+    env_file: .env
+    volumes: ["./data:/app/data"]

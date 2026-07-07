@@ -1,0 +1,15 @@
+{
+  "name": "cclb",
+  "version": "0.1.0",
+  "description": "Safe multi-account Claude Code manager — audited token vault, usage-aware account selection, and a live WebSocket dashboard. Uses the official Claude binary (CLAUDE_CONFIG_DIR profiles + hooks), never a relay/proxy, so it won't jeopardize your accounts.",
+  "type": "module",
+  "bin": { "cclb": "src/server.js" },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": { "node": ">=24" },
+  "dependencies": { "ws": "^8.18.0" },
+  "license": "MIT",
+  "keywords": ["claude", "claude-code", "anthropic", "multi-account", "load-balancing", "rate-limit", "dashboard", "secrets-vault"]
+}
