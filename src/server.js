@@ -243,5 +243,48 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
+// ---- usage poller ------------------------------------------------------
+// Read each account's REAL rate-limit headroom straight from Anthropic and
+// update the vault. No proxy: this is aigate polling on its own tokens so
+// selection/skip stays accurate and auto-recovers after a reset window.
+const allTokensStmt = db.prepare(`SELECT account, token_enc FROM accounts WHERE token_enc IS NOT NULL`);
+async function pollAccountUsage(account, token) {
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer ' + token,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'oauth-2025-04-20',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const u5 = r.headers.get('anthropic-ratelimit-unified-5h-utilization');
+    const u7 = r.headers.get('anthropic-ratelimit-unified-7d-utilization');
+    if (u5 == null && u7 == null) return { account, status: r.status, note: 'no rate-limit headers' };
+    const five = Math.round((parseFloat(u5) || 0) * 100);
+    const seven = Math.round((parseFloat(u7) || 0) * 100);
+    q.updUsage.run(five, seven, account);
+    return { account, five, seven, status: r.status };
+  } catch (e) {
+    return { account, error: String((e && e.message) || e) };
+  }
+}
+async function pollUsage() {
+  let updated = false;
+  for (const row of allTokensStmt.all()) {
+    let tok;
+    try { tok = decrypt(row.token_enc); } catch { continue; }
+    const res = await pollAccountUsage(row.account, tok);
+    if (res.five != null) updated = true;
+    console.log('[poll]', new Date().toISOString(), JSON.stringify(res));
+  }
+  if (updated) broadcast('accounts', q.listAccounts.all());
+}
+const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
+if (POLL_MS > 0) { setTimeout(pollUsage, 8000); setInterval(pollUsage, POLL_MS); }
+
 server.listen(PORT, HOST, () =>
   console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));

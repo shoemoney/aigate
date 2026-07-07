@@ -12,6 +12,8 @@ acct="$(printf '%s' "$resp" | python3 -c 'import sys,json;print(json.load(sys.st
 tok="$(printf '%s' "$resp"  | python3 -c 'import sys,json;print(json.load(sys.stdin).get("setup_token",""))' 2>/dev/null || true)"
 [ -n "$tok" ] || { echo "aigate: no account available → $resp" >&2; exit 1; }
 echo "aigate → using account: $acct" >&2
+# don't let a stray key on the box override the account aigate just picked (the whole point)
+unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
 export CLAUDE_CODE_OAUTH_TOKEN="$tok"
 export AIGATE_ACCOUNT="$acct"     # so the prompt hook + statusline can tag events
 exec claude "$@"
