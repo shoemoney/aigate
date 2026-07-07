@@ -74,6 +74,13 @@ Born from three real pains:
 
 ### Round 3 — the universal registry
 - Generalize `accounts` → `keys(provider, ...)`; providers as first-class config.
+- **Quota-aware, cost-first routing.** When a capability is reachable via multiple
+  sources (e.g. nano-banana via a Gemini Ultra *plan quota* AND paid OpenRouter),
+  route to the **cheapest eligible source first**: included-in-plan quota → prepaid
+  balance → paid per-use — only falling through when the cheaper tier is exhausted,
+  with the budget breaker guarding the paid tier. The LB dimension is **cost**, not
+  just rate-limit headroom. (Real origin: a nano-banana loop fell straight past an
+  unused paid Gemini Ultra quota into $$$ paid OpenRouter. Never again.)
 - Per-provider usage pollers (OpenRouter/Anthropic/etc. spend APIs) so idle keys
   stay fresh in the dashboard.
 - One place that knows every key you have, what it costs, and what's using it.
