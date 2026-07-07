@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>cclb</title>
+<title>aigate</title>
 <style>
   :root{--bg:#0b0e14;--panel:#141922;--line:#232a36;--fg:#e6edf3;--dim:#8b98a9;
         --green:#3fb950;--yellow:#d29922;--red:#f85149;--accent:#58a6ff}
@@ -43,14 +43,14 @@
 </style></head>
 <body>
 <div id="login">
-  <div class="logo" style="font-size:32px">🛡️ cclb</div>
+  <div class="logo" style="font-size:32px">🛡️ aigate</div>
   <div style="color:var(--dim)">Enter API token</div>
-  <input id="tok" type="password" placeholder="CCLB_TOKEN" autofocus>
+  <input id="tok" type="password" placeholder="AIGATE_TOKEN" autofocus>
   <button onclick="save()">Connect</button>
 </div>
 
 <header style="display:none" id="hdr">
-  <span class="logo">🛡️</span><h1>CCLB</h1>
+  <span class="logo">🛡️</span><h1>AIGATE</h1>
   <span class="dot" id="live" title="live"></span>
   <span style="margin-left:auto;color:var(--dim);font-size:12px" id="clock"></span>
 </header>
@@ -64,8 +64,8 @@
 
 <script>
 const $=s=>document.querySelector(s);
-let TOKEN=localStorage.cclb_token||'';
-function save(){TOKEN=$('#tok').value.trim();localStorage.cclb_token=TOKEN;boot();}
+let TOKEN=localStorage.aigate_token||'';
+function save(){TOKEN=$('#tok').value.trim();localStorage.aigate_token=TOKEN;boot();}
 function color(p){return p>=80?'var(--red)':p>=50?'var(--yellow)':'var(--green)'}
 
 function renderAccounts(list){
@@ -108,7 +108,7 @@ function connect(){
 async function boot(){
   if(!TOKEN)return;
   try{const s=await api('/api/stats');renderAccounts(s.accounts);renderHosts(s.by_host);
-    (await api('/api/logs?limit=50')).reverse().forEach(addFeed);}catch{localStorage.removeItem('cclb_token');return}
+    (await api('/api/logs?limit=50')).reverse().forEach(addFeed);}catch{localStorage.removeItem('aigate_token');return}
   $('#login').style.display='none';$('#hdr').style.display='flex';$('#app').style.display='grid';
   connect();
   setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString(),1000);

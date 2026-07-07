@@ -1,17 +1,23 @@
-# 🛡️ cclb
+# 🛡️ aigate
 
-**Safe multi-account Claude Code — an audited token vault, usage-aware account
-selection, and a live dashboard. Uses the *official* `claude` binary, never a
-relay/proxy, so it won't get your accounts flagged.**
+**AisPLB — an AI Secure Proxy & Load Balancer.** One self-hosted place that holds
+every AI/service key you own (encrypted), hands them out securely, load-balances
+where it helps, and shows you **live what's using what** so nothing runs away.
+See [`VISION.md`](VISION.md) for where it's headed.
+
+**v1 (shipped) tackles the hardest case first: safe multi-account Claude Code** —
+an audited token vault, usage-aware account selection, and a live dashboard, using
+the *official* `claude` binary (never a relay/proxy), so it won't get your
+accounts flagged.
 
 If you legitimately hold more than one Claude Max subscription, Anthropic's
 Claude Code team has said [multiple accounts are *not* against ToS](https://github.com/anthropics/claude-code/issues/54464)
 — what gets banned is **relaying/reselling tokens through a proxy that
-impersonates the client.** cclb deliberately stays on the accepted side of
+impersonates the client.** aigate deliberately stays on the accepted side of
 that line:
 
 - ✅ every request runs the **official `claude` binary** against **your own token**
-- ✅ cclb is **never in Anthropic's request path** — it only *picks* the account and *records* activity via Claude Code's local **hooks**
+- ✅ aigate is **never in Anthropic's request path** — it only *picks* the account and *records* activity via Claude Code's local **hooks**
 - ❌ no MITM proxy, no `ANTHROPIC_BASE_URL` interception, no token relay server
 
 ## What it does
@@ -25,11 +31,11 @@ that line:
 
 ```
  each box (official claude):
-   cclb-run     → GET /api/select  → best account + token  (audited by IP)
+   aigate-run     → GET /api/select  → best account + token  (audited by IP)
    UserPromptSubmit → POST /api/events/prompt   {account,host,cwd,prompt}
    statusLine       → POST /api/events/usage    {account,5h%,weekly%}
                                    │
-                        cclb daemon (SQLite)
+                        aigate daemon (SQLite)
                                    │  WebSocket push
                              live dashboard
 ```
@@ -40,18 +46,18 @@ official client talks to Anthropic directly with your token.
 ## Quick start
 
 ```bash
-git clone <this repo> && cd cclb
+git clone <this repo> && cd aigate
 cp .env.example .env
-# set CCLB_TOKEN (any long random string) and
-# CCLB_ENCRYPTION_KEY=$(openssl rand -hex 32)
+# set AIGATE_TOKEN (any long random string) and
+# AIGATE_ENCRYPTION_KEY=$(openssl rand -hex 32)
 npm install
 npm start          # → http://localhost:20200
 ```
 Or Docker: `docker compose up -d`.
 
-Open the dashboard, enter your `CCLB_TOKEN`, then add your accounts:
+Open the dashboard, enter your `AIGATE_TOKEN`, then add your accounts:
 ```bash
-curl -X POST http://localhost:20200/api/accounts -H "Authorization: Bearer $CCLB_TOKEN" \
+curl -X POST http://localhost:20200/api/accounts -H "Authorization: Bearer $AIGATE_TOKEN" \
   -H 'content-type: application/json' \
   -d '{"account":"max_1","setup_token":"sk-ant-oat01-...","label":"personal"}'
 ```
@@ -59,10 +65,10 @@ Get each token with `claude setup-token` while logged into that account.
 
 ### Wire up a box (client side)
 ```bash
-mkdir -p ~/.claude/cclb && cp clients/*.sh ~/.claude/cclb/
-export CCLB_URL=https://cclb.example.com CCLB_TOKEN=...
+mkdir -p ~/.claude/aigate && cp clients/*.sh ~/.claude/aigate/
+export AIGATE_URL=https://aigate.example.com AIGATE_TOKEN=...
 # launch via the router so the account is chosen by headroom:
-alias cc='bash ~/.claude/cclb/cclb-run.sh'
+alias cc='bash ~/.claude/aigate/aigate-run.sh'
 ```
 Register `prompt-hook.sh` as a `UserPromptSubmit` hook and `statusline-feed.sh`
 as your `statusLine` in `~/.claude/settings.json` (snippets in each file).
@@ -77,11 +83,11 @@ as your `statusLine` in `~/.claude/settings.json` (snippets in each file).
 | `GET`  | `/api/stats` · `/api/logs` | dashboard data |
 | `WS`   | `/ws?token=` | live event stream |
 
-All endpoints require `Authorization: Bearer $CCLB_TOKEN`.
+All endpoints require `Authorization: Bearer $AIGATE_TOKEN`.
 
 ## ⚠️ Use responsibly
 Multiple **personal** subscriptions used via the official client is fine per
-Anthropic. **Reselling or pooling access for others is not** — don't. cclb
+Anthropic. **Reselling or pooling access for others is not** — don't. aigate
 gives you visibility so you stay honest and no account runs away.
 
 ## Roadmap

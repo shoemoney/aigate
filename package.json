@@ -1,9 +1,9 @@
 {
-  "name": "cclb",
+  "name": "aigate",
   "version": "0.1.0",
   "description": "Safe multi-account Claude Code manager — audited token vault, usage-aware account selection, and a live WebSocket dashboard. Uses the official Claude binary (CLAUDE_CONFIG_DIR profiles + hooks), never a relay/proxy, so it won't jeopardize your accounts.",
   "type": "module",
-  "bin": { "cclb": "src/server.js" },
+  "bin": { "aigate": "src/server.js" },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js"

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * cclb — safe multi-account Claude Code manager.
+ * aigate — safe multi-account Claude Code manager.
  *
  * A daemon that: stores account OAuth/setup-tokens encrypted at rest, hands the
  * best account (most rate-limit headroom) to whoever asks (audited by IP),
@@ -26,14 +26,14 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dir, '..', 'public');
 const PORT = Number(process.env.PORT || 20200);
 const HOST = process.env.HOST || '0.0.0.0';
-const TOKEN = process.env.CCLB_TOKEN || '';
-const DB_PATH = process.env.CCLB_DB || join(__dir, '..', 'data', 'cclb.db');
-const CUTOFF = Number(process.env.CCLB_HEADROOM_CUTOFF || 95);
-const ENC_KEY = (process.env.CCLB_ENCRYPTION_KEY || '').trim();
+const TOKEN = process.env.AIGATE_TOKEN || '';
+const DB_PATH = process.env.AIGATE_DB || join(__dir, '..', 'data', 'aigate.db');
+const CUTOFF = Number(process.env.AIGATE_HEADROOM_CUTOFF || 95);
+const ENC_KEY = (process.env.AIGATE_ENCRYPTION_KEY || '').trim();
 
-if (!TOKEN) { console.error('FATAL: set CCLB_TOKEN'); process.exit(1); }
+if (!TOKEN) { console.error('FATAL: set AIGATE_TOKEN'); process.exit(1); }
 if (!/^[0-9a-fA-F]{64}$/.test(ENC_KEY)) {
-  console.error('FATAL: set CCLB_ENCRYPTION_KEY to 32-byte hex (openssl rand -hex 32)');
+  console.error('FATAL: set AIGATE_ENCRYPTION_KEY to 32-byte hex (openssl rand -hex 32)');
   process.exit(1);
 }
 const KEY = Buffer.from(ENC_KEY, 'hex');
@@ -220,4 +220,4 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 server.listen(PORT, HOST, () =>
-  console.log(`cclb on http://${HOST}:${PORT}  (db ${DB_PATH})`));
+  console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));

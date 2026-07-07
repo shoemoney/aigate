@@ -1,7 +1,7 @@
 services:
-  cclb:
+  aigate:
     build: .
-    container_name: cclb
+    container_name: aigate
     restart: unless-stopped
     ports: ["20200:20200"]
     env_file: .env
