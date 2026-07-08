@@ -256,6 +256,17 @@ and auto-detects the `claude` binary.
 | `statusline-feed.sh` | statusline badge (account · wk %) → also feeds real usage back |
 | `test-switching.sh` | end-to-end switching test (below) |
 
+### 🔑 `/add-key` — teach every Claude to use the key vault
+
+The repo ships a Claude Code **skill** at [`.claude/skills/add-key/`](.claude/skills/add-key/SKILL.md). Any Claude working in this repo (or with the skill synced into `~/.claude/skills/`) can type **`/add-key`** to vault a provider key and fetch it back to *use* it — no hardcoded secrets:
+
+```text
+/add-key        → store an OpenAI/fal/Gemini/… key, list what's vaulted,
+                  or pull a key at runtime (GET /api/keys/:provider)
+```
+
+It knows the auth flow (source `~/.claude/aigate/env`), the 56-provider catalog, and the add / list / fetch / rotate routes. Distribute it fleet-wide by dropping it in `~/.claude/skills/` on each box — every Claude then knows how to reach the vault.
+
 > [!TIP]
 > `cc` is a shell command (`~/.local/bin/cc`). On Linux it shadows the C
 > compiler `cc` when `~/.local/bin` precedes `/usr/bin` — rename it if you
