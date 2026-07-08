@@ -153,6 +153,21 @@ const server = http.createServer(async (req, res) => {
   // network gate (defense-in-depth, before anything else)
   if (!ipAllowed(reqIp(req), ALLOW_CIDR)) { res.writeHead(403); return res.end('forbidden (network)'); }
 
+  // health probe (no bearer — supervisors/watchdog don't have it; still gated
+  // by network, and loopback/docker healthchecks are always allowed). db-backed:
+  // a wedged DB → 503 so the supervisor can restart us.
+  if (req.method === 'GET' && (p === '/health' || p === '/healthz')) {
+    try {
+      db.prepare('SELECT 1').get();
+      const accts = q.listAccounts.all();
+      const selectable = accts.filter((a) => !a.disabled && !a.reauth_needed && a.has_token
+        && Math.max(a.five_hour_pct || 0, a.seven_day_pct || 0) < CUTOFF).length;
+      return json(res, 200, { ok: true, uptime_s: Math.round(process.uptime()), accounts: accts.length, selectable });
+    } catch (e) {
+      return json(res, 503, { ok: false, error: String((e && e.message) || e) });
+    }
+  }
+
   // static dashboard (index gated at load; API gated per-request)
   if (req.method === 'GET' && !p.startsWith('/api')) {
     const fp = safeStaticPath(PUBLIC, p);
@@ -299,11 +314,37 @@ async function pollUsage() {
 }
 const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
 
-// Only auto-start (listen + poll) when run directly. When imported (tests) the
-// caller drives server.listen() and the poller stays quiet.
+// Close server + db and exit. On a fatal fault we exit non-zero so the
+// supervisor (docker restart:unless-stopped / launchd KeepAlive) revives us —
+// that's the self-heal. On a signal we exit 0 for a clean stop.
+function shutdown(code) {
+  try { server.close(); } catch { /* not listening */ }
+  try { db.close(); } catch { /* already closed */ }
+  process.exit(code);
+}
+
+// Only auto-start (listen + poll + supervise) when run directly. When imported
+// (tests) the caller drives server.listen() and none of this installs.
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
-  if (POLL_MS > 0) { setTimeout(pollUsage, 8000); setInterval(pollUsage, POLL_MS); }
+  // don't let a stray async throw silently kill the daemon
+  process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
+  process.on('uncaughtException', (e) => { console.error('[uncaughtException]', e); shutdown(1); });
+  for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { console.log(`[${sig}] shutting down`); shutdown(0); });
+
+  // internal watchdog: if the DB stops answering, exit so the supervisor
+  // restarts a fresh process. ponytail: db-ping only — covers the common wedge
+  // (locked/corrupt sqlite); widen the check if other subsystems can hang.
+  const WATCHDOG_MS = Number(process.env.AIGATE_WATCHDOG_MS || 30000);
+  if (WATCHDOG_MS > 0) setInterval(() => {
+    try { db.prepare('SELECT 1').get(); }
+    catch (e) { console.error('[watchdog] db unreachable — exiting for restart', e); shutdown(1); }
+  }, WATCHDOG_MS).unref();
+
+  // poller cycles are wrapped so a rejected cycle logs instead of crashing
+  const poll = () => pollUsage().catch((e) => console.error('[poll] cycle failed', e));
+  if (POLL_MS > 0) { setTimeout(poll, 8000); setInterval(poll, POLL_MS); }
+
   server.listen(PORT, HOST, () =>
     console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
 }

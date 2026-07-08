@@ -112,6 +112,22 @@ test('listAccounts exposes reauth_needed for the dashboard badge', async () => {
   assert.equal(list.find((a) => a.account === 'bob').reauth_needed, 0);
 });
 
+test('/health is unauthenticated and reports db-backed status', async () => {
+  const r = await fetch(base + '/health');          // deliberately no bearer
+  assert.equal(r.status, 200);
+  const j = await r.json();
+  assert.equal(j.ok, true);
+  assert.equal(typeof j.uptime_s, 'number');
+  assert.equal(j.accounts, 2);                       // alice + bob
+  assert.equal(typeof j.selectable, 'number');
+});
+
+test('/health selectable drops to 0 when no account is usable', async () => {
+  db.prepare('UPDATE accounts SET disabled=1').run();
+  assert.equal((await (await fetch(base + '/health')).json()).selectable, 0);
+  db.prepare('UPDATE accounts SET disabled=0').run();
+});
+
 test('unknown API route → 404', async () => {
   assert.equal((await fetch(base + '/api/nope', { headers: H })).status, 404);
 });
