@@ -110,16 +110,22 @@ mindmap
       most headroom first
       auto-skip ≥95%
       auto-recover after reset
+      🔁 exclude + retry on over-limit
     📈 Usage poller
       reads Anthropic rate-limit headers
       every 10 min · no proxy
       per-account 5h + 7d %
+    🩺 Self-heal
+      /health DB-backed probe
+      watchdog exits→restart
+      Docker HEALTHCHECK + autoheal
     🧾 Audit
       every handout - IP + host
       every prompt - via hooks
     📊 Live
       WebSocket dashboard
       🚨 runaway detection
+      🔑 add/remove provider keys
     🛑 Guards _(roadmap)_
       per model x key caps
       latching breaker
@@ -134,7 +140,7 @@ mindmap
 ```mermaid
 flowchart LR
   subgraph box["🖥️ each box (official claude)"]
-    R["🎯 aigate-run / cmux wrapper<br/>pick best account"]
+    R["🎯 cc wrapper (aigate-run)<br/>pick best account · retry on limit"]
     C(["claude ↔ Anthropic<br/><i>direct, your token</i>"])
     S["🛡 statusline badge<br/>account · wk %"]
     R --> C
@@ -178,10 +184,13 @@ sequenceDiagram
 | 🔐 | **Encrypted vault** | AES-256-GCM at rest — Claude OAuth tokens **and** provider API keys; tokens are write-only via the API |
 | ⚖️ | **Headroom-aware selection** | hands out the account with the **most headroom** (lowest of `max(5h%,7d%)`), skips anything ≥ cutoff |
 | 📈 | **Server-side usage poller** | reads each account's **real** rate-limit headroom straight from Anthropic every 10 min → auto-skip maxed, **auto-recover after reset**, zero manual seeding |
-| 🔑 | **Provider-key registry** | encrypted store + `/api/keys` for OpenAI / OpenRouter / Anthropic / Gemini / Perplexity / … — validated keys in one place |
+| 🔑 | **Provider-key registry** | encrypted store + `/api/keys` for a **56-provider catalog** (OpenAI / OpenRouter / Gemini / Groq / Together / fal / ElevenLabs / …); `GET /api/providers` feeds a dashboard **add-key form** with per-provider key-format hints |
+| 🔁 | **Over-limit detect + retry** | headless `cc -p` spots a rate-limit/unavailable reply, **parks** that account (`/api/events/limit`) and **retries the next-best** via `/api/select?exclude=` — up to 3 |
+| 🩺 | **Self-healing daemon** | unauthenticated **`/health`** (DB-backed) + internal **watchdog** (exits→restart on a wedged DB) + Docker `HEALTHCHECK` wired to **autoheal** — three recovery layers |
 | 🧾 | **Full audit trail** | every handout logged with **timestamp + IP + host**; every prompt logged (account, host, cwd) |
-| 📊 | **Live dashboard** | account cards w/ usage bars (🚨 runaway), streaming activity feed, per-host/device stats |
-| 🎯 | **No-proxy Claude mode** | official binary + wrappers — won't flag accounts |
+| 📊 | **Live dashboard** | account cards w/ usage bars (🚨 runaway, 🔑 re-auth), **provider-key manager**, streaming activity feed, per-host/device stats |
+| 🎯 | **No-proxy Claude mode** | official binary + `cc` wrapper — won't flag accounts |
+| 🧪 | **Tested** | 44 `node --test` (unit + HTTP), a headless-Chromium dashboard E2E, and a **fleet switching test** on a real Pi — see [docs/TESTING.md](docs/TESTING.md) |
 | 🐳 | **1 runtime dep** | `ws`. SQLite is Node's built-in `node:sqlite`. Buildless. Docker-ready. |
 
 ---
@@ -221,66 +230,85 @@ curl -X POST http://localhost:20200/api/keys \
   -d '{"provider":"openrouter","key":"sk-or-v1-…","label":"prod"}'
 ```
 
+…or just open the **dashboard** → **Provider API keys** → pick from the 56-provider dropdown, paste, **Add key**. 🖥️
+
 ---
 
 ## 🔌 Wire up a box (client side)
 
-<details>
-<summary><b>Drop 4 files → source one line → done</b></summary>
+**One installer sets up the `cc` command.** It routes the official `claude`
+through aigate's selector, unsets any stray `ANTHROPIC_API_KEY`, and (in
+headless `-p` mode) detects over-limit and retries the next account.
 
 ```bash
-mkdir -p ~/.claude/aigate && cp clients/*.sh ~/.claude/aigate/
-printf "export AIGATE_URL='https://aigate.example.com'\nexport AIGATE_TOKEN='…'\n" > ~/.claude/aigate/env
-chmod 600 ~/.claude/aigate/env
-echo '[ -f ~/.claude/aigate/cc.zsh ] && source ~/.claude/aigate/cc.zsh' >> ~/.zshrc
+AIGATE_URL='https://aigate.example.com' AIGATE_TOKEN='…' bash clients/install.sh
+cc -p 'hi'          # → Claude replies, on the account with the most headroom
 ```
 
-Now `cc` launches Claude Code on the account with the most headroom, and **unsets any stray `ANTHROPIC_API_KEY`** so nothing silently bypasses the selector.
+The installer writes `~/.claude/aigate/{aigate-run.sh,env}` + `~/.local/bin/cc`
+and auto-detects the `claude` binary.
 
 | File | Role |
 |---|---|
-| `aigate-run.sh` | the `cc` wrapper — select → set token → unset stray key → exec official `claude` |
-| `cmux-claude.sh` | same, for the [cmux](https://github.com/manaflow-ai/cmux) terminal (`automation.claudeBinaryPath`) |
-| `cc.zsh` | defines the `cc` shell function |
-| `test-cc.sh` | one-shot end-to-end router test |
+| `install.sh` | sets up `cc` + `~/.claude/aigate/` + env; auto-detects `claude` |
+| `aigate-run.sh` | the `cc` wrapper — select → set token → unset stray key → run `claude`; **retry-on-limit** in `-p` mode |
+| `prompt-hook.sh` | Claude Code `UserPromptSubmit` hook → logs the prompt to aigate |
+| `statusline-feed.sh` | statusline badge (account · wk %) → also feeds real usage back |
+| `test-switching.sh` | end-to-end switching test (below) |
 
 > [!TIP]
-> **Using cmux?** It caches `claudeBinaryPath` at launch — point it at `cmux-claude.sh` and do a full **Cmd+Q relaunch**, not just a new window.
+> `cc` is a shell command (`~/.local/bin/cc`). On Linux it shadows the C
+> compiler `cc` when `~/.local/bin` precedes `/usr/bin` — rename it if you
+> compile with `cc`. In headless `-p` mode it auto-adds
+> `--dangerously-skip-permissions` so it never hangs on the trust prompt.
 >
-> **"Unable to connect to API"?** Grep `~/.claude/settings*.json` for a stale `ANTHROPIC_BASE_URL` (e.g. a dead `127.0.0.1:8787` proxy) and strip it — it silently hijacks every request.
-</details>
+> **"Unable to connect to API"?** Grep `~/.claude/settings*.json` for a stale
+> `ANTHROPIC_BASE_URL` and strip it — it silently hijacks every request.
 
 ---
 
 ## 🧪 Prove it actually switches
 
-Don't trust a router you haven't watched fail. Flip the DB and confirm it errors:
+Don't trust a router you haven't watched. `test-switching.sh` flips each account
+`disabled` and asserts `cc -p` follows — with a real Claude `PONG` every time:
 
 ```bash
-# 1. disable the good account, make the maxed one selectable
-curl -X POST $URL/api/accounts/personal/disabled -H "$AUTH" -d '{"disabled":true}'
-# 2. run the test → EXPECT the weekly-limit error (proves it switched)
-~/.claude/aigate/test-cc.sh        # → "You've hit your weekly limit …"
-# 3. restore
-curl -X POST $URL/api/accounts/personal/disabled -H "$AUTH" -d '{"disabled":false}'
+bash clients/test-switching.sh <accountWithMoreHeadroom> <otherAccount>
 ```
 
-If it errors on the maxed account and works on the good one, your router is real. ✅
+<details>
+<summary>✅ <b>Verified run — Pi <code>twojeffs</code> → <code>aigate.shoemoney.ai</code> (2026-07-08)</b></summary>
+
+| State | Expected | Picked | `cc -p` |
+|---|---|---|---|
+| both enabled | shoemoney (1% vs 19%) | **shoemoney** | `PONG` ✅ |
+| shoemoney disabled | personal | **personal** | `PONG` ✅ |
+| personal disabled | shoemoney | **shoemoney** | `PONG` ✅ |
+| both enabled | shoemoney | **shoemoney** | `PONG` ✅ |
+
+Every switch landed in `access_log` (`select`/`ok`) + `request_log`. Full test
+matrix in **[docs/TESTING.md](docs/TESTING.md)**.
+</details>
 
 ---
 
 ## 📡 API reference
 
-All endpoints require `Authorization: Bearer $AIGATE_TOKEN`.
+All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`** (so supervisors can probe it).
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/select?host=` | 🎯 best account + token (logs access w/ IP) |
+| `GET` | `/health` · `/healthz` | 🩺 **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` (503 if the DB is wedged) |
+| `GET` | `/api/select?host=&exclude=a,b` | 🎯 best account + token (logs access w/ IP); `exclude` skips accounts on retry |
 | `GET` / `POST` | `/api/accounts` | list (usage, **no tokens**) / add `{account, setup_token, label}` |
 | `DELETE` | `/api/accounts/:name` | remove |
 | `POST` | `/api/accounts/:name/disabled` | `{disabled: true/false}` |
 | `POST` | `/api/events/usage` | 📈 set an account's 5h/7d % (the poller writes this) |
+| `POST` | `/api/events/limit` | 🔁 `{account}` — park an over-limit account (poller auto-recovers) |
+| `POST` | `/api/events/prompt` | 🧾 log a prompt `{account, host, cwd, model, prompt}` |
+| `GET` | `/api/providers` | 📇 the 56-provider catalog (id, name, key prefix, base URL) |
 | `GET` / `POST` | `/api/keys` | list (**no secrets**) / add `{provider, key, label}` |
+| `GET` | `/api/keys/:provider` | 🔑 newest working key for a provider (audited) |
 | `DELETE` | `/api/keys/:id` | remove a provider key |
 | `GET` | `/api/logs?limit=` · `/api/stats` | prompt log · dashboard rollups |
 | `WS` | `/ws?token=` | 📡 live event stream |
@@ -297,7 +325,9 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN`.
 | `AIGATE_DB` | `./data/aigate.db` | SQLite path |
 | `AIGATE_HEADROOM_CUTOFF` | `95` | skip accounts whose worst-window % ≥ this |
 | `AIGATE_POLL_MS` | `600000` | usage-poll interval (ms); `0` disables the poller |
+| `AIGATE_WATCHDOG_MS` | `30000` | 🩺 self-heal watchdog — pings the DB; exits→restart if wedged. `0` disables |
 | `AIGATE_ALLOW_CIDR` | *(empty = all)* | 🌐 network gate — CIDRs + single IPs. Loopback always OK. |
+| `AIGATE_TRUST_PROXY` | `0` | trust `X-Forwarded-For` for client IP — set `1` **only** behind a proxy you control (else the gate/audit see the proxy IP) |
 
 ---
 
@@ -313,7 +343,7 @@ flowchart TD
 
 | Ring | Ships | Kills the pain of… |
 |---|---|---|
-| ✅ **v1** | headroom selector · encrypted vault · **10-min usage poller** · **provider-key registry** · WS dashboard | "which of my 35 boxes is that?" + manual usage babysitting |
+| ✅ **v1** | headroom selector · **over-limit retry** · encrypted vault · **10-min usage poller** · **56-provider key registry + dashboard add-key UI** · **self-heal (`/health` + watchdog + autoheal)** · WS dashboard | "which of my 35 boxes is that?" + manual usage babysitting + re-login churn |
 | 🔨 **R2** | secure proxy for API providers · per-`model×key` **latching budget breaker** · Redis | the **$500 nano-banana loop** |
 | ⬜ **R3** | universal `keys(provider)` registry · **cost-first routing** (included quota → prepaid → paid) | paying twice for quota you already own |
 | ⬜ **R4** | inbox account discovery · `GET /capabilities` for agents | keys too annoying to use → agents just use them |
@@ -338,6 +368,7 @@ PRs welcome! 💜 Early and opinionated — read **[VISION.md](VISION.md)** firs
 ```bash
 npm start                     # daemon
 node --watch src/server.js    # hot reload
+npm test                      # 44 unit + HTTP tests (node --test, no deps)
 ```
 
 ## 📜 License
