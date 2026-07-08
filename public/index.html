@@ -38,6 +38,11 @@
   .feed .p{color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
   .cols{display:grid;gap:20px;grid-template-columns:1fr 1fr}
   @media(max-width:820px){.cols{grid-template-columns:1fr}}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  form.keyform{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+  form.keyform label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--dim)}
+  form.keyform input{width:auto}
+  button.del{background:var(--red);color:#fff;padding:4px 10px;font-size:12px}
   #login{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px}
   input{background:var(--panel);border:1px solid var(--line);color:var(--fg);padding:10px 12px;border-radius:8px;width:320px;font-size:14px}
   button{background:var(--accent);color:#001; border:0;padding:10px 16px;border-radius:8px;font-weight:600;cursor:pointer}
@@ -57,6 +62,26 @@
 </header>
 <div class="wrap" style="display:none" id="app">
   <section><h2>Accounts — live usage</h2><div class="grid" id="accts"></div></section>
+  <section><h2>Provider API keys</h2>
+    <div class="card" style="margin-bottom:14px">
+      <form class="keyform" id="keyform">
+        <label>Provider
+          <input id="kprov" list="provlist" placeholder="openai" autocomplete="off" style="width:200px">
+          <datalist id="provlist"></datalist>
+        </label>
+        <label>Label <span style="opacity:.6">(optional)</span>
+          <input id="klabel" placeholder="prod" style="width:150px">
+        </label>
+        <label>API key
+          <input id="kkey" type="password" placeholder="paste secret" style="width:300px">
+        </label>
+        <button type="submit">Add key</button>
+        <span id="khint" class="mono" style="color:var(--dim)"></span>
+      </form>
+      <div id="kmsg" style="margin-top:10px;font-size:12px;min-height:16px"></div>
+    </div>
+    <table id="keys"><thead><tr><th>Provider</th><th>Label</th><th>Key</th><th>Status</th><th>Added</th><th></th></tr></thead><tbody></tbody></table>
+  </section>
   <div class="cols">
     <section class="card"><h2>Live activity</h2><div class="feed" id="feed"></div></section>
     <section class="card"><h2>By host / device</h2><table id="hosts"><thead><tr><th>Host</th><th>Requests</th><th>Tokens</th><th>Last</th></tr></thead><tbody></tbody></table></section>
@@ -92,6 +117,48 @@ function addFeed(d){
   f.prepend(r); while(f.children.length>200)f.lastChild.remove();
 }
 async function api(path){const r=await fetch(path,{headers:{authorization:'Bearer '+TOKEN}});if(r.status===401)throw 0;return r.json();}
+
+// ---- provider keys ----
+let PROVIDERS=[];
+async function loadProviders(){
+  PROVIDERS=await api('/api/providers');
+  const dl=$('#provlist'); dl.innerHTML='';
+  for(const p of PROVIDERS){const o=document.createElement('option');o.value=p.id;o.label=p.name;dl.appendChild(o);}
+}
+function providerHint(){
+  const id=$('#kprov').value.trim(), p=PROVIDERS.find(x=>x.id===id);
+  $('#khint').textContent=p?(p.prefix?`↳ ${p.name} — keys usually start "${p.prefix}"`:`↳ ${p.name}`):(id?'↳ custom provider':'');
+}
+async function loadKeys(){renderKeys(await api('/api/keys'));}
+function renderKeys(rows){
+  const tb=$('#keys tbody'); tb.innerHTML='';
+  if(!rows||!rows.length){tb.innerHTML='<tr><td colspan="6" style="color:var(--dim)">no keys yet — add one above</td></tr>';return;}
+  for(const k of rows){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${k.provider}</td><td>${k.label||'—'}</td><td class="mono">${k.key_hint||'—'}</td>
+      <td>${k.status||''}</td><td class="mono">${(k.created_at||'').replace('T',' ')}</td>
+      <td><button class="del">✕</button></td>`;
+    tr.querySelector('.del').onclick=()=>delKey(k.id);
+    tb.appendChild(tr);
+  }
+}
+async function addKey(e){
+  e.preventDefault();
+  const provider=$('#kprov').value.trim(), key=$('#kkey').value.trim(), label=$('#klabel').value.trim(), msg=$('#kmsg');
+  if(!provider||!key){msg.style.color='var(--red)';msg.textContent='provider + key required';return;}
+  msg.style.color='var(--dim)';msg.textContent='adding…';
+  try{
+    const r=await fetch('/api/keys',{method:'POST',headers:{authorization:'Bearer '+TOKEN,'content-type':'application/json'},body:JSON.stringify({provider,key,label})});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok){msg.style.color='var(--green)';msg.textContent='✓ added '+provider;$('#kkey').value='';$('#klabel').value='';loadKeys();}
+    else{msg.style.color='var(--red)';msg.textContent='✗ '+(j.error||('HTTP '+r.status));}
+  }catch(err){msg.style.color='var(--red)';msg.textContent='✗ '+err;}
+}
+async function delKey(id){
+  if(!confirm('Delete this key?'))return;
+  await fetch('/api/keys/'+id,{method:'DELETE',headers:{authorization:'Bearer '+TOKEN}});
+  loadKeys();
+}
 function renderHosts(rows){const tb=$('#hosts tbody');tb.innerHTML='';for(const h of rows||[]){
   tb.insertAdjacentHTML('beforeend',`<tr><td>${h.host||'—'}</td><td>${h.requests}</td><td>${h.tokens||0}</td><td>${(h.last||'').replace('T',' ')}</td></tr>`)}}
 
@@ -102,6 +169,7 @@ function connect(){
   ws.onclose=()=>{$('#live').classList.remove('on');setTimeout(connect,2000)};
   ws.onmessage=e=>{const m=JSON.parse(e.data);
     if(m.type==='accounts')renderAccounts(m.data);
+    else if(m.type==='keys')renderKeys(m.data);
     else if(m.type==='prompt'){addFeed(m.data);api('/api/stats').then(s=>renderHosts(s.by_host))}
     else if(m.type==='access')addFeed({...m.data,prompt:'▸ '+m.data.action});
   };
@@ -109,8 +177,10 @@ function connect(){
 async function boot(){
   if(!TOKEN)return;
   try{const s=await api('/api/stats');renderAccounts(s.accounts);renderHosts(s.by_host);
+    await loadProviders();await loadKeys();
     (await api('/api/logs?limit=50')).reverse().forEach(addFeed);}catch{localStorage.removeItem('aigate_token');return}
   $('#login').style.display='none';$('#hdr').style.display='flex';$('#app').style.display='grid';
+  $('#keyform').onsubmit=addKey; $('#kprov').oninput=providerHint;
   connect();
   setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString(),1000);
 }

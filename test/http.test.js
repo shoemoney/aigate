@@ -128,6 +128,27 @@ test('/health selectable drops to 0 when no account is usable', async () => {
   db.prepare('UPDATE accounts SET disabled=0').run();
 });
 
+test('GET /api/providers returns the catalog (>=50, well-formed)', async () => {
+  const r = await fetch(base + '/api/providers', { headers: H });
+  assert.equal(r.status, 200);
+  const list = await r.json();
+  assert.ok(list.length >= 50, `expected >=50 providers, got ${list.length}`);
+  for (const p of list) { assert.ok(p.id && p.name && p.cat); }   // no half-filled rows
+  assert.ok(list.some((p) => p.id === 'openai') && list.some((p) => p.id === 'groq'));
+});
+
+test('GET /api/keys/:provider returns the decrypted key for the newest working one', async () => {
+  await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'openai', key: 'sk-newest-openai-key', label: 'v2' }) });
+  const j = await (await fetch(base + '/api/keys/openai', { headers: H })).json();
+  assert.equal(j.provider, 'openai');
+  assert.equal(j.key, 'sk-newest-openai-key');   // decrypts + picks newest
+});
+
+test('GET /api/keys/:provider → 404 for a provider with no key', async () => {
+  assert.equal((await fetch(base + '/api/keys/nonesuch', { headers: H })).status, 404);
+});
+
 test('unknown API route → 404', async () => {
   assert.equal((await fetch(base + '/api/nope', { headers: H })).status, 404);
 });

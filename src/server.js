@@ -20,6 +20,7 @@ import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive } from './lib.js';
+import { PROVIDERS } from './providers.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -121,6 +122,7 @@ const q = {
     ON CONFLICT(provider,key_hint) DO UPDATE SET key_enc=excluded.key_enc, label=excluded.label,
       status=excluded.status, last_checked=datetime('now')`),
   listKeys: db.prepare(`SELECT id,provider,label,key_hint,status,last_checked,created_at FROM provider_keys ORDER BY provider,id`),
+  getKeyByProvider: db.prepare(`SELECT key_enc,label FROM provider_keys WHERE provider=? AND status='working' ORDER BY id DESC LIMIT 1`),
   delKey: db.prepare(`DELETE FROM provider_keys WHERE id=?`),
 };
 
@@ -192,9 +194,22 @@ const server = http.createServer(async (req, res) => {
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true });
     }
+    // --- provider catalog (top ~50 providers) for the add-key dropdown ---
+    if (p === '/api/providers' && req.method === 'GET')
+      return json(res, 200, PROVIDERS);
+
     // --- provider API key registry (encrypted at rest; list never returns secrets) ---
     if (p === '/api/keys' && req.method === 'GET')
       return json(res, 200, q.listKeys.all());
+    // fetch the newest working key for a provider (bearer-gated, audited) — used
+    // by clients/skills that need the actual secret to call the provider.
+    if (p.startsWith('/api/keys/') && req.method === 'GET') {
+      const provider = decodeURIComponent(p.split('/').pop());
+      const row = q.getKeyByProvider.get(provider);
+      if (!row) return json(res, 404, { error: 'no working key for ' + provider });
+      q.insAccess.run(provider, url.searchParams.get('host') || '', reqIp(req), 'key', 'ok');
+      return json(res, 200, { provider, label: row.label, key: decrypt(row.key_enc) });
+    }
     if (p === '/api/keys' && req.method === 'POST') {
       const b = await body(req);
       if (!b.provider || !b.key) return json(res, 400, { error: 'provider + key required' });
