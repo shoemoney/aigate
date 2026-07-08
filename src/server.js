@@ -106,9 +106,10 @@ const q = {
   updUsage: db.prepare(`UPDATE accounts SET five_hour_pct=?, seven_day_pct=?, usage_updated=datetime('now') WHERE account=?`),
   // most headroom = lowest worst-window usage; skip disabled / over cutoff /
   // tokenless / needs-reauth so we never hand out a dead token (login churn).
-  pickBest: db.prepare(`SELECT account FROM accounts
+  // Ranked (no LIMIT) so /api/select can skip client-excluded accounts on retry.
+  pickRanked: db.prepare(`SELECT account FROM accounts
     WHERE disabled=0 AND reauth_needed=0 AND token_enc IS NOT NULL AND max(five_hour_pct,seven_day_pct) < ?
-    ORDER BY max(five_hour_pct,seven_day_pct) ASC, usage_updated ASC LIMIT 1`),
+    ORDER BY max(five_hour_pct,seven_day_pct) ASC, usage_updated ASC`),
   insReq: db.prepare(`INSERT INTO request_log(account,host,ip,cwd,model,prompt,tokens) VALUES(?,?,?,?,?,?,?)`),
   insAccess: db.prepare(`INSERT INTO access_log(account,host,ip,action,result) VALUES(?,?,?,?,?)`),
   recentReq: db.prepare(`SELECT id,ts,account,host,ip,cwd,model,substr(prompt,1,400) AS prompt,tokens
@@ -235,14 +236,26 @@ const server = http.createServer(async (req, res) => {
     }
 
     // --- the selector: hand out the best account's token (audited) ---
+    // ?exclude=a,b lets a client retry past an account that just hit its limit.
     if (p === '/api/select' && req.method === 'GET') {
       const host = url.searchParams.get('host') || '', ip = reqIp(req);
-      const row = q.pickBest.get(CUTOFF);
+      const excl = new Set((url.searchParams.get('exclude') || '').split(',').map((s) => s.trim()).filter(Boolean));
+      const row = q.pickRanked.all(CUTOFF).find((r) => !excl.has(r.account));
       if (!row) { q.insAccess.run(null, host, ip, 'select', 'none-available'); return json(res, 503, { error: 'no account with headroom' }); }
       const tok = decrypt(q.getToken.get(row.account).token_enc);
       q.insAccess.run(row.account, host, ip, 'select', 'ok');
       broadcast('access', { account: row.account, host, ip, action: 'select' });
       return json(res, 200, { account: row.account, setup_token: tok });
+    }
+    // client hit an over-limit/unavailable account → park it at 100% so the next
+    // select skips it; the usage poller restores real headroom (auto-recover).
+    if (p === '/api/events/limit' && req.method === 'POST') {
+      const b = await body(req);
+      if (!b.account) return json(res, 400, { error: 'account required' });
+      q.updUsage.run(100, 100, b.account);
+      q.insAccess.run(b.account, b.host || '', reqIp(req), 'limit', 'over-limit');
+      broadcast('accounts', q.listAccounts.all());
+      return json(res, 200, { ok: true });
     }
 
     // --- event ingest (from the fleet's hooks) ---

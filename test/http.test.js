@@ -105,6 +105,28 @@ test('/api/select → 503 when every account needs reauth', async () => {
   db.prepare('UPDATE accounts SET reauth_needed=0').run();   // restore for later assertions
 });
 
+test('/api/select?exclude= skips the excluded account (retry path)', async () => {
+  // both alice & bob live; alice has lower usage so is picked by default.
+  db.prepare('UPDATE accounts SET five_hour_pct=1,seven_day_pct=1,disabled=0,reauth_needed=0 WHERE account=?').run('alice');
+  db.prepare('UPDATE accounts SET five_hour_pct=5,seven_day_pct=5,disabled=0,reauth_needed=0 WHERE account=?').run('bob');
+  let j = await (await fetch(base + '/api/select?host=t', { headers: H })).json();
+  assert.equal(j.account, 'alice');                        // best headroom
+  j = await (await fetch(base + '/api/select?host=t&exclude=alice', { headers: H })).json();
+  assert.equal(j.account, 'bob');                          // retry skips alice
+  const r = await fetch(base + '/api/select?host=t&exclude=alice,bob', { headers: H });
+  assert.equal(r.status, 503);                             // nothing left
+});
+
+test('POST /api/events/limit parks an account so the next select skips it', async () => {
+  db.prepare('UPDATE accounts SET five_hour_pct=1,seven_day_pct=1 WHERE account=?').run('alice');
+  db.prepare('UPDATE accounts SET five_hour_pct=5,seven_day_pct=5 WHERE account=?').run('bob');
+  await fetch(base + '/api/events/limit', { method: 'POST', headers: H, body: JSON.stringify({ account: 'alice' }) });
+  const j = await (await fetch(base + '/api/select?host=t', { headers: H })).json();
+  assert.equal(j.account, 'bob');                          // alice parked at 100% → skipped
+  const a = (await (await fetch(base + '/api/accounts', { headers: H })).json()).find((x) => x.account === 'alice');
+  assert.equal(a.five_hour_pct, 100);
+});
+
 test('listAccounts exposes reauth_needed for the dashboard badge', async () => {
   db.prepare('UPDATE accounts SET reauth_needed=1 WHERE account=?').run('alice');
   const list = await (await fetch(base + '/api/accounts', { headers: H })).json();
