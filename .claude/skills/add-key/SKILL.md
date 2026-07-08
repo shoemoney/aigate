@@ -67,7 +67,22 @@ curl -s "${AUTH[@]}" "$BASE/api/providers" | python3 -c 'import sys,json;[print(
 
 Common ids: `openai openrouter google anthropic groq mistral cohere deepseek xai perplexity fal replicate huggingface together fireworks elevenlabs deepgram stability voyage`.
 
-## 6. Rotate / expire
+## 6. Call the provider with a fetched key
+
+Most providers here are **OpenAI-compatible** (`oaiCompat: true` in the catalog) — hit their `base` URL with the standard chat-completions shape. **Don't hardcode model names** (they change constantly); pull a live one from the provider's own `/models`:
+
+```bash
+P=groq                                                   # any provider id
+KEY=$(curl -s "${AUTH[@]}" "$BASE/api/keys/$P" | python3 -c 'import sys,json;print(json.load(sys.stdin)["key"])')
+API=$(curl -s "${AUTH[@]}" "$BASE/api/providers" | python3 -c "import sys,json;print(next(p['base'] for p in json.load(sys.stdin) if p['id']=='$P'))")
+MODEL=$(curl -s "$API/models" -H "Authorization: Bearer $KEY" | python3 -c 'import sys,json;d=json.load(sys.stdin);print((d.get("data") or d)[0]["id"])')
+curl -s "$API/chat/completions" -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d "{\"model\":\"$MODEL\",\"max_tokens\":20,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+```
+
+Non-OpenAI shapes (check the catalog `base`/`docs`): **anthropic** → POST `/v1/messages`, headers `x-api-key` + `anthropic-version: 2023-06-01`; **google** → key as `?key=` query param; **fal / replicate** → their own REST job API. Reasoning models (gpt-oss, deepseek) put text in `reasoning_content` and may return empty `content` if `max_tokens` is tiny — give them room.
+
+## 7. Rotate / expire
 
 Add the new key, then delete the old id. The fetch route returns the **newest working** key, so a fresh add wins immediately even before you prune.
 

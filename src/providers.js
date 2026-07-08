@@ -13,6 +13,7 @@ export const PROVIDERS = [
   { id: 'openrouter',   name: 'OpenRouter',           cat: 'gateway', prefix: 'sk-or-',    base: 'https://openrouter.ai/api/v1',         docs: 'https://openrouter.ai/docs', oaiCompat: true },
   { id: 'perplexity',   name: 'Perplexity',           cat: 'llm',     prefix: 'pplx-',     base: 'https://api.perplexity.ai',            docs: 'https://docs.perplexity.ai', oaiCompat: true },
   { id: 'xai',          name: 'xAI (Grok)',           cat: 'llm',     prefix: 'xai-',      base: 'https://api.x.ai/v1',                  docs: 'https://docs.x.ai', oaiCompat: true },
+  { id: 'venice',       name: 'Venice AI',            cat: 'llm',     prefix: '',          base: 'https://api.venice.ai/api/v1',         docs: 'https://docs.venice.ai', oaiCompat: true },
   { id: 'mistral',      name: 'Mistral AI',           cat: 'llm',     prefix: '',          base: 'https://api.mistral.ai/v1',            docs: 'https://docs.mistral.ai', oaiCompat: true },
   { id: 'cohere',       name: 'Cohere',               cat: 'llm',     prefix: '',          base: 'https://api.cohere.com',               docs: 'https://docs.cohere.com' },
   { id: 'deepseek',     name: 'DeepSeek',             cat: 'llm',     prefix: 'sk-',       base: 'https://api.deepseek.com',             docs: 'https://platform.deepseek.com', oaiCompat: true },
@@ -53,6 +54,10 @@ export const PROVIDERS = [
   { id: 'lambda',       name: 'Lambda Labs',          cat: 'cloud',   prefix: '',          base: 'https://api.lambdalabs.com/v1',        docs: 'https://docs.lambdalabs.com', oaiCompat: true },
   { id: 'runpod',       name: 'RunPod',               cat: 'cloud',   prefix: '',          base: 'https://api.runpod.ai/v2',             docs: 'https://docs.runpod.io' },
   { id: 'modal',        name: 'Modal',                cat: 'cloud',   prefix: '',          base: '',                                     docs: 'https://modal.com/docs' },
+  { id: 'aws',          name: 'AWS (IAM)',            cat: 'cloud',   prefix: 'AKIA',      base: 'https://sts.amazonaws.com',            docs: 'https://docs.aws.amazon.com/IAM' },
+
+  // --- dev / infra ---
+  { id: 'github',       name: 'GitHub',               cat: 'dev',     prefix: 'ghp_',      base: 'https://api.github.com',               docs: 'https://docs.github.com/rest' },
 
   // --- embeddings / rerank / search ---
   { id: 'voyage',       name: 'Voyage AI',            cat: 'embed',   prefix: 'pa-',       base: 'https://api.voyageai.com/v1',          docs: 'https://docs.voyageai.com' },
