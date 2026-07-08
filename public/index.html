@@ -25,6 +25,7 @@
   .track{height:8px;border-radius:6px;background:#0b0e14;overflow:hidden;border:1px solid var(--line)}
   .fill{height:100%;transition:width .4s ease,background .4s}
   .runaway{border-color:var(--red);box-shadow:0 0 0 1px var(--red),0 0 20px -6px var(--red)}
+  .needsauth{border-color:#d29922;box-shadow:0 0 0 1px #d29922}
   .disabled{opacity:.45}
   table{width:100%;border-collapse:collapse}
   td,th{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);font-size:13px}
@@ -73,9 +74,9 @@ function renderAccounts(list){
   for(const a of list){
     const worst=Math.max(a.five_hour_pct||0,a.seven_day_pct||0);
     const run=worst>=80, card=document.createElement('div');
-    card.className='card acct'+(run?' runaway':'')+(a.disabled?' disabled':'');
+    card.className='card acct'+(run?' runaway':'')+(a.reauth_needed?' needsauth':'')+(a.disabled?' disabled':'');
     card.innerHTML=`<div class="top"><span class="name">${a.account}</span>
-      <span class="badge">${a.disabled?'disabled':(a.has_token?'ready':'no token')} ${run?'🚨':''}</span></div>
+      <span class="badge">${a.disabled?'disabled':a.reauth_needed?'🔑 re-auth':(a.has_token?'ready':'no token')} ${run?'🚨':''}</span></div>
       ${bar('5-hour',a.five_hour_pct)}${bar('weekly',a.seven_day_pct)}
       <div class="badge" style="margin-top:8px">updated ${a.usage_updated||'never'}</div>`;
     el.appendChild(card);

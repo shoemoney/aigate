@@ -19,7 +19,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath } from './lib.js';
+import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive } from './lib.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -59,6 +59,7 @@ db.exec(`
     seven_day_pct  REAL DEFAULT 0,
     usage_updated  TEXT,
     disabled       INTEGER NOT NULL DEFAULT 0,
+    reauth_needed  INTEGER NOT NULL DEFAULT 0,
     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE TABLE IF NOT EXISTS request_log (
@@ -87,19 +88,25 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_req_acct ON request_log(account);
 `);
 
+// migration: older DBs predate reauth_needed — add it if missing
+if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === 'reauth_needed'))
+  db.exec(`ALTER TABLE accounts ADD COLUMN reauth_needed INTEGER NOT NULL DEFAULT 0`);
+
 // prepared once
 const q = {
   upsertAccount: db.prepare(`INSERT INTO accounts(account,token_enc,label) VALUES(?,?,?)
     ON CONFLICT(account) DO UPDATE SET token_enc=excluded.token_enc, label=excluded.label`),
-  listAccounts: db.prepare(`SELECT account,label,five_hour_pct,seven_day_pct,usage_updated,disabled,
+  listAccounts: db.prepare(`SELECT account,label,five_hour_pct,seven_day_pct,usage_updated,disabled,reauth_needed,
     (token_enc IS NOT NULL) AS has_token FROM accounts ORDER BY account`),
   getToken: db.prepare(`SELECT token_enc FROM accounts WHERE account=?`),
   delAccount: db.prepare(`DELETE FROM accounts WHERE account=?`),
   setDisabled: db.prepare(`UPDATE accounts SET disabled=? WHERE account=?`),
+  setReauth: db.prepare(`UPDATE accounts SET reauth_needed=? WHERE account=?`),
   updUsage: db.prepare(`UPDATE accounts SET five_hour_pct=?, seven_day_pct=?, usage_updated=datetime('now') WHERE account=?`),
-  // most headroom = lowest worst-window usage; skip disabled / over cutoff / tokenless
+  // most headroom = lowest worst-window usage; skip disabled / over cutoff /
+  // tokenless / needs-reauth so we never hand out a dead token (login churn).
   pickBest: db.prepare(`SELECT account FROM accounts
-    WHERE disabled=0 AND token_enc IS NOT NULL AND max(five_hour_pct,seven_day_pct) < ?
+    WHERE disabled=0 AND reauth_needed=0 AND token_enc IS NOT NULL AND max(five_hour_pct,seven_day_pct) < ?
     ORDER BY max(five_hour_pct,seven_day_pct) ASC, usage_updated ASC LIMIT 1`),
   insReq: db.prepare(`INSERT INTO request_log(account,host,ip,cwd,model,prompt,tokens) VALUES(?,?,?,?,?,?,?)`),
   insAccess: db.prepare(`INSERT INTO access_log(account,host,ip,action,result) VALUES(?,?,?,?,?)`),
@@ -262,14 +269,20 @@ async function pollAccountUsage(account, token) {
       body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
       signal: AbortSignal.timeout(15000),
     });
+    // 401/403 = token expired/revoked → flag for reauth so /api/select skips it;
+    // any authenticated response clears the flag (auto-recovers after re-token).
+    const alive = tokenIsAlive(r.status);
+    q.setReauth.run(alive ? 0 : 1, account);
     const u5 = r.headers.get('anthropic-ratelimit-unified-5h-utilization');
     const u7 = r.headers.get('anthropic-ratelimit-unified-7d-utilization');
-    if (u5 == null && u7 == null) return { account, status: r.status, note: 'no rate-limit headers' };
+    if (u5 == null && u7 == null)
+      return { account, status: r.status, alive, note: alive ? 'no rate-limit headers' : 'auth failed — needs reauth' };
     const five = Math.round((parseFloat(u5) || 0) * 100);
     const seven = Math.round((parseFloat(u7) || 0) * 100);
     q.updUsage.run(five, seven, account);
-    return { account, five, seven, status: r.status };
+    return { account, five, seven, status: r.status, alive };
   } catch (e) {
+    // network error: can't tell if the token is dead → leave the flag as-is
     return { account, error: String((e && e.message) || e) };
   }
 }

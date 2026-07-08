@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { join, sep } from 'node:path';
-import { makeVault, tokenMatches, ip2int, ipAllowed, clientIp, safeStaticPath } from '../src/lib.js';
+import { makeVault, tokenMatches, ip2int, ipAllowed, clientIp, safeStaticPath, tokenIsAlive } from '../src/lib.js';
 
 const KEY = crypto.randomBytes(32);
 
@@ -92,6 +92,15 @@ test('clientIp: XFF honored only behind trusted proxy', () => {
 });
 test('clientIp: trusted proxy but no XFF falls back to socket', () => {
   assert.equal(clientIp({}, '10.0.0.9', { trustProxy: true }), '10.0.0.9');
+});
+
+test('tokenIsAlive: 401/403 mean dead, everything else alive', () => {
+  assert.equal(tokenIsAlive(401), false);   // expired/revoked
+  assert.equal(tokenIsAlive(403), false);   // forbidden/revoked
+  assert.equal(tokenIsAlive(200), true);    // authenticated
+  assert.equal(tokenIsAlive(400), true);    // authenticated, just a bad request
+  assert.equal(tokenIsAlive(429), true);    // rate-limited but alive
+  assert.equal(tokenIsAlive(529), true);    // overloaded but alive
 });
 
 test('safeStaticPath: root serves index.html', () => {

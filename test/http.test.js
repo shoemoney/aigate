@@ -89,6 +89,29 @@ test('POST /api/keys stores a provider key; list returns hint but not the secret
   assert.ok(!JSON.stringify(keys).includes('supersecretkey'));
 });
 
+test('/api/select skips a needs-reauth account and hands back a live one', async () => {
+  // alice (live) already exists. Add bob, then flag alice's token dead.
+  await fetch(base + '/api/accounts', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'bob', setup_token: 'sk-bob-live' }) });
+  db.prepare('UPDATE accounts SET reauth_needed=1 WHERE account=?').run('alice');
+  const j = await (await fetch(base + '/api/select?host=t', { headers: H })).json();
+  assert.equal(j.account, 'bob');             // never serves alice's dead token
+  assert.equal(j.setup_token, 'sk-bob-live');
+});
+
+test('/api/select → 503 when every account needs reauth', async () => {
+  db.prepare('UPDATE accounts SET reauth_needed=1').run();
+  assert.equal((await fetch(base + '/api/select?host=t', { headers: H })).status, 503);
+  db.prepare('UPDATE accounts SET reauth_needed=0').run();   // restore for later assertions
+});
+
+test('listAccounts exposes reauth_needed for the dashboard badge', async () => {
+  db.prepare('UPDATE accounts SET reauth_needed=1 WHERE account=?').run('alice');
+  const list = await (await fetch(base + '/api/accounts', { headers: H })).json();
+  assert.equal(list.find((a) => a.account === 'alice').reauth_needed, 1);
+  assert.equal(list.find((a) => a.account === 'bob').reauth_needed, 0);
+});
+
 test('unknown API route → 404', async () => {
   assert.equal((await fetch(base + '/api/nope', { headers: H })).status, 404);
 });

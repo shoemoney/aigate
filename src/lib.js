@@ -85,6 +85,16 @@ export function clientIp(headers, remoteAddress, { trustProxy = false } = {}) {
   return remoteAddress || '';
 }
 
+// ---- account token liveness --------------------------------------------
+// Given the HTTP status from a usage-poll against Anthropic, is the account's
+// token still alive? 401/403 mean the OAuth token is expired/revoked and the
+// account needs re-auth; everything else (200, 400, 429, 5xx) authenticated
+// fine, so we must NOT flag it. Network errors are handled by the caller (the
+// flag is left unchanged so an Anthropic outage can't lock every account out).
+export function tokenIsAlive(httpStatus) {
+  return httpStatus !== 401 && httpStatus !== 403;
+}
+
 // ---- static file containment -------------------------------------------
 // Map a URL path to a file inside publicDir, or null if it would escape.
 // Bug: server used fp.startsWith(PUBLIC) with no separator, so a sibling dir
