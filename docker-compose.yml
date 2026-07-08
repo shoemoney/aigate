@@ -6,3 +6,7 @@ services:
     ports: ["20200:20200"]
     env_file: .env
     volumes: ["./data:/app/data"]
+    # self-heal: the Dockerfile HEALTHCHECK marks the container unhealthy when
+    # /health fails; the willfarrell/autoheal container restarts anything
+    # labeled autoheal=true when it goes unhealthy.
+    labels: ["autoheal=true"]
