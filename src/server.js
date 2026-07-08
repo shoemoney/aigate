@@ -17,8 +17,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
+import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath } from './lib.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -33,28 +34,17 @@ const CUTOFF = Number(process.env.AIGATE_HEADROOM_CUTOFF || 95);
 // IPv4 CIDRs, e.g. "192.168.1.0/24". Empty = allow all. Loopback always allowed.
 const ALLOW_CIDR = (process.env.AIGATE_ALLOW_CIDR || '').split(',').map(s => s.trim()).filter(Boolean);
 const ENC_KEY = (process.env.AIGATE_ENCRYPTION_KEY || '').trim();
+// Only trust X-Forwarded-For when aigate sits behind a reverse proxy we control
+// (e.g. NPM). Off by default so a direct client can't spoof its source IP past
+// the CIDR gate. Set AIGATE_TRUST_PROXY=1 when deployed behind a trusted proxy.
+const TRUST_PROXY = process.env.AIGATE_TRUST_PROXY === '1';
 
 if (!TOKEN) { console.error('FATAL: set AIGATE_TOKEN'); process.exit(1); }
 if (!/^[0-9a-fA-F]{64}$/.test(ENC_KEY)) {
   console.error('FATAL: set AIGATE_ENCRYPTION_KEY to 32-byte hex (openssl rand -hex 32)');
   process.exit(1);
 }
-const KEY = Buffer.from(ENC_KEY, 'hex');
-
-// ---- token encryption (AES-256-GCM) ------------------------------------
-function encrypt(plain) {
-  const iv = crypto.randomBytes(12);
-  const c = crypto.createCipheriv('aes-256-gcm', KEY, iv);
-  const enc = Buffer.concat([c.update(plain, 'utf8'), c.final()]);
-  return Buffer.concat([iv, c.getAuthTag(), enc]).toString('base64');
-}
-function decrypt(b64) {
-  const buf = Buffer.from(b64, 'base64');
-  const iv = buf.subarray(0, 12), tag = buf.subarray(12, 28), data = buf.subarray(28);
-  const d = crypto.createDecipheriv('aes-256-gcm', KEY, iv);
-  d.setAuthTag(tag);
-  return Buffer.concat([d.update(data), d.final()]).toString('utf8');
-}
+const { encrypt, decrypt } = makeVault(Buffer.from(ENC_KEY, 'hex'));
 
 // ---- db -----------------------------------------------------------------
 mkdirSync(dirname(DB_PATH), { recursive: true });
@@ -138,30 +128,10 @@ function broadcast(type, data) {
 const authed = (req) => {
   const h = req.headers.authorization || '';
   const bearer = h.startsWith('Bearer ') ? h.slice(7) : '';
-  const url = new URL(req.url, 'http://x');
-  const t = bearer || url.searchParams.get('token') || '';
-  return t.length === TOKEN.length && crypto.timingSafeEqual(Buffer.from(t), Buffer.from(TOKEN));
+  const t = bearer || new URL(req.url, 'http://x').searchParams.get('token') || '';
+  return tokenMatches(t, TOKEN);
 };
-const clientIp = (req) =>
-  (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '';
-const ip2int = (ip) => {
-  const p = String(ip).replace(/^::ffff:/, '').split('.');
-  return p.length === 4 ? (((+p[0] << 24) | (+p[1] << 16) | (+p[2] << 8) | +p[3]) >>> 0) : null;
-};
-function ipAllowed(ip) {
-  if (!ALLOW_CIDR.length) return true;                 // no allowlist → allow all
-  if (ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1') return true;
-  const n = ip2int(ip);
-  if (n === null) return false;                         // non-IPv4 & not loopback → deny when gated
-  for (const c of ALLOW_CIDR) {
-    const [net, b] = c.split('/'); const bits = b === undefined ? 32 : +b;
-    if (net === '0.0.0.0' && bits === 0) return true;
-    const netN = ip2int(net); if (netN === null) continue;
-    const mask = bits === 0 ? 0 : (~((1 << (32 - bits)) - 1)) >>> 0;
-    if ((n & mask) === (netN & mask)) return true;
-  }
-  return false;
-}
+const reqIp = (req) => clientIp(req.headers, req.socket.remoteAddress, { trustProxy: TRUST_PROXY });
 const body = (req) => new Promise((res) => {
   let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => { try { res(b ? JSON.parse(b) : {}); } catch { res({}); } });
 });
@@ -174,13 +144,12 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
 
   // network gate (defense-in-depth, before anything else)
-  if (!ipAllowed(clientIp(req))) { res.writeHead(403); return res.end('forbidden (network)'); }
+  if (!ipAllowed(reqIp(req), ALLOW_CIDR)) { res.writeHead(403); return res.end('forbidden (network)'); }
 
   // static dashboard (index gated at load; API gated per-request)
   if (req.method === 'GET' && !p.startsWith('/api')) {
-    const file = p === '/' ? 'index.html' : p.replace(/^\/+/, '');
-    const fp = join(PUBLIC, file);
-    if (existsSync(fp) && fp.startsWith(PUBLIC)) {
+    const fp = safeStaticPath(PUBLIC, p);
+    if (fp && existsSync(fp)) {
       const data = await readFile(fp);
       res.writeHead(200, { 'content-type': MIME[extname(fp)] || 'application/octet-stream' });
       return res.end(data);
@@ -230,7 +199,7 @@ const server = http.createServer(async (req, res) => {
 
     // --- the selector: hand out the best account's token (audited) ---
     if (p === '/api/select' && req.method === 'GET') {
-      const host = url.searchParams.get('host') || '', ip = clientIp(req);
+      const host = url.searchParams.get('host') || '', ip = reqIp(req);
       const row = q.pickBest.get(CUTOFF);
       if (!row) { q.insAccess.run(null, host, ip, 'select', 'none-available'); return json(res, 503, { error: 'no account with headroom' }); }
       const tok = decrypt(q.getToken.get(row.account).token_enc);
@@ -242,8 +211,8 @@ const server = http.createServer(async (req, res) => {
     // --- event ingest (from the fleet's hooks) ---
     if (p === '/api/events/prompt' && req.method === 'POST') {
       const b = await body(req);
-      q.insReq.run(b.account || '', b.host || '', clientIp(req), b.cwd || '', b.model || '', b.prompt || '', b.tokens ?? null);
-      broadcast('prompt', { account: b.account, host: b.host, ip: clientIp(req), cwd: b.cwd, model: b.model,
+      q.insReq.run(b.account || '', b.host || '', reqIp(req), b.cwd || '', b.model || '', b.prompt || '', b.tokens ?? null);
+      broadcast('prompt', { account: b.account, host: b.host, ip: reqIp(req), cwd: b.cwd, model: b.model,
         prompt: String(b.prompt || '').slice(0, 400), ts: new Date().toISOString() });
       return json(res, 200, { ok: true });
     }
@@ -269,7 +238,7 @@ const server = http.createServer(async (req, res) => {
 
 // ws upgrade (token-gated)
 server.on('upgrade', (req, socket, head) => {
-  if (new URL(req.url, 'http://x').pathname !== '/ws' || !authed(req) || !ipAllowed(clientIp(req))) { socket.destroy(); return; }
+  if (new URL(req.url, 'http://x').pathname !== '/ws' || !authed(req) || !ipAllowed(reqIp(req), ALLOW_CIDR)) { socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => {
     ws.send(JSON.stringify({ type: 'accounts', data: q.listAccounts.all(), ts: new Date().toISOString() }));
   });
@@ -316,7 +285,14 @@ async function pollUsage() {
   if (updated) broadcast('accounts', q.listAccounts.all());
 }
 const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
-if (POLL_MS > 0) { setTimeout(pollUsage, 8000); setInterval(pollUsage, POLL_MS); }
 
-server.listen(PORT, HOST, () =>
-  console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
+// Only auto-start (listen + poll) when run directly. When imported (tests) the
+// caller drives server.listen() and the poller stays quiet.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  if (POLL_MS > 0) { setTimeout(pollUsage, 8000); setInterval(pollUsage, POLL_MS); }
+  server.listen(PORT, HOST, () =>
+    console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
+}
+
+export { server, db, pollUsage };
