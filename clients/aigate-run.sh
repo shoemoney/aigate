@@ -22,8 +22,15 @@ report_limit(){ curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H 
     -d "{\"account\":\"$1\",\"host\":\"$HOST\"}" "$AIGATE_URL/api/events/limit" >/dev/null 2>&1 || true; }
 
 # print mode → capture+retry; else single pick + exec (keep interactive streaming)
-is_print=0
-for a in "$@"; do case "$a" in -p|--print) is_print=1;; esac; done
+is_print=0 has_skip=0
+for a in "$@"; do case "$a" in
+  -p|--print) is_print=1;;
+  --dangerously-skip-permissions) has_skip=1;;
+esac; done
+# headless -p implies non-interactive: skip the trust/permission prompt that
+# otherwise HANGS (looks like "needs login"). Interactive keeps normal prompts.
+skip=()
+[ "$is_print" = 1 ] && [ "$has_skip" = 0 ] && skip=(--dangerously-skip-permissions)
 
 if [ "$is_print" != 1 ]; then
   resp="$(select_acct "")"
@@ -45,7 +52,7 @@ for attempt in 1 2 3; do
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
   export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
   report_prompt "$acct" "$prompt"
-  out="$("$CLAUDE_BIN" "$@" 2>&1)"; rc=$?
+  out="$("$CLAUDE_BIN" "${skip[@]}" "$@" 2>&1)"; rc=$?
   if [ $rc -eq 0 ]; then printf '%s\n' "$out"; exit 0; fi
   # over-limit / unavailable → park account, retry next
   if printf '%s' "$out" | grep -qiE 'rate.?limit|usage limit|too many requests|429|overloaded_error|quota|reached your (usage|limit)|no available|insufficient'; then
