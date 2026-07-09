@@ -11,7 +11,7 @@ set -uo pipefail
 
 ENVF="$HOME/.claude/aigate/env"
 OUT="$HOME/.claude/aigate/mcp-keys.env"
-PAIRS="brave:BRAVE_API_KEY tavily:TAVILY_API_KEY"
+PAIRS="brave:BRAVE_API_KEY tavily:TAVILY_API_KEY exa:EXA_API_KEY context7:CONTEXT7_API_KEY firecrawl:FIRECRAWL_API_KEY"
 
 [ -f "$ENVF" ] && { set -a; . "$ENVF"; set +a; }
 BASE="${AIGATE_URL:-https://aigate.shoemoney.ai}"
