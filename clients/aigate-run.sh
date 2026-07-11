@@ -97,10 +97,10 @@ if [ "$is_print" != 1 ]; then
     [ "$maxed" = "1" ] || exit "$rc"        # headroom left (or unknown) → normal quit, done
     echo "aigate: $acct is out of headroom." >&2
     report_limit "$acct"; tried="${tried:+$tried,}$acct"
-    next="$(printf '%s' "$(select_acct "$tried")" | jget account)"
-    [ -n "$next" ] || { echo "aigate: no other account with headroom — stopping." >&2; exit "$rc"; }
     if [ -t 0 ]; then
-      printf 'aigate: resume this conversation on "%s"? [Y/n] ' "$next" >&2
+      # generic prompt: the loop top does the ONE real select (handles "none left")
+      # and its "using account: X" banner names the actual pick — no peek/TOCTOU
+      printf 'aigate: resume this conversation on another account? [Y/n] ' >&2
       read -r ans; case "$ans" in [Nn]*) exit "$rc";; esac
     fi
     # loop → re-select (skips tried) → claude --continue on the next account
@@ -108,6 +108,7 @@ if [ "$is_print" != 1 ]; then
 fi
 
 prompt="$*"; tried=""
+trap 'rm -f "${errf:-}"' EXIT INT TERM   # don't leak the mktemp on Ctrl-C/TERM
 for attempt in 1 2 3; do
   resp="$(select_acct "$tried")"
   acct="$(printf '%s' "$resp" | jget account)"; tok="$(printf '%s' "$resp" | jget setup_token)"
@@ -122,10 +123,11 @@ for attempt in 1 2 3; do
   out="$("$CLAUDE_BIN" "${skip[@]}" "$@" 2>"$errf")"; rc=$?
   err="$(cat "$errf"; rm -f "$errf")"
   if [ $rc -eq 0 ]; then printf '%s\n' "$out"; exit 0; fi
-  # Anthropic-side transient overload → SHORT park (2m), not the full default window
+  # 529 is Anthropic-GLOBAL load shedding, not a per-account limit — don't park
+  # or hop (that drains the pool); wait and retry the SAME account
   if printf '%s\n%s' "$out" "$err" | grep -qiE 'overloaded_error|529'; then
-    echo "aigate: account $acct transient overload (529) → 2m park, retrying next" >&2
-    report_limit "$acct" 2; tried="${tried:+$tried,}$acct"; continue
+    echo "aigate: transient overload (529) → waiting 10s, retrying same account" >&2
+    sleep 10; continue
   # over-limit / unavailable → park account (default window), retry next
   elif printf '%s\n%s' "$out" "$err" | grep -qiE 'rate.?limit|usage limit|too many requests|429|quota|reached your (usage|limit)|no available|insufficient'; then
     echo "aigate: account $acct over limit/unavailable → retrying next" >&2
