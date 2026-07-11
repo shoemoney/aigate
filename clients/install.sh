@@ -32,6 +32,12 @@ cat > "$BIN/cc" <<'EOF'
 #!/usr/bin/env bash
 # cc — run claude through aigate (account picked by the warden).
 set -a; . "$HOME/.claude/aigate/env"; set +a
+# freshen MCP keys in-foreground when missing/stale so THIS launch resolves ${VAR}s
+MK="$HOME/.claude/aigate/mcp-keys.env"
+if [ ! -f "$MK" ] || [ -n "$(find "$MK" -mmin +720 2>/dev/null)" ]; then
+  "$HOME/.claude/aigate/hydrate.sh" >/dev/null 2>&1 || true
+fi
+[ -f "$MK" ] && . "$MK"
 exec "$HOME/.claude/aigate/aigate-run.sh" "$@"
 EOF
 chmod 0755 "$BIN/cc"
