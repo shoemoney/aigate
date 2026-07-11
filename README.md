@@ -203,7 +203,7 @@ sequenceDiagram
 | 🔁 | **Over-limit detect + retry** | headless `cc -p` spots a rate-limit/unavailable reply, **TTL-parks** that account (`/api/events/limit` — **15m** default, transient **529 → 2m**, real usage untouched) and **retries the next-best** via `/api/select?exclude=` — up to 3 |
 | 🩺 | **Self-healing daemon** | unauthenticated **`/health`** (DB-backed; `selectable` uses the **exact selection query**, so parked accounts don't mask an outage) + internal **watchdog** (exits→restart on a wedged DB) + Docker `HEALTHCHECK` wired to **autoheal** — three recovery layers |
 | 🐤 | **Boot canary + daily backups** | wrong `AIGATE_ENCRYPTION_KEY` = **loud FATAL at boot** (not a decrypt blow-up mid-request); daily `VACUUM INTO` snapshot → `data/backups/` w/ **14-day retention** (ciphertext only — `.env` never copied) |
-| 🧾 | **Full audit trail** | every handout logged with **timestamp + IP + host**; every prompt logged (account, host, cwd — entries capped at 400 chars) |
+| 🧾 | **Full audit trail** | every handout logged with **timestamp + IP + host**; every prompt logged (account, host, cwd — stored capped at 400 chars); request/access logs auto-pruned after **30 days** (daily, piggybacked on the backup pass) |
 | 📊 | **Live dashboard** | account cards w/ usage bars (🚨 runaway, 🔑 re-auth), **provider-key manager**, streaming activity feed, per-host/device stats — WS auth rides a **`bearer.<token>` subprotocol**, never the URL |
 | 🎯 | **No-proxy Claude mode** | official binary + `cc` wrapper — won't flag accounts |
 | 🧪 | **Tested** | unit + HTTP tests (`node --test`, boots the real server on a throwaway DB) and a **fleet switching test** on a real Pi — see [docs/TESTING.md](docs/TESTING.md) |
