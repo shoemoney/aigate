@@ -307,6 +307,22 @@ test('legacy WS ?token= query auth still works (deprecated fallback)', async () 
   assert.equal(m.type, 'accounts');
 });
 
+test('daemon survives an abrupt WS client death; broadcast still reaches a healthy client', async () => {
+  const wsUrl = base.replace('http', 'ws') + '/ws';
+  const dead = new WebSocket(wsUrl, ['aigate', 'bearer.' + TOKEN]);
+  await new Promise((r) => dead.once('message', r));         // fully established
+  dead._socket.resetAndDestroy();                            // RST, no close frame — the sleeping-laptop failure
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal((await fetch(base + '/health')).status, 200); // server-side 'error' didn't bounce the daemon
+  const live = new WebSocket(wsUrl, ['aigate', 'bearer.' + TOKEN]);
+  await new Promise((r) => live.once('message', r));
+  const got = new Promise((r) => live.once('message', (d) => r(JSON.parse(d))));
+  await fetch(base + '/api/events/prompt', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'alice', prompt: 'still broadcasting' }) });
+  assert.equal((await got).type, 'prompt');
+  live.close();
+});
+
 test('POST /api/accounts/:name/refresh — fetch-mocked poll drives usage, maxed, and the reauth round-trip', async () => {
   // URL-routing mock: anthropic.com gets the canned response, everything else
   // (this suite's own 127.0.0.1 calls) delegates to the real fetch.
@@ -346,4 +362,30 @@ test('POST /api/accounts/:name/refresh — fetch-mocked poll drives usage, maxed
     j = await (await realFetch(base + '/api/select?host=t', { headers: H })).json();
     assert.equal(j.account, 'bob');
   } finally { globalThis.fetch = realFetch; }
+});
+
+test('POST /api/accounts rejects the browser Authentication Code (code#state) paste → 400', async () => {
+  const r = await fetch(base + '/api/accounts', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'carol', setup_token: 'abc#def-state' }) });
+  assert.equal(r.status, 400);
+  assert.match((await r.json()).error, /Authentication Code/);
+});
+
+test('POST /api/accounts trims a trailing newline; select returns the TRIMMED token', async () => {
+  const r = await fetch(base + '/api/accounts', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'carol', setup_token: 'sk-ant-oat01-goodtoken\n' }) });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).warning, undefined);         // sk-ant- prefix → no warning
+  const j = await (await fetch(base + '/api/select?host=t&exclude=alice,bob', { headers: H })).json();
+  assert.equal(j.account, 'carol');
+  assert.equal(j.setup_token, 'sk-ant-oat01-goodtoken');     // newline gone before vaulting
+});
+
+test('POST /api/accounts with a non-sk-ant token → 200 + non-fatal warning', async () => {
+  const r = await fetch(base + '/api/accounts', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'carol', setup_token: 'weird-token' }) });
+  assert.equal(r.status, 200);
+  const j = await r.json();
+  assert.equal(j.ok, true);
+  assert.match(j.warning, /doesn't look like a setup token/);
 });

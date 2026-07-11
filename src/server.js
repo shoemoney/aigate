@@ -150,7 +150,11 @@ const q = {
 const wss = new WebSocketServer({ noServer: true, handleProtocols: (protocols) => (protocols.has('aigate') ? 'aigate' : false) });
 function broadcast(type, data) {
   const msg = JSON.stringify({ type, data, ts: new Date().toISOString() });
-  for (const ws of wss.clients) if (ws.readyState === 1) ws.send(msg);
+  for (const ws of wss.clients) {
+    // backpressure guard: a half-open socket never drains — it would buffer every broadcast forever
+    if (ws.bufferedAmount > 4e6) { ws.terminate(); continue; }
+    if (ws.readyState === 1) ws.send(msg);
+  }
 }
 
 // ---- http helpers -------------------------------------------------------
@@ -213,9 +217,15 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/accounts' && req.method === 'POST') {
       const b = await body(req);
       if (!b.account || !b.setup_token) return json(res, 400, { error: 'account + setup_token required' });
-      q.upsertAccount.run(b.account, encrypt(b.setup_token), b.label || '');
+      // the browser "Authentication Code" (code#state) paste vaults fine and only surfaces
+      // ~10min later as a mystery reauth_needed when the poller 401s — reject it NOW
+      const tok = String(b.setup_token).trim();
+      if (!tok || /#|\s/.test(tok))
+        return json(res, 400, { error: "that looks like the browser Authentication Code (code#state) — send the sk-ant-oat01-… line the TERMINAL prints after 'claude setup-token'" });
+      q.upsertAccount.run(b.account, encrypt(tok), b.label || '');
       broadcast('accounts', q.listAccounts.all());
-      return json(res, 200, { ok: true });
+      return json(res, 200, tok.startsWith('sk-ant-') ? { ok: true }
+        : { ok: true, warning: "doesn't look like a setup token (sk-ant-…)" });
     }
     // --- provider catalog (top ~50 providers) for the add-key dropdown ---
     if (p === '/api/providers' && req.method === 'GET')
@@ -345,6 +355,11 @@ server.on('upgrade', (req, socket, head) => {
     .some((p) => p.trim().startsWith('bearer.') && tokenMatches(p.trim().slice(7), TOKEN));
   if (new URL(req.url, 'http://x').pathname !== '/ws' || !(wsAuthed || authed(req)) /* authed = deprecated ?token= fallback */ || !ipAllowed(reqIp(req), ALLOW_CIDR)) { socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => {
+    // a mid-send ECONNRESET (sleeping laptop tab) otherwise emits an unlistened
+    // 'error' → uncaughtException → the whole vault daemon restarts
+    ws.isAlive = true;
+    ws.on('error', () => ws.terminate());
+    ws.on('pong', () => { ws.isAlive = true; });
     ws.send(JSON.stringify({ type: 'accounts', data: q.listAccounts.all(), ts: new Date().toISOString() }));
   });
 });
@@ -444,6 +459,15 @@ if (isMain) {
     try { db.prepare('SELECT 1').get(); }
     catch (e) { console.error('[watchdog] db unreachable — exiting for restart', e); shutdown(1); }
   }, WATCHDOG_MS).unref();
+
+  // WS heartbeat: a socket that missed a pong since the last sweep is dead
+  // (sleeping laptop tab) — terminate it instead of letting it rot in wss.clients
+  setInterval(() => {
+    for (const ws of wss.clients) {
+      if (!ws.isAlive) { ws.terminate(); continue; }
+      ws.isAlive = false; ws.ping();
+    }
+  }, 30000).unref();
 
   // poller cycles are wrapped so a rejected cycle logs instead of crashing
   const poll = () => pollUsage().catch((e) => console.error('[poll] cycle failed', e));
