@@ -3,13 +3,27 @@
 # claude binary through aigate's account selector.
 #
 #   AIGATE_URL=https://aigate… AIGATE_TOKEN=… bash install.sh
+#   bash install.sh                       # re-install: reads secrets from the saved env
 #
-# Installs:  ~/.claude/aigate/{aigate-run.sh,env}  and  ~/.local/bin/cc
+# Installs:  ~/.claude/aigate/{aigate-run.sh,env,version}  and  ~/.local/bin/cc
 set -euo pipefail
+# re-install needs no secrets on the CLI: source the persisted env first so the
+# required-var checks pass. first install (no env file yet) still demands the token.
+[ -f "$HOME/.claude/aigate/env" ] && { set -a; . "$HOME/.claude/aigate/env"; set +a; }
 : "${AIGATE_URL:?set AIGATE_URL}"; : "${AIGATE_TOKEN:?set AIGATE_TOKEN}"
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DIR="$HOME/.claude/aigate"; BIN="$HOME/.local/bin"
 mkdir -p "$DIR" "$BIN"
+
+# version stamp — repo short-sha of the source checkout (best-effort).
+VER="$(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || true)"
+printf '%s\n' "$VER" > "$DIR/version"
+
+# the rc file zsh ACTUALLY sources is ZDOTDIR-based (the .10 trap: $HOME/.zshrc is
+# never read there). pick by ZDOTDIR, not by which file happens to exist.
+ZRC="${ZDOTDIR:-$HOME}/.zshrc"
+mkdir -p "$(dirname "$ZRC")"
+[ -f "$ZRC" ] || : > "$ZRC"
 
 install -m 0755 "$SRC/aigate-run.sh" "$DIR/aigate-run.sh"
 [ -f "$SRC/prompt-hook.sh" ]     && install -m 0755 "$SRC/prompt-hook.sh"     "$DIR/prompt-hook.sh"     || true
@@ -42,6 +56,51 @@ exec "$HOME/.claude/aigate/aigate-run.sh" "$@"
 EOF
 chmod 0755 "$BIN/cc"
 
+# reap the legacy cc.zsh shadow: older installs defined `cc` as a zsh FUNCTION
+# (sourced from an rc line) that shadowed the installed binary. it isn't written
+# by this installer, so its presence means a stale shell-function override.
+if [ -f "$DIR/cc.zsh" ]; then
+  rm -f "$DIR/cc.zsh"
+  for rc in "$HOME/.zshrc" "$HOME/.config/zsh/.zshrc" "$ZRC"; do
+    [ -f "$rc" ] && { sed -i.bak '/aigate\/cc.zsh/d' "$rc"; rm -f "$rc.bak"; }
+  done
+  echo "removed legacy cc.zsh shell-function shadow"
+fi
+
+# wire the hooks into settings.json — they're installed above but nothing
+# references them on a fresh box (dead on every clean install). idempotent
+# python3 merge: dedupe on the command string so re-runs never double-add.
+SETTINGS="$HOME/.claude/settings.json"
+[ -f "$SETTINGS" ] && cp "$SETTINGS" "$SETTINGS.bak" || true
+python3 - "$SETTINGS" <<'PY'
+import json, sys
+p = sys.argv[1]
+try:
+    with open(p) as f: s = json.load(f)
+except Exception:
+    s = {}
+if not isinstance(s, dict): s = {}
+PROMPT = "bash ~/.claude/aigate/prompt-hook.sh"
+STATUS = "bash ~/.claude/aigate/statusline-feed.sh"
+hooks = s.setdefault("hooks", {})
+ups = hooks.setdefault("UserPromptSubmit", [])
+if not isinstance(ups, list): ups = s["hooks"]["UserPromptSubmit"] = []
+have = any(
+    isinstance(h, dict) and h.get("command") == PROMPT
+    for grp in ups if isinstance(grp, dict)
+    for h in (grp.get("hooks") or []))
+if not have:
+    ups.append({"hooks": [{"type": "command", "command": PROMPT}]})
+sl = s.get("statusLine")
+if sl is None:
+    s["statusLine"] = {"type": "command", "command": STATUS}
+elif not (isinstance(sl, dict) and sl.get("command") == STATUS):
+    print("note: keeping your existing custom statusLine (not clobbering)", file=sys.stderr)
+with open(p, "w") as f:
+    json.dump(s, f, indent=2)
+PY
+echo "wired hooks into $SETTINGS"
+
 # MCP-key hydration: a sourced shell hook that pulls vault keys into the shell env
 # so ${BRAVE_API_KEY}/${TAVILY_API_KEY} in MCP-server configs resolve at claude launch.
 if [ -f "$DIR/hydrate.sh" ]; then
@@ -54,7 +113,6 @@ if [ ! -f "$HOME/.claude/aigate/mcp-keys.env" ] || [ -n "$(find "$HOME/.claude/a
 fi
 EOF
   "$DIR/hydrate.sh" >/dev/null 2>&1 || true
-  ZRC="$HOME/.zshrc"; [ -f "$HOME/.config/zsh/.zshrc" ] && ZRC="$HOME/.config/zsh/.zshrc"
   if ! grep -q 'aigate/mcp.zsh' "$ZRC" 2>/dev/null; then
     printf '\n[ -f "$HOME/.claude/aigate/mcp.zsh" ] && source "$HOME/.claude/aigate/mcp.zsh"  # aigate mcp keys\n' >> "$ZRC"
     echo "wired MCP-key hydration into $ZRC"
@@ -64,6 +122,6 @@ EOF
   echo "  claude mcp add -s user tavily        --env TAVILY_API_KEY='\${TAVILY_API_KEY}' -- npx -y tavily-mcp"
 fi
 
-echo "installed: $BIN/cc  →  $DIR/aigate-run.sh  (claude: ${CLAUDE_BIN:-not found in PATH})"
+echo "installed: $BIN/cc  →  $DIR/aigate-run.sh  (claude: ${CLAUDE_BIN:-not found in PATH})  [aigate ${VER:-unknown}]"
 case ":$PATH:" in *":$BIN:"*) : ;; *) echo "NOTE: add to PATH →  export PATH=\"$BIN:\$PATH\"";; esac
 echo "NOTE: 'cc' shadows the C compiler in shells where $BIN precedes /usr/bin. Rename if you compile with cc."
