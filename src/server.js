@@ -15,7 +15,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
@@ -86,9 +86,19 @@ db.exec(`
     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(provider, key_hint)
   );
+  CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
   CREATE INDEX IF NOT EXISTS idx_req_host ON request_log(host);
   CREATE INDEX IF NOT EXISTS idx_req_acct ON request_log(account);
 `);
+
+// key canary: fail LOUD at boot if ENC_KEY can't decrypt this vault, instead of
+// decrypt() exploding deep inside /api/select later. First boot writes it.
+const canary = db.prepare(`SELECT v FROM meta WHERE k='canary'`).get();
+if (!canary) db.prepare(`INSERT INTO meta(k,v) VALUES('canary',?)`).run(encrypt('aigate-canary'));
+else try { decrypt(canary.v); } catch {
+  console.error('FATAL: AIGATE_ENCRYPTION_KEY does not match this vault — restore the original key/.env; a regenerated key CANNOT recover it');
+  process.exit(1);
+}
 
 // migration: older DBs predate reauth_needed — add it if missing
 if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === 'reauth_needed'))
@@ -369,6 +379,24 @@ async function pollUsage() {
 }
 const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
 
+// ---- vault backup --------------------------------------------------------
+// VACUUM INTO = consistent WAL-safe snapshot, zero deps. .env is deliberately
+// NOT copied (no secret sprawl — backups hold ciphertext only). A failed
+// backup logs loudly but never kills the daemon.
+const BACKUP_DIR = join(dirname(DB_PATH), 'backups');
+function backupNow() {
+  try {
+    mkdirSync(BACKUP_DIR, { recursive: true });
+    const target = join(BACKUP_DIR, `aigate-${new Date().toISOString().slice(0, 10)}.db`);
+    if (!existsSync(target)) db.exec(`VACUUM INTO '${target}'`);
+    const cutoff = Date.now() - 14 * 86400000;
+    for (const f of readdirSync(BACKUP_DIR)) {
+      const m = /^aigate-(\d{4}-\d{2}-\d{2})\.db$/.exec(f);
+      if (m && Date.parse(m[1]) < cutoff) unlinkSync(join(BACKUP_DIR, f));
+    }
+  } catch (e) { console.error('[backup] failed', e); }
+}
+
 // Close server + db and exit. On a fatal fault we exit non-zero so the
 // supervisor (docker restart:unless-stopped / launchd KeepAlive) revives us —
 // that's the self-heal. On a signal we exit 0 for a clean stop.
@@ -400,8 +428,12 @@ if (isMain) {
   const poll = () => pollUsage().catch((e) => console.error('[poll] cycle failed', e));
   if (POLL_MS > 0) { setTimeout(poll, 8000); setInterval(poll, POLL_MS); }
 
+  // daily vault backup (~20s after boot, then every 24h)
+  setTimeout(backupNow, 20000).unref();
+  setInterval(backupNow, 86400000).unref();
+
   server.listen(PORT, HOST, () =>
     console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
 }
 
-export { server, db, pollUsage };
+export { server, db, pollUsage, backupNow };

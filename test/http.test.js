@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rmSync } from 'node:fs';
+import { rmSync, existsSync } from 'node:fs';
 
 // Isolate this run onto a throwaway DB + token BEFORE importing server.js.
 // process.env takes precedence over any repo .env (Node does not override
@@ -18,7 +18,8 @@ process.env.HOST = '127.0.0.1';
 delete process.env.AIGATE_ALLOW_CIDR;
 delete process.env.AIGATE_TRUST_PROXY;
 
-const { server, db } = await import('../src/server.js');
+const { server, db, backupNow } = await import('../src/server.js');
+const BACKUPS = join(tmpdir(), 'backups');   // dirname(DB)/backups
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
 
@@ -30,6 +31,7 @@ after(() => {
   server.close();
   try { db.close(); } catch { /* already closed */ }
   for (const f of [DB, DB + '-wal', DB + '-shm']) { try { rmSync(f); } catch { /* gone */ } }
+  rmSync(BACKUPS, { recursive: true, force: true });
 });
 
 test('GET / serves the dashboard', async () => {
@@ -46,6 +48,11 @@ test('GET /api/accounts with token → 200 empty array (fresh DB sanity)', async
   const r = await fetch(base + '/api/accounts', { headers: H });
   assert.equal(r.status, 200);
   assert.deepEqual(await r.json(), []);
+});
+
+test('boot canary: meta.canary row written on first boot (encryption-key guard)', () => {
+  const row = db.prepare(`SELECT v FROM meta WHERE k='canary'`).get();
+  assert.ok(row && row.v);
 });
 
 test('GET /api/select with no accounts → 503', async () => {
@@ -203,4 +210,12 @@ test('unknown API route → 404', async () => {
 test('bad JSON body is tolerated, not fatal', async () => {
   const r = await fetch(base + '/api/accounts', { method: 'POST', headers: H, body: '{not json' });
   assert.equal(r.status, 400);   // parsed as {} → missing fields → 400, no crash
+});
+
+test("backupNow() snapshots the vault to today's file; second call is a no-op", () => {
+  backupNow();
+  const f = join(BACKUPS, `aigate-${new Date().toISOString().slice(0, 10)}.db`);
+  assert.ok(existsSync(f));
+  backupNow();                   // already exists → skip, no throw
+  assert.ok(existsSync(f));
 });
