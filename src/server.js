@@ -492,15 +492,24 @@ const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
 function backupNow() {
   try {
     mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
-    const target = join(BACKUP_DIR, `aigate-${new Date().toISOString().slice(0, 10)}.db`);
-    if (!existsSync(target)) { db.exec(`VACUUM INTO '${target}'`); chmodSync(target, 0o600); }
-    // ponytail: backupNow doubles as daily maintenance — 30-day log retention, no env knob
+    // ponytail: backupNow doubles as daily maintenance — 30-day log retention, no env knob.
+    // Retention runs BEFORE the snapshot so a failing backup (full disk) can't starve it.
     db.exec(`DELETE FROM request_log WHERE ts < datetime('now','-30 days')`);
     db.exec(`DELETE FROM access_log WHERE ts < datetime('now','-30 days')`);
     const cutoff = Date.now() - 14 * 86400000;
     for (const f of readdirSync(BACKUP_DIR)) {
       const m = /^aigate-(\d{4}-\d{2}-\d{2})\.db$/.exec(f);
       if (m && Date.parse(m[1]) < cutoff) unlinkSync(join(BACKUP_DIR, f));
+    }
+    const target = join(BACKUP_DIR, `aigate-${new Date().toISOString().slice(0, 10)}.db`);
+    if (!existsSync(target)) {
+      // VACUUM into a tmp then rename (atomic, same fs) — an aigate-*.db is
+      // only ever a COMPLETED snapshot, never a crash/disk-full partial.
+      const tmp = target + '.tmp';
+      if (existsSync(tmp)) unlinkSync(tmp);
+      db.exec(`VACUUM INTO '${tmp}'`);
+      chmodSync(tmp, 0o600);
+      renameSync(tmp, target);
     }
   } catch (e) { console.error('[backup] failed', e); }
 }

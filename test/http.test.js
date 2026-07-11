@@ -4,8 +4,8 @@ import crypto from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
-import { connect } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
+import { connect } from 'node:net';
 import WebSocket from 'ws';
 
 // Isolate this run onto a throwaway DB + token BEFORE importing server.js.
@@ -323,6 +323,17 @@ test("backupNow() snapshots the vault to today's file; second call is a no-op", 
   assert.ok(existsSync(f));
   backupNow();                   // already exists → skip, no throw
   assert.ok(existsSync(f));
+});
+
+test('backup snapshot is atomic and intact: 0600, no .tmp sibling, quick_check ok', () => {
+  backupNow();
+  const f = join(BACKUPS, `aigate-${new Date().toISOString().slice(0, 10)}.db`);
+  assert.ok(existsSync(f));
+  assert.equal(statSync(f).mode & 0o777, 0o600);
+  assert.ok(!existsSync(f + '.tmp'));
+  const snap = new DatabaseSync(f, { readOnly: true });
+  assert.equal(snap.prepare('PRAGMA quick_check').get().quick_check, 'ok');
+  snap.close();
 });
 
 test('backups are private: dir 0700, snapshot file 0600', () => {
