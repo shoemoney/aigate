@@ -10,7 +10,7 @@
 ![node](https://img.shields.io/badge/node-%E2%89%A524-339933?logo=node.js&logoColor=white)
 ![db](https://img.shields.io/badge/db-SQLite-003B57?logo=sqlite&logoColor=white)
 ![deps](https://img.shields.io/badge/runtime_deps-1_(ws)-lightgrey)
-![compliant](https://img.shields.io/badge/Claude_multi--account-no--proxy_%C2%B7_accepted-8A2BE2)
+[![compliant](https://img.shields.io/badge/Claude_multi--account-no--proxy_%C2%B7_accepted-8A2BE2)](COMPLIANCE.md)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![PRs](https://img.shields.io/badge/PRs-welcome-ff69b4)
 
@@ -52,7 +52,7 @@ Built by someone who woke up to a **$500 OpenRouter bill** from a rogue loop and
 
 ## 🤔 Why (not just a proxy?)
 
-Multiple Claude Max subscriptions are **not against ToS** — [Anthropic's Claude Code team said so](https://code.claude.com/docs/en/legal-and-compliance). What gets accounts **banned** is relaying/reselling tokens through a proxy that impersonates the official client. aigate stays firmly on the **accepted** side of that line for Claude, and uses a normal secure proxy only where it's safe:
+Multiple Claude Max subscriptions are **not against ToS** — Anthropic's Claude Code team [said so on the record](https://x.com/trq212/status/2024212378402095389) and told The New Stack they *"will not be canceling accounts."* What gets accounts **banned** is [relaying subscription tokens through a harness that spoofs the official client](https://x.com/trq212/status/2009689809875591565). aigate stays firmly on the **accepted** side of that line for Claude, and uses a normal secure proxy only where it's safe:
 
 | Provider type | aigate mode | In Anthropic's request path? | Safe? |
 |---|---|---|---|
@@ -66,8 +66,10 @@ Multiple Claude Max subscriptions are **not against ToS** — [Anthropic's Claud
 ## ⚖️ Compliance (the whole point)
 
 > Most "multi-account Claude" tools get this **wrong** and get people banned. aigate is built specifically to get it **right.** Here's the line, in Anthropic's own words, and where every tool falls.
+>
+> 📋 **Full policy analysis + every primary-source receipt → [COMPLIANCE.md](COMPLIANCE.md).**
 
-Anthropic's [Claude Code legal & compliance page](https://code.claude.com/docs/en/legal-and-compliance) is unusually explicit. The banned pattern is **routing requests through Free/Pro/Max plan credentials on behalf of users** via a proxy that impersonates the official client. Running **your own** multiple accounts is fine — Claude Code team member Thariq Shihipar: *"It's not against terms of service to have multiple MAX accounts."*
+Anthropic's [Claude Code legal & compliance page](https://code.claude.com/docs/en/legal-and-compliance) is unusually explicit. The banned pattern is **routing requests through Free/Pro/Max plan credentials on behalf of users via a harness that spoofs the official client** — in Anthropic's own words ([Thariq Shihipar, Claude Code @ Anthropic — Jan 9, 2026](https://x.com/trq212/status/2009689809875591565)): *"we tightened our safeguards against spoofing the Claude Code harness … third-party harnesses using Claude subscriptions … are prohibited by our Terms of Service."* Running **your own** multiple accounts through the **official** client is a different thing entirely — he [confirmed on Feb 19, 2026](https://x.com/trq212/status/2024212378402095389) *"Nothing is changing about how you can use the Agent SDK and MAX subscriptions,"* and Anthropic itself acknowledges [`CLAUDE_CONFIG_DIR`](https://github.com/anthropics/claude-code/issues/261) as the sanctioned multi-account isolation mechanism. aigate never spoofs the harness — it runs the **real `claude` binary** — so it stays on the accepted side.
 
 ```mermaid
 flowchart TB
@@ -93,6 +95,19 @@ flowchart TB
 
 > [!WARNING]
 > **The one soft spot — respect it.** Keep aigate **single-tenant** and each account's usage within *ordinary individual* bounds. Do **not** shard one heavy 24/7 workload across N accounts to beat the weekly cap — that's *limit evasion*, bannable even with the official binary. Prefer an **API-key fallback** (Console pay-go) over over-draining a subscription. Never ship a token to a machine used by a different person.
+
+### 📎 Receipts — read the primary sources yourself
+
+Don't take my word for it. Here's the line, from Anthropic directly:
+
+| Source | What it establishes |
+|---|---|
+| ⚖️ [Anthropic — Claude Code Legal & Compliance](https://code.claude.com/docs/en/legal-and-compliance) | The authoritative policy: OAuth is for *"ordinary use of Claude Code and other native Anthropic applications"*; developers routing subscription creds **on behalf of their users** must use API keys. |
+| 🐦 [Thariq Shihipar (@trq212), Claude Code @ Anthropic — Jan 9, 2026](https://x.com/trq212/status/2009689809875591565) | Names the **banned** pattern: *harnesses that **spoof** the Claude Code client* using subscription tokens. aigate runs the real binary — it doesn't spoof. |
+| 🐦 [Thariq Shihipar — Feb 19, 2026](https://x.com/trq212/status/2024212378402095389) | *"Nothing is changing about how you can use the Agent SDK and MAX subscriptions."* |
+| 🧩 [anthropics/claude-code #261](https://github.com/anthropics/claude-code/issues/261) · [#33430](https://github.com/anthropics/claude-code/issues/33430) | Anthropic's **own repo** acknowledging **`CLAUDE_CONFIG_DIR`** for per-account isolation — the exact mechanism aigate uses. |
+
+> The through-line: **who makes the request matters.** A harness spoofing the client = banned. The official `claude` binary, your own accounts = accepted. aigate is architected to always be the second thing.
 
 ---
 
