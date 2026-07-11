@@ -348,7 +348,7 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`**
 | `GET` | `/api/keys/:provider` | 🔑 newest working key for a provider (audited; name normalized — `BRAVE ` finds `brave`) |
 | `DELETE` | `/api/keys/:id` | remove a provider key |
 | `GET` | `/api/logs?limit=` · `/api/stats` | prompt log · dashboard rollups |
-| `WS` | `/ws` | 📡 live event stream — auth via the **`bearer.<token>` WebSocket subprotocol** (token never lands in URL/access logs; legacy `?token=` still accepted, **deprecated**) |
+| `WS` | `/ws` | 📡 live event stream — auth via the **`bearer.<token>` WebSocket subprotocol** (token never lands in URL/access logs; `?token=` is **removed** — header/subprotocol only) |
 
 ---
 

@@ -14,7 +14,7 @@
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
-import { chmodSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
@@ -162,11 +162,10 @@ function broadcast(type, data) {
 }
 
 // ---- http helpers -------------------------------------------------------
+// header-only: a ?token= bearer would land in edge (NPM) access logs and outlive rotation
 const authed = (req) => {
   const h = req.headers.authorization || '';
-  const bearer = h.startsWith('Bearer ') ? h.slice(7) : '';
-  const t = bearer || new URL(req.url, 'http://x').searchParams.get('token') || '';
-  return tokenMatches(t, TOKEN);
+  return h.startsWith('Bearer ') && tokenMatches(h.slice(7), TOKEN);
 };
 const reqIp = (req) => clientIp(req.headers, req.socket.remoteAddress, { trustProxy: TRUST_PROXY });
 const body = (req) => new Promise((res) => {
@@ -181,11 +180,16 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 
 // ---- routes -------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://x');
+  // a malformed target ('//', protocol-relative) makes new URL throw; in an async
+  // handler that's an unhandled rejection → socket hangs (pre-auth DoS). 404 it.
+  let url; try { url = new URL(req.url, 'http://x'); } catch { res.writeHead(404); return res.end('not found'); }
   const p = url.pathname;
 
   // network gate (defense-in-depth, before anything else)
-  if (!ipAllowed(reqIp(req), ALLOW_CIDR)) { res.writeHead(403); return res.end('forbidden (network)'); }
+  if (!ipAllowed(reqIp(req), ALLOW_CIDR)) {
+    console.warn('[net] denied', reqIp(req), req.method, p);   // stderr only — unauth clients must not write DB rows
+    return json(res, 403, { error: 'forbidden (network)' });
+  }
 
   // health probe (no bearer — supervisors/watchdog don't have it; still gated
   // by network, and loopback/docker healthchecks are always allowed). db-backed:
@@ -206,7 +210,9 @@ const server = http.createServer(async (req, res) => {
   // static dashboard (index gated at load; API gated per-request)
   if (req.method === 'GET' && !p.startsWith('/api')) {
     const fp = safeStaticPath(PUBLIC, p);
-    if (fp && existsSync(fp)) {
+    // regular files only: GET // resolves to PUBLIC itself → readFile(dir) rejects
+    // outside the try/catch → socket hangs forever (pre-auth DoS)
+    if (fp && existsSync(fp) && statSync(fp).isFile()) {
       const data = await readFile(fp);
       res.writeHead(200, { 'content-type': MIME[extname(fp)] || 'application/octet-stream' });
       return res.end(data);
@@ -214,7 +220,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(404); return res.end('not found');
   }
 
-  if (!authed(req)) return json(res, 401, { error: 'unauthorized' });
+  if (!authed(req)) { console.error('[auth] denied', reqIp(req), req.method, p); return json(res, 401, { error: 'unauthorized' }); }
 
   try {
     // --- accounts / vault ---
@@ -368,7 +374,7 @@ const server = http.createServer(async (req, res) => {
 server.on('upgrade', (req, socket, head) => {
   const wsAuthed = String(req.headers['sec-websocket-protocol'] || '').split(',')
     .some((p) => p.trim().startsWith('bearer.') && tokenMatches(p.trim().slice(7), TOKEN));
-  if (new URL(req.url, 'http://x').pathname !== '/ws' || !(wsAuthed || authed(req)) /* authed = deprecated ?token= fallback */ || !ipAllowed(reqIp(req), ALLOW_CIDR)) { socket.destroy(); return; }
+  if (new URL(req.url, 'http://x').pathname !== '/ws' || !wsAuthed || !ipAllowed(reqIp(req), ALLOW_CIDR)) { console.warn('[ws] denied', reqIp(req)); socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => {
     // a mid-send ECONNRESET (sleeping laptop tab) otherwise emits an unlistened
     // 'error' → uncaughtException → the whole vault daemon restarts

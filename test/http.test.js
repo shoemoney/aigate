@@ -41,8 +41,18 @@ test('GET / serves the dashboard', async () => {
   assert.match(r.headers.get('content-type'), /text\/html/);
 });
 
-test('GET /api/accounts without token → 401', async () => {
-  assert.equal((await fetch(base + '/api/accounts')).status, 401);
+test('GET /api/accounts without token → 401 with JSON body', async () => {
+  const r = await fetch(base + '/api/accounts');
+  assert.equal(r.status, 401);
+  assert.deepEqual(await r.json(), { error: 'unauthorized' });
+});
+
+test('?token= query auth is dead — header-only → 401', async () => {
+  assert.equal((await fetch(base + `/api/accounts?token=${TOKEN}`)).status, 401);
+});
+
+test('GET // (a directory) → 404, not a hang', async () => {
+  assert.equal((await fetch(base + '//')).status, 404);
 });
 
 test('GET /api/accounts with token → 200 empty array (fresh DB sanity)', async () => {
@@ -339,10 +349,15 @@ test('WS with no auth is destroyed before any message', async () => {
   });
 });
 
-test('legacy WS ?token= query auth still works (deprecated fallback)', async () => {
-  const m = await wsFirstMsg('/ws?token=' + TOKEN);
-  assert.equal(m.type, 'accounts');
+test('WS ?token= query auth is dead — socket destroyed', async () => {
+  await new Promise((resolve, reject) => {
+    const ws = new WebSocket(base.replace('http', 'ws') + '/ws?token=' + TOKEN);
+    ws.on('message', () => reject(new Error('?token= socket got data')));
+    ws.on('error', resolve);
+    ws.on('close', resolve);
+  });
 });
+// ponytail: no 403 net-gate test — ALLOW_CIDR is read at import and this harness deletes it; the 401 JSON assertion above covers the error-shape contract
 
 test('daemon survives an abrupt WS client death; broadcast still reaches a healthy client', async () => {
   const wsUrl = base.replace('http', 'ws') + '/ws';
