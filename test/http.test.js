@@ -89,6 +89,17 @@ test('POST /api/keys stores a provider key; list returns hint but not the secret
   assert.ok(!JSON.stringify(keys).includes('supersecretkey'));
 });
 
+test('key_hint = first8…last4: same-prefix keys coexist, exact re-POST still upserts', async () => {
+  const post = (key) => fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'collideco', key }) });
+  await post('sk-proj-collide-AAAA');   // shares first 14 chars with the next key…
+  await post('sk-proj-collide-BBBB');
+  await post('sk-proj-collide-BBBB');   // exact duplicate → upsert, not a third row
+  const hints = (await (await fetch(base + '/api/keys', { headers: H })).json())
+    .filter((k) => k.provider === 'collideco').map((k) => k.key_hint).sort();
+  assert.deepEqual(hints, ['sk-proj-…AAAA', 'sk-proj-…BBBB']);   // both survive
+});
+
 test('/api/select skips a needs-reauth account and hands back a live one', async () => {
   // alice (live) already exists. Add bob, then flag alice's token dead.
   await fetch(base + '/api/accounts', { method: 'POST', headers: H,
@@ -126,6 +137,12 @@ test('POST /api/events/limit parks an account (skipped on select) WITHOUT clobbe
   const a = (await (await fetch(base + '/api/accounts', { headers: H })).json()).find((x) => x.account === 'alice');
   assert.equal(a.five_hour_pct, 1);                        // real usage preserved, NOT clobbered to 100
   assert.ok(a.parked_until);                               // parked timestamp set
+});
+
+test('/health selectable counts parked accounts as unusable (matches /api/select)', async () => {
+  // alice is still parked from the previous test; park bob too → nothing servable
+  await fetch(base + '/api/events/limit', { method: 'POST', headers: H, body: JSON.stringify({ account: 'bob' }) });
+  assert.equal((await (await fetch(base + '/health')).json()).selectable, 0);
 });
 
 test('unpolled account (usage_updated NULL) sorts LAST, not as a phantom 0%', async () => {

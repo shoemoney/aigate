@@ -172,8 +172,9 @@ const server = http.createServer(async (req, res) => {
     try {
       db.prepare('SELECT 1').get();
       const accts = q.listAccounts.all();
-      const selectable = accts.filter((a) => !a.disabled && !a.reauth_needed && a.has_token
-        && Math.max(a.five_hour_pct || 0, a.seven_day_pct || 0) < CUTOFF).length;
+      // same query /api/select uses — a hand-rolled filter here once ignored parked_until
+      // and reported selectable>0 while select 503'd, so autoheal never restarted anything.
+      const selectable = q.pickRanked.all(CUTOFF).length;
       return json(res, 200, { ok: true, uptime_s: Math.round(process.uptime()), accounts: accts.length, selectable });
     } catch (e) {
       return json(res, 503, { ok: false, error: String((e && e.message) || e) });
@@ -223,7 +224,9 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/keys' && req.method === 'POST') {
       const b = await body(req);
       if (!b.provider || !b.key) return json(res, 400, { error: 'provider + key required' });
-      q.addKey.run(b.provider, b.label || '', encrypt(b.key), b.key.slice(0, 14) + '…', b.status || 'working');
+      // first8…last4: UNIQUE(provider,key_hint) is the upsert target — a prefix-only hint
+      // made same-prefix keys (sk-proj-…, sk-or-v1-…) silently overwrite each other.
+      q.addKey.run(b.provider, b.label || '', encrypt(b.key), b.key.slice(0, 8) + '…' + b.key.slice(-4), b.status || 'working');
       broadcast('keys', q.listKeys.all());
       return json(res, 200, { ok: true });
     }
