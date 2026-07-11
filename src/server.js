@@ -12,7 +12,6 @@
  * daemon only picks which profile and records what happened (via local hooks).
  */
 import http from 'node:http';
-import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
