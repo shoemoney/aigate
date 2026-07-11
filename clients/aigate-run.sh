@@ -18,8 +18,9 @@ select_acct(){ curl -s -m8 -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL
 report_prompt(){ curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
     -d "$(python3 -c 'import json,sys;print(json.dumps({"account":sys.argv[1],"host":sys.argv[2],"prompt":sys.argv[3][:400]}))' "$1" "$HOST" "$2")" \
     "$AIGATE_URL/api/events/prompt" >/dev/null 2>&1 || true; }
-report_limit(){ curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
-    -d "{\"account\":\"$1\",\"host\":\"$HOST\"}" "$AIGATE_URL/api/events/limit" >/dev/null 2>&1 || true; }
+report_limit(){ local m=""; [ -n "${2:-}" ] && m=",\"minutes\":$2"   # optional short park (server accepts minutes)
+  curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
+    -d "{\"account\":\"$1\",\"host\":\"$HOST\"$m}" "$AIGATE_URL/api/events/limit" >/dev/null 2>&1 || true; }
 
 # Preflight alert (NOT auto-fix): a stored Claude login OUTRANKS the token aigate
 # injects, so the session silently serves the WRONG account — the "why is it stuck
@@ -46,6 +47,14 @@ warn_shadow_login(){
   } >&2
 }
 
+# Preflight alert (warn, don't edit): a stale ANTHROPIC_BASE_URL in settings*.json
+# silently hijacks EVERY request ("Unable to connect to API" with no obvious cause).
+warn_base_url(){
+  local hits; hits="$(grep -l ANTHROPIC_BASE_URL "$HOME/.claude/settings.json" "$HOME/.claude/settings.local.json" 2>/dev/null | tr '\n' ' ')"
+  [ -z "$hits" ] && return 0
+  echo "⚠️  aigate: ANTHROPIC_BASE_URL set in ${hits}— it hijacks every request; remove the \"ANTHROPIC_BASE_URL\" key from those file(s)." >&2
+}
+
 # print mode → capture+retry; else single pick + exec (keep interactive streaming)
 is_print=0 has_skip=0
 for a in "$@"; do case "$a" in
@@ -58,6 +67,7 @@ skip=()
 [ "$is_print" = 1 ] && [ "$has_skip" = 0 ] && skip=(--dangerously-skip-permissions)
 
 warn_shadow_login   # alert if a stored login would shadow aigate's picked account
+warn_base_url       # alert if settings*.json would redirect requests off-Anthropic
 
 if [ "$is_print" != 1 ]; then
   # Interactive: SUPERVISE the official binary (not exec) so we can SWITCH accounts
@@ -70,7 +80,7 @@ if [ "$is_print" != 1 ]; then
     acct="$(printf '%s' "$resp" | jget account)"; tok="$(printf '%s' "$resp" | jget setup_token)"
     [ -n "$tok" ] || { echo "aigate: no account available (tried: ${tried:-none}) → $resp" >&2; exit 1; }
     echo "aigate → using account: $acct" >&2
-    unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
+    unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
     export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
     warn_shadow_login
     report_prompt "$acct" "interactive session"
@@ -103,16 +113,24 @@ for attempt in 1 2 3; do
   acct="$(printf '%s' "$resp" | jget account)"; tok="$(printf '%s' "$resp" | jget setup_token)"
   [ -n "$tok" ] || { echo "aigate: no account available (tried: ${tried:-none}) → $resp" >&2; exit 1; }
   echo "aigate → account: $acct (attempt $attempt)" >&2
-  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
+  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
   export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
   report_prompt "$acct" "$prompt"
-  out="$("$CLAUDE_BIN" "${skip[@]}" "$@" 2>&1)"; rc=$?
+  # split streams: stdout stays CLEAN for consuming scripts, stderr banners don't
+  # pollute it and don't false-trigger the limit classifier on success
+  errf="$(mktemp)"
+  out="$("$CLAUDE_BIN" "${skip[@]}" "$@" 2>"$errf")"; rc=$?
+  err="$(cat "$errf"; rm -f "$errf")"
   if [ $rc -eq 0 ]; then printf '%s\n' "$out"; exit 0; fi
-  # over-limit / unavailable → park account, retry next
-  if printf '%s' "$out" | grep -qiE 'rate.?limit|usage limit|too many requests|429|overloaded_error|quota|reached your (usage|limit)|no available|insufficient'; then
+  # Anthropic-side transient overload → SHORT park (2m), not the full default window
+  if printf '%s\n%s' "$out" "$err" | grep -qiE 'overloaded_error|529'; then
+    echo "aigate: account $acct transient overload (529) → 2m park, retrying next" >&2
+    report_limit "$acct" 2; tried="${tried:+$tried,}$acct"; continue
+  # over-limit / unavailable → park account (default window), retry next
+  elif printf '%s\n%s' "$out" "$err" | grep -qiE 'rate.?limit|usage limit|too many requests|429|quota|reached your (usage|limit)|no available|insufficient'; then
     echo "aigate: account $acct over limit/unavailable → retrying next" >&2
     report_limit "$acct"; tried="${tried:+$tried,}$acct"; continue
   fi
-  printf '%s\n' "$out" >&2; exit $rc      # genuine error, surface it
+  printf '%s\n' "$out"; printf '%s\n' "$err" >&2; exit $rc   # genuine error, surface both streams
 done
 echo "aigate: all accounts exhausted (tried: $tried)" >&2; exit 1
