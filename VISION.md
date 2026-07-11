@@ -39,6 +39,11 @@ Born from three real pains:
 ### v1 — NOW (shipped)
 - SQLite vault (AES-256-GCM) · usage-aware Claude account selector · IP-audited
   handouts · prompt+usage event ingest · WebSocket dashboard · per-host stats.
+- …and everything that landed after the first cut: 59-provider key registry +
+  add-key UI · over-limit TTL-park retry · self-heal (`/health` + watchdog +
+  autoheal) · boot canary + daily `VACUUM INTO` backups + corruption
+  auto-restore · full-mutation audit trail (`/api/access`) · live re-poll
+  (`/refresh`) · secret-scrubbed prompt log.
 
 ### Round 2 — hot layer + spend guard
 - **Redis hot layer** (Redis already runs fleet-wide incl. .10):
@@ -128,3 +133,27 @@ framework re-implementing key handling, they all ask aigate. Distribution + safe
 - **Never** relay/impersonate Claude Code for subscription accounts — selector only.
 - No pooling/reselling access for others. Personal, honest, visible.
 - Don't build a ring before the previous one has earned it.
+- **`/api/capabilities` stays READ-ONLY** — the Round-4 registry endpoint reports
+  counts + selectability, never meters/holds/forwards. Anything that puts aigate
+  *in a provider's request path* (spend metering, held/budget breaker, metered
+  on-demand handout) stays **UNBUILT** until the secure-proxy ring earns it —
+  that's the drift to catch in review.
+
+## Deferred by design (triggers)
+One line per ring — the thing that has to *bite* before it earns its code, so the
+audit loop doesn't drift into over-building:
+- **Secure-proxy / metering mode** → only when a real API-key spend surprise a live
+  meter would've stopped bites **and** a client will actually route provider calls
+  through aigate.
+- **Full budget/spend breaker** → only **after** the proxy is live and carrying
+  traffic (it's blind to spend without it).
+- **Redis hot layer** → only when you **measure** real SQLite contention **or** a
+  2nd process needs the event bus.
+- **MariaDB/Postgres** → only at a 2nd instance / HA, or external tools reading the
+  DB directly.
+- **Cost-first routing + per-agent lanes** → gated behind the proxy + universal
+  registry.
+- **Framework plugins** → only when a real agent needs a key plain `GET /api/keys`
+  can't satisfy.
+- **Inbox discovery sweep** → never daemon code — a standalone throwaway script if
+  ever.

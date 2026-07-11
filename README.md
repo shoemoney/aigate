@@ -203,7 +203,7 @@ sequenceDiagram
 | 🔁 | **Over-limit detect + retry** | headless `cc -p` spots a rate-limit/unavailable reply, **TTL-parks** that account (`/api/events/limit` — **15m** default, transient **529 → 2m**, real usage untouched) and **retries the next-best** via `/api/select?exclude=` — up to 3 |
 | 🩺 | **Self-healing daemon** | unauthenticated **`/health`** (DB-backed; `selectable` uses the **exact selection query**, so parked accounts don't mask an outage) + internal **watchdog** (exits→restart on a wedged DB) + Docker `HEALTHCHECK` wired to **autoheal** — three recovery layers |
 | 🐤 | **Boot canary + daily backups** | wrong `AIGATE_ENCRYPTION_KEY` = **loud FATAL at boot** (not a decrypt blow-up mid-request); daily `VACUUM INTO` snapshot → `data/backups/` w/ **14-day retention** (ciphertext only — `.env` never copied) |
-| 🧾 | **Full audit trail** | every handout logged with **timestamp + IP + host**; every prompt logged (account, host, cwd — stored capped at 400 chars); request/access logs auto-pruned after **30 days** (daily, piggybacked on the backup pass) |
+| 🧾 | **Full audit trail** | every **handout, key-fetch, and mutation** (account add/overwrite/delete/disable/enable · key add/delete · limit-park) logged with **timestamp + IP + host**; every prompt is **secret-scrubbed** (`sk-`/`ghp`/`AIza`-shaped tokens redacted) **before** storage then capped at **400 chars**; all readable at **`/api/access`**; auto-pruned after **30 days** (daily, piggybacked on the backup pass) |
 | 📊 | **Live dashboard** | account cards w/ usage bars (🚨 runaway, 🔑 re-auth), **provider-key manager**, streaming activity feed, per-host/device stats — WS auth rides a **`bearer.<token>` subprotocol**, never the URL |
 | 🎯 | **No-proxy Claude mode** | official binary + `cc` wrapper — won't flag accounts |
 | 🧪 | **Tested** | unit + HTTP tests (`node --test`, boots the real server on a throwaway DB) and a **fleet switching test** on a real Pi — see [docs/TESTING.md](docs/TESTING.md) |
@@ -340,7 +340,7 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`**
 | `DELETE` | `/api/accounts/:name` | remove |
 | `POST` | `/api/accounts/:name/disabled` | `{disabled: true/false}` |
 | `POST` | `/api/accounts/:name/refresh` | 🔄 **live re-poll** ONE account's real headroom right now (not the 10-min cache) → `{five, seven, alive, maxed}`; 404 on unknown account |
-| `POST` | `/api/events/usage` | 📈 set an account's 5h/7d % (the poller writes this); **404 on unknown account** |
+| `POST` | `/api/events/usage` | 📈 set an account's 5h/7d % — the **client statusline-feed** path (the server-side poller writes usage straight to the DB); **404 on unknown account** |
 | `POST` | `/api/events/limit` | 🔁 `{account, minutes?}` — **TTL-park** an over-limit account (default **15m**, `minutes` clamped 1–360; real usage untouched, auto-unparks when the TTL passes); **404 on unknown account** |
 | `POST` | `/api/events/prompt` | 🧾 log a prompt `{account, host, cwd, model, prompt}` |
 | `GET` | `/api/providers` | 📇 the 59-provider catalog (id, name, key prefix, base URL) |
@@ -348,6 +348,7 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`**
 | `GET` | `/api/keys/:provider` | 🔑 newest working key for a provider (audited; name normalized — `BRAVE ` finds `brave`) |
 | `DELETE` | `/api/keys/:id` | remove a provider key |
 | `GET` | `/api/logs?limit=` · `/api/stats` | prompt log · dashboard rollups |
+| `GET` | `/api/access?limit=` | 🧾 **audit trail** — every handout, mutation & key-fetch (account · host · IP · action · result; **no secrets**) for post-incident review; `limit` default 100, capped **1000** |
 | `WS` | `/ws` | 📡 live event stream — auth via the **`bearer.<token>` WebSocket subprotocol** (token never lands in URL/access logs; `?token=` is **removed** — header/subprotocol only) |
 
 ---
