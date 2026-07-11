@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rmSync, existsSync } from 'node:fs';
+import { rmSync, existsSync, statSync } from 'node:fs';
 import WebSocket from 'ws';
 
 // Isolate this run onto a throwaway DB + token BEFORE importing server.js.
@@ -180,6 +180,20 @@ test('POST /api/events/prompt truncates stored prompt to 400 chars', async () =>
   assert.ok(row.prompt.length <= 400);
 });
 
+test('POST /api/events/prompt scrubs pasted secrets; git SHAs survive', async () => {
+  const log1 = async () => (await (await fetch(base + '/api/logs?limit=1', { headers: H })).json())[0];
+  await fetch(base + '/api/events/prompt', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'alice', prompt: 'please vault sk-ant-oat01-ABCDEFGHIJKLMNOP' }) });
+  let row = await log1();
+  assert.ok(row.prompt.includes('sk-ant-o…[redacted]'));
+  assert.ok(!row.prompt.includes('sk-ant-oat01-ABCDEFGHIJKLMNOP'));
+  const sha = 'deadbeef'.repeat(5);                          // 40-char git SHA, not a secret
+  await fetch(base + '/api/events/prompt', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'alice', prompt: 'revert commit ' + sha }) });
+  row = await log1();
+  assert.equal(row.prompt, 'revert commit ' + sha);          // untouched
+});
+
 test('/health selectable counts parked accounts as unusable (matches /api/select)', async () => {
   // alice is still parked from the previous test; park bob too → nothing servable
   await fetch(base + '/api/events/limit', { method: 'POST', headers: H, body: JSON.stringify({ account: 'bob' }) });
@@ -297,6 +311,12 @@ test("backupNow() snapshots the vault to today's file; second call is a no-op", 
   assert.ok(existsSync(f));
   backupNow();                   // already exists → skip, no throw
   assert.ok(existsSync(f));
+});
+
+test('backups are private: dir 0700, snapshot file 0600', () => {
+  const f = join(BACKUPS, `aigate-${new Date().toISOString().slice(0, 10)}.db`);
+  assert.equal(statSync(BACKUPS).mode & 0o777, 0o700);
+  assert.equal(statSync(f).mode & 0o777, 0o600);
 });
 
 const wsFirstMsg = (path, protocols) => new Promise((resolve, reject) => {

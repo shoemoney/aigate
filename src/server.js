@@ -14,7 +14,7 @@
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
-import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
@@ -175,6 +175,8 @@ const body = (req) => new Promise((res) => {
   req.on('end', () => { try { res(b ? JSON.parse(b) : {}); } catch { res({}); } });
 });
 const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
+// prefix-shaped secrets only (sk-…, ghp…, xoxb…) — no generic long-hex rule, git SHAs must survive
+const scrub = (s) => String(s || '').replace(/\b(sk-[A-Za-z0-9_-]{12,}|(?:ghp|gho|xox[bp]|tvly|pplx|fc|AIza)[A-Za-z0-9_-]{12,})\b/g, (m) => m.slice(0, 8) + '…[redacted]');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 
 // ---- routes -------------------------------------------------------------
@@ -334,10 +336,11 @@ const server = http.createServer(async (req, res) => {
     // --- event ingest (from the fleet's hooks) ---
     if (p === '/api/events/prompt' && req.method === 'POST') {
       const b = await body(req);
-      // store truncated: every read already substr's to 400 — never retain full prompts
-      q.insReq.run(b.account || '', b.host || '', reqIp(req), b.cwd || '', b.model || '', String(b.prompt || '').slice(0, 400), b.tokens ?? null);
+      // store scrubbed + truncated: every read already substr's to 400 — never retain full prompts
+      const prompt = scrub(b.prompt).slice(0, 400);
+      q.insReq.run(b.account || '', b.host || '', reqIp(req), b.cwd || '', b.model || '', prompt, b.tokens ?? null);
       broadcast('prompt', { account: b.account, host: b.host, ip: reqIp(req), cwd: b.cwd, model: b.model,
-        prompt: String(b.prompt || '').slice(0, 400), ts: new Date().toISOString() });
+        prompt, ts: new Date().toISOString() });
       return json(res, 200, { ok: true });
     }
     if (p === '/api/events/usage' && req.method === 'POST') {
@@ -431,9 +434,9 @@ const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
 const BACKUP_DIR = join(dirname(DB_PATH), 'backups');
 function backupNow() {
   try {
-    mkdirSync(BACKUP_DIR, { recursive: true });
+    mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
     const target = join(BACKUP_DIR, `aigate-${new Date().toISOString().slice(0, 10)}.db`);
-    if (!existsSync(target)) db.exec(`VACUUM INTO '${target}'`);
+    if (!existsSync(target)) { db.exec(`VACUUM INTO '${target}'`); chmodSync(target, 0o600); }
     // ponytail: backupNow doubles as daily maintenance — 30-day log retention, no env knob
     db.exec(`DELETE FROM request_log WHERE ts < datetime('now','-30 days')`);
     db.exec(`DELETE FROM access_log WHERE ts < datetime('now','-30 days')`);
