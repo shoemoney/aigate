@@ -199,13 +199,14 @@ sequenceDiagram
 | 🔐 | **Encrypted vault** | AES-256-GCM at rest — Claude OAuth tokens **and** provider API keys; tokens are write-only via the API |
 | ⚖️ | **Headroom-aware selection** | hands out the account with the **most headroom** (lowest of `max(5h%,7d%)`), skips anything ≥ cutoff |
 | 📈 | **Server-side usage poller** | reads each account's **real** rate-limit headroom straight from Anthropic every 10 min → auto-skip maxed, **auto-recover after reset**, zero manual seeding |
-| 🔑 | **Provider-key registry** | encrypted store + `/api/keys` for a **56-provider catalog** (OpenAI / OpenRouter / Gemini / Groq / Together / fal / ElevenLabs / …); `GET /api/providers` feeds a dashboard **add-key form** with per-provider key-format hints |
-| 🔁 | **Over-limit detect + retry** | headless `cc -p` spots a rate-limit/unavailable reply, **parks** that account (`/api/events/limit`) and **retries the next-best** via `/api/select?exclude=` — up to 3 |
-| 🩺 | **Self-healing daemon** | unauthenticated **`/health`** (DB-backed) + internal **watchdog** (exits→restart on a wedged DB) + Docker `HEALTHCHECK` wired to **autoheal** — three recovery layers |
-| 🧾 | **Full audit trail** | every handout logged with **timestamp + IP + host**; every prompt logged (account, host, cwd) |
-| 📊 | **Live dashboard** | account cards w/ usage bars (🚨 runaway, 🔑 re-auth), **provider-key manager**, streaming activity feed, per-host/device stats |
+| 🔑 | **Provider-key registry** | encrypted store + `/api/keys` for a **59-provider catalog** (OpenAI / OpenRouter / Gemini / Groq / Together / fal / ElevenLabs / …); **sanitized intake** (trims + un-quotes pastes, **400s** `export`/`NAME=` blobs, provider lowercased) + collision-proof **`first8…last4`** hints; `GET /api/providers` feeds a dashboard **add-key form** with per-provider key-format hints |
+| 🔁 | **Over-limit detect + retry** | headless `cc -p` spots a rate-limit/unavailable reply, **TTL-parks** that account (`/api/events/limit` — **15m** default, transient **529 → 2m**, real usage untouched) and **retries the next-best** via `/api/select?exclude=` — up to 3 |
+| 🩺 | **Self-healing daemon** | unauthenticated **`/health`** (DB-backed; `selectable` uses the **exact selection query**, so parked accounts don't mask an outage) + internal **watchdog** (exits→restart on a wedged DB) + Docker `HEALTHCHECK` wired to **autoheal** — three recovery layers |
+| 🐤 | **Boot canary + daily backups** | wrong `AIGATE_ENCRYPTION_KEY` = **loud FATAL at boot** (not a decrypt blow-up mid-request); daily `VACUUM INTO` snapshot → `data/backups/` w/ **14-day retention** (ciphertext only — `.env` never copied) |
+| 🧾 | **Full audit trail** | every handout logged with **timestamp + IP + host**; every prompt logged (account, host, cwd — entries capped at 400 chars) |
+| 📊 | **Live dashboard** | account cards w/ usage bars (🚨 runaway, 🔑 re-auth), **provider-key manager**, streaming activity feed, per-host/device stats — WS auth rides a **`bearer.<token>` subprotocol**, never the URL |
 | 🎯 | **No-proxy Claude mode** | official binary + `cc` wrapper — won't flag accounts |
-| 🧪 | **Tested** | 44 `node --test` (unit + HTTP), a headless-Chromium dashboard E2E, and a **fleet switching test** on a real Pi — see [docs/TESTING.md](docs/TESTING.md) |
+| 🧪 | **Tested** | unit + HTTP tests (`node --test`, boots the real server on a throwaway DB) and a **fleet switching test** on a real Pi — see [docs/TESTING.md](docs/TESTING.md) |
 | 🐳 | **1 runtime dep** | `ws`. SQLite is Node's built-in `node:sqlite`. Buildless. Docker-ready. |
 
 ---
@@ -245,28 +246,36 @@ curl -X POST http://localhost:20200/api/keys \
   -d '{"provider":"openrouter","key":"sk-or-v1-…","label":"prod"}'
 ```
 
-…or just open the **dashboard** → **Provider API keys** → pick from the 56-provider dropdown, paste, **Add key**. 🖥️
+…or just open the **dashboard** → **Provider API keys** → pick from the 59-provider dropdown, paste, **Add key**. 🖥️ (Paste hygiene is handled server-side: quotes get stripped, and an accidental `export NAME=…` blob is rejected with a 400 instead of vaulting garbage.)
 
 ---
 
 ## 🔌 Wire up a box (client side)
 
 **One installer sets up the `cc` command.** It routes the official `claude`
-through aigate's selector, unsets any stray `ANTHROPIC_API_KEY`, and (in
-headless `-p` mode) detects over-limit and retries the next account.
+through aigate's selector, unsets stray `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` /
+`ANTHROPIC_BASE_URL`, preflight-**warns** on shadow logins + `BASE_URL` hijacks, and (in
+headless `-p` mode) detects over-limit and retries the next account — with **clean stdout**
+(all banners on stderr, so piping `cc -p` output stays pure).
 
 ```bash
 AIGATE_URL='https://aigate.example.com' AIGATE_TOKEN='…' bash clients/install.sh
 cc -p 'hi'          # → Claude replies, on the account with the most headroom
 ```
 
-The installer writes `~/.claude/aigate/{aigate-run.sh,env}` + `~/.local/bin/cc`
+The installer writes `~/.claude/aigate/{aigate-run.sh,hydrate.sh,env}` + `~/.local/bin/cc`
 and auto-detects the `claude` binary.
+
+> [!IMPORTANT]
+> The **live copies are `~/.claude/aigate/*`** — editing `clients/*.sh` in the repo changes
+> nothing on a box until you **re-run `clients/install.sh` there**. Ship client-script
+> changes by re-running the installer on each machine.
 
 | File | Role |
 |---|---|
-| `install.sh` | sets up `cc` + `~/.claude/aigate/` + env; auto-detects `claude` |
-| `aigate-run.sh` | the `cc` wrapper — select → set token → unset stray key → run `claude`; **retry-on-limit** in `-p` mode |
+| `install.sh` | sets up `cc` + `~/.claude/aigate/` + env; auto-detects `claude`; wires MCP-key hydration into the shell |
+| `aigate-run.sh` | the `cc` wrapper — select → set token → unset stray `ANTHROPIC_*` (incl. `BASE_URL`) → run `claude`; **retry-on-limit** in `-p` mode (transient **529 → 2m park**, real limits → 15m) w/ clean stdout; preflight-warns **shadow logins** + `BASE_URL` hijacks |
+| `hydrate.sh` | MCP-key hydration — vault → `~/.claude/aigate/mcp-keys.env` so `${BRAVE_API_KEY}`-style MCP configs resolve at launch; **merges** partial fetches (a blip never wipes cached keys); `cc` **foreground-freshens** when missing/stale (>12h) so *this* launch gets keys |
 | `prompt-hook.sh` | Claude Code `UserPromptSubmit` hook → logs the prompt to aigate |
 | `statusline-feed.sh` | statusline badge (account · wk %) → also feeds real usage back |
 | `test-switching.sh` | end-to-end switching test (below) |
@@ -280,7 +289,7 @@ The repo ships a Claude Code **skill** at [`.claude/skills/add-key/`](.claude/sk
                   or pull a key at runtime (GET /api/keys/:provider)
 ```
 
-It knows the auth flow (source `~/.claude/aigate/env`), the 56-provider catalog, and the add / list / fetch / rotate routes. Distribute it fleet-wide by dropping it in `~/.claude/skills/` on each box — every Claude then knows how to reach the vault.
+It knows the auth flow (source `~/.claude/aigate/env`), the 59-provider catalog, and the add / list / fetch / rotate routes. Distribute it fleet-wide by dropping it in `~/.claude/skills/` on each box — every Claude then knows how to reach the vault.
 
 > [!TIP]
 > `cc` is a shell command (`~/.local/bin/cc`). On Linux it shadows the C
@@ -288,8 +297,9 @@ It knows the auth flow (source `~/.claude/aigate/env`), the 56-provider catalog,
 > compile with `cc`. In headless `-p` mode it auto-adds
 > `--dangerously-skip-permissions` so it never hangs on the trust prompt.
 >
-> **"Unable to connect to API"?** Grep `~/.claude/settings*.json` for a stale
-> `ANTHROPIC_BASE_URL` and strip it — it silently hijacks every request.
+> **"Unable to connect to API"?** A stale `ANTHROPIC_BASE_URL` silently hijacks
+> every request. `cc` unsets the env var and **preflight-warns** when
+> `~/.claude/settings*.json` carries one — strip the key where it points.
 
 ---
 
@@ -329,15 +339,16 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`**
 | `GET` / `POST` | `/api/accounts` | list (usage, **no tokens**) / add `{account, setup_token, label}` |
 | `DELETE` | `/api/accounts/:name` | remove |
 | `POST` | `/api/accounts/:name/disabled` | `{disabled: true/false}` |
-| `POST` | `/api/events/usage` | 📈 set an account's 5h/7d % (the poller writes this) |
-| `POST` | `/api/events/limit` | 🔁 `{account}` — park an over-limit account (poller auto-recovers) |
+| `POST` | `/api/accounts/:name/refresh` | 🔄 **live re-poll** ONE account's real headroom right now (not the 10-min cache) → `{five, seven, alive, maxed}`; 404 on unknown account |
+| `POST` | `/api/events/usage` | 📈 set an account's 5h/7d % (the poller writes this); **404 on unknown account** |
+| `POST` | `/api/events/limit` | 🔁 `{account, minutes?}` — **TTL-park** an over-limit account (default **15m**, `minutes` clamped 1–360; real usage untouched, auto-unparks when the TTL passes); **404 on unknown account** |
 | `POST` | `/api/events/prompt` | 🧾 log a prompt `{account, host, cwd, model, prompt}` |
-| `GET` | `/api/providers` | 📇 the 56-provider catalog (id, name, key prefix, base URL) |
-| `GET` / `POST` | `/api/keys` | list (**no secrets**) / add `{provider, key, label}` |
-| `GET` | `/api/keys/:provider` | 🔑 newest working key for a provider (audited) |
+| `GET` | `/api/providers` | 📇 the 59-provider catalog (id, name, key prefix, base URL) |
+| `GET` / `POST` | `/api/keys` | list (**no secrets**, `first8…last4` hints) / add `{provider, key, label}` — **sanitized**: trims + un-quotes, **400** on `export`/`NAME=` pastes, provider lowercased, non-fatal `warning` for uncataloged providers |
+| `GET` | `/api/keys/:provider` | 🔑 newest working key for a provider (audited; name normalized — `BRAVE ` finds `brave`) |
 | `DELETE` | `/api/keys/:id` | remove a provider key |
 | `GET` | `/api/logs?limit=` · `/api/stats` | prompt log · dashboard rollups |
-| `WS` | `/ws?token=` | 📡 live event stream |
+| `WS` | `/ws` | 📡 live event stream — auth via the **`bearer.<token>` WebSocket subprotocol** (token never lands in URL/access logs; legacy `?token=` still accepted, **deprecated**) |
 
 ---
 
@@ -369,7 +380,7 @@ flowchart TD
 
 | Ring | Ships | Kills the pain of… |
 |---|---|---|
-| ✅ **v1** | headroom selector · **over-limit retry** · encrypted vault · **10-min usage poller** · **56-provider key registry + dashboard add-key UI** · **self-heal (`/health` + watchdog + autoheal)** · WS dashboard | "which of my 35 boxes is that?" + manual usage babysitting + re-login churn |
+| ✅ **v1** | headroom selector · **over-limit retry (TTL parks)** · encrypted vault (**boot canary** + daily backups) · **10-min usage poller** · **59-provider key registry + dashboard add-key UI** · **self-heal (`/health` + watchdog + autoheal)** · WS dashboard | "which of my 35 boxes is that?" + manual usage babysitting + re-login churn |
 | 🔨 **R2** | secure proxy for API providers · per-`model×key` **latching budget breaker** · Redis | the **$500 nano-banana loop** |
 | ⬜ **R3** | universal `keys(provider)` registry · **cost-first routing** (included quota → prepaid → paid) | paying twice for quota you already own |
 | ⬜ **R4** | inbox account discovery · `GET /capabilities` for agents | keys too annoying to use → agents just use them |
@@ -394,7 +405,7 @@ PRs welcome! 💜 Early and opinionated — read **[VISION.md](VISION.md)** firs
 ```bash
 npm start                     # daemon
 node --watch src/server.js    # hot reload
-npm test                      # 44 unit + HTTP tests (node --test, no deps)
+npm test                      # unit + HTTP tests (node --test, no deps)
 ```
 
 ## 📜 License
