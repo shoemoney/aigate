@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
+import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { connect } from 'node:net';
 import WebSocket from 'ws';
@@ -21,7 +21,7 @@ process.env.HOST = '127.0.0.1';
 delete process.env.AIGATE_ALLOW_CIDR;
 delete process.env.AIGATE_TRUST_PROXY;
 
-const { server, db, backupNow, openDb } = await import('../src/server.js');
+const { server, db, backupNow, openDb, isWeakToken } = await import('../src/server.js');
 const BACKUPS = join(tmpdir(), 'backups');   // dirname(DB)/backups
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
@@ -66,6 +66,13 @@ test('GET /api/accounts with token → 200 empty array (fresh DB sanity)', async
 test('boot canary: meta.canary row written on first boot (encryption-key guard)', () => {
   const row = db.prepare(`SELECT v FROM meta WHERE k='canary'`).get();
   assert.ok(row && row.v);
+});
+
+test('isWeakToken: true for empty / the placeholder / under-16-char, false for a strong token', () => {
+  for (const w of ['', 'short', 'a'.repeat(15), 'change-me-to-a-long-random-string'])
+    assert.equal(isWeakToken(w), true, JSON.stringify(w));
+  assert.equal(isWeakToken('a'.repeat(16)), false);
+  assert.equal(isWeakToken(TOKEN), false);   // the suite's own >16-char token boots the guard past
 });
 
 test('GET /api/select with no accounts → 503', async () => {
@@ -599,6 +606,13 @@ test('GET /api/capabilities is a read-only registry slice: counts + selectabilit
   assert.equal(typeof j.claude.accounts, 'number');
   const blob = JSON.stringify(j);
   assert.ok(!blob.includes('sk-'), 'capability map leaked a secret');   // counts only, never the key value
+});
+
+test('GET /api/capabilities exposes the server version matching package.json', async () => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const j = await (await fetch(base + '/api/capabilities', { headers: H })).json();
+  assert.equal(typeof j.version, 'string');
+  assert.equal(j.version, pkg.version);
 });
 
 test('listKeys surfaces last_used per provider: non-null after a key-fetch, null for an untouched provider', async () => {

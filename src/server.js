@@ -14,7 +14,7 @@
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
@@ -25,6 +25,7 @@ import { PROVIDERS, isKnownProvider } from './providers.js';
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
 const __dir = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dir, '..', 'public');
+const VERSION = JSON.parse(readFileSync(join(__dir, '..', 'package.json'), 'utf8')).version;
 const PORT = Number(process.env.PORT || 20200);
 const HOST = process.env.HOST || '0.0.0.0';
 const TOKEN = process.env.AIGATE_TOKEN || '';
@@ -39,7 +40,13 @@ const ENC_KEY = (process.env.AIGATE_ENCRYPTION_KEY || '').trim();
 // the CIDR gate. Set AIGATE_TRUST_PROXY=1 when deployed behind a trusted proxy.
 const TRUST_PROXY = process.env.AIGATE_TRUST_PROXY === '1';
 
-if (!TOKEN) { console.error('FATAL: set AIGATE_TOKEN'); process.exit(1); }
+// weak = empty / the .env.example placeholder / under 16 chars — any of these boots the
+// vault behind a GUESSABLE shared bearer that gates every OAuth token + provider key.
+const isWeakToken = (t) => !t || t === 'change-me-to-a-long-random-string' || t.length < 16;
+if (isWeakToken(TOKEN)) {
+  console.error('FATAL: set AIGATE_TOKEN to a strong random value — clients send it as Authorization: Bearer; generate: openssl rand -hex 24');
+  process.exit(1);
+}
 if (!/^[0-9a-fA-F]{64}$/.test(ENC_KEY)) {
   console.error('FATAL: set AIGATE_ENCRYPTION_KEY to 32-byte hex (openssl rand -hex 32)');
   process.exit(1);
@@ -323,7 +330,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/capabilities' && req.method === 'GET') {
       const providers = {};
       for (const r of q.capabilities.all()) providers[r.provider] = { keys: r.keys, label: r.label, last_checked: r.last_checked };
-      return json(res, 200, { providers, claude: { selectable: q.pickRanked.all(CUTOFF).length, accounts: q.listAccounts.all().length } });
+      return json(res, 200, { version: VERSION, providers, claude: { selectable: q.pickRanked.all(CUTOFF).length, accounts: q.listAccounts.all().length } });
     }
     // fetch the newest working key for a provider (bearer-gated, audited) — used
     // by clients/skills that need the actual secret to call the provider.
@@ -620,4 +627,4 @@ if (isMain) {
     console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
 }
 
-export { server, db, pollUsage, backupNow, openDb };
+export { server, db, pollUsage, backupNow, openDb, isWeakToken };
