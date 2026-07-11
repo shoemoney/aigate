@@ -54,6 +54,7 @@
   <div style="color:var(--dim)">Enter API token</div>
   <input id="tok" type="password" placeholder="AIGATE_TOKEN" autofocus>
   <button onclick="save()">Connect</button>
+  <div id="loginmsg" style="color:var(--red);font-size:12px;min-height:16px"></div>
 </div>
 
 <header style="display:none" id="hdr">
@@ -100,6 +101,7 @@ const fmtAge=s=>s<60?s+'s':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600
 
 function renderAccounts(list){
   const el=$('#accts'); el.innerHTML='';
+  if(!list||!list.length){el.innerHTML='<div class="card" style="color:var(--dim)">no accounts yet — run <span class="mono">claude setup-token</span>, then add the <span class="mono">sk-ant-oat01…</span> line via the add-account skill or <span class="mono">POST /api/accounts</span> (paste the token there, never here)</div>';return;}
   for(const a of list){
     const worst=Math.max(a.five_hour_pct||0,a.seven_day_pct||0);
     const run=worst>=80, card=document.createElement('div');
@@ -201,7 +203,10 @@ async function boot(){
   try{const s=await api('/api/stats');renderAccounts(s.accounts);renderHosts(s.by_host);
     await loadProviders();await loadKeys();
     await seedFeed();}
-  catch(e){if(e===401)localStorage.removeItem('aigate_token');else setTimeout(boot,3000);return}
+  catch(e){
+    if(e===401){localStorage.removeItem('aigate_token');$('#loginmsg').textContent='token rejected — check it and try again';}
+    else{$('#loginmsg').textContent="can't reach server, retrying…";setTimeout(boot,3000);}
+    return;}
   $('#login').style.display='none';$('#hdr').style.display='flex';$('#app').style.display='grid';
   $('#keyform').onsubmit=addKey; $('#kprov').oninput=providerHint;
   connect();

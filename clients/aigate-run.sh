@@ -9,7 +9,8 @@
 # claude's output, reports it to aigate, and RETRIES with the next-best account
 # (up to 3). Interactive sessions get a single pick + exec passthrough.
 set -uo pipefail
-: "${AIGATE_URL:?set AIGATE_URL}"; : "${AIGATE_TOKEN:?set AIGATE_TOKEN}"
+: "${AIGATE_URL:?not set — run: set -a; . ~/.claude/aigate/env; set +a  (or add it to your shell rc)}"
+: "${AIGATE_TOKEN:?not set — run: set -a; . ~/.claude/aigate/env; set +a  (or add it to your shell rc)}"
 HOST="$(hostname -s)"
 CLAUDE_BIN="${AIGATE_CLAUDE_BIN:-claude}"
 
@@ -21,6 +22,19 @@ report_prompt(){ curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H
 report_limit(){ local m=""; [ -n "${2:-}" ] && m=",\"minutes\":$2"   # optional short park (server accepts minutes)
   curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
     -d "{\"account\":\"$1\",\"host\":\"$HOST\"$m}" "$AIGATE_URL/api/events/limit" >/dev/null 2>&1 || true; }
+# A select response with NO setup_token is NOT always "capacity": empty body = server
+# unreachable, 'unauthorized' = rejected token, only a reasoned 503 is real no-headroom.
+no_token_diag(){
+  case "$1" in
+    "") echo "aigate: cannot reach the server (down / wrong AIGATE_URL / network)" >&2;;
+    *unauthorized*) echo "aigate: AIGATE_TOKEN rejected (401) — wrong or rotated token; re-source ~/.claude/aigate/env" >&2;;
+    *) printf '%s' "$1" | python3 -c 'import sys,json
+raw=sys.stdin.read()
+try:d=json.loads(raw)
+except Exception:d={}
+print("aigate: no account available — {} accts ({} parked, {} re-auth, {} off)".format(d.get("accounts",0),d.get("parked",0),d.get("reauth",0),d.get("disabled",0)) if "accounts" in d else "aigate: "+str(d.get("error") or raw or "unknown error"))' >&2;;
+  esac
+}
 
 # Preflight alert (NOT auto-fix): a stored Claude login OUTRANKS the token aigate
 # injects, so the session silently serves the WRONG account — the "why is it stuck
@@ -78,7 +92,7 @@ if [ "$is_print" != 1 ]; then
   while :; do
     resp="$(select_acct "$tried")"
     acct="$(printf '%s' "$resp" | jget account)"; tok="$(printf '%s' "$resp" | jget setup_token)"
-    [ -n "$tok" ] || { echo "aigate: no account available (tried: ${tried:-none}) → $resp" >&2; exit 1; }
+    [ -n "$tok" ] || { no_token_diag "$resp"; exit 1; }
     echo "aigate → using account: $acct" >&2
     unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
     export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
@@ -112,7 +126,7 @@ trap 'rm -f "${errf:-}"' EXIT INT TERM   # don't leak the mktemp on Ctrl-C/TERM
 for attempt in 1 2 3; do
   resp="$(select_acct "$tried")"
   acct="$(printf '%s' "$resp" | jget account)"; tok="$(printf '%s' "$resp" | jget setup_token)"
-  [ -n "$tok" ] || { echo "aigate: no account available (tried: ${tried:-none}) → $resp" >&2; exit 1; }
+  [ -n "$tok" ] || { no_token_diag "$resp"; exit 1; }
   echo "aigate → account: $acct (attempt $attempt)" >&2
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
   export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
