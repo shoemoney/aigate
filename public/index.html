@@ -90,6 +90,7 @@
 
 <script>
 const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 let TOKEN=localStorage.aigate_token||'';
 function save(){TOKEN=$('#tok').value.trim();localStorage.aigate_token=TOKEN;boot();}
 function color(p){return p>=80?'var(--red)':p>=50?'var(--yellow)':'var(--green)'}
@@ -99,9 +100,9 @@ function renderAccounts(list){
   for(const a of list){
     const worst=Math.max(a.five_hour_pct||0,a.seven_day_pct||0);
     const run=worst>=80, card=document.createElement('div');
-    card.className='card acct'+(run?' runaway':'')+(a.reauth_needed?' needsauth':'')+(a.disabled?' disabled':'');
-    card.innerHTML=`<div class="top"><span class="name">${a.account}</span>
-      <span class="badge">${a.disabled?'disabled':a.reauth_needed?'🔑 re-auth':(a.has_token?'ready':'no token')} ${run?'🚨':''}</span></div>
+    card.className='card acct'+(run?' runaway':'')+(a.reauth_needed?' needsauth':'')+(a.disabled||a.parked?' disabled':'');
+    card.innerHTML=`<div class="top"><span class="name">${esc(a.account)}</span>
+      <span class="badge">${a.disabled?'disabled':a.reauth_needed?'🔑 re-auth':a.parked?'⏸ parked':(a.has_token?'ready':'no token')} ${run?'🚨':''}</span></div>
       ${bar('5-hour',a.five_hour_pct)}${bar('weekly',a.seven_day_pct)}
       <div class="badge" style="margin-top:8px">updated ${a.usage_updated||'never'}</div>`;
     el.appendChild(card);
@@ -113,10 +114,10 @@ function bar(lbl,p){p=Math.round(p||0);return `<div class="bar"><div class="lbl"
 function addFeed(d){
   const f=$('#feed'),r=document.createElement('div');r.className='row';
   const t=new Date(d.ts||Date.now()).toLocaleTimeString();
-  r.innerHTML=`<span class="t">${t}</span><span class="a">${d.account||'?'}</span><span class="h">${d.host||''}</span><span class="p">${(d.prompt||d.action||'').replace(/</g,'&lt;')}</span>`;
+  r.innerHTML=`<span class="t">${t}</span><span class="a">${esc(d.account||'?')}</span><span class="h">${esc(d.host||'')}</span><span class="p">${esc(d.prompt||d.action||'')}</span>`;
   f.prepend(r); while(f.children.length>200)f.lastChild.remove();
 }
-async function api(path){const r=await fetch(path,{headers:{authorization:'Bearer '+TOKEN}});if(r.status===401)throw 0;return r.json();}
+async function api(path){const r=await fetch(path,{headers:{authorization:'Bearer '+TOKEN}});if(r.status===401)throw 401;return r.json();}
 
 // ---- provider keys ----
 let PROVIDERS=[];
@@ -135,8 +136,8 @@ function renderKeys(rows){
   if(!rows||!rows.length){tb.innerHTML='<tr><td colspan="6" style="color:var(--dim)">no keys yet — add one above</td></tr>';return;}
   for(const k of rows){
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${k.provider}</td><td>${k.label||'—'}</td><td class="mono">${k.key_hint||'—'}</td>
-      <td>${k.status||''}</td><td class="mono">${(k.created_at||'').replace('T',' ')}</td>
+    tr.innerHTML=`<td>${esc(k.provider)}</td><td>${esc(k.label||'—')}</td><td class="mono">${esc(k.key_hint||'—')}</td>
+      <td>${esc(k.status||'')}</td><td class="mono">${(k.created_at||'').replace('T',' ')}</td>
       <td><button class="del">✕</button></td>`;
     tr.querySelector('.del').onclick=()=>delKey(k.id);
     tb.appendChild(tr);
@@ -160,12 +161,16 @@ async function delKey(id){
   loadKeys();
 }
 function renderHosts(rows){const tb=$('#hosts tbody');tb.innerHTML='';for(const h of rows||[]){
-  tb.insertAdjacentHTML('beforeend',`<tr><td>${h.host||'—'}</td><td>${h.requests}</td><td>${h.tokens||0}</td><td>${(h.last||'').replace('T',' ')}</td></tr>`)}}
+  tb.insertAdjacentHTML('beforeend',`<tr><td>${esc(h.host||'—')}</td><td>${h.requests}</td><td>${h.tokens||0}</td><td>${(h.last||'').replace('T',' ')}</td></tr>`)}}
 
 let ws;
 function connect(){
   ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',['aigate','bearer.'+TOKEN]);
-  ws.onopen=()=>$('#live').classList.add('on');
+  ws.onopen=async()=>{$('#live').classList.add('on');
+    try{const s=await api('/api/stats');renderAccounts(s.accounts);renderHosts(s.by_host);
+      renderKeys(await api('/api/keys'));
+      $('#feed').innerHTML='';(await api('/api/logs?limit=50')).reverse().forEach(addFeed);
+    }catch(e){if(e===401){localStorage.removeItem('aigate_token');location.reload();}}};
   ws.onclose=()=>{$('#live').classList.remove('on');setTimeout(connect,2000)};
   ws.onmessage=e=>{const m=JSON.parse(e.data);
     if(m.type==='accounts')renderAccounts(m.data);
@@ -178,12 +183,14 @@ async function boot(){
   if(!TOKEN)return;
   try{const s=await api('/api/stats');renderAccounts(s.accounts);renderHosts(s.by_host);
     await loadProviders();await loadKeys();
-    (await api('/api/logs?limit=50')).reverse().forEach(addFeed);}catch{localStorage.removeItem('aigate_token');return}
+    (await api('/api/logs?limit=50')).reverse().forEach(addFeed);}
+  catch(e){if(e===401)localStorage.removeItem('aigate_token');else setTimeout(boot,3000);return}
   $('#login').style.display='none';$('#hdr').style.display='flex';$('#app').style.display='grid';
   $('#keyform').onsubmit=addKey; $('#kprov').oninput=providerHint;
   connect();
   setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString(),1000);
 }
+$('#tok').onkeydown=e=>e.key==='Enter'&&save();
 boot();
 </script>
 </body></html>
