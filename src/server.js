@@ -19,7 +19,7 @@ import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive } from './lib.js';
-import { PROVIDERS } from './providers.js';
+import { PROVIDERS, isKnownProvider } from './providers.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -225,7 +225,8 @@ const server = http.createServer(async (req, res) => {
     // fetch the newest working key for a provider (bearer-gated, audited) — used
     // by clients/skills that need the actual secret to call the provider.
     if (p.startsWith('/api/keys/') && req.method === 'GET') {
-      const provider = decodeURIComponent(p.split('/').pop());
+      // normalize like POST does — 'Brave ' vs 'brave' must not silently 404 hydrate
+      const provider = decodeURIComponent(p.split('/').pop()).trim().toLowerCase();
       const row = q.getKeyByProvider.get(provider);
       if (!row) return json(res, 404, { error: 'no working key for ' + provider });
       q.insAccess.run(provider, url.searchParams.get('host') || '', reqIp(req), 'key', 'ok');
@@ -233,12 +234,20 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/keys' && req.method === 'POST') {
       const b = await body(req);
-      if (!b.provider || !b.key) return json(res, 400, { error: 'provider + key required' });
+      const provider = String(b.provider || '').trim().toLowerCase();
+      if (!provider) return json(res, 400, { error: 'provider + key required' });
+      // pastes arrive as `export NAME="sk-…"` and the failure surfaces days later as a
+      // provider 401 — strip one layer of matching quotes, reject anything not a bare value.
+      let key = String(b.key || '').trim();
+      const qm = /^(['"])([\s\S]*)\1$/.exec(key); if (qm) key = qm[2];
+      if (!key || /\s/.test(key) || /^(export\s|\w+=)/.test(key))
+        return json(res, 400, { error: 'key looks malformed (contains whitespace or an export/NAME= prefix — send the raw value only)' });
       // first8…last4: UNIQUE(provider,key_hint) is the upsert target — a prefix-only hint
       // made same-prefix keys (sk-proj-…, sk-or-v1-…) silently overwrite each other.
-      q.addKey.run(b.provider, b.label || '', encrypt(b.key), b.key.slice(0, 8) + '…' + b.key.slice(-4), b.status || 'working');
+      q.addKey.run(provider, b.label || '', encrypt(key), key.slice(0, 8) + '…' + key.slice(-4), b.status || 'working');
       broadcast('keys', q.listKeys.all());
-      return json(res, 200, { ok: true });
+      return json(res, 200, isKnownProvider(provider) ? { ok: true }
+        : { ok: true, warning: `unknown provider ${provider} — not in the catalog` });
     }
     if (p.startsWith('/api/keys/') && req.method === 'DELETE') {
       q.delKey.run(Number(p.split('/').pop()));
@@ -289,7 +298,10 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req);
       if (!b.account) return json(res, 400, { error: 'account required' });
       const mins = Math.min(Math.max(Number(b.minutes) || 15, 1), 360);
-      q.parkAccount.run(`+${mins} minutes`, b.account);
+      // a mistyped/stale account matches zero rows — {ok:true} there means selection
+      // keeps running on stale data while the client thinks it reported fine.
+      if (q.parkAccount.run(`+${mins} minutes`, b.account).changes === 0)
+        return json(res, 404, { error: 'unknown account ' + b.account });
       q.insAccess.run(b.account, b.host || '', reqIp(req), 'limit', `parked ${mins}m`);
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true, parked_minutes: mins });
@@ -306,7 +318,8 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/events/usage' && req.method === 'POST') {
       const b = await body(req);
       if (!b.account) return json(res, 400, { error: 'account required' });
-      q.updUsage.run(Number(b.five_hour_pct) || 0, Number(b.seven_day_pct) || 0, b.account);
+      if (q.updUsage.run(Number(b.five_hour_pct) || 0, Number(b.seven_day_pct) || 0, b.account).changes === 0)
+        return json(res, 404, { error: 'unknown account ' + b.account });
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true });
     }

@@ -147,6 +147,15 @@ test('POST /api/events/limit parks an account (skipped on select) WITHOUT clobbe
   assert.ok(a.parked_until);                               // parked timestamp set
 });
 
+test('POST /api/events/usage + /limit for an unknown account → 404, not silent ok', async () => {
+  for (const ev of ['usage', 'limit']) {
+    const r = await fetch(base + `/api/events/${ev}`, { method: 'POST', headers: H,
+      body: JSON.stringify({ account: 'ghost', five_hour_pct: 9 }) });
+    assert.equal(r.status, 404, ev);
+    assert.match((await r.json()).error, /unknown account ghost/);
+  }
+});
+
 test('/health selectable counts parked accounts as unusable (matches /api/select)', async () => {
   // alice is still parked from the previous test; park bob too → nothing servable
   await fetch(base + '/api/events/limit', { method: 'POST', headers: H, body: JSON.stringify({ account: 'bob' }) });
@@ -202,6 +211,37 @@ test('GET /api/keys/:provider returns the decrypted key for the newest working o
 
 test('GET /api/keys/:provider → 404 for a provider with no key', async () => {
   assert.equal((await fetch(base + '/api/keys/nonesuch', { headers: H })).status, 404);
+});
+
+test('POST /api/keys strips one layer of surrounding quotes — round-trips the raw value', async () => {
+  await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'groq', key: '"gsk_quoted-paste-1234"' }) });
+  const j = await (await fetch(base + '/api/keys/groq', { headers: H })).json();
+  assert.equal(j.key, 'gsk_quoted-paste-1234');   // quotes stripped before vaulting
+});
+
+test('POST /api/keys rejects export/NAME= pastes → 400', async () => {
+  const r = await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'openai', key: 'export FOO=abc' }) });
+  assert.equal(r.status, 400);
+  assert.match((await r.json()).error, /malformed/);
+});
+
+test('POST /api/keys with an uncataloged provider → 200 with a non-fatal warning', async () => {
+  const r = await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'nonesuchco', key: 'nk-abc123' }) });
+  assert.equal(r.status, 200);
+  const j = await r.json();
+  assert.equal(j.ok, true);
+  assert.match(j.warning, /unknown provider nonesuchco/);
+});
+
+test('GET /api/keys/:provider normalizes case/whitespace — BRAVE%20 finds brave', async () => {
+  await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'brave', key: 'BSA-abc123' }) });
+  const j = await (await fetch(base + '/api/keys/BRAVE%20', { headers: H })).json();
+  assert.equal(j.provider, 'brave');
+  assert.equal(j.key, 'BSA-abc123');
 });
 
 test('unknown API route → 404', async () => {
