@@ -117,14 +117,22 @@ test('/api/select?exclude= skips the excluded account (retry path)', async () =>
   assert.equal(r.status, 503);                             // nothing left
 });
 
-test('POST /api/events/limit parks an account so the next select skips it', async () => {
-  db.prepare('UPDATE accounts SET five_hour_pct=1,seven_day_pct=1 WHERE account=?').run('alice');
-  db.prepare('UPDATE accounts SET five_hour_pct=5,seven_day_pct=5 WHERE account=?').run('bob');
+test('POST /api/events/limit parks an account (skipped on select) WITHOUT clobbering its usage', async () => {
+  db.prepare("UPDATE accounts SET five_hour_pct=1,seven_day_pct=1,parked_until=NULL,usage_updated=datetime('now') WHERE account=?").run('alice');
+  db.prepare("UPDATE accounts SET five_hour_pct=5,seven_day_pct=5,parked_until=NULL,usage_updated=datetime('now') WHERE account=?").run('bob');
   await fetch(base + '/api/events/limit', { method: 'POST', headers: H, body: JSON.stringify({ account: 'alice' }) });
   const j = await (await fetch(base + '/api/select?host=t', { headers: H })).json();
-  assert.equal(j.account, 'bob');                          // alice parked at 100% → skipped
+  assert.equal(j.account, 'bob');                          // alice parked → skipped
   const a = (await (await fetch(base + '/api/accounts', { headers: H })).json()).find((x) => x.account === 'alice');
-  assert.equal(a.five_hour_pct, 100);
+  assert.equal(a.five_hour_pct, 1);                        // real usage preserved, NOT clobbered to 100
+  assert.ok(a.parked_until);                               // parked timestamp set
+});
+
+test('unpolled account (usage_updated NULL) sorts LAST, not as a phantom 0%', async () => {
+  db.prepare("UPDATE accounts SET reauth_needed=0,disabled=0,parked_until=NULL,five_hour_pct=3,seven_day_pct=3,usage_updated=datetime('now') WHERE account=?").run('bob');
+  db.prepare('UPDATE accounts SET reauth_needed=0,disabled=0,parked_until=NULL,five_hour_pct=0,seven_day_pct=0,usage_updated=NULL WHERE account=?').run('alice');
+  const j = await (await fetch(base + '/api/select?host=t', { headers: H })).json();
+  assert.equal(j.account, 'bob');                          // polled bob (3%) beats unpolled alice despite alice's raw 0
 });
 
 test('listAccounts exposes reauth_needed for the dashboard badge', async () => {

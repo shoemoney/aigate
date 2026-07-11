@@ -61,6 +61,7 @@ db.exec(`
     usage_updated  TEXT,
     disabled       INTEGER NOT NULL DEFAULT 0,
     reauth_needed  INTEGER NOT NULL DEFAULT 0,
+    parked_until   TEXT,
     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE TABLE IF NOT EXISTS request_log (
@@ -92,24 +93,32 @@ db.exec(`
 // migration: older DBs predate reauth_needed — add it if missing
 if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === 'reauth_needed'))
   db.exec(`ALTER TABLE accounts ADD COLUMN reauth_needed INTEGER NOT NULL DEFAULT 0`);
+// migration: park an over-limit account by TTL instead of clobbering its usage
+if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === 'parked_until'))
+  db.exec(`ALTER TABLE accounts ADD COLUMN parked_until TEXT`);
 
 // prepared once
 const q = {
   upsertAccount: db.prepare(`INSERT INTO accounts(account,token_enc,label) VALUES(?,?,?)
     ON CONFLICT(account) DO UPDATE SET token_enc=excluded.token_enc, label=excluded.label`),
-  listAccounts: db.prepare(`SELECT account,label,five_hour_pct,seven_day_pct,usage_updated,disabled,reauth_needed,
+  listAccounts: db.prepare(`SELECT account,label,five_hour_pct,seven_day_pct,usage_updated,disabled,reauth_needed,parked_until,
     (token_enc IS NOT NULL) AS has_token FROM accounts ORDER BY account`),
   getToken: db.prepare(`SELECT token_enc FROM accounts WHERE account=?`),
   delAccount: db.prepare(`DELETE FROM accounts WHERE account=?`),
   setDisabled: db.prepare(`UPDATE accounts SET disabled=? WHERE account=?`),
   setReauth: db.prepare(`UPDATE accounts SET reauth_needed=? WHERE account=?`),
   updUsage: db.prepare(`UPDATE accounts SET five_hour_pct=?, seven_day_pct=?, usage_updated=datetime('now') WHERE account=?`),
-  // most headroom = lowest worst-window usage; skip disabled / over cutoff /
-  // tokenless / needs-reauth so we never hand out a dead token (login churn).
+  // park an over-limit account for a TTL WITHOUT clobbering its real usage — pickRanked
+  // skips it until parked_until passes (auto-recover); the poller keeps its % honest.
+  parkAccount: db.prepare(`UPDATE accounts SET parked_until=datetime('now', ?) WHERE account=?`),
+  // most headroom = lowest worst-window usage; skip disabled / over cutoff / tokenless /
+  // needs-reauth / currently-parked. Unpolled (usage_updated IS NULL) sorts LAST so a
+  // freshly-added account isn't handed out as a phantom "0%" before its first real poll.
   // Ranked (no LIMIT) so /api/select can skip client-excluded accounts on retry.
   pickRanked: db.prepare(`SELECT account FROM accounts
     WHERE disabled=0 AND reauth_needed=0 AND token_enc IS NOT NULL AND max(five_hour_pct,seven_day_pct) < ?
-    ORDER BY max(five_hour_pct,seven_day_pct) ASC, usage_updated ASC`),
+      AND (parked_until IS NULL OR parked_until < datetime('now'))
+    ORDER BY (usage_updated IS NULL) ASC, max(five_hour_pct,seven_day_pct) ASC, usage_updated ASC`),
   insReq: db.prepare(`INSERT INTO request_log(account,host,ip,cwd,model,prompt,tokens) VALUES(?,?,?,?,?,?,?)`),
   insAccess: db.prepare(`INSERT INTO access_log(account,host,ip,action,result) VALUES(?,?,?,?,?)`),
   recentReq: db.prepare(`SELECT id,ts,account,host,ip,cwd,model,substr(prompt,1,400) AS prompt,tokens
@@ -234,6 +243,19 @@ const server = http.createServer(async (req, res) => {
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true });
     }
+    // poll ONE account's real headroom RIGHT NOW (not the 10-min cache) so a client can
+    // decide, on session exit, whether it's exhausted and should switch accounts.
+    if (p.startsWith('/api/accounts/') && p.endsWith('/refresh') && req.method === 'POST') {
+      const name = decodeURIComponent(p.split('/')[3]);
+      const row = q.getToken.get(name);
+      if (!row || !row.token_enc) return json(res, 404, { error: 'unknown account' });
+      let tok; try { tok = decrypt(row.token_enc); } catch { return json(res, 500, { error: 'decrypt failed' }); }
+      const r = await pollAccountUsage(name, tok);   // updates usage/reauth in the DB
+      broadcast('accounts', q.listAccounts.all());
+      const worst = Math.max(Number(r.five) || 0, Number(r.seven) || 0);
+      return json(res, 200, { account: name, five: r.five ?? null, seven: r.seven ?? null,
+        alive: r.alive !== false, maxed: worst >= CUTOFF ? 1 : 0 });
+    }
 
     // --- the selector: hand out the best account's token (audited) ---
     // ?exclude=a,b lets a client retry past an account that just hit its limit.
@@ -247,15 +269,17 @@ const server = http.createServer(async (req, res) => {
       broadcast('access', { account: row.account, host, ip, action: 'select' });
       return json(res, 200, { account: row.account, setup_token: tok });
     }
-    // client hit an over-limit/unavailable account → park it at 100% so the next
-    // select skips it; the usage poller restores real headroom (auto-recover).
+    // client hit an over-limit/unavailable account → PARK it for a TTL (default 15m) so
+    // the next select skips it, WITHOUT clobbering its real usage; the poller keeps the %
+    // honest and it auto-recovers when parked_until passes. ?minutes overrides the TTL.
     if (p === '/api/events/limit' && req.method === 'POST') {
       const b = await body(req);
       if (!b.account) return json(res, 400, { error: 'account required' });
-      q.updUsage.run(100, 100, b.account);
-      q.insAccess.run(b.account, b.host || '', reqIp(req), 'limit', 'over-limit');
+      const mins = Math.min(Math.max(Number(b.minutes) || 15, 1), 360);
+      q.parkAccount.run(`+${mins} minutes`, b.account);
+      q.insAccess.run(b.account, b.host || '', reqIp(req), 'limit', `parked ${mins}m`);
       broadcast('accounts', q.listAccounts.all());
-      return json(res, 200, { ok: true });
+      return json(res, 200, { ok: true, parked_minutes: mins });
     }
 
     // --- event ingest (from the fleet's hooks) ---

@@ -60,14 +60,41 @@ skip=()
 warn_shadow_login   # alert if a stored login would shadow aigate's picked account
 
 if [ "$is_print" != 1 ]; then
-  resp="$(select_acct "")"
-  acct="$(printf '%s' "$resp" | jget account)"; tok="$(printf '%s' "$resp" | jget setup_token)"
-  [ -n "$tok" ] || { echo "aigate: no account available → $resp" >&2; exit 1; }
-  echo "aigate → using account: $acct" >&2
-  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
-  export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
-  report_prompt "$acct" "interactive session"
-  exec "$CLAUDE_BIN" "$@"
+  # Interactive: SUPERVISE the official binary (not exec) so we can SWITCH accounts
+  # mid-session WITHOUT a proxy. When the account runs dry, park it and relaunch
+  # `claude --continue` on the next account — the SAME conversation carries over.
+  # Compliant: still the real binary, your own accounts, no relay, no forged headers.
+  tried=""; first=1
+  while :; do
+    resp="$(select_acct "$tried")"
+    acct="$(printf '%s' "$resp" | jget account)"; tok="$(printf '%s' "$resp" | jget setup_token)"
+    [ -n "$tok" ] || { echo "aigate: no account available (tried: ${tried:-none}) → $resp" >&2; exit 1; }
+    echo "aigate → using account: $acct" >&2
+    unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
+    export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
+    warn_shadow_login
+    report_prompt "$acct" "interactive session"
+    # after the first account, --continue resumes the conversation on the new one
+    cont=(); [ "$first" = 0 ] && cont=(--continue)
+    "$CLAUDE_BIN" "${cont[@]}" "$@"; rc=$?; first=0
+    # On exit: cheap CACHED usage check first; only pay for a live re-poll when usage
+    # is already near the cap, so a normal quit stays instant.
+    worst="$(curl -s -m5 -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL/api/accounts" 2>/dev/null \
+      | python3 -c 'import sys,json;d=json.load(sys.stdin);a=[x for x in d if x["account"]==sys.argv[1]];print(int(max(a[0].get("five_hour_pct") or 0,a[0].get("seven_day_pct") or 0)) if a else 0)' "$acct" 2>/dev/null)"
+    maxed=""
+    [ "${worst:-0}" -ge 85 ] 2>/dev/null && \
+      maxed="$(curl -s -m15 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL/api/accounts/$acct/refresh" 2>/dev/null | jget maxed)"
+    [ "$maxed" = "1" ] || exit "$rc"        # headroom left (or unknown) → normal quit, done
+    echo "aigate: $acct is out of headroom." >&2
+    report_limit "$acct"; tried="${tried:+$tried,}$acct"
+    next="$(printf '%s' "$(select_acct "$tried")" | jget account)"
+    [ -n "$next" ] || { echo "aigate: no other account with headroom — stopping." >&2; exit "$rc"; }
+    if [ -t 0 ]; then
+      printf 'aigate: resume this conversation on "%s"? [Y/n] ' "$next" >&2
+      read -r ans; case "$ans" in [Nn]*) exit "$rc";; esac
+    fi
+    # loop → re-select (skips tried) → claude --continue on the next account
+  done
 fi
 
 prompt="$*"; tried=""
