@@ -548,3 +548,43 @@ test('DELETE with a bogus key id / account name → 404, not silent ok', async (
   assert.equal((await fetch(base + '/api/keys/abc', { method: 'DELETE', headers: H })).status, 404);   // Number→NaN
   assert.equal((await fetch(base + '/api/accounts/ghost', { method: 'DELETE', headers: H })).status, 404);
 });
+
+test('GET /api/access exposes the audit trail (key-add present, never a raw secret)', async () => {
+  db.prepare('DELETE FROM access_log').run();
+  await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'accessco', key: 'xk-access-topsecret-1234' }) });   // non-sk so the hint carries no 'sk-'
+  const rows = await (await fetch(base + '/api/access', { headers: H })).json();
+  assert.ok(rows.some((r) => r.action === 'key-add'), 'key-add row present');
+  assert.ok(!JSON.stringify(rows).includes('sk-'));
+  assert.ok(!JSON.stringify(rows).includes('topsecret'));   // only the first8…last4 hint is stored, never the value
+});
+
+test('reasoned select-503 writes WHY into the audit result', async () => {
+  db.prepare('DELETE FROM access_log').run();
+  db.prepare("UPDATE accounts SET disabled=1,reauth_needed=0,parked_until=NULL").run();
+  assert.equal((await fetch(base + '/api/select?host=t', { headers: H })).status, 503);
+  const sel = (await (await fetch(base + '/api/access', { headers: H })).json()).find((r) => r.action === 'select');
+  assert.ok(sel, 'select row present');
+  assert.ok(sel.result.includes('none-available'));
+  assert.match(sel.result, /parked|re-auth|off/);   // the reason, not a bare 'none-available'
+  db.prepare('UPDATE accounts SET disabled=0').run();   // restore for later assertions
+});
+
+test('listAccounts exposes usage_age_s: numeric for a polled account, null for never-polled', async () => {
+  db.prepare("UPDATE accounts SET usage_updated=datetime('now') WHERE account=?").run('alice');
+  db.prepare('UPDATE accounts SET usage_updated=NULL WHERE account=?').run('bob');
+  const list = await (await fetch(base + '/api/accounts', { headers: H })).json();
+  const alice = list.find((a) => a.account === 'alice');
+  assert.equal(typeof alice.usage_age_s, 'number');
+  assert.ok(alice.usage_age_s >= 0);
+  assert.equal(list.find((a) => a.account === 'bob').usage_age_s, null);
+});
+
+test('/health includes poll_age_s, backup_age_s, and the unusable tally', async () => {
+  backupNow();   // guarantee a backup file exists so backup_age_s is a number, not null
+  const j = await (await fetch(base + '/health')).json();
+  assert.equal(j.ok, true);
+  for (const k of ['poll_age_s', 'backup_age_s', 'parked', 'reauth', 'disabled'])
+    assert.ok(k in j, 'missing ' + k);
+  assert.equal(typeof j.backup_age_s, 'number');
+});

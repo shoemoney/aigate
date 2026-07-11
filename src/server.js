@@ -148,6 +148,7 @@ const q = {
   // instead of parsing a bare sqlite UTC string (no Z) in the right timezone.
   listAccounts: db.prepare(`SELECT account,label,five_hour_pct,seven_day_pct,usage_updated,disabled,reauth_needed,parked_until,
     (parked_until IS NOT NULL AND parked_until > datetime('now')) AS parked,
+    CAST(strftime('%s','now') - strftime('%s', usage_updated) AS INTEGER) AS usage_age_s,
     (token_enc IS NOT NULL) AS has_token FROM accounts ORDER BY account`),
   getToken: db.prepare(`SELECT token_enc FROM accounts WHERE account=?`),
   delAccount: db.prepare(`DELETE FROM accounts WHERE account=? RETURNING label`),
@@ -170,6 +171,9 @@ const q = {
   insAccess: db.prepare(`INSERT INTO access_log(account,host,ip,action,result) VALUES(?,?,?,?,?)`),
   recentReq: db.prepare(`SELECT id,ts,account,host,ip,cwd,model,substr(prompt,1,400) AS prompt,tokens
     FROM request_log ORDER BY id DESC LIMIT ?`),
+  recentAccess: db.prepare(`SELECT id,ts,account,host,ip,action,result FROM access_log ORDER BY id DESC LIMIT ?`),
+  // julianday (not strftime string-parse) to dodge the sqlite-UTC trap; NULL when nothing polled yet
+  pollAge: db.prepare(`SELECT CAST((julianday('now')-julianday(MAX(usage_updated)))*86400 AS INT) AS s FROM accounts WHERE usage_updated IS NOT NULL`),
   statByHost: db.prepare(`SELECT host, count(*) AS requests, sum(coalesce(tokens,0)) AS tokens,
     max(ts) AS last FROM request_log GROUP BY host ORDER BY requests DESC`),
   addKey: db.prepare(`INSERT INTO provider_keys(provider,label,key_enc,key_hint,status,last_checked)
@@ -198,6 +202,12 @@ function logAccess(account, host, ip, action, result) {
   q.insAccess.run(account, host, ip, action, result);
   broadcast('access', { account, host, ip, action, result });
 }
+// one-pass count of unusable accounts — shared by /health and the reasoned select-503
+const tally = (list) => {
+  let parked = 0, reauth = 0, disabled = 0;
+  for (const a of list) { parked += a.parked; reauth += a.reauth_needed; disabled += a.disabled; }
+  return { parked, reauth, disabled };
+};
 
 // ---- http helpers -------------------------------------------------------
 // header-only: a ?token= bearer would land in edge (NPM) access logs and outlive rotation
@@ -242,7 +252,17 @@ const server = http.createServer(async (req, res) => {
       // same query /api/select uses — a hand-rolled filter here once ignored parked_until
       // and reported selectable>0 while select 503'd, so autoheal never restarted anything.
       const selectable = q.pickRanked.all(CUTOFF).length;
-      return json(res, 200, { ok: true, uptime_s: Math.round(process.uptime()), accounts: accts.length, selectable });
+      const { parked, reauth, disabled } = tally(accts);
+      // newest aigate-*.db backup mtime → age; numbers only, safe on this unauth endpoint
+      let backup_age_s = null;
+      if (existsSync(BACKUP_DIR)) {
+        const mtimes = readdirSync(BACKUP_DIR)
+          .filter((f) => /^aigate-\d{4}-\d{2}-\d{2}\.db$/.test(f))
+          .map((f) => statSync(join(BACKUP_DIR, f)).mtimeMs);
+        if (mtimes.length) backup_age_s = Math.round((Date.now() - Math.max(...mtimes)) / 1000);
+      }
+      return json(res, 200, { ok: true, uptime_s: Math.round(process.uptime()), accounts: accts.length, selectable,
+        poll_age_s: q.pollAge.get().s, backup_age_s, parked, reauth, disabled });
     } catch (e) {
       return json(res, 503, { ok: false, error: String((e && e.message) || e) });
     }
@@ -367,11 +387,11 @@ const server = http.createServer(async (req, res) => {
       const excl = new Set((url.searchParams.get('exclude') || '').split(',').map((s) => s.trim()).filter(Boolean));
       const row = q.pickRanked.all(CUTOFF).find((r) => !excl.has(r.account));
       if (!row) {
-        logAccess(null, host, ip, 'select', 'none-available');
-        // reasoned 503: WHY is nothing servable — one account may tick several counters
+        // reasoned 503: WHY is nothing servable — one account may tick several counters.
+        // Tally BEFORE the audit so the feed AND /api/access record the reason, not a bare 'none-available'.
         const all = q.listAccounts.all();
-        let parked = 0, reauth = 0, disabled = 0;
-        for (const a of all) { parked += a.parked; reauth += a.reauth_needed; disabled += a.disabled; }
+        const { parked, reauth, disabled } = tally(all);
+        logAccess(null, host, ip, 'select', `none-available · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off)`);
         return json(res, 503, { error: 'no account with headroom', accounts: all.length, parked, reauth, disabled });
       }
       const tok = decrypt(q.getToken.get(row.account).token_enc);
@@ -417,6 +437,9 @@ const server = http.createServer(async (req, res) => {
     // --- read models for the dashboard ---
     if (p === '/api/logs' && req.method === 'GET')
       return json(res, 200, q.recentReq.all(Math.min(Number(url.searchParams.get('limit')) || 100, 1000)));
+    // audit trail read path (access_log holds only hints/labels/actions, never secrets)
+    if (p === '/api/access' && req.method === 'GET')
+      return json(res, 200, q.recentAccess.all(Math.min(Number(url.searchParams.get('limit')) || 100, 1000)));
     if (p === '/api/stats' && req.method === 'GET')
       return json(res, 200, { by_host: q.statByHost.all(), accounts: q.listAccounts.all() });
 
@@ -488,7 +511,7 @@ async function pollUsage() {
   try {
     // parallel: one hung/dead token no longer makes the cycle N×15s and stalls later accounts.
     // node:sqlite is sync so the interleaved DB writes stay serialized on the event loop.
-    const results = await Promise.all(allTokensStmt.all().map(async (row) => {
+    await Promise.all(allTokensStmt.all().map(async (row) => {
       let tok;
       // no exit: partial failure stays partial, and a restart won't fix a key mismatch
       try { tok = decrypt(row.token_enc); }
@@ -497,7 +520,9 @@ async function pollUsage() {
       console.log('[poll]', new Date().toISOString(), JSON.stringify(res));
       return res;
     }));
-    if (results.some((r) => r && r.five != null)) broadcast('accounts', q.listAccounts.all());
+    // unconditional: a 401'd token returns no rate-limit headers (five==null) but still
+    // setReauth(1)'d the DB — a guarded broadcast left the dashboard showing a dying account green.
+    broadcast('accounts', q.listAccounts.all());
   } finally { polling = false; }
 }
 const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
