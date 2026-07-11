@@ -21,6 +21,31 @@ report_prompt(){ curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H
 report_limit(){ curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
     -d "{\"account\":\"$1\",\"host\":\"$HOST\"}" "$AIGATE_URL/api/events/limit" >/dev/null 2>&1 || true; }
 
+# Preflight alert (NOT auto-fix): a stored Claude login OUTRANKS the token aigate
+# injects, so the session silently serves the WRONG account — the "why is it stuck
+# on one account / random re-login loop" trap. aigate injects a fresh token per
+# run and needs no stored login, so if one exists we just warn how to clear it.
+warn_shadow_login(){
+  local hit="" mac=0
+  if [ "$(uname -s)" = "Darwin" ]; then
+    mac=1
+    security find-generic-password -s "Claude Code-credentials" >/dev/null 2>&1 \
+      && hit="a macOS Keychain login ('Claude Code-credentials')"
+  elif [ -f "$HOME/.claude/.credentials.json" ]; then
+    hit="$HOME/.claude/.credentials.json"
+  fi
+  [ -z "$hit" ] && return 0
+  {
+    echo "⚠️  aigate: $hit will OVERRIDE the account aigate picks —"
+    echo "    sessions may silently run the WRONG account. Clear it once (aigate needs no stored login):"
+    if [ "$mac" = 1 ]; then
+      echo '      while security delete-generic-password -s "Claude Code-credentials" 2>/dev/null; do :; done'
+    else
+      echo '      rm -f ~/.claude/.credentials.json'
+    fi
+  } >&2
+}
+
 # print mode → capture+retry; else single pick + exec (keep interactive streaming)
 is_print=0 has_skip=0
 for a in "$@"; do case "$a" in
@@ -31,6 +56,8 @@ esac; done
 # otherwise HANGS (looks like "needs login"). Interactive keeps normal prompts.
 skip=()
 [ "$is_print" = 1 ] && [ "$has_skip" = 0 ] && skip=(--dangerously-skip-permissions)
+
+warn_shadow_login   # alert if a stored login would shadow aigate's picked account
 
 if [ "$is_print" != 1 ]; then
   resp="$(select_acct "")"
