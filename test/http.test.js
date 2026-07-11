@@ -147,6 +147,23 @@ test('POST /api/events/limit parks an account (skipped on select) WITHOUT clobbe
   assert.ok(a.parked_until);                               // parked timestamp set
 });
 
+test('parked state is visible: computed flag, parked_until echo, reasoned 503', async () => {
+  // alice is still parked from the previous test; park bob too → ALL accounts parked
+  const r = await (await fetch(base + '/api/events/limit', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'bob' }) })).json();
+  assert.ok(r.parked_until);                               // limit response echoes the actual expiry
+  let list = await (await fetch(base + '/api/accounts', { headers: H })).json();
+  assert.equal(list.find((a) => a.account === 'bob').parked, 1);   // plain 0/1, no string parsing
+  const s = await fetch(base + '/api/select?host=t', { headers: H });
+  assert.equal(s.status, 503);
+  const j = await s.json();
+  assert.equal(j.accounts, list.length);                   // reasoned 503 counts every account
+  assert.ok(j.parked >= 1);
+  db.prepare('UPDATE accounts SET parked_until=NULL WHERE account=?').run('bob');
+  list = await (await fetch(base + '/api/accounts', { headers: H })).json();
+  assert.equal(list.find((a) => a.account === 'bob').parked, 0);   // flag clears with the timestamp
+});
+
 test('POST /api/events/usage + /limit for an unknown account → 404, not silent ok', async () => {
   for (const ev of ['usage', 'limit']) {
     const r = await fetch(base + `/api/events/${ev}`, { method: 'POST', headers: H,

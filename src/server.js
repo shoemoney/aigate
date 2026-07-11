@@ -110,7 +110,10 @@ if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === 'par
 const q = {
   upsertAccount: db.prepare(`INSERT INTO accounts(account,token_enc,label) VALUES(?,?,?)
     ON CONFLICT(account) DO UPDATE SET token_enc=excluded.token_enc, label=excluded.label`),
+  // parked computed in the SAME clock domain as pickRanked — clients get a plain 0/1
+  // instead of parsing a bare sqlite UTC string (no Z) in the right timezone.
   listAccounts: db.prepare(`SELECT account,label,five_hour_pct,seven_day_pct,usage_updated,disabled,reauth_needed,parked_until,
+    (parked_until IS NOT NULL AND parked_until > datetime('now')) AS parked,
     (token_enc IS NOT NULL) AS has_token FROM accounts ORDER BY account`),
   getToken: db.prepare(`SELECT token_enc FROM accounts WHERE account=?`),
   delAccount: db.prepare(`DELETE FROM accounts WHERE account=?`),
@@ -120,6 +123,7 @@ const q = {
   // park an over-limit account for a TTL WITHOUT clobbering its real usage — pickRanked
   // skips it until parked_until passes (auto-recover); the poller keeps its % honest.
   parkAccount: db.prepare(`UPDATE accounts SET parked_until=datetime('now', ?) WHERE account=?`),
+  getParked: db.prepare(`SELECT parked_until FROM accounts WHERE account=?`),
   // most headroom = lowest worst-window usage; skip disabled / over cutoff / tokenless /
   // needs-reauth / currently-parked. Unpolled (usage_updated IS NULL) sorts LAST so a
   // freshly-added account isn't handed out as a phantom "0%" before its first real poll.
@@ -297,7 +301,14 @@ const server = http.createServer(async (req, res) => {
       const host = url.searchParams.get('host') || '', ip = reqIp(req);
       const excl = new Set((url.searchParams.get('exclude') || '').split(',').map((s) => s.trim()).filter(Boolean));
       const row = q.pickRanked.all(CUTOFF).find((r) => !excl.has(r.account));
-      if (!row) { q.insAccess.run(null, host, ip, 'select', 'none-available'); return json(res, 503, { error: 'no account with headroom' }); }
+      if (!row) {
+        q.insAccess.run(null, host, ip, 'select', 'none-available');
+        // reasoned 503: WHY is nothing servable — one account may tick several counters
+        const all = q.listAccounts.all();
+        let parked = 0, reauth = 0, disabled = 0;
+        for (const a of all) { parked += a.parked; reauth += a.reauth_needed; disabled += a.disabled; }
+        return json(res, 503, { error: 'no account with headroom', accounts: all.length, parked, reauth, disabled });
+      }
       const tok = decrypt(q.getToken.get(row.account).token_enc);
       q.insAccess.run(row.account, host, ip, 'select', 'ok');
       broadcast('access', { account: row.account, host, ip, action: 'select' });
@@ -316,7 +327,8 @@ const server = http.createServer(async (req, res) => {
         return json(res, 404, { error: 'unknown account ' + b.account });
       q.insAccess.run(b.account, b.host || '', reqIp(req), 'limit', `parked ${mins}m`);
       broadcast('accounts', q.listAccounts.all());
-      return json(res, 200, { ok: true, parked_minutes: mins });
+      // read back so the caller can display/log the actual expiry
+      return json(res, 200, { ok: true, parked_minutes: mins, parked_until: q.getParked.get(b.account).parked_until });
     }
 
     // --- event ingest (from the fleet's hooks) ---
