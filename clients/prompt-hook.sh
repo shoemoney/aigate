@@ -4,6 +4,8 @@
 #   "hooks": { "UserPromptSubmit": [ { "hooks": [
 #     { "type": "command", "command": "bash ~/.claude/aigate/prompt-hook.sh" } ] } ] }
 # Runs LOCALLY on the official client; aigate is never in Anthropic's path.
+# Hooks fire for ALL claude sessions but only cc exports AIGATE_*; fail-open.
+[ -n "${AIGATE_URL:-}" ] || { set -a; . "$HOME/.claude/aigate/env" 2>/dev/null; set +a; }
 in="$(cat)"
 python3 - "$in" <<'PY' &
 import json, os, sys, urllib.request
