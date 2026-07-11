@@ -19,6 +19,7 @@
   .acct .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
   .acct .name{font-weight:600;font-size:15px}
   .acct .badge{font-size:11px;color:var(--dim)}
+  .badge.stale{color:var(--yellow);opacity:.7}
   .bar{margin:9px 0}
   .bar .lbl{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-bottom:4px}
   .bar .lbl b{color:var(--fg)}
@@ -95,17 +96,24 @@ let TOKEN=localStorage.aigate_token||'';
 let statsT;
 function save(){TOKEN=$('#tok').value.trim();localStorage.aigate_token=TOKEN;boot();}
 function color(p){return p>=80?'var(--red)':p>=50?'var(--yellow)':'var(--green)'}
+const fmtAge=s=>s<60?s+'s':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600)+'h':Math.floor(s/86400)+'d';  // fmtAge(90)==='1m', fmtAge(3600)==='1h'
 
 function renderAccounts(list){
   const el=$('#accts'); el.innerHTML='';
   for(const a of list){
     const worst=Math.max(a.five_hour_pct||0,a.seven_day_pct||0);
     const run=worst>=80, card=document.createElement('div');
+    // parked_until is a bare sqlite UTC string with no zone — append 'Z' before parsing
+    const parkTxt=a.parked_until?'→'+new Date(a.parked_until.replace(' ','T')+'Z').toLocaleTimeString():'';
+    const badge=a.disabled?'disabled':a.reauth_needed?'🔑 re-auth':a.parked?'⏸ parked'+parkTxt:(a.has_token?'ready':'no token');
+    // usage_age_s absent → old server, fall back to the raw usage_updated line; null → never polled
+    const ageKnown=a.usage_age_s!==undefined, stale=ageKnown&&a.usage_age_s>1500;
+    const updated=!ageKnown?'updated '+(a.usage_updated||'never'):a.usage_age_s==null?'never':fmtAge(a.usage_age_s)+' ago';
     card.className='card acct'+(run?' runaway':'')+(a.reauth_needed?' needsauth':'')+(a.disabled||a.parked?' disabled':'');
     card.innerHTML=`<div class="top"><span class="name">${esc(a.account)}</span>
-      <span class="badge">${a.disabled?'disabled':a.reauth_needed?'🔑 re-auth':a.parked?'⏸ parked':(a.has_token?'ready':'no token')} ${run?'🚨':''}</span></div>
+      <span class="badge">${badge} ${run?'🚨':''}</span></div>
       ${bar('5-hour',a.five_hour_pct)}${bar('weekly',a.seven_day_pct)}
-      <div class="badge" style="margin-top:8px">updated ${a.usage_updated||'never'}</div>`;
+      <div class="badge${stale?' stale':''}" style="margin-top:8px">${updated}</div>`;
     el.appendChild(card);
   }
 }
@@ -119,6 +127,13 @@ function addFeed(d){
   f.prepend(r); while(f.children.length>200)f.lastChild.remove();
 }
 async function api(path){const r=await fetch(path,{headers:{authorization:'Bearer '+TOKEN}});if(r.status===401)throw 401;return r.json();}
+// seed the feed from BOTH prompt logs and access events; an old server that 404s /api/access yields no access rows
+async function seedFeed(){
+  const logs=await api('/api/logs?limit=50');   // 401 here propagates → logout; access is best-effort
+  const acc=await api('/api/access?limit=50').then(r=>Array.isArray(r)?r:[]).catch(()=>[]);
+  [...logs,...acc.map(r=>({...r,prompt:'▸ '+r.action+(r.result&&r.result!=='ok'?' — '+r.result:'')}))]
+    .sort((a,b)=>new Date(a.ts)-new Date(b.ts)).forEach(addFeed);
+}
 
 // ---- provider keys ----
 let PROVIDERS=[];
@@ -170,7 +185,7 @@ function connect(){
   ws.onopen=async()=>{$('#live').classList.add('on');
     try{const s=await api('/api/stats');renderAccounts(s.accounts);renderHosts(s.by_host);
       renderKeys(await api('/api/keys'));
-      $('#feed').innerHTML='';(await api('/api/logs?limit=50')).reverse().forEach(addFeed);
+      $('#feed').innerHTML='';await seedFeed();
     }catch(e){if(e===401){localStorage.removeItem('aigate_token');location.reload();}}};
   ws.onclose=()=>{$('#live').classList.remove('on');setTimeout(connect,2000)};
   ws.onmessage=e=>{const m=JSON.parse(e.data);
@@ -184,7 +199,7 @@ async function boot(){
   if(!TOKEN)return;
   try{const s=await api('/api/stats');renderAccounts(s.accounts);renderHosts(s.by_host);
     await loadProviders();await loadKeys();
-    (await api('/api/logs?limit=50')).reverse().forEach(addFeed);}
+    await seedFeed();}
   catch(e){if(e===401)localStorage.removeItem('aigate_token');else setTimeout(boot,3000);return}
   $('#login').style.display='none';$('#hdr').style.display='flex';$('#app').style.display='grid';
   $('#keyform').onsubmit=addKey; $('#kprov').oninput=providerHint;
