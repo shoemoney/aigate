@@ -14,7 +14,7 @@
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
-import { chmodSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
@@ -48,47 +48,81 @@ const { encrypt, decrypt } = makeVault(Buffer.from(ENC_KEY, 'hex'));
 
 // ---- db -----------------------------------------------------------------
 mkdirSync(dirname(DB_PATH), { recursive: true });
-const db = new DatabaseSync(DB_PATH);
-db.exec(`
-  PRAGMA journal_mode = WAL;
-  CREATE TABLE IF NOT EXISTS accounts (
-    account        TEXT PRIMARY KEY,
-    token_enc      TEXT,
-    label          TEXT DEFAULT '',
-    five_hour_pct  REAL DEFAULT 0,
-    seven_day_pct  REAL DEFAULT 0,
-    usage_updated  TEXT,
-    disabled       INTEGER NOT NULL DEFAULT 0,
-    reauth_needed  INTEGER NOT NULL DEFAULT 0,
-    parked_until   TEXT,
-    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS request_log (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts       TEXT NOT NULL DEFAULT (datetime('now')),
-    account  TEXT, host TEXT, ip TEXT, cwd TEXT, model TEXT,
-    prompt   TEXT, tokens INTEGER
-  );
-  CREATE TABLE IF NOT EXISTS access_log (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts       TEXT NOT NULL DEFAULT (datetime('now')),
-    account  TEXT, host TEXT, ip TEXT, action TEXT, result TEXT
-  );
-  CREATE TABLE IF NOT EXISTS provider_keys (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider     TEXT NOT NULL,
-    label        TEXT DEFAULT '',
-    key_enc      TEXT NOT NULL,
-    key_hint     TEXT,
-    status       TEXT DEFAULT 'working',
-    last_checked TEXT,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(provider, key_hint)
-  );
-  CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
-  CREATE INDEX IF NOT EXISTS idx_req_host ON request_log(host);
-  CREATE INDEX IF NOT EXISTS idx_req_acct ON request_log(account);
-`);
+const BACKUP_DIR = join(dirname(DB_PATH), 'backups');
+
+// Boot preflight: a malformed DB (hard power-off mid-write) would throw here
+// uncaught → docker restart → same throw → a crash-loop self-heal can't fix,
+// while a good snapshot sits in data/backups/. Quarantine the corrupt file(s),
+// restore the newest backup, retry ONCE; anything else exits with the manual
+// restore command instead of looping in the dark.
+function openDb(path = DB_PATH) {
+  const tryOpen = () => {
+    const d = new DatabaseSync(path);
+    try {
+      if (d.prepare('PRAGMA quick_check').get().quick_check !== 'ok')
+        throw new Error('quick_check failed: database corrupt');
+      d.exec(`
+        PRAGMA busy_timeout = 5000; -- 5s = Dockerfile HEALTHCHECK timeout: a lock outlasting it still fails /health honestly
+        PRAGMA journal_mode = WAL;
+        CREATE TABLE IF NOT EXISTS accounts (
+          account        TEXT PRIMARY KEY,
+          token_enc      TEXT,
+          label          TEXT DEFAULT '',
+          five_hour_pct  REAL DEFAULT 0,
+          seven_day_pct  REAL DEFAULT 0,
+          usage_updated  TEXT,
+          disabled       INTEGER NOT NULL DEFAULT 0,
+          reauth_needed  INTEGER NOT NULL DEFAULT 0,
+          parked_until   TEXT,
+          created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS request_log (
+          id       INTEGER PRIMARY KEY AUTOINCREMENT,
+          ts       TEXT NOT NULL DEFAULT (datetime('now')),
+          account  TEXT, host TEXT, ip TEXT, cwd TEXT, model TEXT,
+          prompt   TEXT, tokens INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS access_log (
+          id       INTEGER PRIMARY KEY AUTOINCREMENT,
+          ts       TEXT NOT NULL DEFAULT (datetime('now')),
+          account  TEXT, host TEXT, ip TEXT, action TEXT, result TEXT
+        );
+        CREATE TABLE IF NOT EXISTS provider_keys (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          provider     TEXT NOT NULL,
+          label        TEXT DEFAULT '',
+          key_enc      TEXT NOT NULL,
+          key_hint     TEXT,
+          status       TEXT DEFAULT 'working',
+          last_checked TEXT,
+          created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(provider, key_hint)
+        );
+        CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
+        CREATE INDEX IF NOT EXISTS idx_req_host ON request_log(host);
+        CREATE INDEX IF NOT EXISTS idx_req_acct ON request_log(account);
+      `);
+      return d;
+    } catch (e) { try { d.close(); } catch { /* never opened */ } throw e; }
+  };
+  try { return tryOpen(); } catch (e) {
+    if (!/malformed|not a database|corrupt/i.test(String(e && e.message))) throw e;
+    const stamp = Date.now();
+    for (const suf of ['', '-wal', '-shm'])
+      if (existsSync(path + suf)) renameSync(path + suf, `${path}.corrupt-${stamp}${suf}`);
+    const bak = existsSync(BACKUP_DIR)
+      ? readdirSync(BACKUP_DIR).filter((f) => /^aigate-\d{4}-\d{2}-\d{2}\.db$/.test(f)).sort().at(-1)
+      : undefined;
+    if (bak) {
+      console.error(`[db] CORRUPT vault (${e.message}) — quarantined to ${path}.corrupt-${stamp}, restoring backup ${bak}`);
+      copyFileSync(join(BACKUP_DIR, bak), path);
+      try { return tryOpen(); } catch (e2) { console.error('[db] restored backup failed to open too', e2); }
+    } else console.error(`[db] CORRUPT vault (${e.message}) — quarantined to ${path}.corrupt-${stamp}, NO backup in ${BACKUP_DIR}`);
+    console.error(`[db] manual restore: cp ${BACKUP_DIR}/aigate-<date>.db ${path}  then restart aigate`);
+    process.exit(1);
+  }
+}
+const db = openDb();
 
 // key canary: fail LOUD at boot if ENC_KEY can't decrypt this vault, instead of
 // decrypt() exploding deep inside /api/select later. First boot writes it.
@@ -455,7 +489,6 @@ const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
 // VACUUM INTO = consistent WAL-safe snapshot, zero deps. .env is deliberately
 // NOT copied (no secret sprawl — backups hold ciphertext only). A failed
 // backup logs loudly but never kills the daemon.
-const BACKUP_DIR = join(dirname(DB_PATH), 'backups');
 function backupNow() {
   try {
     mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
@@ -490,13 +523,15 @@ if (isMain) {
   process.on('uncaughtException', (e) => { console.error('[uncaughtException]', e); shutdown(1); });
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { console.log(`[${sig}] shutting down`); shutdown(0); });
 
-  // internal watchdog: if the DB stops answering, exit so the supervisor
-  // restarts a fresh process. ponytail: db-ping only — covers the common wedge
-  // (locked/corrupt sqlite); widen the check if other subsystems can hang.
+  // internal watchdog: WRITE-ping, not SELECT — in WAL mode readers never block
+  // on a wedged writer (disk full, ro-remount, stuck write lock), so a read
+  // ping stays green while every POST 500s. A failed write exits so the
+  // supervisor restarts a fresh process. ponytail: db-ping only — widen the
+  // check if other subsystems can hang.
   const WATCHDOG_MS = Number(process.env.AIGATE_WATCHDOG_MS || 30000);
   if (WATCHDOG_MS > 0) setInterval(() => {
-    try { db.prepare('SELECT 1').get(); }
-    catch (e) { console.error('[watchdog] db unreachable — exiting for restart', e); shutdown(1); }
+    try { db.prepare(`INSERT INTO meta(k,v) VALUES('watchdog',datetime('now')) ON CONFLICT(k) DO UPDATE SET v=excluded.v`).run(); }
+    catch (e) { console.error('[watchdog] db write failed — exiting for restart', e); shutdown(1); }
   }, WATCHDOG_MS).unref();
 
   // WS heartbeat: a socket that missed a pong since the last sweep is dead
@@ -520,4 +555,4 @@ if (isMain) {
     console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
 }
 
-export { server, db, pollUsage, backupNow };
+export { server, db, pollUsage, backupNow, openDb };

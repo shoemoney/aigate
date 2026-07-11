@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rmSync, existsSync, statSync } from 'node:fs';
+import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { connect } from 'node:net';
+import { DatabaseSync } from 'node:sqlite';
 import WebSocket from 'ws';
 
 // Isolate this run onto a throwaway DB + token BEFORE importing server.js.
@@ -20,7 +21,7 @@ process.env.HOST = '127.0.0.1';
 delete process.env.AIGATE_ALLOW_CIDR;
 delete process.env.AIGATE_TRUST_PROXY;
 
-const { server, db, backupNow } = await import('../src/server.js');
+const { server, db, backupNow, openDb } = await import('../src/server.js');
 const BACKUPS = join(tmpdir(), 'backups');   // dirname(DB)/backups
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
@@ -328,6 +329,31 @@ test('backups are private: dir 0700, snapshot file 0600', () => {
   const f = join(BACKUPS, `aigate-${new Date().toISOString().slice(0, 10)}.db`);
   assert.equal(statSync(BACKUPS).mode & 0o777, 0o700);
   assert.equal(statSync(f).mode & 0o777, 0o600);
+});
+
+test('openDb: corrupt DB is quarantined and auto-restored from the newest backup', () => {
+  // plant a marker-carrying backup that sorts newest, so a passing assert
+  // proves THIS file (not luck) was restored
+  mkdirSync(BACKUPS, { recursive: true });
+  const bak = join(BACKUPS, 'aigate-2099-01-01.db');
+  const src = new DatabaseSync(bak);
+  src.exec(`CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT);
+            INSERT INTO meta(k,v) VALUES('restore-marker','yes')`);
+  src.close();
+  const CORRUPT = join(tmpdir(), `aigate-corrupt-${process.pid}-${Date.now()}.db`);
+  writeFileSync(CORRUPT, 'definitely not a sqlite database — hard power-off garbage');
+  const d = openDb(CORRUPT);
+  try {
+    assert.equal(d.prepare('PRAGMA quick_check').get().quick_check, 'ok');
+    assert.equal(d.prepare(`SELECT v FROM meta WHERE k='restore-marker'`).get().v, 'yes');
+    const quarantined = readdirSync(tmpdir()).filter((f) => f.startsWith(CORRUPT.split('/').pop() + '.corrupt-'));
+    assert.ok(quarantined.length >= 1, 'no .corrupt-* quarantine file');
+  } finally {
+    d.close();
+    for (const f of readdirSync(tmpdir()))
+      if (f.startsWith(CORRUPT.split('/').pop())) rmSync(join(tmpdir(), f), { force: true });
+    rmSync(bak, { force: true });
+  }
 });
 
 const wsFirstMsg = (path, protocols) => new Promise((resolve, reject) => {
