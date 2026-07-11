@@ -176,6 +176,20 @@ test('unpolled account (usage_updated NULL) sorts LAST, not as a phantom 0%', as
   assert.equal(j.account, 'bob');                          // polled bob (3%) beats unpolled alice despite alice's raw 0
 });
 
+test('/api/select skips an account at/over the headroom cutoff (default 95)', async () => {
+  db.prepare("UPDATE accounts SET reauth_needed=0,disabled=0,parked_until=NULL,five_hour_pct=99,seven_day_pct=1,usage_updated=datetime('now') WHERE account=?").run('alice');
+  db.prepare("UPDATE accounts SET reauth_needed=0,disabled=0,parked_until=NULL,five_hour_pct=5,seven_day_pct=5,usage_updated=datetime('now') WHERE account=?").run('bob');
+  const j = await (await fetch(base + '/api/select?host=t', { headers: H })).json();
+  assert.equal(j.account, 'bob');                          // alice at 99% ≥ cutoff → skipped
+});
+
+test('/api/select auto-recovers an account whose parked_until has passed', async () => {
+  db.prepare("UPDATE accounts SET five_hour_pct=1,seven_day_pct=1,parked_until=datetime('now','-1 minute'),usage_updated=datetime('now') WHERE account=?").run('alice');
+  const j = await (await fetch(base + '/api/select?host=t', { headers: H })).json();
+  assert.equal(j.account, 'alice');                        // park expired → back in rotation, best headroom
+  db.prepare('UPDATE accounts SET parked_until=NULL WHERE account=?').run('alice');   // reset for later tests
+});
+
 test('listAccounts exposes reauth_needed for the dashboard badge', async () => {
   db.prepare('UPDATE accounts SET reauth_needed=1 WHERE account=?').run('alice');
   const list = await (await fetch(base + '/api/accounts', { headers: H })).json();
@@ -291,4 +305,45 @@ test('WS with no auth is destroyed before any message', async () => {
 test('legacy WS ?token= query auth still works (deprecated fallback)', async () => {
   const m = await wsFirstMsg('/ws?token=' + TOKEN);
   assert.equal(m.type, 'accounts');
+});
+
+test('POST /api/accounts/:name/refresh — fetch-mocked poll drives usage, maxed, and the reauth round-trip', async () => {
+  // URL-routing mock: anthropic.com gets the canned response, everything else
+  // (this suite's own 127.0.0.1 calls) delegates to the real fetch.
+  const realFetch = globalThis.fetch;
+  let next;
+  const canned = (status, u5, u7) => new Response('{}', { status, headers: u5 == null ? {} : {
+    'anthropic-ratelimit-unified-5h-utilization': u5, 'anthropic-ratelimit-unified-7d-utilization': u7 } });
+  globalThis.fetch = (url, opts) =>
+    String(url).startsWith('https://api.anthropic.com') ? Promise.resolve(next) : realFetch(url, opts);
+  const refresh = async (name) => (await realFetch(base + `/api/accounts/${name}/refresh`, { method: 'POST', headers: H })).json();
+  const acct = async (name) => (await (await realFetch(base + '/api/accounts', { headers: H })).json()).find((a) => a.account === name);
+  try {
+    db.prepare("UPDATE accounts SET reauth_needed=0,disabled=0,parked_until=NULL,five_hour_pct=50,seven_day_pct=50,usage_updated=datetime('now')").run();
+
+    next = canned(200, '0.42', '0.10');                    // (a) headers land in the row, under cutoff
+    let r = await refresh('bob');
+    assert.deepEqual([r.five, r.seven, r.maxed], [42, 10, 0]);
+    const b = await acct('bob');
+    assert.equal(b.five_hour_pct, 42);
+    assert.equal(b.seven_day_pct, 10);
+
+    next = canned(200, '0.99', '0.99');                    // (b) over the 95 cutoff → maxed
+    assert.equal((await refresh('bob')).maxed, 1);
+
+    db.prepare('UPDATE accounts SET five_hour_pct=5,seven_day_pct=5 WHERE account=?').run('bob');
+    next = canned(401);                                    // (c) dead token → reauth flag, select skips
+    r = await refresh('bob');
+    assert.equal(r.alive, false);
+    assert.equal((await acct('bob')).reauth_needed, 1);
+    let j = await (await realFetch(base + '/api/select?host=t', { headers: H })).json();
+    assert.equal(j.account, 'alice');                      // bob (5%) would win were it not flagged
+
+    next = canned(200, '0.05', '0.05');                    // (d) good poll → flag clears, selectable again
+    r = await refresh('bob');
+    assert.equal(r.alive, true);
+    assert.equal((await acct('bob')).reauth_needed, 0);
+    j = await (await realFetch(base + '/api/select?host=t', { headers: H })).json();
+    assert.equal(j.account, 'bob');
+  } finally { globalThis.fetch = realFetch; }
 });

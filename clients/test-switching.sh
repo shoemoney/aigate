@@ -25,11 +25,12 @@ runcc(){ # $1 = expected account
   else echo "  ✗ expected=$1 picked=$picked pong=$pong"; fails=$((fails+1)); fi
   rm -f "$err"
 }
+# ctrl-C mid-run must not leave a REAL account disabled fleet-wide
+trap 'setdis "$A" false; setdis "$B" false; rm -rf "$WORK"' EXIT
 
 echo "[1] both enabled → expect $A (more headroom)"; setdis "$A" false; setdis "$B" false; sleep 1; runcc "$A"
 echo "[2] $A disabled → expect $B";                  setdis "$A" true;  sleep 1;                 runcc "$B"
 echo "[3] $B disabled → expect $A";                  setdis "$A" false; setdis "$B" true; sleep 1; runcc "$A"
 echo "[4] both enabled → expect $A";                 setdis "$B" false; sleep 1;                 runcc "$A"
-rm -rf "$WORK"
 [ "$fails" = 0 ] && echo "SWITCHING OK ✔ (verify DB: access_log/request_log for host $(hostname -s))" \
   || { echo "SWITCHING FAILED: $fails"; exit 1; }
