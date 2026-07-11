@@ -81,7 +81,7 @@
       </form>
       <div id="kmsg" style="margin-top:10px;font-size:12px;min-height:16px"></div>
     </div>
-    <table id="keys"><thead><tr><th>Provider</th><th>Label</th><th>Key</th><th>Status</th><th>Added</th><th></th></tr></thead><tbody></tbody></table>
+    <table id="keys"><thead><tr><th>Provider</th><th>Label</th><th>Key</th><th>Status</th><th>Added</th><th>Last used</th><th></th></tr></thead><tbody></tbody></table>
   </section>
   <div class="cols">
     <section class="card"><h2>Live activity</h2><div class="feed" id="feed"></div></section>
@@ -149,11 +149,12 @@ function providerHint(){
 async function loadKeys(){renderKeys(await api('/api/keys'));}
 function renderKeys(rows){
   const tb=$('#keys tbody'); tb.innerHTML='';
-  if(!rows||!rows.length){tb.innerHTML='<tr><td colspan="6" style="color:var(--dim)">no keys yet — add one above</td></tr>';return;}
+  if(!rows||!rows.length){tb.innerHTML='<tr><td colspan="7" style="color:var(--dim)">no keys yet — add one above</td></tr>';return;}
   for(const k of rows){
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${esc(k.provider)}</td><td>${esc(k.label||'—')}</td><td class="mono">${esc(k.key_hint||'—')}</td>
       <td>${esc(k.status||'')}</td><td class="mono">${(k.created_at||'').replace('T',' ')}</td>
+      <td class="mono">${k.last_used?esc(k.last_used):'<span style="color:var(--dim)">never</span>'}</td>
       <td><button class="del">✕</button></td>`;
     tr.querySelector('.del').onclick=()=>delKey(k.id);
     tb.appendChild(tr);

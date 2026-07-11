@@ -588,3 +588,26 @@ test('/health includes poll_age_s, backup_age_s, and the unusable tally', async 
     assert.ok(k in j, 'missing ' + k);
   assert.equal(typeof j.backup_age_s, 'number');
 });
+
+test('GET /api/capabilities is a read-only registry slice: counts + selectability, never a secret', async () => {
+  // dedicated provider so keys===1 is exact — 'openai' already accumulated multiple keys upstream
+  await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'capco', key: 'sk-cap-test-key-value', label: 'cap' }) });
+  const j = await (await fetch(base + '/api/capabilities', { headers: H })).json();
+  assert.equal(j.providers.capco.keys, 1);
+  assert.equal(typeof j.claude.selectable, 'number');
+  assert.equal(typeof j.claude.accounts, 'number');
+  const blob = JSON.stringify(j);
+  assert.ok(!blob.includes('sk-'), 'capability map leaked a secret');   // counts only, never the key value
+});
+
+test('listKeys surfaces last_used per provider: non-null after a key-fetch, null for an untouched provider', async () => {
+  await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'fal', key: 'fal-lastused-test-key' }) });
+  await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'untouchedco', key: 'uk-never-fetched-key' }) });   // vaulted but never GET'd
+  await fetch(base + '/api/keys/fal', { headers: H });                  // logs a key-fetch (action='key', account='fal')
+  const keys = await (await fetch(base + '/api/keys', { headers: H })).json();
+  assert.ok(keys.find((k) => k.provider === 'fal').last_used, 'fetched provider has a last_used ts');
+  assert.equal(keys.find((k) => k.provider === 'untouchedco').last_used, null);   // never fetched → null
+});
