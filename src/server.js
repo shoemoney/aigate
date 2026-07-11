@@ -251,11 +251,13 @@ const server = http.createServer(async (req, res) => {
     const fp = safeStaticPath(PUBLIC, p);
     // regular files only: GET // resolves to PUBLIC itself → readFile(dir) rejects
     // outside the try/catch → socket hangs forever (pre-auth DoS)
-    if (fp && existsSync(fp) && statSync(fp).isFile()) {
-      const data = await readFile(fp);
-      res.writeHead(200, { 'content-type': MIME[extname(fp)] || 'application/octet-stream' });
-      return res.end(data);
-    }
+    try {
+      if (fp && existsSync(fp) && statSync(fp).isFile()) {
+        const data = await readFile(fp);
+        res.writeHead(200, { 'content-type': MIME[extname(fp)] || 'application/octet-stream' });
+        return res.end(data);
+      }
+    } catch { /* file vanished between existsSync and read (deploy swapping public/) → 404, not a hung pre-auth socket */ }
     res.writeHead(404); return res.end('not found');
   }
 
@@ -347,6 +349,9 @@ const server = http.createServer(async (req, res) => {
       if (!row || !row.token_enc) return json(res, 404, { error: 'unknown account' });
       let tok; try { tok = decrypt(row.token_enc); } catch { return json(res, 500, { error: 'decrypt failed' }); }
       const r = await pollAccountUsage(name, tok);   // updates usage/reauth in the DB
+      // poll failure (timeout/outage) → 502, DB untouched — a 200 {alive:true,maxed:0} here
+      // would read as "healthy and empty" exactly when the client must keep-or-switch
+      if (r.error) return json(res, 502, { account: name, error: r.error });
       broadcast('accounts', q.listAccounts.all());
       const worst = Math.max(Number(r.five) || 0, Number(r.seven) || 0);
       return json(res, 200, { account: name, five: r.five ?? null, seven: r.seven ?? null,
@@ -455,6 +460,8 @@ async function pollAccountUsage(account, token) {
       body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
       signal: AbortSignal.timeout(15000),
     });
+    // status + headers are all we read — cancel the body or undici pins the connection until GC
+    r.body?.cancel().catch(() => {});
     // 401/403 = token expired/revoked → flag for reauth so /api/select skips it;
     // any authenticated response clears the flag (auto-recovers after re-token).
     const alive = tokenIsAlive(r.status);
@@ -472,16 +479,23 @@ async function pollAccountUsage(account, token) {
     return { account, error: String((e && e.message) || e) };
   }
 }
+let polling = false;   // ponytail: skip-not-queue — a skipped cycle self-corrects next interval
 async function pollUsage() {
-  let updated = false;
-  for (const row of allTokensStmt.all()) {
-    let tok;
-    try { tok = decrypt(row.token_enc); } catch { continue; }
-    const res = await pollAccountUsage(row.account, tok);
-    if (res.five != null) updated = true;
-    console.log('[poll]', new Date().toISOString(), JSON.stringify(res));
-  }
-  if (updated) broadcast('accounts', q.listAccounts.all());
+  if (polling) { console.warn('[poll] previous cycle still running, skipping'); return; }
+  polling = true;
+  try {
+    let updated = false;
+    for (const row of allTokensStmt.all()) {
+      let tok;
+      // no exit: partial failure stays partial, and a restart won't fix a key mismatch
+      try { tok = decrypt(row.token_enc); }
+      catch (e) { console.error('[poll] decrypt failed for', row.account, '— wrong AIGATE_ENCRYPTION_KEY or corrupt row:', String(e && e.message || e)); continue; }
+      const res = await pollAccountUsage(row.account, tok);
+      if (res.five != null) updated = true;
+      console.log('[poll]', new Date().toISOString(), JSON.stringify(res));
+    }
+    if (updated) broadcast('accounts', q.listAccounts.all());
+  } finally { polling = false; }
 }
 const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
 

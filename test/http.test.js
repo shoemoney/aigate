@@ -466,6 +466,24 @@ test('POST /api/accounts/:name/refresh — fetch-mocked poll drives usage, maxed
   } finally { globalThis.fetch = realFetch; }
 });
 
+test('POST /api/accounts/:name/refresh — poll failure → 502 with error, usage untouched', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (url, opts) =>
+    String(url).startsWith('https://api.anthropic.com') ? Promise.reject(new Error('anthropic unreachable')) : realFetch(url, opts);
+  try {
+    db.prepare('UPDATE accounts SET five_hour_pct=42,seven_day_pct=10 WHERE account=?').run('bob');
+    const r = await realFetch(base + '/api/accounts/bob/refresh', { method: 'POST', headers: H });
+    assert.equal(r.status, 502);                             // NOT 200 {alive:true,maxed:0}
+    assert.match((await r.json()).error, /unreachable/);
+    const b = (await (await realFetch(base + '/api/accounts', { headers: H })).json()).find((a) => a.account === 'bob');
+    assert.equal(b.five_hour_pct, 42);                       // poller stays authoritative
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('GET a missing file under public/ → 404 (static branch falls through, never hangs)', async () => {
+  assert.equal((await fetch(base + '/nope-does-not-exist.html')).status, 404);
+});
+
 test('POST /api/accounts rejects the browser Authentication Code (code#state) paste → 400', async () => {
   const r = await fetch(base + '/api/accounts', { method: 'POST', headers: H,
     body: JSON.stringify({ account: 'carol', setup_token: 'abc#def-state' }) });
