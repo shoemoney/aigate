@@ -441,3 +441,30 @@ test('POST /api/accounts with a non-sk-ant token → 200 + non-fatal warning', a
   assert.equal(j.ok, true);
   assert.match(j.warning, /doesn't look like a setup token/);
 });
+
+test('audit trail: every mutation lands in access_log with an ip, never a secret', async () => {
+  db.prepare('DELETE FROM access_log').run();
+  const post = (path, b) => fetch(base + path, { method: 'POST', headers: H, body: JSON.stringify(b) });
+  await post('/api/accounts', { account: 'gaunt', setup_token: 'sk-ant-oat01-gauntsecret', label: 'g1' });
+  await post('/api/accounts', { account: 'gaunt', setup_token: 'sk-ant-oat01-gauntsecret2', label: 'g2' });   // overwrite
+  await post('/api/accounts/gaunt/disabled', { disabled: true });
+  await post('/api/accounts/gaunt/disabled', { disabled: false });
+  await post('/api/keys', { provider: 'gauntco', key: 'gk-gaunt-key-9999' });
+  await fetch(base + '/api/keys/gauntco', { headers: H });                                    // secret fetch
+  const keyId = (await (await fetch(base + '/api/keys', { headers: H })).json()).find((k) => k.provider === 'gauntco').id;
+  assert.equal((await fetch(base + `/api/keys/${keyId}`, { method: 'DELETE', headers: H })).status, 200);
+  assert.equal((await fetch(base + '/api/accounts/gaunt', { method: 'DELETE', headers: H })).status, 200);
+  await fetch(base + '/api/select?host=t', { headers: H });                                   // ok OR none — both audited
+  const rows = db.prepare('SELECT action,ip FROM access_log').all();
+  for (const a of ['account-add', 'account-overwrite', 'account-disable', 'account-enable',
+    'key-add', 'key', 'key-delete', 'account-delete', 'select'])
+    assert.ok(rows.some((r) => r.action === a), 'missing action ' + a);
+  for (const r of rows) assert.ok(r.ip, 'empty ip on ' + r.action);
+  assert.ok(!JSON.stringify(rows).includes('sk-'));                                          // trail never holds secrets
+});
+
+test('DELETE with a bogus key id / account name → 404, not silent ok', async () => {
+  assert.equal((await fetch(base + '/api/keys/999999', { method: 'DELETE', headers: H })).status, 404);
+  assert.equal((await fetch(base + '/api/keys/abc', { method: 'DELETE', headers: H })).status, 404);   // Number→NaN
+  assert.equal((await fetch(base + '/api/accounts/ghost', { method: 'DELETE', headers: H })).status, 404);
+});

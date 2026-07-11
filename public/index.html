@@ -176,7 +176,7 @@ function connect(){
     if(m.type==='accounts')renderAccounts(m.data);
     else if(m.type==='keys')renderKeys(m.data);
     else if(m.type==='prompt'){addFeed(m.data);api('/api/stats').then(s=>renderHosts(s.by_host))}
-    else if(m.type==='access')addFeed({...m.data,prompt:'▸ '+m.data.action});
+    else if(m.type==='access')addFeed({...m.data,prompt:'▸ '+m.data.action+(m.data.result&&m.data.result!=='ok'?' — '+m.data.result:'')});
   };
 }
 async function boot(){

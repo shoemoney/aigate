@@ -116,7 +116,7 @@ const q = {
     (parked_until IS NOT NULL AND parked_until > datetime('now')) AS parked,
     (token_enc IS NOT NULL) AS has_token FROM accounts ORDER BY account`),
   getToken: db.prepare(`SELECT token_enc FROM accounts WHERE account=?`),
-  delAccount: db.prepare(`DELETE FROM accounts WHERE account=?`),
+  delAccount: db.prepare(`DELETE FROM accounts WHERE account=? RETURNING label`),
   setDisabled: db.prepare(`UPDATE accounts SET disabled=? WHERE account=?`),
   setReauth: db.prepare(`UPDATE accounts SET reauth_needed=? WHERE account=?`),
   updUsage: db.prepare(`UPDATE accounts SET five_hour_pct=?, seven_day_pct=?, usage_updated=datetime('now') WHERE account=?`),
@@ -146,7 +146,7 @@ const q = {
       status=excluded.status, last_checked=datetime('now')`),
   listKeys: db.prepare(`SELECT id,provider,label,key_hint,status,last_checked,created_at FROM provider_keys ORDER BY provider,id`),
   getKeyByProvider: db.prepare(`SELECT key_enc,label FROM provider_keys WHERE provider=? AND status='working' ORDER BY id DESC LIMIT 1`),
-  delKey: db.prepare(`DELETE FROM provider_keys WHERE id=?`),
+  delKey: db.prepare(`DELETE FROM provider_keys WHERE id=? RETURNING provider,key_hint`),
 };
 
 // ---- websocket hub ------------------------------------------------------
@@ -159,6 +159,11 @@ function broadcast(type, data) {
     if (ws.bufferedAmount > 4e6) { ws.terminate(); continue; }
     if (ws.readyState === 1) ws.send(msg);
   }
+}
+// every audited event also hits the live feed — an audit row nobody sees is not accountability
+function logAccess(account, host, ip, action, result) {
+  q.insAccess.run(account, host, ip, action, result);
+  broadcast('access', { account, host, ip, action, result });
 }
 
 // ---- http helpers -------------------------------------------------------
@@ -234,7 +239,9 @@ const server = http.createServer(async (req, res) => {
       const tok = String(b.setup_token).trim();
       if (!tok || /#|\s/.test(tok))
         return json(res, 400, { error: "that looks like the browser Authentication Code (code#state) — send the sk-ant-oat01-… line the TERMINAL prints after 'claude setup-token'" });
+      const existed = !!q.getToken.get(b.account);   // BEFORE upsert — overwrite vs add
       q.upsertAccount.run(b.account, encrypt(tok), b.label || '');
+      logAccess(b.account, '', reqIp(req), existed ? 'account-overwrite' : 'account-add', b.label || '');
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, tok.startsWith('sk-ant-') ? { ok: true }
         : { ok: true, warning: "doesn't look like a setup token (sk-ant-…)" });
@@ -253,7 +260,7 @@ const server = http.createServer(async (req, res) => {
       const provider = decodeURIComponent(p.split('/').pop()).trim().toLowerCase();
       const row = q.getKeyByProvider.get(provider);
       if (!row) return json(res, 404, { error: 'no working key for ' + provider });
-      q.insAccess.run(provider, url.searchParams.get('host') || '', reqIp(req), 'key', 'ok');
+      logAccess(provider, url.searchParams.get('host') || '', reqIp(req), 'key', 'ok');
       return json(res, 200, { provider, label: row.label, key: decrypt(row.key_enc) });
     }
     if (p === '/api/keys' && req.method === 'POST') {
@@ -268,24 +275,33 @@ const server = http.createServer(async (req, res) => {
         return json(res, 400, { error: 'key looks malformed (contains whitespace or an export/NAME= prefix — send the raw value only)' });
       // first8…last4: UNIQUE(provider,key_hint) is the upsert target — a prefix-only hint
       // made same-prefix keys (sk-proj-…, sk-or-v1-…) silently overwrite each other.
-      q.addKey.run(provider, b.label || '', encrypt(key), key.slice(0, 8) + '…' + key.slice(-4), b.status || 'working');
+      const hint = key.slice(0, 8) + '…' + key.slice(-4);
+      q.addKey.run(provider, b.label || '', encrypt(key), hint, b.status || 'working');
+      logAccess(provider, '', reqIp(req), 'key-add', hint);
       broadcast('keys', q.listKeys.all());
       return json(res, 200, isKnownProvider(provider) ? { ok: true }
         : { ok: true, warning: `unknown provider ${provider} — not in the catalog` });
     }
     if (p.startsWith('/api/keys/') && req.method === 'DELETE') {
-      q.delKey.run(Number(p.split('/').pop()));
+      // RETURNING: a typo'd id used to no-op with {ok:true} — surface it as a 404
+      const dead = q.delKey.get(Number(p.split('/').pop()));
+      if (!dead) return json(res, 404, { error: 'unknown key id' });
+      logAccess(dead.provider, '', reqIp(req), 'key-delete', dead.key_hint);
       broadcast('keys', q.listKeys.all());
       return json(res, 200, { ok: true });
     }
     if (p.startsWith('/api/accounts/') && req.method === 'DELETE') {
-      q.delAccount.run(decodeURIComponent(p.split('/').pop()));
+      const name = decodeURIComponent(p.split('/').pop());
+      const dead = q.delAccount.get(name);
+      if (!dead) return json(res, 404, { error: 'unknown account' });
+      logAccess(name, '', reqIp(req), 'account-delete', dead.label);
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true });
     }
     if (p.startsWith('/api/accounts/') && p.endsWith('/disabled') && req.method === 'POST') {
       const name = decodeURIComponent(p.split('/')[3]); const b = await body(req);
       q.setDisabled.run(b.disabled ? 1 : 0, name);
+      logAccess(name, '', reqIp(req), b.disabled ? 'account-disable' : 'account-enable', 'ok');
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true });
     }
@@ -310,7 +326,7 @@ const server = http.createServer(async (req, res) => {
       const excl = new Set((url.searchParams.get('exclude') || '').split(',').map((s) => s.trim()).filter(Boolean));
       const row = q.pickRanked.all(CUTOFF).find((r) => !excl.has(r.account));
       if (!row) {
-        q.insAccess.run(null, host, ip, 'select', 'none-available');
+        logAccess(null, host, ip, 'select', 'none-available');
         // reasoned 503: WHY is nothing servable — one account may tick several counters
         const all = q.listAccounts.all();
         let parked = 0, reauth = 0, disabled = 0;
@@ -318,8 +334,7 @@ const server = http.createServer(async (req, res) => {
         return json(res, 503, { error: 'no account with headroom', accounts: all.length, parked, reauth, disabled });
       }
       const tok = decrypt(q.getToken.get(row.account).token_enc);
-      q.insAccess.run(row.account, host, ip, 'select', 'ok');
-      broadcast('access', { account: row.account, host, ip, action: 'select' });
+      logAccess(row.account, host, ip, 'select', 'ok');
       return json(res, 200, { account: row.account, setup_token: tok });
     }
     // client hit an over-limit/unavailable account → PARK it for a TTL (default 15m) so
@@ -333,7 +348,7 @@ const server = http.createServer(async (req, res) => {
       // keeps running on stale data while the client thinks it reported fine.
       if (q.parkAccount.run(`+${mins} minutes`, b.account).changes === 0)
         return json(res, 404, { error: 'unknown account ' + b.account });
-      q.insAccess.run(b.account, b.host || '', reqIp(req), 'limit', `parked ${mins}m`);
+      logAccess(b.account, b.host || '', reqIp(req), 'limit', `parked ${mins}m`);
       broadcast('accounts', q.listAccounts.all());
       // read back so the caller can display/log the actual expiry
       return json(res, 200, { ok: true, parked_minutes: mins, parked_until: q.getParked.get(b.account).parked_until });
