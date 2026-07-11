@@ -43,7 +43,8 @@ Born from three real pains:
   add-key UI · over-limit TTL-park retry · self-heal (`/health` + watchdog +
   autoheal) · boot canary + daily `VACUUM INTO` backups + corruption
   auto-restore · full-mutation audit trail (`/api/access`) · live re-poll
-  (`/refresh`) · secret-scrubbed prompt log.
+  (`/refresh`) · secret-scrubbed prompt log · read-only capability map
+  (`/api/capabilities`).
 
 ### Round 2 — hot layer + spend guard
 - **Redis hot layer** (Redis already runs fleet-wide incl. .10):
