@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync, existsSync } from 'node:fs';
+import WebSocket from 'ws';
 
 // Isolate this run onto a throwaway DB + token BEFORE importing server.js.
 // process.env takes precedence over any repo .env (Node does not override
@@ -218,4 +219,29 @@ test("backupNow() snapshots the vault to today's file; second call is a no-op", 
   assert.ok(existsSync(f));
   backupNow();                   // already exists → skip, no throw
   assert.ok(existsSync(f));
+});
+
+const wsFirstMsg = (path, protocols) => new Promise((resolve, reject) => {
+  const ws = new WebSocket(base.replace('http', 'ws') + path, protocols);
+  ws.on('message', (d) => { ws.close(); resolve(JSON.parse(d)); });
+  ws.on('error', reject);
+});
+
+test('WS auth via bearer.<token> subprotocol — no token in the URL', async () => {
+  const m = await wsFirstMsg('/ws', ['aigate', 'bearer.' + TOKEN]);
+  assert.equal(m.type, 'accounts');
+});
+
+test('WS with no auth is destroyed before any message', async () => {
+  await new Promise((resolve, reject) => {
+    const ws = new WebSocket(base.replace('http', 'ws') + '/ws');
+    ws.on('message', () => reject(new Error('unauthenticated socket got data')));
+    ws.on('error', resolve);
+    ws.on('close', resolve);
+  });
+});
+
+test('legacy WS ?token= query auth still works (deprecated fallback)', async () => {
+  const m = await wsFirstMsg('/ws?token=' + TOKEN);
+  assert.equal(m.type, 'accounts');
 });

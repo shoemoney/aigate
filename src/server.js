@@ -147,7 +147,8 @@ const q = {
 };
 
 // ---- websocket hub ------------------------------------------------------
-const wss = new WebSocketServer({ noServer: true });
+// browsers abort unless the server echoes one offered subprotocol — echo 'aigate', never the bearer
+const wss = new WebSocketServer({ noServer: true, handleProtocols: (protocols) => (protocols.has('aigate') ? 'aigate' : false) });
 function broadcast(type, data) {
   const msg = JSON.stringify({ type, data, ts: new Date().toISOString() });
   for (const ws of wss.clients) if (ws.readyState === 1) ws.send(msg);
@@ -323,9 +324,11 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// ws upgrade (token-gated)
+// ws upgrade (token-gated; bearer rides the 'bearer.<token>' subprotocol so it never lands in URL access logs)
 server.on('upgrade', (req, socket, head) => {
-  if (new URL(req.url, 'http://x').pathname !== '/ws' || !authed(req) || !ipAllowed(reqIp(req), ALLOW_CIDR)) { socket.destroy(); return; }
+  const wsAuthed = String(req.headers['sec-websocket-protocol'] || '').split(',')
+    .some((p) => p.trim().startsWith('bearer.') && tokenMatches(p.trim().slice(7), TOKEN));
+  if (new URL(req.url, 'http://x').pathname !== '/ws' || !(wsAuthed || authed(req)) /* authed = deprecated ?token= fallback */ || !ipAllowed(reqIp(req), ALLOW_CIDR)) { socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => {
     ws.send(JSON.stringify({ type: 'accounts', data: q.listAccounts.all(), ts: new Date().toISOString() }));
   });

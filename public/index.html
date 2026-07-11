@@ -164,7 +164,7 @@ function renderHosts(rows){const tb=$('#hosts tbody');tb.innerHTML='';for(const 
 
 let ws;
 function connect(){
-  ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws?token='+encodeURIComponent(TOKEN));
+  ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',['aigate','bearer.'+TOKEN]);
   ws.onopen=()=>$('#live').classList.add('on');
   ws.onclose=()=>{$('#live').classList.remove('on');setTimeout(connect,2000)};
   ws.onmessage=e=>{const m=JSON.parse(e.data);
