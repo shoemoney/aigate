@@ -156,6 +156,13 @@ test('POST /api/events/usage + /limit for an unknown account → 404, not silent
   }
 });
 
+test('POST /api/events/prompt truncates stored prompt to 400 chars', async () => {
+  await fetch(base + '/api/events/prompt', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'alice', prompt: 'x'.repeat(1000) }) });
+  const [row] = await (await fetch(base + '/api/logs?limit=1', { headers: H })).json();
+  assert.ok(row.prompt.length <= 400);
+});
+
 test('/health selectable counts parked accounts as unusable (matches /api/select)', async () => {
   // alice is still parked from the previous test; park bob too → nothing servable
   await fetch(base + '/api/events/limit', { method: 'POST', headers: H, body: JSON.stringify({ account: 'bob' }) });

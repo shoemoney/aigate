@@ -10,3 +10,8 @@ services:
     # /health fails; the willfarrell/autoheal container restarts anything
     # labeled autoheal=true when it goes unhealthy.
     labels: ["autoheal=true"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

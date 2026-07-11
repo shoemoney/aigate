@@ -162,7 +162,9 @@ const authed = (req) => {
 };
 const reqIp = (req) => clientIp(req.headers, req.socket.remoteAddress, { trustProxy: TRUST_PROXY });
 const body = (req) => new Promise((res) => {
-  let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => { try { res(b ? JSON.parse(b) : {}); } catch { res({}); } });
+  let b = '';
+  req.on('data', (c) => { b += c; if (b.length > 1e6) { req.destroy(); res({}); } }); // 1MB cap
+  req.on('end', () => { try { res(b ? JSON.parse(b) : {}); } catch { res({}); } });
 });
 const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
@@ -310,7 +312,8 @@ const server = http.createServer(async (req, res) => {
     // --- event ingest (from the fleet's hooks) ---
     if (p === '/api/events/prompt' && req.method === 'POST') {
       const b = await body(req);
-      q.insReq.run(b.account || '', b.host || '', reqIp(req), b.cwd || '', b.model || '', b.prompt || '', b.tokens ?? null);
+      // store truncated: every read already substr's to 400 — never retain full prompts
+      q.insReq.run(b.account || '', b.host || '', reqIp(req), b.cwd || '', b.model || '', String(b.prompt || '').slice(0, 400), b.tokens ?? null);
       broadcast('prompt', { account: b.account, host: b.host, ip: reqIp(req), cwd: b.cwd, model: b.model,
         prompt: String(b.prompt || '').slice(0, 400), ts: new Date().toISOString() });
       return json(res, 200, { ok: true });
@@ -404,6 +407,9 @@ function backupNow() {
     mkdirSync(BACKUP_DIR, { recursive: true });
     const target = join(BACKUP_DIR, `aigate-${new Date().toISOString().slice(0, 10)}.db`);
     if (!existsSync(target)) db.exec(`VACUUM INTO '${target}'`);
+    // ponytail: backupNow doubles as daily maintenance — 30-day log retention, no env knob
+    db.exec(`DELETE FROM request_log WHERE ts < datetime('now','-30 days')`);
+    db.exec(`DELETE FROM access_log WHERE ts < datetime('now','-30 days')`);
     const cutoff = Date.now() - 14 * 86400000;
     for (const f of readdirSync(BACKUP_DIR)) {
       const m = /^aigate-(\d{4}-\d{2}-\d{2})\.db$/.exec(f);
