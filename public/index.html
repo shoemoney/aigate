@@ -92,6 +92,7 @@
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 let TOKEN=localStorage.aigate_token||'';
+let statsT;
 function save(){TOKEN=$('#tok').value.trim();localStorage.aigate_token=TOKEN;boot();}
 function color(p){return p>=80?'var(--red)':p>=50?'var(--yellow)':'var(--green)'}
 
@@ -175,7 +176,7 @@ function connect(){
   ws.onmessage=e=>{const m=JSON.parse(e.data);
     if(m.type==='accounts')renderAccounts(m.data);
     else if(m.type==='keys')renderKeys(m.data);
-    else if(m.type==='prompt'){addFeed(m.data);api('/api/stats').then(s=>renderHosts(s.by_host))}
+    else if(m.type==='prompt'){addFeed(m.data);clearTimeout(statsT);statsT=setTimeout(()=>api('/api/stats').then(s=>renderHosts(s.by_host)).catch(()=>{}),1500)}
     else if(m.type==='access')addFeed({...m.data,prompt:'▸ '+m.data.action+(m.data.result&&m.data.result!=='ok'?' — '+m.data.result:'')});
   };
 }
