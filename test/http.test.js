@@ -192,6 +192,18 @@ test('POST /api/events/prompt truncates stored prompt to 400 chars', async () =>
   assert.ok(row.prompt.length <= 400);
 });
 
+test('POST /api/events/prompt round-trips a multibyte UTF-8 prompt (no mojibake)', async () => {
+  // body() now collects Buffers and decodes ONCE — a per-chunk toString() would split an
+  // emoji/CJK UTF-8 sequence across TCP boundaries into replacement chars. Can't force a
+  // chunk split in-process, but proving the emoji survives a normal POST exercises the
+  // decode-once path this fix restores.
+  const prompt = '🛡️ café 日本語';
+  await fetch(base + '/api/events/prompt', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'alice', prompt }) });
+  const [row] = await (await fetch(base + '/api/logs?limit=1', { headers: H })).json();
+  assert.equal(row.prompt, prompt);                 // byte-for-byte, no U+FFFD replacement chars
+});
+
 test('POST /api/events/prompt scrubs pasted secrets; git SHAs survive', async () => {
   const log1 = async () => (await (await fetch(base + '/api/logs?limit=1', { headers: H })).json())[0];
   await fetch(base + '/api/events/prompt', { method: 'POST', headers: H,

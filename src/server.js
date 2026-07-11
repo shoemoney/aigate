@@ -100,7 +100,7 @@ function openDb(path = DB_PATH) {
         );
         CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
         CREATE INDEX IF NOT EXISTS idx_req_host ON request_log(host);
-        CREATE INDEX IF NOT EXISTS idx_req_acct ON request_log(account);
+        DROP INDEX IF EXISTS idx_req_acct;
       `);
       return d;
     } catch (e) { try { d.close(); } catch { /* never opened */ } throw e; }
@@ -170,8 +170,6 @@ const q = {
   insAccess: db.prepare(`INSERT INTO access_log(account,host,ip,action,result) VALUES(?,?,?,?,?)`),
   recentReq: db.prepare(`SELECT id,ts,account,host,ip,cwd,model,substr(prompt,1,400) AS prompt,tokens
     FROM request_log ORDER BY id DESC LIMIT ?`),
-  statByAccount: db.prepare(`SELECT account, count(*) AS requests, sum(coalesce(tokens,0)) AS tokens,
-    max(ts) AS last FROM request_log GROUP BY account`),
   statByHost: db.prepare(`SELECT host, count(*) AS requests, sum(coalesce(tokens,0)) AS tokens,
     max(ts) AS last FROM request_log GROUP BY host ORDER BY requests DESC`),
   addKey: db.prepare(`INSERT INTO provider_keys(provider,label,key_enc,key_hint,status,last_checked)
@@ -187,6 +185,7 @@ const q = {
 // browsers abort unless the server echoes one offered subprotocol — echo 'aigate', never the bearer
 const wss = new WebSocketServer({ noServer: true, handleProtocols: (protocols) => (protocols.has('aigate') ? 'aigate' : false) });
 function broadcast(type, data) {
+  if (wss.clients.size === 0) return;   // 0 dashboard tabs is the common case — skip stringify + loop
   const msg = JSON.stringify({ type, data, ts: new Date().toISOString() });
   for (const ws of wss.clients) {
     // backpressure guard: a half-open socket never drains — it would buffer every broadcast forever
@@ -207,10 +206,13 @@ const authed = (req) => {
   return h.startsWith('Bearer ') && tokenMatches(h.slice(7), TOKEN);
 };
 const reqIp = (req) => clientIp(req.headers, req.socket.remoteAddress, { trustProxy: TRUST_PROXY });
+// collect Buffers and decode ONCE: coercing each chunk to a string splits a multibyte
+// UTF-8 sequence (emoji/CJK) across TCP boundaries into replacement chars; the 1MB cap
+// must count bytes, not UTF-16 units. Never rejects (bad/oversized body → {}).
 const body = (req) => new Promise((res) => {
-  let b = '';
-  req.on('data', (c) => { b += c; if (b.length > 1e6) { req.destroy(); res({}); } }); // 1MB cap
-  req.on('end', () => { try { res(b ? JSON.parse(b) : {}); } catch { res({}); } });
+  const chunks = []; let n = 0;
+  req.on('data', (c) => { n += c.length; if (n > 1e6) { req.destroy(); return res({}); } chunks.push(c); });
+  req.on('end', () => { try { res(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch { res({}); } });
 });
 const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
 // prefix-shaped secrets only (sk-…, ghp…, xoxb…) — no generic long-hex rule, git SHAs must survive
@@ -416,7 +418,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/logs' && req.method === 'GET')
       return json(res, 200, q.recentReq.all(Math.min(Number(url.searchParams.get('limit')) || 100, 1000)));
     if (p === '/api/stats' && req.method === 'GET')
-      return json(res, 200, { by_account: q.statByAccount.all(), by_host: q.statByHost.all(), accounts: q.listAccounts.all() });
+      return json(res, 200, { by_host: q.statByHost.all(), accounts: q.listAccounts.all() });
 
     return json(res, 404, { error: 'not found' });
   } catch (e) {
@@ -484,17 +486,18 @@ async function pollUsage() {
   if (polling) { console.warn('[poll] previous cycle still running, skipping'); return; }
   polling = true;
   try {
-    let updated = false;
-    for (const row of allTokensStmt.all()) {
+    // parallel: one hung/dead token no longer makes the cycle N×15s and stalls later accounts.
+    // node:sqlite is sync so the interleaved DB writes stay serialized on the event loop.
+    const results = await Promise.all(allTokensStmt.all().map(async (row) => {
       let tok;
       // no exit: partial failure stays partial, and a restart won't fix a key mismatch
       try { tok = decrypt(row.token_enc); }
-      catch (e) { console.error('[poll] decrypt failed for', row.account, '— wrong AIGATE_ENCRYPTION_KEY or corrupt row:', String(e && e.message || e)); continue; }
+      catch (e) { console.error('[poll] decrypt failed for', row.account, '— wrong AIGATE_ENCRYPTION_KEY or corrupt row:', String(e && e.message || e)); return null; }
       const res = await pollAccountUsage(row.account, tok);
-      if (res.five != null) updated = true;
       console.log('[poll]', new Date().toISOString(), JSON.stringify(res));
-    }
-    if (updated) broadcast('accounts', q.listAccounts.all());
+      return res;
+    }));
+    if (results.some((r) => r && r.five != null)) broadcast('accounts', q.listAccounts.all());
   } finally { polling = false; }
 }
 const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
