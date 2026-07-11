@@ -387,9 +387,12 @@ const server = http.createServer(async (req, res) => {
 
 // ws upgrade (token-gated; bearer rides the 'bearer.<token>' subprotocol so it never lands in URL access logs)
 server.on('upgrade', (req, socket, head) => {
+  // same '//' trap as the request handler, but this listener is SYNC — an unguarded
+  // throw here is uncaughtException → shutdown(1) → autoheal crash-loop, pre-auth
+  let path; try { path = new URL(req.url, 'http://x').pathname; } catch { socket.destroy(); return; }
   const wsAuthed = String(req.headers['sec-websocket-protocol'] || '').split(',')
     .some((p) => p.trim().startsWith('bearer.') && tokenMatches(p.trim().slice(7), TOKEN));
-  if (new URL(req.url, 'http://x').pathname !== '/ws' || !wsAuthed || !ipAllowed(reqIp(req), ALLOW_CIDR)) { console.warn('[ws] denied', reqIp(req)); socket.destroy(); return; }
+  if (path !== '/ws' || !wsAuthed || !ipAllowed(reqIp(req), ALLOW_CIDR)) { console.warn('[ws] denied', reqIp(req)); socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => {
     // a mid-send ECONNRESET (sleeping laptop tab) otherwise emits an unlistened
     // 'error' → uncaughtException → the whole vault daemon restarts

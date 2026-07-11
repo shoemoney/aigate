@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync, existsSync, statSync } from 'node:fs';
+import { connect } from 'node:net';
 import WebSocket from 'ws';
 
 // Isolate this run onto a throwaway DB + token BEFORE importing server.js.
@@ -358,6 +359,18 @@ test('WS ?token= query auth is dead — socket destroyed', async () => {
   });
 });
 // ponytail: no 403 net-gate test — ALLOW_CIDR is read at import and this harness deletes it; the 401 JSON assertion above covers the error-shape contract
+
+test('malformed WS upgrade target ("//") is destroyed pre-auth — daemon survives', async () => {
+  // ws-the-library validates URLs client-side, so hand-roll the frame: '//' parses
+  // as a request-target but makes the listener's new URL() throw (protocol-relative)
+  const sock = connect(server.address().port, '127.0.0.1');
+  sock.on('error', () => {});                                  // RST on destroy is expected
+  await new Promise((r) => sock.once('connect', r));
+  sock.write('GET // HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n');
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal((await fetch(base + '/health')).status, 200);   // unguarded parse would have shutdown(1)'d
+  sock.destroy();
+});
 
 test('daemon survives an abrupt WS client death; broadcast still reaches a healthy client', async () => {
   const wsUrl = base.replace('http', 'ws') + '/ws';
