@@ -467,11 +467,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     // --- read models for the dashboard ---
+    // Math.max(1,…) floor: SQLite reads a negative LIMIT as unbounded, so a truthy -1 would dump the whole log.
     if (p === '/api/logs' && req.method === 'GET')
-      return json(res, 200, q.recentReq.all(Math.min(Number(url.searchParams.get('limit')) || 100, 1000)));
+      return json(res, 200, q.recentReq.all(Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 100, 1000))));
     // audit trail read path (access_log holds only hints/labels/actions, never secrets)
     if (p === '/api/access' && req.method === 'GET')
-      return json(res, 200, q.recentAccess.all(Math.min(Number(url.searchParams.get('limit')) || 100, 1000)));
+      return json(res, 200, q.recentAccess.all(Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 100, 1000))));
     if (p === '/api/stats' && req.method === 'GET')
       return json(res, 200, { by_host: q.statByHost.all(), accounts: q.listAccounts.all() });
 

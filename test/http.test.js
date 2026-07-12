@@ -199,6 +199,16 @@ test('POST /api/events/prompt truncates stored prompt to 400 chars', async () =>
   assert.ok(row.prompt.length <= 400);
 });
 
+test('negative ?limit is clamped, not unbounded (SQLite reads LIMIT -1 as ALL)', async () => {
+  for (let i = 0; i < 3; i++)                                  // seed a few request_log rows
+    await fetch(base + '/api/events/prompt', { method: 'POST', headers: H,
+      body: JSON.stringify({ account: 'alice', prompt: 'seed ' + i }) });
+  const logs = await (await fetch(base + '/api/logs?limit=-1', { headers: H })).json();
+  const access = await (await fetch(base + '/api/access?limit=-1', { headers: H })).json();
+  assert.ok(Array.isArray(logs) && logs.length > 0 && logs.length <= 1000, 'logs clamped to [1,1000]');
+  assert.ok(Array.isArray(access) && access.length > 0 && access.length <= 1000, 'access clamped to [1,1000]');
+});
+
 test('POST /api/events/prompt round-trips a multibyte UTF-8 prompt (no mojibake)', async () => {
   // body() now collects Buffers and decodes ONCE — a per-chunk toString() would split an
   // emoji/CJK UTF-8 sequence across TCP boundaries into replacement chars. Can't force a
