@@ -70,8 +70,9 @@ Every switch landed in `access_log` (`select`/`ok`) and `request_log`.
 `cc -p` captures claude's output with **clean stdout** (banners + claude's
 stderr never pollute the piped result) and classifies the failure:
 
-- **transient 529/overload** → POSTs `/api/events/limit` with `minutes: 2` (short park)
-- **real rate-limit / quota** → POSTs `/api/events/limit` for the default **15m**
+- **transient 529/overload** → **waits 10s and retries the SAME account** (no park — 529 is
+  Anthropic-global load-shedding; parking/hopping just drains the pool)
+- **real per-account usage limit / quota** → POSTs `/api/events/limit` for the default **15m** TTL park
   (`minutes` accepts 1–360; unknown account → 404)
 
 Parking sets `parked_until` — the next select skips the account until the TTL

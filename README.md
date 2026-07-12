@@ -200,7 +200,7 @@ sequenceDiagram
 | ⚖️ | **Headroom-aware selection** | hands out the account with the **most headroom** (lowest of `max(5h%,7d%)`), skips anything ≥ cutoff |
 | 📈 | **Server-side usage poller** | reads each account's **real** rate-limit headroom straight from Anthropic every 10 min → auto-skip maxed, **auto-recover after reset**, zero manual seeding |
 | 🔑 | **Provider-key registry** | encrypted store + `/api/keys` for a **59-provider catalog** (OpenAI / OpenRouter / Gemini / Groq / Together / fal / ElevenLabs / …); **sanitized intake** (trims + un-quotes pastes, **400s** `export`/`NAME=` blobs, provider lowercased) + collision-proof **`first8…last4`** hints; `GET /api/providers` feeds a dashboard **add-key form** with per-provider key-format hints |
-| 🔁 | **Over-limit detect + retry** | headless `cc -p` spots a rate-limit/unavailable reply, **TTL-parks** that account (`/api/events/limit` — **15m** default, transient **529 → 2m**, real usage untouched) and **retries the next-best** via `/api/select?exclude=` — up to 3 |
+| 🔁 | **Over-limit detect + retry** | headless `cc -p` classifies claude's failure — a **real per-account usage limit** → **TTL-parks** that account (`/api/events/limit` — **15m** default, real usage untouched) and **retries the next-best** via `/api/select?exclude=` (up to 3); a **transient 529/overload** → **waits 10s and retries the SAME account** (no park — 529 is global load-shedding; parking/hopping just drains the pool) |
 | 🩺 | **Self-healing daemon** | unauthenticated **`/health`** (DB-backed; `selectable` uses the **exact selection query**, so parked accounts don't mask an outage) + internal **watchdog** (exits→restart on a wedged DB) + Docker `HEALTHCHECK` wired to **autoheal** — three recovery layers |
 | 🐤 | **Boot canary + daily backups** | wrong `AIGATE_ENCRYPTION_KEY` = **loud FATAL at boot** (not a decrypt blow-up mid-request); daily `VACUUM INTO` snapshot → `data/backups/` w/ **14-day retention** (ciphertext only — `.env` never copied) |
 | 🧾 | **Full audit trail** | every **handout, key-fetch, and mutation** (account add/overwrite/delete/disable/enable · key add/delete · limit-park) logged with **timestamp + IP + host**; every prompt is **secret-scrubbed** (`sk-`/`ghp`/`AIza`-shaped tokens redacted) **before** storage then capped at **400 chars**; all readable at **`/api/access`**; auto-pruned after **30 days** (daily, piggybacked on the backup pass) |
@@ -274,7 +274,7 @@ and auto-detects the `claude` binary.
 | File | Role |
 |---|---|
 | `install.sh` | sets up `cc` + `~/.claude/aigate/` + env; auto-detects `claude`; wires MCP-key hydration into the shell |
-| `aigate-run.sh` | the `cc` wrapper — select → set token → unset stray `ANTHROPIC_*` (incl. `BASE_URL`) → run `claude`; **retry-on-limit** in `-p` mode (transient **529 → 2m park**, real limits → 15m) w/ clean stdout; preflight-warns **shadow logins** + `BASE_URL` hijacks |
+| `aigate-run.sh` | the `cc` wrapper — select → set token → unset stray `ANTHROPIC_*` (incl. `BASE_URL`) → run `claude`; **retry-on-limit** in `-p` mode (real limit → **15m park** + next account; transient **529 → wait 10s, retry the SAME account, no park**) w/ clean stdout; preflight-warns **shadow logins** + `BASE_URL` hijacks |
 | `hydrate.sh` | MCP-key hydration — vault → `~/.claude/aigate/mcp-keys.env` so `${BRAVE_API_KEY}`-style MCP configs resolve at launch; **merges** partial fetches (a blip never wipes cached keys); `cc` **foreground-freshens** when missing/stale (>12h) so *this* launch gets keys |
 | `prompt-hook.sh` | Claude Code `UserPromptSubmit` hook → logs the prompt to aigate |
 | `statusline-feed.sh` | statusline badge (account · wk %) → also feeds real usage back |
@@ -334,7 +334,7 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`**
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` · `/healthz` | 🩺 **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` (503 if the DB is wedged) |
+| `GET` | `/health` · `/healthz` | 🩺 **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` plus observability numbers `poll_age_s, backup_age_s` + a `parked` / `reauth` / `disabled` tally (all numbers, no secrets; autoheal reads only the status) (503 if the DB is wedged) |
 | `GET` | `/api/select?host=&exclude=a,b` | 🎯 best account + token (logs access w/ IP); `exclude` skips accounts on retry |
 | `GET` / `POST` | `/api/accounts` | list (usage, **no tokens**) / add `{account, setup_token, label}` |
 | `DELETE` | `/api/accounts/:name` | remove |
@@ -349,6 +349,7 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`**
 | `DELETE` | `/api/keys/:id` | remove a provider key |
 | `GET` | `/api/logs?limit=` · `/api/stats` | prompt log · dashboard rollups |
 | `GET` | `/api/access?limit=` | 🧾 **audit trail** — every handout, mutation & key-fetch (account · host · IP · action · result; **no secrets**) for post-incident review; `limit` default 100, capped **1000** |
+| `GET` | `/api/capabilities` | 🧭 read-only **registry slice** — per-provider **key counts** + Claude **selectability** (accounts + how many are pickable) + server **version**; a machine-readable "what can I reach?" for agents (**never secrets**) |
 | `WS` | `/ws` | 📡 live event stream — auth via the **`bearer.<token>` WebSocket subprotocol** (token never lands in URL/access logs; `?token=` is **removed** — header/subprotocol only) |
 
 ---
@@ -384,7 +385,7 @@ flowchart TD
 | ✅ **v1** | headroom selector · **over-limit retry (TTL parks)** · encrypted vault (**boot canary** + daily backups) · **10-min usage poller** · **59-provider key registry + dashboard add-key UI** · **self-heal (`/health` + watchdog + autoheal)** · WS dashboard | "which of my 35 boxes is that?" + manual usage babysitting + re-login churn |
 | 🔨 **R2** | secure proxy for API providers · per-`model×key` **latching budget breaker** · Redis | the **$500 nano-banana loop** |
 | ⬜ **R3** | universal `keys(provider)` registry · **cost-first routing** (included quota → prepaid → paid) | paying twice for quota you already own |
-| ⬜ **R4** | inbox account discovery · `GET /capabilities` for agents | keys too annoying to use → agents just use them |
+| ⬜ **R4** | inbox account discovery · fuller **agent capability registry** — the read-only `GET /api/capabilities` slice (counts + selectability + version) **already ships**; R4 is the metered, on-demand-handout registry layered on top | keys too annoying to use → agents just use them |
 
 > 🔨 = the one "next" pointer. Nothing gets a ✅ until it exists in code and runs on real machines.
 

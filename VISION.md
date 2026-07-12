@@ -95,7 +95,7 @@ Born from three real pains:
 - **Inbox discovery sweep** — scan email for billing receipts / signup confirmations
   → auto-surface every paid service you actually have (the forgotten half). One-time
   "here's your real account footprint," then pull keys into the vault.
-- **Agent capability registry** — the unlock. `GET /capabilities` returns a
+- **Agent capability registry** — the unlock. `GET /api/capabilities` returns a
   machine-readable map of what's available (`OpenRouter{grok,nano-banana,…}`,
   `Replicate`, `Perplexity`, `AWS`, …). Agents ask *"what do I have access to?"*,
   request a **metered + audited** key on demand, and dormant subscriptions become
