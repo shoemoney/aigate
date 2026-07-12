@@ -98,6 +98,8 @@ let statsT;
 function save(){TOKEN=$('#tok').value.trim();localStorage.aigate_token=TOKEN;boot();}
 function color(p){return p>=80?'var(--red)':p>=50?'var(--yellow)':'var(--green)'}
 const fmtAge=s=>s<60?s+'s':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600)+'h':Math.floor(s/86400)+'d';  // fmtAge(90)==='1m', fmtAge(3600)==='1h'
+// sqlite timestamps are bare UTC ("2026-07-11 18:30:00", no Z) — V8 parses those as LOCAL; stamp them UTC. ISO-Z (live WS rows) passes through.
+const toDate=s=>new Date(/[TZ]/.test(String(s))?s:String(s).replace(' ','T')+'Z');  // +toDate('2026-07-11 18:30:00') === Date.UTC(2026,6,11,18,30,0)
 
 function renderAccounts(list){
   const el=$('#accts'); el.innerHTML='';
@@ -105,8 +107,7 @@ function renderAccounts(list){
   for(const a of list){
     const worst=Math.max(a.five_hour_pct||0,a.seven_day_pct||0);
     const run=worst>=80, card=document.createElement('div');
-    // parked_until is a bare sqlite UTC string with no zone — append 'Z' before parsing
-    const parkTxt=a.parked_until?'→'+new Date(a.parked_until.replace(' ','T')+'Z').toLocaleTimeString():'';
+    const parkTxt=a.parked_until?'→'+toDate(a.parked_until).toLocaleTimeString():'';
     const badge=a.disabled?'disabled':a.reauth_needed?'🔑 re-auth':a.parked?'⏸ parked'+parkTxt:(a.has_token?'ready':'no token');
     // usage_age_s absent → old server, fall back to the raw usage_updated line; null → never polled
     const ageKnown=a.usage_age_s!==undefined, stale=ageKnown&&a.usage_age_s>1500;
@@ -124,7 +125,7 @@ function bar(lbl,p){p=Math.round(p||0);return `<div class="bar"><div class="lbl"
 
 function addFeed(d){
   const f=$('#feed'),r=document.createElement('div');r.className='row';
-  const t=new Date(d.ts||Date.now()).toLocaleTimeString();
+  const t=(d.ts?toDate(d.ts):new Date()).toLocaleTimeString();
   r.innerHTML=`<span class="t">${t}</span><span class="a">${esc(d.account||'?')}</span><span class="h">${esc(d.host||'')}</span><span class="p">${esc(d.prompt||d.action||'')}</span>`;
   f.prepend(r); while(f.children.length>200)f.lastChild.remove();
 }
@@ -134,7 +135,7 @@ async function seedFeed(){
   const logs=await api('/api/logs?limit=50');   // 401 here propagates → logout; access is best-effort
   const acc=await api('/api/access?limit=50').then(r=>Array.isArray(r)?r:[]).catch(()=>[]);
   [...logs,...acc.map(r=>({...r,prompt:'▸ '+r.action+(r.result&&r.result!=='ok'?' — '+r.result:'')}))]
-    .sort((a,b)=>new Date(a.ts)-new Date(b.ts)).forEach(addFeed);
+    .sort((a,b)=>toDate(a.ts)-toDate(b.ts)).forEach(addFeed);
 }
 
 // ---- provider keys ----
@@ -155,8 +156,8 @@ function renderKeys(rows){
   for(const k of rows){
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${esc(k.provider)}</td><td>${esc(k.label||'—')}</td><td class="mono">${esc(k.key_hint||'—')}</td>
-      <td>${esc(k.status||'')}</td><td class="mono">${(k.created_at||'').replace('T',' ')}</td>
-      <td class="mono">${k.last_used?esc(k.last_used):'<span style="color:var(--dim)">never</span>'}</td>
+      <td>${esc(k.status||'')}</td><td class="mono">${k.created_at?toDate(k.created_at).toLocaleString():''}</td>
+      <td class="mono">${k.last_used?toDate(k.last_used).toLocaleString():'<span style="color:var(--dim)">never</span>'}</td>
       <td><button class="del">✕</button></td>`;
     tr.querySelector('.del').onclick=()=>delKey(k.id);
     tb.appendChild(tr);
@@ -180,7 +181,7 @@ async function delKey(id){
   loadKeys();
 }
 function renderHosts(rows){const tb=$('#hosts tbody');tb.innerHTML='';for(const h of rows||[]){
-  tb.insertAdjacentHTML('beforeend',`<tr><td>${esc(h.host||'—')}</td><td>${h.requests}</td><td>${h.tokens||0}</td><td>${(h.last||'').replace('T',' ')}</td></tr>`)}}
+  tb.insertAdjacentHTML('beforeend',`<tr><td>${esc(h.host||'—')}</td><td>${h.requests}</td><td>${h.tokens||0}</td><td>${h.last?toDate(h.last).toLocaleString():''}</td></tr>`)}}
 
 let ws;
 function connect(){
