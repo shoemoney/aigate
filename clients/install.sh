@@ -15,8 +15,10 @@ SRC="$(cd "$(dirname "$0")" && pwd)"
 DIR="$HOME/.claude/aigate"; BIN="$HOME/.local/bin"
 mkdir -p "$DIR" "$BIN"
 
-# version stamp — repo short-sha of the source checkout (best-effort).
+# version stamp — repo short-sha of the source checkout (best-effort); a git-less
+# tar-path install falls back to AIGATE_VERSION passed through by fleet-push.
 VER="$(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || true)"
+[ -n "$VER" ] || VER="${AIGATE_VERSION:-}"
 printf '%s\n' "$VER" > "$DIR/version"
 
 # the rc file zsh ACTUALLY sources is ZDOTDIR-based (the .10 trap: $HOME/.zshrc is

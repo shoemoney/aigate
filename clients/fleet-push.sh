@@ -10,6 +10,9 @@
 set -u
 SRC="$(cd "$(dirname "$0")" && pwd)"
 BOXES="${AIGATE_BOXES:-192.168.1.3 192.168.1.4 192.168.1.5}"
+# local short-sha of THIS checkout — passed to the tar-path remote install (git-less
+# tmpdir there can't rev-parse); empty if this side isn't a git checkout either.
+SHA="$(git -C "$SRC/.." rev-parse --short HEAD 2>/dev/null || true)"
 
 for host in $BOXES; do
   echo "=== $host ==="
@@ -23,7 +26,7 @@ for host in $BOXES; do
     else
       d="$(mktemp -d)"; trap "rm -rf \"$d\"" EXIT
       tar -xzf - -C "$d"
-      bash "$d/install.sh"
+      AIGATE_VERSION='"$SHA"' bash "$d/install.sh"
     fi
   '; then
     v="$(ssh -o ConnectTimeout=6 "$host" 'cat "$HOME/.claude/aigate/version" 2>/dev/null' || true)"
