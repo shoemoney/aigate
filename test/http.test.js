@@ -259,6 +259,22 @@ test('listAccounts exposes reauth_needed for the dashboard badge', async () => {
   assert.equal(list.find((a) => a.account === 'bob').reauth_needed, 0);
 });
 
+test('re-adding a token clears reauth_needed (recovery flow) → account selectable again', async () => {
+  const add = (setup_token) => fetch(base + '/api/accounts', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'recov', setup_token }) });
+  await add('sk-ant-oat01-recov-old');
+  db.prepare('UPDATE accounts SET reauth_needed=1 WHERE account=?').run('recov');   // poller 401'd it
+  await add('sk-ant-oat01-recov-new');                        // setup-token recovery: re-POST a fresh token
+  assert.equal(db.prepare('SELECT reauth_needed FROM accounts WHERE account=?').get('recov').reauth_needed, 0);
+  // and it's servable NOW (not after a poll cycle): exclude every other account so recov is the only candidate
+  const others = (await (await fetch(base + '/api/accounts', { headers: H })).json())
+    .map((a) => a.account).filter((a) => a !== 'recov');
+  const j = await (await fetch(base + `/api/select?host=t&exclude=${others.join(',')}`, { headers: H })).json();
+  assert.equal(j.account, 'recov');
+  assert.equal(j.setup_token, 'sk-ant-oat01-recov-new');     // fresh token, not the dead one
+  db.prepare('DELETE FROM accounts WHERE account=?').run('recov');   // keep shared state (alice+bob) intact
+});
+
 test('/health is unauthenticated and reports db-backed status', async () => {
   const r = await fetch(base + '/health');          // deliberately no bearer
   assert.equal(r.status, 200);
@@ -325,6 +341,18 @@ test('GET /api/keys/:provider normalizes case/whitespace — BRAVE%20 finds brav
   const j = await (await fetch(base + '/api/keys/BRAVE%20', { headers: H })).json();
   assert.equal(j.provider, 'brave');
   assert.equal(j.key, 'BSA-abc123');
+});
+
+test('POST /api/keys coerces a mistyped status to working; disabled shelves the key', async () => {
+  // a status typo must NOT silently hide the key — coerced to 'working' so the fetch path still finds it
+  await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'typoco', key: 'tk-typo-status-1234', status: 'workign' }) });
+  const j = await (await fetch(base + '/api/keys/typoco', { headers: H })).json();
+  assert.equal(j.key, 'tk-typo-status-1234');                // 'workign' → 'working', getKeyByProvider returns it
+  // 'disabled' is the ONE legit non-working value — deliberately shelved, not served
+  await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'shelfco', key: 'dk-shelf-key-5678', status: 'disabled' }) });
+  assert.equal((await fetch(base + '/api/keys/shelfco', { headers: H })).status, 404);
 });
 
 test('unknown API route → 404', async () => {

@@ -140,6 +140,10 @@ else try { decrypt(canary.v); } catch {
   process.exit(1);
 }
 
+// ponytail: the presence-check below is idempotent + crash-safe for ADD COLUMN ONLY.
+// A future migration that also BACKFILLS data must gate the backfill on its OWN sentinel
+// (e.g. a meta row): a crash between ADD COLUMN and the UPDATE leaves the column present,
+// so the next boot's presence-check reads it as 'done' and the backfill never re-runs.
 // migration: older DBs predate reauth_needed — add it if missing
 if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === 'reauth_needed'))
   db.exec(`ALTER TABLE accounts ADD COLUMN reauth_needed INTEGER NOT NULL DEFAULT 0`);
@@ -149,8 +153,11 @@ if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === 'par
 
 // prepared once
 const q = {
+  // reauth_needed=0 on re-add: the recovery flow (setup-token → re-POST the fresh token) must
+  // clear the poller's 401-flag NOW, else the account stays unselectable up to a full poll cycle.
+  // parked_until/disabled are deliberately untouched — parking is usage-driven, disabling is manual.
   upsertAccount: db.prepare(`INSERT INTO accounts(account,token_enc,label) VALUES(?,?,?)
-    ON CONFLICT(account) DO UPDATE SET token_enc=excluded.token_enc, label=excluded.label`),
+    ON CONFLICT(account) DO UPDATE SET token_enc=excluded.token_enc, label=excluded.label, reauth_needed=0`),
   // parked computed in the SAME clock domain as pickRanked — clients get a plain 0/1
   // instead of parsing a bare sqlite UTC string (no Z) in the right timezone.
   listAccounts: db.prepare(`SELECT account,label,five_hour_pct,seven_day_pct,usage_updated,disabled,reauth_needed,parked_until,
@@ -355,7 +362,11 @@ const server = http.createServer(async (req, res) => {
       // first8…last4: UNIQUE(provider,key_hint) is the upsert target — a prefix-only hint
       // made same-prefix keys (sk-proj-…, sk-or-v1-…) silently overwrite each other.
       const hint = key.slice(0, 8) + '…' + key.slice(-4);
-      q.addKey.run(provider, b.label || '', encrypt(key), hint, b.status || 'working');
+      // a mistyped status ('workign'/'Working'/'active') would vault a key that getKeyByProvider's
+      // exact status='working' filter then 404s forever — coerce anything but the two legit values
+      // to 'working' ('disabled' = deliberately shelved). Lazy on purpose: default, don't 400.
+      const status = (b.status === 'working' || b.status === 'disabled') ? b.status : 'working';
+      q.addKey.run(provider, b.label || '', encrypt(key), hint, status);
       logAccess(provider, '', reqIp(req), 'key-add', hint);
       broadcast('keys', q.listKeys.all());
       return json(res, 200, isKnownProvider(provider) ? { ok: true }
