@@ -7,7 +7,10 @@
 # Hooks fire for ALL claude sessions but only cc exports AIGATE_*; fail-open.
 [ -n "${AIGATE_URL:-}" ] || { set -a; . "$HOME/.claude/aigate/env" 2>/dev/null; set +a; }
 in="$(cat)"
-python3 - "$in" <<'PY' &
+# Detach the child's stdio (>/dev/null 2>&1) so it does NOT hold this hook's inherited
+# pipe open — otherwise a hook runner that waits on stdio-EOF blocks the turn until the
+# backgrounded HTTP calls finish. We want truly zero-latency fire-and-forget.
+python3 - "$in" >/dev/null 2>&1 <<'PY' &
 import json, os, sys, urllib.request
 try:
     d = json.loads(sys.argv[1] or "{}")
@@ -33,7 +36,8 @@ PY
 # Cheap cached read first; only pay for a live refresh when already near the cap (≥85,
 # same threshold as aigate-run.sh's supervise loop). aigate stays a SELECTOR: this only
 # reports YOUR account's own usage — it is never in Anthropic's request path.
-python3 - <<'PY' &
+# stdio detached (>/dev/null 2>&1) so these serial HTTP calls never block the turn.
+python3 - >/dev/null 2>&1 <<'PY' &
 import json, os, urllib.request
 def call(method, path, timeout):
     req = urllib.request.Request(
