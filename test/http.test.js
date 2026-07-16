@@ -840,3 +840,31 @@ test('GET /api/metrics returns Prometheus text with the core gauges (F5)', async
     assert.match(body, new RegExp('^' + m + ' \\d+', 'm'));
   assert.equal((await fetch(base + '/api/metrics')).status, 401);   // bearer-gated
 });
+
+test('POST /api/keys warns when the key does not match the catalog prefix (F8)', async () => {
+  // openai keys start sk- ; paste a clearly-wrong value → 200 with a heads-up warning
+  const r = await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'openai', key: 'AIzawrongprovider1234' }) });
+  assert.equal(r.status, 200);
+  assert.match((await r.json()).warning || '', /prefix/);
+  // a correctly-prefixed key gets no prefix warning
+  const ok = await (await fetch(base + '/api/keys', { method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'openai', key: 'sk-proj-correct-prefix-1234' }) })).json();
+  assert.ok(!ok.warning || !/prefix/.test(ok.warning));
+});
+
+test('POST /api/keys/import vaults many keys, reporting per-row ok/error (F11)', async () => {
+  const r = await fetch(base + '/api/keys/import', { method: 'POST', headers: H, body: JSON.stringify([
+    { provider: 'groq', key: 'gsk-import-one-1111' },
+    { provider: 'together', key: 'tog-import-two-2222', label: 'batch' },
+    { provider: '', key: 'no-provider-3333' },              // bad row → reported, not fatal
+  ]) });
+  assert.equal(r.status, 200);
+  const j = await r.json();
+  assert.equal(j.total, 3);
+  assert.equal(j.imported, 2);
+  assert.equal(j.results.filter((x) => x.ok).length, 2);
+  assert.ok(j.results.some((x) => x.error));                // the empty-provider row errored
+  const keys = await (await fetch(base + '/api/keys', { headers: H })).json();
+  assert.ok(keys.some((k) => /1111/.test(k.key_hint)) && keys.some((k) => /2222/.test(k.key_hint)));
+});

@@ -19,7 +19,7 @@ import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive } from './lib.js';
-import { PROVIDERS, isKnownProvider, PROVIDER_BY_ID } from './providers.js';
+import { PROVIDERS, PROVIDER_BY_ID } from './providers.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -328,6 +328,28 @@ const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'applic
 const scrub = (s) => String(s || '').replace(/\b(sk-[A-Za-z0-9_-]{12,}|(?:ghp|gho|xox[bp]|tvly|pplx|fc|AIza)[A-Za-z0-9_-]{12,})\b/g, (m) => m.slice(0, 8) + '…[redacted]');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 
+// Sanitize + vault ONE provider key. Shared by POST /api/keys and the bulk import so
+// the paste-mistake guards (quote-strip, export/NAME= reject) live in exactly one place.
+// Returns { error } (400-worthy) OR { ok, provider, hint, warning }. warning is non-fatal
+// (unknown provider, or key not matching the catalog prefix) — the caller still 200s.
+function vaultOneKey(raw) {
+  const provider = String(raw.provider || '').trim().toLowerCase();
+  if (!provider) return { error: 'provider required' };
+  let key = String(raw.key || '').trim();
+  const qm = /^(['"])([\s\S]*)\1$/.exec(key); if (qm) key = qm[2];   // strip one layer of matching quotes
+  if (!key || /\s/.test(key) || /^(export\s|\w+=)/.test(key))
+    return { error: 'key looks malformed (whitespace or an export/NAME= prefix — send the raw value only)' };
+  const hint = key.slice(0, 8) + '…' + key.slice(-4);
+  const status = (raw.status === 'working' || raw.status === 'disabled') ? raw.status : 'working';
+  q.addKey.run(provider, raw.label || '', encrypt(key), hint, status);
+  const meta = PROVIDER_BY_ID.get(provider);
+  let warning;
+  if (!meta) warning = `unknown provider ${provider} — not in the catalog`;
+  else if (meta.prefix && !key.startsWith(meta.prefix))
+    warning = `key doesn't start with the expected ${provider} prefix "${meta.prefix}" — did you paste the right key into the right slot?`;
+  return { ok: true, provider, hint, warning };
+}
+
 // ---- routes -------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   // a malformed target ('//', protocol-relative) makes new URL throw; in an async
@@ -465,28 +487,27 @@ const server = http.createServer(async (req, res) => {
       logAccess(provider, host, reqIp(req), 'key', 'ok');
       return json(res, 200, { provider, label: row.label, key, key_hint: row.key_hint });
     }
-    if (p === '/api/keys' && req.method === 'POST') {
+    // bulk import: [{provider,key,label}] or {keys:[...]} — vault many at once, one row per
+    // result so a bad entry doesn't sink the batch. (must be tested before the singular POST)
+    if (p === '/api/keys/import' && req.method === 'POST') {
       const b = await body(req);
-      const provider = String(b.provider || '').trim().toLowerCase();
-      if (!provider) return json(res, 400, { error: 'provider + key required' });
-      // pastes arrive as `export NAME="sk-…"` and the failure surfaces days later as a
-      // provider 401 — strip one layer of matching quotes, reject anything not a bare value.
-      let key = String(b.key || '').trim();
-      const qm = /^(['"])([\s\S]*)\1$/.exec(key); if (qm) key = qm[2];
-      if (!key || /\s/.test(key) || /^(export\s|\w+=)/.test(key))
-        return json(res, 400, { error: 'key looks malformed (contains whitespace or an export/NAME= prefix — send the raw value only)' });
-      // first8…last4: UNIQUE(provider,key_hint) is the upsert target — a prefix-only hint
-      // made same-prefix keys (sk-proj-…, sk-or-v1-…) silently overwrite each other.
-      const hint = key.slice(0, 8) + '…' + key.slice(-4);
-      // a mistyped status ('workign'/'Working'/'active') would vault a key that getKeyByProvider's
-      // exact status='working' filter then 404s forever — coerce anything but the two legit values
-      // to 'working' ('disabled' = deliberately shelved). Lazy on purpose: default, don't 400.
-      const status = (b.status === 'working' || b.status === 'disabled') ? b.status : 'working';
-      q.addKey.run(provider, b.label || '', encrypt(key), hint, status);
-      logAccess(provider, '', reqIp(req), 'key-add', hint);
+      const items = Array.isArray(b) ? b : (Array.isArray(b.keys) ? b.keys : null);
+      if (!items) return json(res, 400, { error: 'body must be an array of {provider,key,label} or {keys:[...]}' });
+      if (items.length > 200) return json(res, 400, { error: 'too many keys in one import (max 200)' });
+      const results = items.map((it) => {
+        const r = vaultOneKey(it);
+        return { provider: String((it && it.provider) || '').trim().toLowerCase(), ok: !r.error, error: r.error, warning: r.warning };
+      });
+      const added = results.filter((r) => r.ok).length;
+      if (added) { logAccess('*', '', reqIp(req), 'key-import', `${added}/${items.length}`); broadcast('keys', q.listKeys.all()); }
+      return json(res, 200, { imported: added, total: items.length, results });
+    }
+    if (p === '/api/keys' && req.method === 'POST') {
+      const r = vaultOneKey(await body(req));
+      if (r.error) return json(res, 400, { error: r.error });
+      logAccess(r.provider, '', reqIp(req), 'key-add', r.hint);
       broadcast('keys', q.listKeys.all());
-      return json(res, 200, isKnownProvider(provider) ? { ok: true }
-        : { ok: true, warning: `unknown provider ${provider} — not in the catalog` });
+      return json(res, 200, r.warning ? { ok: true, warning: r.warning } : { ok: true });
     }
     if (p.startsWith('/api/keys/') && req.method === 'DELETE') {
       // RETURNING: a typo'd id used to no-op with {ok:true} — surface it as a 404
