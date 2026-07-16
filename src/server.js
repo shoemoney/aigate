@@ -39,6 +39,10 @@ const ENC_KEY = (process.env.AIGATE_ENCRYPTION_KEY || '').trim();
 // (e.g. NPM). Off by default so a direct client can't spoof its source IP past
 // the CIDR gate. Set AIGATE_TRUST_PROXY=1 when deployed behind a trusted proxy.
 const TRUST_PROXY = process.env.AIGATE_TRUST_PROXY === '1';
+// Optional: the IP(s) of the proxy peers we trust to set X-Forwarded-For. When
+// set, XFF is only honored if the socket peer is one of these — defense-in-depth
+// so a direct LAN client can't present a forged XFF even under TRUST_PROXY.
+const TRUSTED_PROXIES = (process.env.AIGATE_TRUSTED_PROXIES || '').split(',').map((s) => s.trim()).filter(Boolean);
 
 // weak = empty / the .env.example placeholder / under 16 chars — any of these boots the
 // vault behind a GUESSABLE shared bearer that gates every OAuth token + provider key.
@@ -235,7 +239,7 @@ const authed = (req) => {
   const h = req.headers.authorization || '';
   return h.startsWith('Bearer ') && tokenMatches(h.slice(7), TOKEN);
 };
-const reqIp = (req) => clientIp(req.headers, req.socket.remoteAddress, { trustProxy: TRUST_PROXY });
+const reqIp = (req) => clientIp(req.headers, req.socket.remoteAddress, { trustProxy: TRUST_PROXY, proxies: TRUSTED_PROXIES });
 // collect Buffers and decode ONCE: coercing each chunk to a string splits a multibyte
 // UTF-8 sequence (emoji/CJK) across TCP boundaries into replacement chars; the 1MB cap
 // must count bytes, not UTF-16 units. Never rejects (bad/oversized body → {}).

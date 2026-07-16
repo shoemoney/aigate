@@ -81,14 +81,33 @@ test('ipAllowed: malformed client ip denied when gated', () => {
 test('ipAllowed: unparseable cidr entries are skipped, not fatal', () => {
   assert.equal(ipAllowed('192.168.1.5', ['garbage/xx', '192.168.1.0/24']), true);
 });
+test('ipAllowed: out-of-range prefix bits are skipped, not evaluated (mod-32 mask bug)', () => {
+  // /33, /-1, /abc must NOT silently produce a garbage mask that matches
+  assert.equal(ipAllowed('8.8.8.8', ['1.2.3.4/33']), false);
+  assert.equal(ipAllowed('8.8.8.8', ['1.2.3.4/-1']), false);
+  assert.equal(ipAllowed('8.8.8.8', ['1.2.3.4/abc']), false);
+  // a valid entry alongside an invalid one still works
+  assert.equal(ipAllowed('192.168.1.5', ['1.2.3.4/99', '192.168.1.0/24']), true);
+});
 
 test('clientIp: XFF ignored by default (spoof blocked, bug #2)', () => {
   const ip = clientIp({ 'x-forwarded-for': '1.2.3.4' }, '10.0.0.9');
   assert.equal(ip, '10.0.0.9');
 });
-test('clientIp: XFF honored only behind trusted proxy', () => {
+test('clientIp: trusted proxy honors the RIGHTMOST XFF hop, not the spoofable leftmost', () => {
+  // NPM appends the real client, so the rightmost hop is the trustworthy one.
   const ip = clientIp({ 'x-forwarded-for': '1.2.3.4, 5.6.7.8' }, '10.0.0.9', { trustProxy: true });
-  assert.equal(ip, '1.2.3.4');
+  assert.equal(ip, '5.6.7.8');
+});
+test('clientIp: a client-prepended spoof cannot win the CIDR gate', () => {
+  // attacker prepends 127.0.0.1 to forge loopback; our proxy appends the real IP
+  const ip = clientIp({ 'x-forwarded-for': '127.0.0.1, 203.0.113.9' }, '10.0.0.9', { trustProxy: true });
+  assert.equal(ip, '203.0.113.9');   // NOT 127.0.0.1
+});
+test('clientIp: XFF only honored from a configured trusted-proxy peer', () => {
+  const headers = { 'x-forwarded-for': '203.0.113.9' };
+  assert.equal(clientIp(headers, '10.0.0.9', { trustProxy: true, proxies: ['10.0.0.1'] }), '10.0.0.9'); // peer not a proxy → ignore XFF
+  assert.equal(clientIp(headers, '10.0.0.1', { trustProxy: true, proxies: ['10.0.0.1'] }), '203.0.113.9'); // peer is the proxy
 });
 test('clientIp: trusted proxy but no XFF falls back to socket', () => {
   assert.equal(clientIp({}, '10.0.0.9', { trustProxy: true }), '10.0.0.9');

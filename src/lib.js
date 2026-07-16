@@ -65,6 +65,9 @@ export function ipAllowed(ip, cidrs) {
   for (const c of cidrs) {
     const [net, b] = c.split('/');
     const bits = b === undefined ? 32 : +b;
+    // reject out-of-range/NaN prefixes: JS bit-shifts are mod-32, so an invalid
+    // `/33` or `/abc` silently computes a garbage mask that mis-authorizes IPs.
+    if (!Number.isInteger(bits) || bits < 0 || bits > 32) continue;
     if (net === '0.0.0.0' && bits === 0) return true;
     const netN = ip2int(net);
     if (netN === null) continue;
@@ -77,10 +80,20 @@ export function ipAllowed(ip, cidrs) {
 // Resolve the client IP. X-Forwarded-For is attacker-controlled unless aigate
 // sits behind a proxy WE trust, so only honor it when trustProxy is set.
 // Bug: server previously trusted XFF unconditionally → CIDR gate spoofable.
-export function clientIp(headers, remoteAddress, { trustProxy = false } = {}) {
-  if (trustProxy) {
-    const xff = String(headers['x-forwarded-for'] || '').split(',')[0].trim();
-    if (xff) return xff;
+// Bug: even under trustProxy, taking the LEFTMOST hop is spoofable — a client
+// can prepend `X-Forwarded-For: 127.0.0.1` and our proxy (NPM uses
+// $proxy_add_x_forwarded_for, which APPENDS) leaves that forged entry on the
+// left. Take the RIGHTMOST hop — the one our own directly-connected proxy
+// appended — which the client cannot forge. Assumes ONE trusted proxy hop
+// (aigate's topology); for N chained proxies you'd strip N from the right.
+// `proxies` (optional) hardens further: only parse XFF when the socket peer is
+// actually one of our proxies. Empty list = honor XFF from any peer (trustProxy
+// is already an explicit opt-in that you're behind a trusted edge).
+export function clientIp(headers, remoteAddress, { trustProxy = false, proxies = [] } = {}) {
+  const peerTrusted = trustProxy && (proxies.length === 0 || proxies.includes(remoteAddress));
+  if (peerTrusted) {
+    const hops = String(headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (hops.length) return hops[hops.length - 1];
   }
   return remoteAddress || '';
 }
