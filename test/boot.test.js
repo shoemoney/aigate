@@ -6,6 +6,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
+import { makeVault } from '../src/lib.js';
 
 // Boot-guard tests spawn a fresh `node src/server.js` because the FATAL checks
 // call process.exit(1) at import — you can't assert that in-process. Each run
@@ -63,6 +65,23 @@ test('boot: AIGATE_VERSION env overrides the served version (/api/capabilities)'
     assert.equal((await res.json()).version, 'sha-deadbeef');
   } finally {
     child.kill('SIGKILL');
+    for (const f of [DB, DB + '-wal', DB + '-shm']) { try { rmSync(f); } catch { /* gone */ } }
+  }
+});
+
+test('boot: a canary written under a DIFFERENT key is FATAL — never opens an undecryptable vault (F7 mechanism)', () => {
+  // hand-build a vault whose canary is encrypted under key A, then boot with key B
+  const DB = join(tmpdir(), `aigate-canary-${process.pid}-${Math.random().toString(36).slice(2)}.db`);
+  const dbA = new DatabaseSync(DB);
+  dbA.exec(`CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT)`);
+  const vaultA = makeVault(crypto.randomBytes(32));
+  dbA.prepare(`INSERT INTO meta(k,v) VALUES('canary',?)`).run(vaultA.encrypt('aigate-canary'));
+  dbA.close();
+  try {
+    const r = boot({ AIGATE_DB: DB, AIGATE_ENCRYPTION_KEY: crypto.randomBytes(32).toString('hex') });  // key B ≠ A
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /does not match this vault/);
+  } finally {
     for (const f of [DB, DB + '-wal', DB + '-shm']) { try { rmSync(f); } catch { /* gone */ } }
   }
 });

@@ -185,6 +185,7 @@ function renderHosts(rows){const tb=$('#hosts tbody');tb.innerHTML='';for(const 
 
 let ws;
 function connect(){
+  if(ws&&(ws.readyState===0||ws.readyState===1))return;   // already CONNECTING/OPEN — don't spawn a duplicate socket (double onmessage, reconnect storm)
   ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',['aigate','bearer.'+TOKEN]);
   ws.onopen=async()=>{$('#live').classList.add('on');
     try{const s=await api('/api/stats');renderAccounts(s.accounts);renderHosts(s.by_host);

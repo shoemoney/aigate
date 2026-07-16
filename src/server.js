@@ -141,7 +141,15 @@ function openDb(path = DB_PATH) {
     if (bak) {
       console.error(`[db] CORRUPT vault (${e.message}) — quarantined to ${path}.corrupt-${stamp}, restoring backup ${bak}`);
       copyFileSync(join(BACKUP_DIR, bak), path);
-      try { return tryOpen(); } catch (e2) { console.error('[db] restored backup failed to open too', e2); }
+      try {
+        const d2 = tryOpen();
+        // quick_check only proves it's a valid SQLite file — verify our CURRENT key still
+        // decrypts the restored vault before trusting it, else we'd 'recover' into a vault
+        // whose every token/key throws on decrypt (a silent, worse outage).
+        const c = d2.prepare(`SELECT v FROM meta WHERE k='canary'`).get();
+        if (c) decrypt(c.v);
+        return d2;
+      } catch (e2) { console.error('[db] restored backup failed to open/decrypt with the current key', e2); }
     } else console.error(`[db] CORRUPT vault (${e.message}) — quarantined to ${path}.corrupt-${stamp}, NO backup in ${BACKUP_DIR}`);
     console.error(`[db] manual restore: cp ${BACKUP_DIR}/aigate-<date>.db ${path}  then restart aigate`);
     process.exit(1);
@@ -810,6 +818,11 @@ async function pollProviderKeys() {
 // backup logs loudly but never kills the daemon.
 function backupNow() {
   try {
+    // daily canary re-check: the boot-time canary only runs once, so a mid-life .env/key
+    // swap (a bad redeploy) would silently corrupt every decrypt until the next restart.
+    // Surface it loudly + alert the moment the daily cycle notices.
+    try { const c = db.prepare(`SELECT v FROM meta WHERE k='canary'`).get(); if (c) decrypt(c.v); }
+    catch { console.error('[canary] AIGATE_ENCRYPTION_KEY no longer decrypts this vault — a bad .env/key swap?'); alert('aigate: encryption-key canary FAILED — vault may be undecryptable'); }
     mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
     // ponytail: backupNow doubles as daily maintenance — 30-day log retention, no env knob.
     // Retention runs BEFORE the snapshot so a failing backup (full disk) can't starve it.
