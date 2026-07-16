@@ -253,10 +253,17 @@ const reqIp = (req) => clientIp(req.headers, req.socket.remoteAddress, { trustPr
 // collect Buffers and decode ONCE: coercing each chunk to a string splits a multibyte
 // UTF-8 sequence (emoji/CJK) across TCP boundaries into replacement chars; the 1MB cap
 // must count bytes, not UTF-16 units. Never rejects (bad/oversized body → {}).
-const body = (req) => new Promise((res) => {
-  const chunks = []; let n = 0;
-  req.on('data', (c) => { n += c.length; if (n > 1e6) { req.destroy(); return res({}); } chunks.push(c); });
-  req.on('end', () => { try { res(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch { res({}); } });
+const body = (req) => new Promise((resolve) => {
+  const chunks = []; let n = 0, settled = false;
+  const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+  // stop buffering past 1MB but DON'T destroy the socket — the handler still needs
+  // a live connection to send its 413 back; pause so we ignore the rest of the body.
+  req.on('data', (c) => { n += c.length; if (n > 1e6) { req.pause(); return done({ __oversized: true }); } chunks.push(c); });
+  req.on('end', () => { try { done(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch { done({}); } });
+  // a client abort / socket error must still settle the promise, else the awaiting
+  // handler hangs forever holding the request open (slow-loris-style pre-handler leak).
+  req.on('aborted', () => done({}));
+  req.on('error', () => done({}));
 });
 const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
 // prefix-shaped secrets only (sk-…, ghp…, xoxb…) — no generic long-hex rule, git SHAs must survive
@@ -298,7 +305,9 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, uptime_s: Math.round(process.uptime()), accounts: accts.length, selectable,
         poll_age_s: q.pollAge.get().s, backup_age_s, parked, reauth, disabled });
     } catch (e) {
-      return json(res, 503, { ok: false, error: String((e && e.message) || e) });
+      // unauth endpoint: log the detail, return a generic 503 (don't leak DB_PATH / SQLite internals)
+      console.error('[health] db check failed', String((e && e.message) || e));
+      return json(res, 503, { ok: false });
     }
   }
 
@@ -326,6 +335,9 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/accounts' && req.method === 'POST') {
       const b = await body(req);
       if (!b.account || !b.setup_token) return json(res, 400, { error: 'account + setup_token required' });
+      // a name with '/' or whitespace breaks the /api/accounts/<name>/<verb> path
+      // parsing (split('/')[3]) and can't be targeted for disable/refresh/delete.
+      if (/[/\s]/.test(String(b.account))) return json(res, 400, { error: 'account name cannot contain spaces or slashes' });
       // the browser "Authentication Code" (code#state) paste vaults fine and only surfaces
       // ~10min later as a mystery reauth_needed when the poller 401s — reject it NOW
       const tok = String(b.setup_token).trim();
@@ -412,7 +424,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (p.startsWith('/api/accounts/') && p.endsWith('/disabled') && req.method === 'POST') {
       const name = decodeURIComponent(p.split('/')[3]); const b = await body(req);
-      q.setDisabled.run(b.disabled ? 1 : 0, name);
+      // check .changes like the sibling mutation routes — disabling an unknown/typo'd
+      // account used to no-op yet still return {ok:true} + broadcast, hiding the miss.
+      if (q.setDisabled.run(b.disabled ? 1 : 0, name).changes === 0) return json(res, 404, { error: 'unknown account ' + name });
       logAccess(name, '', reqIp(req), b.disabled ? 'account-disable' : 'account-enable', 'ok');
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true });
@@ -485,6 +499,9 @@ const server = http.createServer(async (req, res) => {
     // --- event ingest (from the fleet's hooks) ---
     if (p === '/api/events/prompt' && req.method === 'POST') {
       const b = await body(req);
+      // an oversized body was dropped to a sentinel — say so (413) instead of silently
+      // writing a hollow row of empty defaults under a 200 the client reads as "logged".
+      if (b.__oversized) return json(res, 413, { error: 'payload too large' });
       // store scrubbed + truncated: every read already substr's to 400 — never retain full prompts
       const prompt = scrub(b.prompt).slice(0, 400);
       q.insReq.run(b.account || '', b.host || '', reqIp(req), b.cwd || '', b.model || '', prompt, b.tokens ?? null);
@@ -513,7 +530,13 @@ const server = http.createServer(async (req, res) => {
 
     return json(res, 404, { error: 'not found' });
   } catch (e) {
-    return json(res, 500, { error: String(e && e.message || e) });
+    // malformed %-encoding in a path segment throws URIError from decodeURIComponent —
+    // that's a client mistake (400), not our fault (500).
+    if (e instanceof URIError) return json(res, 400, { error: 'bad url encoding' });
+    // keep the raw fault server-side; a bearer holder isn't necessarily the operator,
+    // and SQLite/fs error strings leak paths + internals.
+    console.error('[500]', req.method, p, String((e && e.message) || e));
+    return json(res, 500, { error: 'internal error' });
   }
 });
 

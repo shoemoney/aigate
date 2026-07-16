@@ -703,3 +703,26 @@ test('GET /api/keys/:provider on an undecryptable key → 500 {decrypt failed} +
     db.prepare(`DELETE FROM provider_keys WHERE provider='poisonprov'`).run();
   }
 });
+
+test('POST /api/accounts rejects a name containing a slash (path-safety, bug B11)', async () => {
+  const r = await fetch(base + '/api/accounts', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'a/b', setup_token: 'sk-ant-oat01-x' }) });
+  assert.equal(r.status, 400);
+});
+test('POST /api/accounts/:name/disabled on an unknown account → 404, not a silent ok (bug B11)', async () => {
+  const r = await fetch(base + '/api/accounts/nope-not-here/disabled', { method: 'POST', headers: H,
+    body: JSON.stringify({ disabled: 1 }) });
+  assert.equal(r.status, 404);
+});
+test('malformed %-encoding in a path → 400, not 500 (bug B9)', async () => {
+  const r = await fetch(base + '/api/keys/%C3%28', { headers: H });   // 0xC3 0x28 = invalid UTF-8, decodeURIComponent throws
+  assert.equal(r.status, 400);
+});
+test('oversized POST body → 413, no hollow row written (bug B6)', async () => {
+  const big = 'x'.repeat(1_100_000);
+  const r = await fetch(base + '/api/events/prompt', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'oversize-test', prompt: big }) });
+  assert.equal(r.status, 413);
+  const logs = await (await fetch(base + '/api/logs?limit=50', { headers: H })).json();
+  assert.ok(!logs.some((l) => l.account === 'oversize-test'), 'no hollow row from the dropped body');
+});
