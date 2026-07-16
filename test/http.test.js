@@ -21,7 +21,7 @@ process.env.HOST = '127.0.0.1';
 delete process.env.AIGATE_ALLOW_CIDR;
 delete process.env.AIGATE_TRUST_PROXY;
 
-const { server, db, backupNow, openDb, isWeakToken, pollProviderKeys } = await import('../src/server.js');
+const { server, db, backupNow, openDb, isWeakToken, pollProviderKeys, authFail, authLocked, authOk } = await import('../src/server.js');
 const BACKUPS = join(tmpdir(), 'backups');   // dirname(DB)/backups
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
@@ -816,4 +816,27 @@ test('/health surfaces last-poller-cycle health fields (F6)', async () => {
   assert.equal(h.ok, true);
   assert.equal(typeof h.poll_ok, 'number');
   assert.equal(typeof h.poll_failed, 'number');
+});
+
+test('auth throttle: locks a source IP after too many fails, clears on success, exempts loopback (F4)', () => {
+  const ip = '203.0.113.77';
+  authOk(ip);
+  for (let i = 0; i < 9; i++) authFail(ip);
+  assert.equal(authLocked(ip), false);   // under the threshold
+  authFail(ip);                          // 10th
+  assert.equal(authLocked(ip), true);
+  authOk(ip);                            // a good auth clears the lock
+  assert.equal(authLocked(ip), false);
+  for (let i = 0; i < 30; i++) authFail('127.0.0.1');   // loopback never locks (tests + healthcheck)
+  assert.equal(authLocked('127.0.0.1'), false);
+});
+
+test('GET /api/metrics returns Prometheus text with the core gauges (F5)', async () => {
+  const r = await fetch(base + '/api/metrics', { headers: H });
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-type'), /text\/plain/);
+  const body = await r.text();
+  for (const m of ['aigate_selectable', 'aigate_accounts_total', 'aigate_poll_failed', 'aigate_provider_keys_working'])
+    assert.match(body, new RegExp('^' + m + ' \\d+', 'm'));
+  assert.equal((await fetch(base + '/api/metrics')).status, 401);   // bearer-gated
 });

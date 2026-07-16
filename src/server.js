@@ -234,6 +234,7 @@ const q = {
   allWorkingKeys: db.prepare(`SELECT id,provider,key_enc FROM provider_keys WHERE status='working'`),
   getKeyRow: db.prepare(`SELECT id,provider,key_enc,label FROM provider_keys WHERE id=?`),
   setKeyStatus: db.prepare(`UPDATE provider_keys SET status=?, last_checked=datetime('now') WHERE id=?`),
+  keyStatusCounts: db.prepare(`SELECT status, count(*) AS c FROM provider_keys GROUP BY status`),
 };
 
 // ---- websocket hub ------------------------------------------------------
@@ -275,6 +276,30 @@ function noteSelectable(n, ctx) {
 }
 // last poller cycle health, surfaced on /health so fleet autoheal/dashboard see degradation
 let lastPoll = { ts: null, ok: 0, failed: [] };
+
+// ---- auth-failure throttle (in-memory) ---------------------------------
+// bounded by distinct attacker IPs seen within the window; a periodic sweep evicts
+// expired entries so a spray of one-shot IPs can't grow the map unbounded.
+const AUTH_MAX_FAILS = Number(process.env.AIGATE_AUTH_MAX_FAILS || 10);
+const AUTH_WINDOW_MS = Number(process.env.AIGATE_AUTH_WINDOW_MS || 60000);
+const AUTH_LOCK_MS = Number(process.env.AIGATE_AUTH_LOCK_MS || 300000);
+const authFails = new Map();   // ip -> { fails, first, until }
+const isLoopback = (ip) => ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1' || ip === '';
+function authLocked(ip) { const e = authFails.get(ip); return !!(e && e.until > Date.now()); }
+function authFail(ip) {
+  if (isLoopback(ip)) return;
+  const now = Date.now();
+  let e = authFails.get(ip);
+  if (!e || now - e.first > AUTH_WINDOW_MS) e = { fails: 0, first: now, until: 0 };
+  e.fails++;
+  if (e.fails >= AUTH_MAX_FAILS) e.until = now + AUTH_LOCK_MS;
+  authFails.set(ip, e);
+}
+function authOk(ip) { if (authFails.has(ip)) authFails.delete(ip); }
+function sweepAuthFails() {
+  const now = Date.now();
+  for (const [ip, e] of authFails) if (e.until < now && now - e.first > AUTH_WINDOW_MS) authFails.delete(ip);
+}
 
 // ---- http helpers -------------------------------------------------------
 // header-only: a ?token= bearer would land in edge (NPM) access logs and outlive rotation
@@ -362,7 +387,14 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(404); return res.end('not found');
   }
 
-  if (!authed(req)) { console.error('[auth] denied', reqIp(req), req.method, p); return json(res, 401, { error: 'unauthorized' }); }
+  // brute-force throttle: the whole vault is behind one shared bearer, so an
+  // unthrottled guess loop is free (and floods the log a line per attempt). Lock a
+  // source IP out after too many fails in the window. Loopback is exempt (local tests
+  // + the docker healthcheck path shouldn't be able to lock themselves out).
+  const clientAddr = reqIp(req);
+  if (authLocked(clientAddr)) { console.warn('[auth] locked', clientAddr); return json(res, 429, { error: 'too many auth failures — try again later' }); }
+  if (!authed(req)) { authFail(clientAddr); console.error('[auth] denied', clientAddr, req.method, p); return json(res, 401, { error: 'unauthorized' }); }
+  authOk(clientAddr);
 
   try {
     // --- accounts / vault ---
@@ -581,6 +613,30 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, q.recentAccess.all(Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 100, 1000))));
     if (p === '/api/stats' && req.method === 'GET')
       return json(res, 200, { by_host: q.statByHost.all(), accounts: q.listAccounts.all() });
+
+    // Prometheus text exposition (bearer-gated; the fleet already scrapes Prometheus, so
+    // it can alert on 0 selectable / rising decrypt or poll failures). Numbers only.
+    if (p === '/api/metrics' && req.method === 'GET') {
+      const accts = q.listAccounts.all();
+      const { parked, reauth, disabled } = tally(accts);
+      const keyc = Object.fromEntries(q.keyStatusCounts.all().map((r) => [r.status || 'unknown', r.c]));
+      const L = [
+        '# aigate metrics',
+        `aigate_uptime_seconds ${Math.round(process.uptime())}`,
+        `aigate_accounts_total ${accts.length}`,
+        `aigate_selectable ${q.pickRanked.all(CUTOFF).length}`,
+        `aigate_accounts_parked ${parked}`,
+        `aigate_accounts_reauth ${reauth}`,
+        `aigate_accounts_disabled ${disabled}`,
+        `aigate_poll_ok ${lastPoll.ok}`,
+        `aigate_poll_failed ${lastPoll.failed.length}`,
+        `aigate_provider_keys_working ${keyc.working || 0}`,
+        `aigate_provider_keys_dead ${keyc.dead || 0}`,
+        `aigate_auth_locked_ips ${[...authFails.values()].filter((e) => e.until > Date.now()).length}`,
+      ];
+      res.writeHead(200, { 'content-type': 'text/plain; version=0.0.4' });
+      return res.end(L.join('\n') + '\n');
+    }
 
     return json(res, 404, { error: 'not found' });
   } catch (e) {
@@ -808,8 +864,11 @@ if (isMain) {
   setTimeout(backupNow, 20000).unref();
   setInterval(backupNow, 86400000).unref();
 
+  // evict expired auth-throttle entries so a spray of one-shot IPs can't grow the map
+  setInterval(sweepAuthFails, AUTH_WINDOW_MS).unref();
+
   server.listen(PORT, HOST, () =>
     console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
 }
 
-export { server, db, pollUsage, pollProviderKeys, backupNow, openDb, isWeakToken };
+export { server, db, pollUsage, pollProviderKeys, backupNow, openDb, isWeakToken, authFail, authLocked, authOk };
