@@ -746,3 +746,20 @@ test('poll: a present-but-unparseable rate header keeps last-known-good, never p
     assert.equal(b.seven_day_pct, 77);
   } finally { globalThis.fetch = realFetch; }
 });
+
+test('/api/capabilities label reflects the SERVED (newest) key, not lexical max (bug B8)', async () => {
+  const postKey = (b) => fetch(base + '/api/keys', { method: 'POST', headers: H, body: JSON.stringify(b) });
+  await postKey({ provider: 'labtest', key: 'labtest-key-oldddd', label: 'ZZZ-old' });
+  await postKey({ provider: 'labtest', key: 'labtest-key-newwww', label: 'AAA-new' });  // higher id = newest = served
+  const caps = (await (await fetch(base + '/api/capabilities', { headers: H })).json()).providers.labtest;
+  assert.equal(caps.keys, 2);
+  assert.equal(caps.label, 'AAA-new');   // correlated to newest; max('ZZZ-old','AAA-new') would wrongly be 'ZZZ-old'
+});
+
+test('listKeys marks a never-fetched key stale, clears after a fetch (F10)', async () => {
+  const list = async () => (await (await fetch(base + '/api/keys', { headers: H })).json());
+  await fetch(base + '/api/keys', { method: 'POST', headers: H, body: JSON.stringify({ provider: 'staleco', key: 'staleco-key-xxxx' }) });
+  assert.equal((await list()).find((k) => k.provider === 'staleco').stale, 1);   // never fetched → stale
+  await fetch(base + '/api/keys/staleco', { headers: H });                        // fetch → last_used=now
+  assert.equal((await list()).find((k) => k.provider === 'staleco').stale, 0);    // fresh
+});

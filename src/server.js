@@ -210,10 +210,16 @@ const q = {
       status=excluded.status, last_checked=datetime('now')`),
   // last_used is per-PROVIDER not per-key (correlated on provider_keys.provider) — fine for "which subs do I never touch"
   listKeys: db.prepare(`SELECT id,provider,label,key_hint,status,last_checked,created_at,
-    (SELECT max(ts) FROM access_log a WHERE a.action='key' AND a.account=provider_keys.provider) AS last_used
+    (SELECT max(ts) FROM access_log a WHERE a.action='key' AND a.account=provider_keys.provider) AS last_used,
+    -- stale = never fetched, or not fetched in 90d — surfaces "subs I'm paying for but never touch"
+    (COALESCE((SELECT max(ts) FROM access_log a WHERE a.action='key' AND a.account=provider_keys.provider),'1970-01-01') < datetime('now','-90 days')) AS stale
     FROM provider_keys ORDER BY provider,id`),
-  // read-only capability map: one row per provider with a working key (counts + newest last_checked, NEVER secrets)
-  capabilities: db.prepare(`SELECT provider, count(*) AS keys, max(label) AS label, max(last_checked) AS last_checked
+  // read-only capability map: one row per provider with a working key (counts + newest last_checked, NEVER secrets).
+  // label is correlated to the NEWEST key (the one getKeyByProvider actually serves) — max(label) picked an
+  // arbitrary lexical max that could disagree with the served key when a provider has >1 working key.
+  capabilities: db.prepare(`SELECT provider, count(*) AS keys,
+      (SELECT label FROM provider_keys p2 WHERE p2.provider=provider_keys.provider AND p2.status='working' ORDER BY id DESC LIMIT 1) AS label,
+      max(last_checked) AS last_checked
     FROM provider_keys WHERE status='working' GROUP BY provider ORDER BY provider`),
   getKeyByProvider: db.prepare(`SELECT key_enc,label FROM provider_keys WHERE provider=? AND status='working' ORDER BY id DESC LIMIT 1`),
   delKey: db.prepare(`DELETE FROM provider_keys WHERE id=? RETURNING provider,key_hint`),

@@ -157,7 +157,7 @@ function renderKeys(rows){
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${esc(k.provider)}</td><td>${esc(k.label||'—')}</td><td class="mono">${esc(k.key_hint||'—')}</td>
       <td>${esc(k.status||'')}</td><td class="mono">${k.created_at?toDate(k.created_at).toLocaleString():''}</td>
-      <td class="mono">${k.last_used?toDate(k.last_used).toLocaleString():'<span style="color:var(--dim)">never</span>'}</td>
+      <td class="mono">${k.last_used?toDate(k.last_used).toLocaleString():'<span style="color:var(--dim)">never</span>'}${k.stale?' <span class="badge stale" title="never fetched or idle >90d">stale</span>':''}</td>
       <td><button class="del">✕</button></td>`;
     tr.querySelector('.del').onclick=()=>delKey(k.id);
     tb.appendChild(tr);
