@@ -50,8 +50,10 @@ const TRUSTED_PROXIES = (process.env.AIGATE_TRUSTED_PROXIES || '').split(',').ma
 // going dead, a failed backup. Empty = disabled. Fire-and-forget, never blocks a request.
 const ALERT_WEBHOOK = (process.env.AIGATE_ALERT_WEBHOOK || '').trim();
 
-// weak = empty / the .env.example placeholder / under 16 chars — any of these boots the
+// weak = empty / a known placeholder / under 16 chars — any of these boots the
 // vault behind a GUESSABLE shared bearer that gates every OAuth token + provider key.
+// (.env.example ships AIGATE_TOKEN empty, caught by !t; the string literal below stays
+// as a guard against the old copy-pasted placeholder some deploys may still carry.)
 const isWeakToken = (t) => !t || t === 'change-me-to-a-long-random-string' || t.length < 16;
 if (isWeakToken(TOKEN)) {
   console.error('FATAL: set AIGATE_TOKEN to a strong random value — clients send it as Authorization: Bearer; generate: openssl rand -hex 24');
@@ -448,7 +450,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, tok.startsWith('sk-ant-') ? { ok: true }
         : { ok: true, warning: "doesn't look like a setup token (sk-ant-…)" });
     }
-    // --- provider catalog (top ~50 providers) for the add-key dropdown ---
+    // --- provider catalog (~59 providers) for the add-key dropdown ---
     if (p === '/api/providers' && req.method === 'GET')
       return json(res, 200, PROVIDERS);
 

@@ -2,7 +2,9 @@
 
 # 🛡️ aigate
 
-### **The AI Secure Proxy & Load Balancer**
+### **The compliant AI credential vault & account selector**
+
+<sub>*(a secure proxy / load balancer is the roadmap — today aigate is **NOT** a proxy: it never sits in Anthropic's request path, it **picks** the best account/key and records usage.)*</sub>
 
 *One self-hosted place that holds every AI credential you own, hands them out **the compliant way**, balances by **real rate-limit headroom**, and shows you **live what's using what** — so nothing runs away at 2am.*
 
@@ -196,7 +198,7 @@ sequenceDiagram
 
 | | Feature | Notes |
 |---|---|---|
-| 🔐 | **Encrypted vault** | AES-256-GCM at rest — Claude OAuth tokens **and** provider API keys; tokens are write-only via the API |
+| 🔐 | **Encrypted vault** | AES-256-GCM at rest — Claude OAuth tokens **and** provider API keys; the **list** endpoints never return secrets (only `has_token` / `key_hint`), while the selector/fetch routes hand the decrypted value to an authenticated, audited caller |
 | ⚖️ | **Headroom-aware selection** | hands out the account with the **most headroom** (lowest of `max(5h%,7d%)`), skips anything ≥ cutoff |
 | 📈 | **Server-side usage poller** | reads each account's **real** rate-limit headroom straight from Anthropic every 10 min → auto-skip maxed, **auto-recover after reset**, zero manual seeding |
 | 🔑 | **Provider-key registry** | encrypted store + `/api/keys` for a **59-provider catalog** (OpenAI / OpenRouter / Gemini / Groq / Together / fal / ElevenLabs / …); **sanitized intake** (trims + un-quotes pastes, **400s** `export`/`NAME=` blobs, provider lowercased) + collision-proof **`first8…last4`** hints; `GET /api/providers` feeds a dashboard **add-key form** with per-provider key-format hints |
@@ -334,7 +336,7 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`**
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` · `/healthz` | 🩺 **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` plus observability numbers `poll_age_s, backup_age_s` + a `parked` / `reauth` / `disabled` tally (all numbers, no secrets; autoheal reads only the status) (503 if the DB is wedged) |
+| `GET` | `/health` · `/healthz` | 🩺 **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` plus observability numbers `poll_age_s, backup_age_s, poll_ok, poll_failed` + a `parked` / `reauth` / `disabled` tally (all numbers, no secrets; autoheal reads only the status) (generic 503 if the DB is wedged) |
 | `GET` | `/api/select?host=&exclude=a,b` | 🎯 best account + token (logs access w/ IP); `exclude` skips accounts on retry |
 | `GET` / `POST` | `/api/accounts` | list (usage, **no tokens**) / add `{account, setup_token, label}` |
 | `DELETE` | `/api/accounts/:name` | remove |
@@ -344,13 +346,16 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`**
 | `POST` | `/api/events/limit` | 🔁 `{account, minutes?}` — **TTL-park** an over-limit account (default **15m**, `minutes` clamped 1–360; real usage untouched, auto-unparks when the TTL passes); **404 on unknown account** |
 | `POST` | `/api/events/prompt` | 🧾 log a prompt `{account, host, cwd, model, prompt}` |
 | `GET` | `/api/providers` | 📇 the 59-provider catalog (id, name, key prefix, base URL) |
-| `GET` / `POST` | `/api/keys` | list (**no secrets**, `first8…last4` hints) / add `{provider, key, label}` — **sanitized**: trims + un-quotes, **400** on `export`/`NAME=` pastes, provider lowercased, non-fatal `warning` for uncataloged providers |
-| `GET` | `/api/keys/:provider` | 🔑 newest working key for a provider (audited; name normalized — `BRAVE ` finds `brave`) |
+| `GET` / `POST` | `/api/keys` | list (**no secrets**, `first8…last4` hints, `stale` flag) / add `{provider, key, label}` — **sanitized**: trims + un-quotes, **400** on `export`/`NAME=` pastes, provider lowercased, non-fatal `warning` for uncataloged providers **or a key that doesn't match the catalog prefix** |
+| `POST` | `/api/keys/import` | 📥 **bulk import** `[{provider,key,label}]` (or `{keys:[…]}`) — one result row per key so a bad entry doesn't sink the batch (max 200) |
+| `GET` | `/api/keys/:provider?exclude=` | 🔑 newest working key for a provider (audited; name normalized — `BRAVE ` finds `brave`); `exclude=<hint>` skips a just-failed key and serves the next |
+| `POST` | `/api/keys/:id/refresh` | 💓 **liveness probe** ONE key (oaiCompat providers: `GET <base>/models`) → flips `status` working/dead; 200 `{checked:false}` for providers with no probe |
 | `DELETE` | `/api/keys/:id` | remove a provider key |
+| `GET` | `/api/metrics` | 📈 **Prometheus** text (bearer-gated) — `aigate_selectable`, `aigate_accounts_*`, `aigate_poll_ok/failed`, `aigate_provider_keys_working/dead`, … |
 | `GET` | `/api/logs?limit=` · `/api/stats` | prompt log · dashboard rollups |
 | `GET` | `/api/access?limit=` | 🧾 **audit trail** — every handout, mutation & key-fetch (account · host · IP · action · result; **no secrets**) for post-incident review; `limit` default 100, capped **1000** |
 | `GET` | `/api/capabilities` | 🧭 read-only **registry slice** — per-provider **key counts** + Claude **selectability** (accounts + how many are pickable) + server **version**; a machine-readable "what can I reach?" for agents (**never secrets**) |
-| `WS` | `/ws` | 📡 live event stream — auth via the **`bearer.<token>` WebSocket subprotocol** (token never lands in URL/access logs; `?token=` is **removed** — header/subprotocol only) |
+| `WS` | `/ws` | 📡 live event stream — auth via the **`bearer.<token>` WebSocket subprotocol** (token never lands in URL/access logs; a `?token=` query param is **ignored** — header/subprotocol only) |
 
 ---
 
