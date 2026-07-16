@@ -360,8 +360,16 @@ const server = http.createServer(async (req, res) => {
       const provider = decodeURIComponent(p.split('/').pop()).trim().toLowerCase();
       const row = q.getKeyByProvider.get(provider);
       if (!row) return json(res, 404, { error: 'no working key for ' + provider });
-      logAccess(provider, url.searchParams.get('host') || '', reqIp(req), 'key', 'ok');
-      return json(res, 200, { provider, label: row.label, key: decrypt(row.key_enc) });
+      // decrypt BEFORE the audit — a 'key ok' row written ahead of a decrypt that
+      // then throws makes the vault's audit trail claim a handout that never
+      // happened. On failure, record the fault honestly and 500.
+      const host = url.searchParams.get('host') || '';
+      let key; try { key = decrypt(row.key_enc); } catch {
+        logAccess(provider, host, reqIp(req), 'key', 'decrypt-fail');
+        return json(res, 500, { error: 'decrypt failed' });
+      }
+      logAccess(provider, host, reqIp(req), 'key', 'ok');
+      return json(res, 200, { provider, label: row.label, key });
     }
     if (p === '/api/keys' && req.method === 'POST') {
       const b = await body(req);
@@ -431,8 +439,22 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/select' && req.method === 'GET') {
       const host = url.searchParams.get('host') || '', ip = reqIp(req);
       const excl = new Set((url.searchParams.get('exclude') || '').split(',').map((s) => s.trim()).filter(Boolean));
-      const row = q.pickRanked.all(CUTOFF).find((r) => !excl.has(r.account));
-      if (!row) {
+      // Walk the ranked candidates, not just the top one: a poison account (corrupt
+      // ciphertext or a since-rotated key) used to throw on decrypt and 500 — and
+      // pickRanked kept re-electing it, so EVERY select 500'd forever. Park a poison
+      // account (so pickRanked skips it), audit the fault, and fall through to next.
+      let picked = null, tok = null;
+      for (const r of q.pickRanked.all(CUTOFF)) {
+        if (excl.has(r.account)) continue;
+        const row = q.getToken.get(r.account);
+        if (!row || !row.token_enc) continue;   // TOCTOU: deleted between rank and read
+        try { tok = decrypt(row.token_enc); picked = r; break; }
+        catch {
+          q.parkAccount.run('+60 minutes', r.account);
+          logAccess(r.account, host, ip, 'select', 'decrypt-fail — parked 60m');
+        }
+      }
+      if (!picked) {
         // reasoned 503: WHY is nothing servable — one account may tick several counters.
         // Tally BEFORE the audit so the feed AND /api/access record the reason, not a bare 'none-available'.
         const all = q.listAccounts.all();
@@ -440,9 +462,8 @@ const server = http.createServer(async (req, res) => {
         logAccess(null, host, ip, 'select', `none-available · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off)`);
         return json(res, 503, { error: 'no account with headroom', accounts: all.length, parked, reauth, disabled });
       }
-      const tok = decrypt(q.getToken.get(row.account).token_enc);
-      logAccess(row.account, host, ip, 'select', 'ok');
-      return json(res, 200, { account: row.account, setup_token: tok });
+      logAccess(picked.account, host, ip, 'select', 'ok');
+      return json(res, 200, { account: picked.account, setup_token: tok });
     }
     // client hit an over-limit/unavailable account → PARK it for a TTL (default 15m) so
     // the next select skips it, WITHOUT clobbering its real usage; the poller keeps the %

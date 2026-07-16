@@ -663,3 +663,43 @@ test('listKeys surfaces last_used per provider: non-null after a key-fetch, null
   assert.ok(keys.find((k) => k.provider === 'fal').last_used, 'fetched provider has a last_used ts');
   assert.equal(keys.find((k) => k.provider === 'untouchedco').last_used, null);   // never fetched → null
 });
+
+test('GET /api/select skips a poison (undecryptable) account, parks it, and hands out the next good one — never 500s (bug B1)', async () => {
+  // pre-existing selectable accounts get excluded so only our two candidates remain
+  const before = await (await fetch(base + '/api/accounts', { headers: H })).json();
+  const excl = before.map((a) => a.account).join(',');
+  // poison: valid-looking row but token_enc is not decryptable; ranked FIRST (usage set, low)
+  db.prepare(`INSERT INTO accounts(account,token_enc,five_hour_pct,seven_day_pct,usage_updated)
+    VALUES('poisonsel','@@not-base64-ciphertext@@',1,1,datetime('now'))`).run();
+  await fetch(base + '/api/accounts', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'goodsel', setup_token: 'sk-ant-oat01-goodtok' }) });
+  try {
+    const r = await fetch(base + `/api/select?exclude=${encodeURIComponent(excl)}`, { headers: H });
+    assert.equal(r.status, 200);                       // NOT 500
+    assert.equal((await r.json()).account, 'goodsel'); // skipped poison, served the good one
+    // poison is now parked so pickRanked won't re-elect it next call
+    const poison = (await (await fetch(base + '/api/accounts', { headers: H })).json()).find((a) => a.account === 'poisonsel');
+    assert.equal(poison.parked, 1);
+    // and the fault is audited
+    const access = await (await fetch(base + '/api/access?limit=50', { headers: H })).json();
+    assert.ok(access.some((a) => a.account === 'poisonsel' && /decrypt-fail/.test(a.result)));
+  } finally {
+    db.prepare(`DELETE FROM accounts WHERE account IN ('poisonsel','goodsel')`).run();
+  }
+});
+
+test('GET /api/keys/:provider on an undecryptable key → 500 {decrypt failed} + audited, no "ok" row (bug B2)', async () => {
+  db.prepare(`INSERT INTO provider_keys(provider,key_enc,key_hint,status)
+    VALUES('poisonprov','@@not-base64-ciphertext@@','poi…son','working')`).run();
+  try {
+    const r = await fetch(base + '/api/keys/poisonprov', { headers: H });
+    assert.equal(r.status, 500);
+    assert.deepEqual(await r.json(), { error: 'decrypt failed' });
+    const access = await (await fetch(base + '/api/access?limit=50', { headers: H })).json();
+    const rows = access.filter((a) => a.account === 'poisonprov' && a.action === 'key');
+    assert.ok(rows.some((a) => a.result === 'decrypt-fail'), 'fault audited');
+    assert.ok(!rows.some((a) => a.result === 'ok'), 'no lying "ok" handout row');
+  } finally {
+    db.prepare(`DELETE FROM provider_keys WHERE provider='poisonprov'`).run();
+  }
+});
