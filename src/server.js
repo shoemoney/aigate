@@ -19,7 +19,7 @@ import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive } from './lib.js';
-import { PROVIDERS, isKnownProvider } from './providers.js';
+import { PROVIDERS, isKnownProvider, PROVIDER_BY_ID } from './providers.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -221,8 +221,15 @@ const q = {
       (SELECT label FROM provider_keys p2 WHERE p2.provider=provider_keys.provider AND p2.status='working' ORDER BY id DESC LIMIT 1) AS label,
       max(last_checked) AS last_checked
     FROM provider_keys WHERE status='working' GROUP BY provider ORDER BY provider`),
-  getKeyByProvider: db.prepare(`SELECT key_enc,label FROM provider_keys WHERE provider=? AND status='working' ORDER BY id DESC LIMIT 1`),
+  // ranked working keys for a provider (newest first) so /api/keys/:provider can
+  // skip a client-excluded key on retry — mirrors accounts' pickRanked/exclude.
+  rankedKeys: db.prepare(`SELECT id,key_enc,label,key_hint FROM provider_keys WHERE provider=? AND status='working' ORDER BY id DESC`),
   delKey: db.prepare(`DELETE FROM provider_keys WHERE id=? RETURNING provider,key_hint`),
+  // provider-key liveness poller (mirror of the account poller): keys are otherwise
+  // insert-and-forget, so a revoked key stays 'working' forever and gets served silently.
+  allWorkingKeys: db.prepare(`SELECT id,provider,key_enc FROM provider_keys WHERE status='working'`),
+  getKeyRow: db.prepare(`SELECT id,provider,key_enc,label FROM provider_keys WHERE id=?`),
+  setKeyStatus: db.prepare(`UPDATE provider_keys SET status=?, last_checked=datetime('now') WHERE id=?`),
 };
 
 // ---- websocket hub ------------------------------------------------------
@@ -371,23 +378,37 @@ const server = http.createServer(async (req, res) => {
       for (const r of q.capabilities.all()) providers[r.provider] = { keys: r.keys, label: r.label, last_checked: r.last_checked };
       return json(res, 200, { version: VERSION, providers, claude: { selectable: q.pickRanked.all(CUTOFF).length, accounts: q.listAccounts.all().length } });
     }
+    // on-demand liveness check for ONE key (mirror of /api/accounts/:name/refresh)
+    if (p.startsWith('/api/keys/') && p.endsWith('/refresh') && req.method === 'POST') {
+      const row = q.getKeyRow.get(Number(p.split('/')[3]));
+      if (!row) return json(res, 404, { error: 'unknown key id' });
+      let key; try { key = decrypt(row.key_enc); } catch { return json(res, 500, { error: 'decrypt failed' }); }
+      const chk = await checkProviderKey(PROVIDER_BY_ID.get(row.provider), key);
+      if (chk.skip) return json(res, 200, { id: row.id, provider: row.provider, checked: false, note: 'no liveness probe for this provider' });
+      if (chk.error) return json(res, 502, { id: row.id, provider: row.provider, error: chk.error });  // network blip → status untouched
+      q.setKeyStatus.run(chk.alive ? 'working' : 'dead', row.id);
+      logAccess(row.provider, '', reqIp(req), 'key-refresh', chk.alive ? 'working' : `dead (${chk.status})`);
+      broadcast('keys', q.listKeys.all());
+      return json(res, 200, { id: row.id, provider: row.provider, checked: true, alive: chk.alive, status: chk.status });
+    }
     // fetch the newest working key for a provider (bearer-gated, audited) — used
-    // by clients/skills that need the actual secret to call the provider.
+    // by clients/skills that need the actual secret to call the provider. ?exclude=
+    // <hint,hint> lets a client whose key just 401'd retry the next working key.
     if (p.startsWith('/api/keys/') && req.method === 'GET') {
       // normalize like POST does — 'Brave ' vs 'brave' must not silently 404 hydrate
       const provider = decodeURIComponent(p.split('/').pop()).trim().toLowerCase();
-      const row = q.getKeyByProvider.get(provider);
+      const excl = new Set((url.searchParams.get('exclude') || '').split(',').map((s) => s.trim()).filter(Boolean));
+      const row = q.rankedKeys.all(provider).find((r) => !excl.has(r.key_hint));
       if (!row) return json(res, 404, { error: 'no working key for ' + provider });
       // decrypt BEFORE the audit — a 'key ok' row written ahead of a decrypt that
-      // then throws makes the vault's audit trail claim a handout that never
-      // happened. On failure, record the fault honestly and 500.
+      // then throws makes the vault's audit trail claim a handout that never happened.
       const host = url.searchParams.get('host') || '';
       let key; try { key = decrypt(row.key_enc); } catch {
         logAccess(provider, host, reqIp(req), 'key', 'decrypt-fail');
         return json(res, 500, { error: 'decrypt failed' });
       }
       logAccess(provider, host, reqIp(req), 'key', 'ok');
-      return json(res, 200, { provider, label: row.label, key });
+      return json(res, 200, { provider, label: row.label, key, key_hint: row.key_hint });
     }
     if (p === '/api/keys' && req.method === 'POST') {
       const b = await body(req);
@@ -637,6 +658,41 @@ async function pollUsage() {
 }
 const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
 
+// ---- provider-key liveness ---------------------------------------------
+// Accounts self-heal (poll → reauth flag); provider keys were insert-and-forget,
+// so a revoked/rotated key sat status='working' forever and got served silently.
+// Probe = GET <base>/models with the key as Bearer. Only providers that speak the
+// OpenAI API (oaiCompat) get a generic probe; others have no universal cheap check
+// and are left untouched (skip), never wrongly flipped to dead.
+async function checkProviderKey(meta, key) {
+  if (!meta || !meta.oaiCompat || !meta.base) return { skip: true };
+  try {
+    const r = await fetch(meta.base.replace(/\/+$/, '') + '/models', {
+      headers: { authorization: 'Bearer ' + key },
+      signal: AbortSignal.timeout(15000), redirect: 'error',
+    });
+    r.body?.cancel().catch(() => {});
+    return { alive: r.status !== 401 && r.status !== 403, status: r.status };
+  } catch (e) { return { error: String((e && e.message) || e) }; }
+}
+let keyPolling = false;
+async function pollProviderKeys() {
+  if (keyPolling) { console.warn('[keypoll] previous cycle still running, skipping'); return; }
+  keyPolling = true;
+  try {
+    let flipped = 0;
+    await Promise.all(q.allWorkingKeys.all().map(async (row) => {
+      let key; try { key = decrypt(row.key_enc); }
+      catch { return; }   // poison key: the /api/keys decrypt guards handle it, don't flip on a read we can't do
+      const chk = await checkProviderKey(PROVIDER_BY_ID.get(row.provider), key);
+      if (chk.skip || chk.error) return;   // unknown provider / network blip → leave status as-is
+      q.setKeyStatus.run(chk.alive ? 'working' : 'dead', row.id);
+      if (!chk.alive) { flipped++; console.warn('[keypoll] E_KEY_DEAD', row.provider, 'id', row.id, 'status', chk.status); }
+    }));
+    if (flipped) broadcast('keys', q.listKeys.all());
+  } finally { keyPolling = false; }
+}
+
 // ---- vault backup --------------------------------------------------------
 // VACUUM INTO = consistent WAL-safe snapshot, zero deps. .env is deliberately
 // NOT copied (no secret sprawl — backups hold ciphertext only). A failed
@@ -708,6 +764,12 @@ if (isMain) {
   const poll = () => pollUsage().catch((e) => console.error('[poll] cycle failed', e));
   if (POLL_MS > 0) { setTimeout(poll, 8000); setInterval(poll, POLL_MS); }
 
+  // provider-key liveness runs on its own (slower) cadence — keys change far less
+  // often than account headroom. Offset from the account poll so they don't burst together.
+  const KEY_POLL_MS = Number(process.env.AIGATE_KEY_POLL_MS || 3600000); // 1h
+  const keyPoll = () => pollProviderKeys().catch((e) => console.error('[keypoll] cycle failed', e));
+  if (KEY_POLL_MS > 0) { setTimeout(keyPoll, 25000); setInterval(keyPoll, KEY_POLL_MS); }
+
   // daily vault backup (~20s after boot, then every 24h)
   setTimeout(backupNow, 20000).unref();
   setInterval(backupNow, 86400000).unref();
@@ -716,4 +778,4 @@ if (isMain) {
     console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
 }
 
-export { server, db, pollUsage, backupNow, openDb, isWeakToken };
+export { server, db, pollUsage, pollProviderKeys, backupNow, openDb, isWeakToken };

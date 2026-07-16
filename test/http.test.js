@@ -21,7 +21,7 @@ process.env.HOST = '127.0.0.1';
 delete process.env.AIGATE_ALLOW_CIDR;
 delete process.env.AIGATE_TRUST_PROXY;
 
-const { server, db, backupNow, openDb, isWeakToken } = await import('../src/server.js');
+const { server, db, backupNow, openDb, isWeakToken, pollProviderKeys } = await import('../src/server.js');
 const BACKUPS = join(tmpdir(), 'backups');   // dirname(DB)/backups
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
@@ -762,4 +762,51 @@ test('listKeys marks a never-fetched key stale, clears after a fetch (F10)', asy
   assert.equal((await list()).find((k) => k.provider === 'staleco').stale, 1);   // never fetched → stale
   await fetch(base + '/api/keys/staleco', { headers: H });                        // fetch → last_used=now
   assert.equal((await list()).find((k) => k.provider === 'staleco').stale, 0);    // fresh
+});
+
+test('pollProviderKeys flips a revoked oaiCompat key to dead, keeps live, skips non-oaiCompat (F1)', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (url, opts) => {
+    const u = String(url);
+    if (u.startsWith('http://127.0.0.1')) return realFetch(url, opts);   // this suite's own calls
+    const auth = (opts && opts.headers && opts.headers.authorization) || '';
+    return Promise.resolve(new Response('{}', { status: /DEAD/.test(auth) ? 401 : 200 }));  // provider /models probe
+  };
+  const add = (p, k) => realFetch(base + '/api/keys', { method: 'POST', headers: H, body: JSON.stringify({ provider: p, key: k }) });
+  try {
+    await add('groq', 'gsk-live-key-AAAA');
+    await add('groq', 'gsk-revoked-key-DEAD');
+    await add('anthropic', 'sk-ant-nonoai-BBBB');   // anthropic is NOT oaiCompat → must be skipped, never flipped
+    await pollProviderKeys();
+    const keys = await (await realFetch(base + '/api/keys', { headers: H })).json();
+    assert.equal(keys.find((k) => /AAAA/.test(k.key_hint)).status, 'working');   // live stays
+    assert.equal(keys.find((k) => /DEAD/.test(k.key_hint)).status, 'dead');      // revoked flips
+    assert.equal(keys.find((k) => /BBBB/.test(k.key_hint)).status, 'working');   // non-oaiCompat untouched
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('POST /api/keys/:id/refresh probes one key on demand (F1)', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (url, opts) => String(url).startsWith('http://127.0.0.1')
+    ? realFetch(url, opts) : Promise.resolve(new Response('{}', { status: 401 }));
+  try {
+    await realFetch(base + '/api/keys', { method: 'POST', headers: H, body: JSON.stringify({ provider: 'together', key: 'tog-refresh-CCCC' }) });
+    const id = (await (await realFetch(base + '/api/keys', { headers: H })).json()).find((k) => /CCCC/.test(k.key_hint)).id;
+    const r = await realFetch(base + `/api/keys/${id}/refresh`, { method: 'POST', headers: H });
+    const j = await r.json();
+    assert.equal(j.checked, true);
+    assert.equal(j.alive, false);
+    const status = (await (await realFetch(base + '/api/keys', { headers: H })).json()).find((k) => k.id === id).status;
+    assert.equal(status, 'dead');
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('GET /api/keys/:provider?exclude= skips a hint and serves the next working key (F9)', async () => {
+  const add = (k) => fetch(base + '/api/keys', { method: 'POST', headers: H, body: JSON.stringify({ provider: 'excltest', key: k }) });
+  await add('excltest-older-1111');
+  await add('excltest-newer-2222');   // newest = default pick
+  const def = await (await fetch(base + '/api/keys/excltest', { headers: H })).json();
+  assert.match(def.key_hint, /2222/);                         // newest served by default
+  const next = await (await fetch(base + `/api/keys/excltest?exclude=${encodeURIComponent(def.key_hint)}`, { headers: H })).json();
+  assert.match(next.key_hint, /1111/);                        // excluded newest → falls to older
 });
