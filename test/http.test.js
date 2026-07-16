@@ -726,3 +726,23 @@ test('oversized POST body → 413, no hollow row written (bug B6)', async () => 
   const logs = await (await fetch(base + '/api/logs?limit=50', { headers: H })).json();
   assert.ok(!logs.some((l) => l.account === 'oversize-test'), 'no hollow row from the dropped body');
 });
+
+test('poll: a present-but-unparseable rate header keeps last-known-good, never phantom-0 (bug B7)', async () => {
+  const realFetch = globalThis.fetch;
+  let next;
+  const canned = (status, u5, u7) => new Response('{}', { status, headers: (u5 == null ? {} : {
+    'anthropic-ratelimit-unified-5h-utilization': u5, 'anthropic-ratelimit-unified-7d-utilization': u7 }) });
+  globalThis.fetch = (url, opts) =>
+    String(url).startsWith('https://api.anthropic.com') ? Promise.resolve(next) : realFetch(url, opts);
+  const refresh = async (name) => (await realFetch(base + `/api/accounts/${name}/refresh`, { method: 'POST', headers: H })).json();
+  const acct = async (name) => (await (await realFetch(base + '/api/accounts', { headers: H })).json()).find((a) => a.account === name);
+  try {
+    db.prepare("UPDATE accounts SET reauth_needed=0,disabled=0,parked_until=NULL,five_hour_pct=77,seven_day_pct=77,usage_updated=datetime('now') WHERE account=?").run('bob');
+    next = canned(200, 'not-a-number', '0.10');   // 5h header is garbage
+    const r = await refresh('bob');
+    assert.equal(r.five, null);                    // no usage written this cycle
+    const b = await acct('bob');
+    assert.equal(b.five_hour_pct, 77);             // kept last-known-good, NOT zeroed
+    assert.equal(b.seven_day_pct, 77);
+  } finally { globalThis.fetch = realFetch; }
+});

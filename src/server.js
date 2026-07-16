@@ -501,7 +501,9 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req);
       // an oversized body was dropped to a sentinel — say so (413) instead of silently
       // writing a hollow row of empty defaults under a 200 the client reads as "logged".
-      if (b.__oversized) return json(res, 413, { error: 'payload too large' });
+      // Connection:close — we paused mid-body, so the socket has unread bytes that would
+      // poison a keep-alive reuse (ECONNRESET on the NEXT request); close it cleanly.
+      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'payload too large' })); }
       // store scrubbed + truncated: every read already substr's to 400 — never retain full prompts
       const prompt = scrub(b.prompt).slice(0, 400);
       q.insReq.run(b.account || '', b.host || '', reqIp(req), b.cwd || '', b.model || '', prompt, b.tokens ?? null);
@@ -575,6 +577,9 @@ async function pollAccountUsage(account, token) {
       },
       body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
       signal: AbortSignal.timeout(15000),
+      // never follow a redirect: this request carries a live OAuth token as Bearer,
+      // and a hijacked-DNS 30x could bounce it to an attacker-controlled host.
+      redirect: 'error',
     });
     // status + headers are all we read — cancel the body or undici pins the connection until GC
     r.body?.cancel().catch(() => {});
@@ -586,8 +591,16 @@ async function pollAccountUsage(account, token) {
     const u7 = r.headers.get('anthropic-ratelimit-unified-7d-utilization');
     if (u5 == null && u7 == null)
       return { account, status: r.status, alive, note: alive ? 'no rate-limit headers' : 'auth failed — needs reauth' };
-    const five = Math.round((parseFloat(u5) || 0) * 100);
-    const seven = Math.round((parseFloat(u7) || 0) * 100);
+    const f5 = parseFloat(u5), f7 = parseFloat(u7);
+    // a header that's PRESENT but unparseable (Anthropic renamed/reformatted it) must
+    // not become a phantom 0% = "max headroom" that then gets selected FIRST and routes
+    // traffic to an exhausted token. Keep the last-known-good % and alarm instead.
+    if ((u5 != null && Number.isNaN(f5)) || (u7 != null && Number.isNaN(f7))) {
+      console.warn('[poll] E_HEADER_DRIFT unparseable rate header for', account, JSON.stringify({ u5, u7 }));
+      return { account, status: r.status, alive, note: 'unparseable rate header — kept last-known-good' };
+    }
+    const five = Math.round((f5 || 0) * 100);
+    const seven = Math.round((f7 || 0) * 100);
     q.updUsage.run(five, seven, account);
     return { account, five, seven, status: r.status, alive };
   } catch (e) {
