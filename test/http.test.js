@@ -810,3 +810,10 @@ test('GET /api/keys/:provider?exclude= skips a hint and serves the next working 
   const next = await (await fetch(base + `/api/keys/excltest?exclude=${encodeURIComponent(def.key_hint)}`, { headers: H })).json();
   assert.match(next.key_hint, /1111/);                        // excluded newest → falls to older
 });
+
+test('/health surfaces last-poller-cycle health fields (F6)', async () => {
+  const h = await (await fetch(base + '/health')).json();
+  assert.equal(h.ok, true);
+  assert.equal(typeof h.poll_ok, 'number');
+  assert.equal(typeof h.poll_failed, 'number');
+});

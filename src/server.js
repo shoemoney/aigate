@@ -45,6 +45,10 @@ const TRUST_PROXY = process.env.AIGATE_TRUST_PROXY === '1';
 // set, XFF is only honored if the socket peer is one of these — defense-in-depth
 // so a direct LAN client can't present a forged XFF even under TRUST_PROXY.
 const TRUSTED_PROXIES = (process.env.AIGATE_TRUSTED_PROXIES || '').split(',').map((s) => s.trim()).filter(Boolean);
+// Optional outbound alert webhook (Slack/Discord/generic {text} JSON). Fires on the
+// events an operator wants to hear about at 2am: selection outage, a provider key
+// going dead, a failed backup. Empty = disabled. Fire-and-forget, never blocks a request.
+const ALERT_WEBHOOK = (process.env.AIGATE_ALERT_WEBHOOK || '').trim();
 
 // weak = empty / the .env.example placeholder / under 16 chars — any of these boots the
 // vault behind a GUESSABLE shared bearer that gates every OAuth token + provider key.
@@ -255,6 +259,22 @@ const tally = (list) => {
   for (const a of list) { parked += a.parked; reauth += a.reauth_needed; disabled += a.disabled; }
   return { parked, reauth, disabled };
 };
+// fire-and-forget outbound alert; never throws into a request path
+function alert(text, extra = {}) {
+  if (!ALERT_WEBHOOK) return;
+  fetch(ALERT_WEBHOOK, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text, ts: new Date().toISOString(), ...extra }),
+    signal: AbortSignal.timeout(10000), redirect: 'error',
+  }).catch((e) => console.error('[alert] webhook failed', String((e && e.message) || e)));
+}
+// selection-outage edge trigger: alert only on the 0↔>0 transition, not every probe
+let zeroAlerted = false;
+function noteSelectable(n, ctx) {
+  if (n === 0 && !zeroAlerted) { zeroAlerted = true; alert('aigate: 0 selectable accounts — selection is down', ctx); }
+  else if (n > 0 && zeroAlerted) { zeroAlerted = false; alert('aigate: recovered — accounts selectable again'); }
+}
+// last poller cycle health, surfaced on /health so fleet autoheal/dashboard see degradation
+let lastPoll = { ts: null, ok: 0, failed: [] };
 
 // ---- http helpers -------------------------------------------------------
 // header-only: a ?token= bearer would land in edge (NPM) access logs and outlive rotation
@@ -316,7 +336,10 @@ const server = http.createServer(async (req, res) => {
         if (mtimes.length) backup_age_s = Math.round((Date.now() - Math.max(...mtimes)) / 1000);
       }
       return json(res, 200, { ok: true, uptime_s: Math.round(process.uptime()), accounts: accts.length, selectable,
-        poll_age_s: q.pollAge.get().s, backup_age_s, parked, reauth, disabled });
+        poll_age_s: q.pollAge.get().s, backup_age_s, parked, reauth, disabled,
+        // last poller cycle health — surfaces poll degradation (all tokens erroring) that
+        // usage staleness alone wouldn't flag; numbers only, safe on this unauth endpoint
+        poll_ok: lastPoll.ok, poll_failed: lastPoll.failed.length });
     } catch (e) {
       // unauth endpoint: log the detail, return a generic 503 (don't leak DB_PATH / SQLite internals)
       console.error('[health] db check failed', String((e && e.message) || e));
@@ -501,8 +524,10 @@ const server = http.createServer(async (req, res) => {
         const all = q.listAccounts.all();
         const { parked, reauth, disabled } = tally(all);
         logAccess(null, host, ip, 'select', `none-available · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off)`);
+        noteSelectable(0, { via: 'select', accounts: all.length, parked, reauth, disabled });   // edge-alert on first outage
         return json(res, 503, { error: 'no account with headroom', accounts: all.length, parked, reauth, disabled });
       }
+      noteSelectable(1, { via: 'select' });   // a real handout means selection is up → clears the outage latch
       logAccess(picked.account, host, ip, 'select', 'ok');
       return json(res, 200, { account: picked.account, setup_token: tok });
     }
@@ -642,18 +667,23 @@ async function pollUsage() {
   try {
     // parallel: one hung/dead token no longer makes the cycle N×15s and stalls later accounts.
     // node:sqlite is sync so the interleaved DB writes stay serialized on the event loop.
-    await Promise.all(allTokensStmt.all().map(async (row) => {
+    const results = await Promise.all(allTokensStmt.all().map(async (row) => {
       let tok;
       // no exit: partial failure stays partial, and a restart won't fix a key mismatch
       try { tok = decrypt(row.token_enc); }
-      catch (e) { console.error('[poll] decrypt failed for', row.account, '— wrong AIGATE_ENCRYPTION_KEY or corrupt row:', String(e && e.message || e)); return null; }
+      catch (e) { console.error('[poll] decrypt failed for', row.account, '— wrong AIGATE_ENCRYPTION_KEY or corrupt row:', String(e && e.message || e)); return { account: row.account, error: 'decrypt' }; }
       const res = await pollAccountUsage(row.account, tok);
       console.log('[poll]', new Date().toISOString(), JSON.stringify(res));
       return res;
     }));
+    // record cycle health so /health (and thus fleet autoheal/dashboard) can see poller degradation
+    const failed = results.filter((r) => r && r.error).map((r) => ({ account: r.account, error: r.error }));
+    lastPoll = { ts: new Date().toISOString(), ok: results.length - failed.length, failed };
     // unconditional: a 401'd token returns no rate-limit headers (five==null) but still
     // setReauth(1)'d the DB — a guarded broadcast left the dashboard showing a dying account green.
     broadcast('accounts', q.listAccounts.all());
+    // edge-alert if this cycle left nothing selectable (or recovered)
+    noteSelectable(q.pickRanked.all(CUTOFF).length, { via: 'poll' });
   } finally { polling = false; }
 }
 const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
@@ -687,7 +717,11 @@ async function pollProviderKeys() {
       const chk = await checkProviderKey(PROVIDER_BY_ID.get(row.provider), key);
       if (chk.skip || chk.error) return;   // unknown provider / network blip → leave status as-is
       q.setKeyStatus.run(chk.alive ? 'working' : 'dead', row.id);
-      if (!chk.alive) { flipped++; console.warn('[keypoll] E_KEY_DEAD', row.provider, 'id', row.id, 'status', chk.status); }
+      if (!chk.alive) {
+        flipped++;
+        console.warn('[keypoll] E_KEY_DEAD', row.provider, 'id', row.id, 'status', chk.status);
+        alert(`aigate: provider key went dead — ${row.provider}`, { provider: row.provider, id: row.id, status: chk.status });
+      }
     }));
     if (flipped) broadcast('keys', q.listKeys.all());
   } finally { keyPolling = false; }
@@ -719,7 +753,7 @@ function backupNow() {
       chmodSync(tmp, 0o600);
       renameSync(tmp, target);
     }
-  } catch (e) { console.error('[backup] failed', e); }
+  } catch (e) { console.error('[backup] failed', e); alert('aigate: vault backup FAILED', { error: String((e && e.message) || e) }); }
 }
 
 // Close server + db and exit. On a fatal fault we exit non-zero so the
