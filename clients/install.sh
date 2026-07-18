@@ -28,6 +28,7 @@ mkdir -p "$(dirname "$ZRC")"
 [ -f "$ZRC" ] || : > "$ZRC"
 
 install -m 0755 "$SRC/aigate-run.sh" "$DIR/aigate-run.sh"
+[ -f "$SRC/aigate-kimi.sh" ]     && install -m 0755 "$SRC/aigate-kimi.sh"     "$DIR/aigate-kimi.sh"     || true
 [ -f "$SRC/prompt-hook.sh" ]     && install -m 0755 "$SRC/prompt-hook.sh"     "$DIR/prompt-hook.sh"     || true
 [ -f "$SRC/statusline-feed.sh" ] && install -m 0755 "$SRC/statusline-feed.sh" "$DIR/statusline-feed.sh" || true
 [ -f "$SRC/hydrate.sh" ]         && install -m 0755 "$SRC/hydrate.sh"         "$DIR/hydrate.sh"         || true
@@ -46,7 +47,8 @@ EOF
 
 cat > "$BIN/cc" <<'EOF'
 #!/usr/bin/env bash
-# cc — run claude through aigate (account picked by the warden).
+# cc — run claude through aigate (account picked by the warden), or `cc kimi …`
+# to drive the same official binary against Kimi K3.
 set -a; . "$HOME/.claude/aigate/env"; set +a
 # freshen MCP keys in-foreground when missing/stale so THIS launch resolves ${VAR}s
 MK="$HOME/.claude/aigate/mcp-keys.env"
@@ -54,6 +56,12 @@ if [ ! -f "$MK" ] || [ -n "$(find "$MK" -mmin +720 2>/dev/null)" ]; then
   "$HOME/.claude/aigate/hydrate.sh" >/dev/null 2>&1 || true
 fi
 [ -f "$MK" ] && . "$MK"
+# force a plain single-session REPL — never the experimental agent-teams board
+# (cmux injects CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1; unset beats it, "=0" would not)
+unset CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
+# `cc kimi …` → Kimi K3 via its Anthropic endpoint (bypasses the Claude warden);
+# anything else → the account warden, unchanged.
+[ "${1:-}" = kimi ] && { shift; exec "$HOME/.claude/aigate/aigate-kimi.sh" "$@"; }
 exec "$HOME/.claude/aigate/aigate-run.sh" "$@"
 EOF
 chmod 0755 "$BIN/cc"
