@@ -307,6 +307,8 @@ const q = {
   retryCard: db.prepare(`UPDATE board_cards SET status='todo', error=NULL, worker=NULL, claimed_at=NULL, updated_at=datetime('now') WHERE id=? RETURNING *`),
   delCard: db.prepare(`DELETE FROM board_cards WHERE id=? RETURNING id`),
   maxCardPos: db.prepare(`SELECT COALESCE(MAX(position),0) AS m FROM board_cards`),
+  // drag-to-reorder priority: only todo cards reorder (workers own running); lower pos claimed first
+  setCardPos: db.prepare(`UPDATE board_cards SET position=?, updated_at=datetime('now') WHERE id=? AND status='todo'`),
 };
 
 // ---- websocket hub ------------------------------------------------------
@@ -799,6 +801,15 @@ const server = http.createServer(async (req, res) => {
       logAccess('board', card.worker || '', reqIp(req), 'claim', `card ${card.id}`);
       broadcast('board', q.listCards.all());
       return json(res, 200, { id: card.id, prompt: card.prompt, cwd: card.cwd, model: card.model, effort: card.effort, session_id: card.session_id });
+    }
+    // drag-to-reorder the Todo queue: {ids:[...]} in the desired order → position = array index.
+    // One request, one broadcast (vs N PATCHes) so the board doesn't flicker mid-drag.
+    if (p === '/api/board/reorder' && req.method === 'POST') {
+      const b = await body(req);
+      if (!Array.isArray(b.ids)) return json(res, 400, { error: 'ids array required' });
+      b.ids.forEach((id, i) => q.setCardPos.run(i, Number(id)));
+      broadcast('board', q.listCards.all());
+      return json(res, 200, { ok: true, reordered: b.ids.length });
     }
     // worker returns Claude's output → append the turn, store session id (--resume continuity), flip done/error
     if (p.startsWith('/api/board/') && p.endsWith('/result') && req.method === 'POST') {

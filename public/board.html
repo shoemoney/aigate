@@ -9,29 +9,36 @@
     --bg:#0a0e14; --bg2:#0f1520; --panel:#131b28; --panel2:#182234;
     --line:#223044; --ink:#e6edf6; --dim:#8ea1ba; --faint:#5f728c;
     --todo:#6b7cff; --run:#f5a524; --done:#22c98a; --err:#ff5d6c;
+    --cyan:#35d6e5; --violet:#a26bff;
     --accent:#6b7cff; --glow:0 0 0 1px var(--line), 0 8px 30px rgba(0,0,0,.45);
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --spring:cubic-bezier(.34,1.56,.64,1);
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
-  body{background:radial-gradient(1200px 700px at 80% -10%,#16233b 0%,var(--bg) 55%) fixed,var(--bg);
+  body{background:
+      radial-gradient(1100px 640px at 82% -12%,rgba(107,124,255,.14) 0%,transparent 60%),
+      radial-gradient(900px 560px at 8% 108%,rgba(162,107,255,.12) 0%,transparent 55%),
+      var(--bg);
+    background-attachment:fixed;
     color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif;
     -webkit-font-smoothing:antialiased;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
   a{color:var(--accent)}
   code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
   header{display:flex;align-items:center;gap:14px;padding:16px 22px;border-bottom:1px solid var(--line);
-    background:linear-gradient(180deg,rgba(24,34,52,.7),rgba(19,27,40,.4));backdrop-filter:blur(8px);position:sticky;top:0;z-index:20}
+    background:linear-gradient(180deg,rgba(24,34,52,.72),rgba(19,27,40,.42));backdrop-filter:blur(10px);position:sticky;top:0;z-index:20}
   header .brand{font-weight:800;letter-spacing:.2px;font-size:18px;display:flex;align-items:center;gap:9px}
   header .dot{width:10px;height:10px;border-radius:50%;background:var(--done);box-shadow:0 0 12px var(--done);animation:pulse 2.4s infinite}
   header .dot.off{background:var(--err);box-shadow:0 0 12px var(--err)}
   header .spacer{flex:1}
-  header .filter{background:var(--bg2);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:7px 11px;font:inherit;font-size:13px;width:min(320px,32vw);margin-left:6px}
+  header .filter{background:var(--bg2);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:7px 11px;font:inherit;font-size:13px;width:min(320px,32vw);margin-left:6px;transition:.18s box-shadow,.18s border-color}
   header .filter:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(107,124,255,.15)}
   .btn{border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:8px 14px;border-radius:10px;
     font-weight:600;cursor:pointer;transition:.16s transform,.16s box-shadow,.16s border-color;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
   .btn:hover{transform:translateY(-1px);border-color:var(--accent);box-shadow:0 6px 18px rgba(107,124,255,.25)}
   .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  .btn.primary{background:linear-gradient(135deg,#6b7cff,#8a6bff);border-color:transparent;color:#fff}
+  .btn.primary{background:linear-gradient(135deg,#6b7cff,#8a6bff);border-color:transparent;color:#fff;box-shadow:0 4px 16px rgba(107,124,255,.35)}
+  .btn.primary:hover{box-shadow:0 8px 24px rgba(138,107,255,.45)}
   .btn.ghost{background:transparent}
   .btn.sm{padding:5px 10px;font-size:12px;border-radius:8px}
   .btn.icon{padding:5px 8px;font-size:12px}
@@ -41,33 +48,48 @@
   .board{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:20px;max-width:1600px;margin:0 auto;align-items:start}
   @media(max-width:1100px){.board{grid-template-columns:repeat(2,1fr)}}
   @media(max-width:640px){.board{grid-template-columns:1fr}}
-  .col{background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);border-radius:16px;padding:12px;min-height:120px}
-  .col h2{margin:2px 4px 12px;font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:var(--dim);display:flex;align-items:center;gap:8px;position:sticky;top:0}
-  .col h2 .pip{width:9px;height:9px;border-radius:50%}
+  /* while dragging a Todo card, focus the reorder space: dim the columns you can't drop into */
+  .board.dragging .col:not(.todo){opacity:.55;filter:saturate(.6)}
+  .col{background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);border-radius:16px;padding:12px;min-height:120px;position:relative;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 18px 40px -22px rgba(0,0,0,.8);transition:opacity .2s,filter .2s}
+  .col::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;border-radius:16px 16px 0 0;opacity:.85}
+  .col.todo::before{background:linear-gradient(90deg,var(--todo),var(--violet))}
+  .col.running::before{background:linear-gradient(90deg,var(--run),#ffd08a)}
+  .col.done::before{background:linear-gradient(90deg,var(--done),var(--cyan))}
+  .col.error::before{background:linear-gradient(90deg,var(--err),#ff9aa4)}
+  .col h2{margin:6px 4px 12px;font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:var(--dim);display:flex;align-items:center;gap:8px;position:sticky;top:0}
   .col h2 .glyph{font:700 10px/1 var(--mono);color:var(--bg);width:14px;height:14px;border-radius:4px;display:grid;place-items:center}
-  .col .count{margin-left:auto;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:1px 9px;font-size:11px;color:var(--dim)}
+  .col .count{margin-left:auto;background:var(--panel2);border:1px solid var(--line);border-radius:20px;min-width:24px;text-align:center;padding:1px 9px;font-size:11px;color:var(--dim);overflow:hidden;height:18px;position:relative}
+  .col .count .roll{display:block}
+  .col.todo    h2 .glyph{background:var(--todo)}
+  .col.running h2 .glyph{background:var(--run)}
+  .col.done    h2 .glyph{background:var(--done)}
+  .col.error   h2 .glyph{background:var(--err)}
   .col .list{max-height:calc(100vh - 200px);overflow-y:auto;overflow-x:hidden;position:relative;scrollbar-width:thin}
   .col .list::-webkit-scrollbar{width:7px}.col .list::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
-  .col.todo    h2 .pip{background:var(--todo)} .col.todo    h2 .glyph{background:var(--todo)}
-  .col.running h2 .pip{background:var(--run)}  .col.running h2 .glyph{background:var(--run)}
-  .col.done    h2 .pip{background:var(--done)} .col.done    h2 .glyph{background:var(--done)}
-  .col.error   h2 .pip{background:var(--err)}  .col.error   h2 .glyph{background:var(--err)}
 
-  .card{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:11px;
-    box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;position:relative;overflow:hidden}
-  .card:hover{border-color:#31456a}
+  .card{background:linear-gradient(180deg,#1a2536,#161f2e);border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:11px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 6px 18px -8px rgba(0,0,0,.7);cursor:pointer;position:relative;overflow:hidden;
+    transition:transform .14s var(--spring),box-shadow .18s,border-color .16s}
+  .card:hover{transform:translateY(-2px);border-color:#31456a;box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 14px 30px -12px rgba(0,0,0,.75),0 0 20px -6px var(--halo,transparent)}
+  .card.todo{--halo:rgba(107,124,255,.4)} .card.running{--halo:rgba(245,165,36,.45)}
+  .card.done{--halo:rgba(34,201,138,.4)} .card.error{--halo:rgba(255,93,108,.45)}
   .card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .card .head{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+  .card .grip{color:var(--faint);font-size:13px;cursor:grab;flex:none;letter-spacing:-2px;opacity:.6;transition:opacity .15s}
+  .card .grip:hover{opacity:1;color:var(--dim)}
+  .card .rank{font:700 10px/1 var(--mono);color:#fff;background:linear-gradient(135deg,var(--todo),var(--violet));
+    width:17px;height:17px;border-radius:5px;display:grid;place-items:center;flex:none;box-shadow:0 0 10px -2px rgba(107,124,255,.6)}
   .card .id{color:var(--faint);font-size:11px;font-weight:600;font-family:var(--mono)}
   .card .ttl{font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .card .chev{color:var(--faint);font-size:11px;transition:transform .2s;flex:none}
   .card.open .chev{transform:rotate(90deg)}
-  .status{font:700 9.5px/1 ui-sans-serif;text-transform:uppercase;letter-spacing:.6px;padding:3px 7px;border-radius:6px;flex:none;display:inline-flex;align-items:center;gap:4px}
-  .status::before{content:"";width:6px;height:6px;border-radius:2px}
-  .status.todo{color:#aab4ff;background:rgba(107,124,255,.12)} .status.todo::before{background:var(--todo);border-radius:50%}
-  .status.running{color:#ffcf8f;background:rgba(245,165,36,.13)} .status.running::before{background:var(--run);clip-path:polygon(0 0,100% 50%,0 100%)}
-  .status.done{color:#88f0c4;background:rgba(34,201,138,.12)} .status.done::before{background:var(--done);clip-path:polygon(50% 0,100% 100%,0 100%)}
-  .status.error{color:#ff9aa4;background:rgba(255,93,108,.12)} .status.error::before{background:var(--err)}
+  .status{font:700 9.5px/1 ui-sans-serif;text-transform:uppercase;letter-spacing:.6px;padding:3px 8px;border-radius:6px;flex:none;display:inline-flex;align-items:center;gap:4px;color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.2),inset 0 -2px 4px rgba(0,0,0,.25)}
+  .status::before{content:"";width:6px;height:6px;border-radius:2px;background:rgba(255,255,255,.9)}
+  .status.todo{background:linear-gradient(135deg,#6b7cff,#8a6bff)} .status.todo::before{border-radius:50%}
+  .status.running{background:linear-gradient(135deg,#f5a524,#ff8f3a)} .status.running::before{clip-path:polygon(0 0,100% 50%,0 100%)}
+  .status.done{background:linear-gradient(135deg,#22c98a,#2fd6b0)} .status.done::before{clip-path:polygon(50% 0,100% 100%,0 100%)}
+  .status.error{background:linear-gradient(135deg,#ff5d6c,#ff7a54)}
   .card .timer{font-family:var(--mono);font-size:11px;color:var(--dim);flex:none}
   .card .prompt{color:var(--dim);font-size:12.5px;white-space:pre-wrap;max-height:60px;overflow:hidden;
     -webkit-mask-image:linear-gradient(180deg,#000 58%,transparent);mask-image:linear-gradient(180deg,#000 58%,transparent)}
@@ -76,32 +98,46 @@
   .tag{font-size:10.5px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim);background:var(--panel);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
   .tag.model,.tag.dir{font-family:var(--mono);font-size:10px}
   .tag.model{color:#a9b6ff;border-color:#33407a} .tag.dir{color:#8fe3c0;border-color:#2c5344}
-  .tag.effort{color:var(--faint)}                       /* low/medium stay quiet */
-  .tag.effort.hot{color:#ffd08a;border-color:#5a4a2a;background:rgba(245,165,36,.08)}  /* high/max stand out */
-  .card.running{border-color:var(--run)}
-  .card.running::after{content:"";position:absolute;inset:0;border-radius:14px;pointer-events:none;
-    box-shadow:inset 0 0 0 1px var(--run);animation:runglow 1.9s ease-in-out infinite}
+  .tag.effort{color:var(--faint)}
+  .tag.effort.hot{color:#ffd08a;border-color:#5a4a2a;background:rgba(245,165,36,.1)}
+
+  /* running: rotating conic-gradient border sweep — premium, low opacity, not noisy */
+  .card.running{border-color:transparent}
+  .card.running::after{content:"";position:absolute;inset:0;border-radius:14px;padding:1px;pointer-events:none;
+    background:conic-gradient(from var(--a,0deg),transparent 0 62%,rgba(245,165,36,.9) 78%,#ffe0a3 88%,transparent 100%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+    animation:sweep 3.2s linear infinite}
   .card.error{border-color:#5a2730}
   .card .spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(245,165,36,.35);border-top-color:var(--run);border-radius:50%;animation:spin .7s linear infinite;flex:none}
 
+  /* drag & drop */
+  .card[draggable=true]{cursor:default}
+  .card.dragging{opacity:.9;transform:scale(1.035) rotate(1.1deg);cursor:grabbing;
+    border-color:var(--accent);box-shadow:0 22px 44px -12px rgba(0,0,0,.8),0 0 26px -4px rgba(107,124,255,.7);z-index:5}
+  .card.drop-before::before,.card.drop-after::after{content:"";position:absolute;left:6px;right:6px;height:3px;border-radius:3px;
+    background:linear-gradient(90deg,var(--todo),var(--violet));box-shadow:0 0 12px 1px rgba(107,124,255,.8);z-index:6}
+  .card.drop-before::before{top:-7px} .card.drop-after::after{bottom:-7px}
+
   .thread{margin-top:10px;border-top:1px dashed var(--line);padding-top:9px;display:flex;flex-direction:column;gap:9px}
-  .turn .tp{font-size:11.5px;color:var(--accent);font-weight:600;margin-bottom:2px}
+  .turn .tp{font-size:11.5px;color:var(--cyan);font-weight:600;margin-bottom:2px}
   .turn .tp::before{content:"› "}
   .summary{font-size:12.5px;color:var(--ink);white-space:pre-wrap}
+  .summary .ln{opacity:0;animation:rise .32s ease forwards}          /* staggered bullet reveal */
   .errbox{margin-top:9px;color:var(--err);font-size:12px;white-space:pre-wrap;font-family:var(--mono)}
   .followrow{margin-top:10px;display:flex;gap:7px}
-  .followrow input{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:7px 9px;font:inherit;font-size:12.5px}
-  .followrow input:focus{outline:none;border-color:var(--accent)}
+  .followrow input{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:7px 9px;font:inherit;font-size:12.5px;transition:.16s box-shadow,.16s border-color}
+  .followrow input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 3px rgba(53,214,229,.15)}
   .cardacts{margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .cardacts .turns{color:var(--faint);font-size:11px;margin-left:auto}
 
   /* modal */
   .scrim{position:fixed;inset:0;background:rgba(4,7,12,.62);backdrop-filter:blur(6px);display:flex;align-items:flex-start;justify-content:center;padding:7vh 16px;z-index:40}
-  .modal{width:min(560px,100%);background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);border-radius:18px;box-shadow:var(--glow);padding:20px}
+  .modal{width:min(560px,100%);background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);border-radius:18px;box-shadow:var(--glow),0 30px 80px -20px rgba(0,0,0,.85);padding:20px;
+    animation:modalin .3s var(--spring)}
   .modal h3{margin:0 0 14px;font-size:17px;display:flex;align-items:center;gap:8px}
   .field{margin-bottom:13px}
   .field label{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:5px}
-  .field input,.field textarea,.field select{width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:10px 11px;font:inherit}
+  .field input,.field textarea,.field select{width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:10px 11px;font:inherit;transition:.16s box-shadow,.16s border-color}
   .field input.mono,.field textarea{font-family:var(--mono);font-size:13px}
   .field textarea{min-height:110px;resize:vertical}
   .field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(107,124,255,.18)}
@@ -110,31 +146,35 @@
   .modal .actions .hint{margin-right:auto;color:var(--faint);font-size:11px}
   .msg{color:var(--err);font-size:12px;min-height:16px;margin-top:2px}
 
-  /* transitions — tightened for operator pace */
-  .flip-move{transition:transform .26s cubic-bezier(.2,.8,.2,1)}
-  .flip-enter-active{transition:all .22s cubic-bezier(.2,.8,.2,1)}
+  /* transitions */
+  .flip-move{transition:transform .3s var(--spring)}
+  .flip-enter-active{transition:all .28s var(--spring)}
   .flip-leave-active{transition:all .18s ease;position:absolute;width:calc(100% - 24px)}
-  .flip-enter-from{opacity:0;transform:translateY(-8px) scale(.97)}
+  .flip-enter-from{opacity:0;transform:translateY(-8px) scale(.96)}
   .flip-leave-to{opacity:0;transform:scale(.95)}
   .fade-enter-active,.fade-leave-active{transition:opacity .18s}
   .fade-enter-from,.fade-leave-to{opacity:0}
   .exp-enter-active,.exp-leave-active{transition:max-height .28s ease,opacity .2s;overflow:hidden}
   .exp-enter-from,.exp-leave-to{max-height:0;opacity:0}
-  .exp-enter-to,.exp-leave-from{max-height:600px;opacity:1}
+  .exp-enter-to,.exp-leave-from{max-height:700px;opacity:1}
+  .roll-enter-active,.roll-leave-active{transition:transform .3s var(--spring),opacity .3s;position:absolute;inset:0}
+  .roll-enter-from{transform:translateY(100%);opacity:0}.roll-leave-to{transform:translateY(-100%);opacity:0}
   .empty{color:var(--faint);font-size:12px;text-align:center;padding:16px 6px;line-height:1.7}
-
   .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
   @keyframes spin{to{transform:rotate(360deg)}}
-  @keyframes runglow{0%,100%{box-shadow:inset 0 0 0 1px rgba(245,165,36,.35)}50%{box-shadow:inset 0 0 0 1px rgba(245,165,36,.9),0 0 14px rgba(245,165,36,.18)}}
+  @keyframes sweep{to{--a:360deg}}
+  @property --a{syntax:'<angle>';inherits:false;initial-value:0deg}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @keyframes modalin{from{opacity:0;transform:scale(.94) translateY(-8px)}to{opacity:1;transform:none}}
+  @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-  /* the jury was unanimous: honor reduced-motion — kill sweeps/flips/pulses, keep legible statics */
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
-    .card.running::after{animation:none;box-shadow:inset 0 0 0 1px var(--run)}
+    .card.running::after{animation:none;background:linear-gradient(90deg,transparent,rgba(245,165,36,.6));padding:1px}
+    .card:hover{transform:none}.card.dragging{transform:none}
     .card .spin{animation:none;border-top-color:var(--run)}
-    header .dot{animation:none}
+    header .dot{animation:none}.summary .ln{opacity:1;animation:none}
   }
 </style>
 </head>
@@ -149,14 +189,22 @@
     <button class="btn primary" @click="openNew">+ New task</button>
   </header>
 
-  <div class="board">
+  <div class="board" :class="{dragging:dragId!=null}">
     <div v-for="col in columns" :key="col.key" class="col" :class="col.key">
-      <h2><span class="glyph">{{col.glyph}}</span>{{col.label}}<span class="count">{{cards(col.key).length}}</span></h2>
+      <h2><span class="glyph">{{col.glyph}}</span>{{col.label}}
+        <span class="count"><transition name="roll"><span class="roll" :key="cards(col.key).length">{{cards(col.key).length}}</span></transition></span>
+      </h2>
       <transition-group name="flip" tag="div" class="list">
-        <div v-for="c in cards(col.key)" :key="c.id" class="card" :class="[c.status,{open:opened===c.id}]"
+        <div v-for="(c,idx) in cards(col.key)" :key="c.id" class="card"
+             :class="[c.status,{open:opened===c.id,dragging:dragId===c.id,'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
              tabindex="0" role="button" :aria-expanded="opened===c.id"
+             :draggable="col.key==='todo'"
+             @dragstart="col.key==='todo'&&dragStart(c,$event)" @dragend="dragEnd"
+             @dragover="col.key==='todo'&&dragOver(c,$event)" @drop="col.key==='todo'&&drop(c)"
              @click="expand(c)" @keydown.enter.prevent="expand(c)" @keydown.space.prevent="expand(c)">
           <div class="head">
+            <span v-if="col.key==='todo'" class="grip" title="drag to reprioritize" aria-hidden="true">⋮⋮</span>
+            <span v-if="col.key==='todo'" class="rank">{{idx+1}}</span>
             <span class="id">#{{c.id}}</span>
             <span class="ttl">{{c.title||untitled(c)}}</span>
             <span class="status" :class="c.status">{{statusLabel(c.status)}}</span>
@@ -176,7 +224,9 @@
               <div v-if="c.turns&&c.turns.length" class="thread">
                 <div v-for="(t,i) in c.turns" :key="i" class="turn">
                   <div v-if="c.turns.length>1" class="tp">{{t.prompt}}</div>
-                  <div class="summary" :style="t.ok===false?'color:var(--err)':''">{{t.summary||'(no output)'}}</div>
+                  <div class="summary" :style="t.ok===false?'color:var(--err)':''"
+                    ><span class="ln" v-for="(ln,j) in lines(t.summary)" :key="j" :style="'animation-delay:'+(j*40)+'ms'">{{ln}}
+</span></div>
                 </div>
               </div>
               <div v-if="c.status==='error'&&c.error" class="errbox">⚠ {{c.error}}</div>
@@ -257,7 +307,7 @@ const AUTH = TOKEN ? {authorization:'Bearer '+TOKEN} : {};
 async function api(path,opts={}){
   const r = await fetch(path,{credentials:'same-origin',...opts,
     headers:{...(opts.body?{'content-type':'application/json'}:{}),...AUTH,...(opts.headers||{})}});
-  if(r.status===401){location.href='/';throw 401;}          // not logged in → dashboard login sets the cookie
+  if(r.status===401){location.href='/';throw 401;}
   return r;
 }
 const { createApp } = Vue;
@@ -265,6 +315,7 @@ createApp({
   data(){return{
     all:[], live:false, showNew:false, busy:false, formMsg:'', announce:'', filter:'',
     opened:null, followText:{}, sending:{}, confirmDel:null, now:Date.now(),
+    dragId:null, dragOverId:null, dragOverPos:'before',
     form:{title:'',cwd:'',prompt:'',model:'',effort:'medium'},
     columns:[
       {key:'todo',label:'Todo',glyph:'○',empty:'No queued tasks — press n to add one.'},
@@ -283,11 +334,12 @@ createApp({
     base(p){return (p||'').replace(/\/+$/,'').split('/').pop()||p},
     untitled(c){return (c.prompt||'').slice(0,40)+((c.prompt||'').length>40?'…':'')},
     statusLabel(s){return {todo:'queued',running:'running',done:'done',error:'error'}[s]||s},
+    lines(s){return String(s||'').split('\n')},
     parseTurns(c){try{return JSON.parse(c.turns||'[]')}catch{return[]}},
     lastSummary(c){const t=this.parseTurns(c);return t.length?t[t.length-1].summary:''},
     tms(s){return s?Date.parse(s.replace(' ','T')+'Z'):0},
     fmtDur(ms){if(ms<0)ms=0;const s=Math.floor(ms/1000);if(s<60)return s+'s';const m=Math.floor(s/60);if(m<60)return m+'m '+String(s%60).padStart(2,'0')+'s';const h=Math.floor(m/60);return h+'h '+String(m%60).padStart(2,'0')+'m'},
-    timer(c){                                                 // todo → queued age; running → live elapsed; settled → total duration
+    timer(c){
       if(c.status==='todo'&&c.created_at)return this.fmtDur(this.now-this.tms(c.created_at));
       if(c.status==='running'&&c.claimed_at)return this.fmtDur(this.now-this.tms(c.claimed_at));
       if((c.status==='done'||c.status==='error')&&c.claimed_at){
@@ -306,6 +358,23 @@ createApp({
     expand(c){ this.opened = this.opened===c.id ? null : c.id; },
     openNew(){ this.showNew=true; this.formMsg=''; this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus()); },
     async copy(text,what){ try{ await navigator.clipboard.writeText(text); this.announce=`Copied ${what}`; }catch{} },
+    // --- drag & drop reorder (Todo priority) ---
+    dragStart(c,e){ this.dragId=c.id; e.dataTransfer.effectAllowed='move'; try{e.dataTransfer.setData('text/plain',String(c.id))}catch{} },
+    dragOver(c,e){ if(this.dragId==null||c.id===this.dragId)return; e.preventDefault();
+      const r=e.currentTarget.getBoundingClientRect(); this.dragOverId=c.id; this.dragOverPos=(e.clientY-r.top)<r.height/2?'before':'after'; },
+    dragEnd(){ this.dragId=null; this.dragOverId=null; },
+    async drop(target){
+      const src=this.dragId; this.dragOverId=null;
+      if(src==null||target.id===src){ this.dragId=null; return; }
+      const ids=this.cards('todo').map(c=>c.id).filter(id=>id!==src);
+      let at=ids.indexOf(target.id); if(this.dragOverPos==='after')at+=1;
+      ids.splice(at,0,src);
+      this.dragId=null;
+      // optimistic: apply new positions locally so it feels instant, then persist
+      ids.forEach((id,i)=>{const card=this.all.find(c=>c.id===id);if(card)card.position=i;});
+      await api('/api/board/reorder',{method:'POST',body:JSON.stringify({ids})}).catch(()=>{});
+      this.announce='Queue reordered';
+    },
     async create(){
       if(!this.form.prompt.trim()){this.formMsg='prompt is required';return;}
       this.busy=true;this.formMsg='';
@@ -323,12 +392,12 @@ createApp({
       catch(e){} finally{ this.sending[c.id]=false; }
     },
     async retry(c){ await api('/api/board/'+c.id+'/retry',{method:'POST'}).catch(()=>{}); },
-    del(c){                                                   // two-step: first click arms, second confirms (3s window)
+    del(c){
       if(this.confirmDel!==c.id){ this.confirmDel=c.id; setTimeout(()=>{ if(this.confirmDel===c.id)this.confirmDel=null; },3000); return; }
       this.confirmDel=null;
       api('/api/board/'+c.id,{method:'DELETE'}).catch(()=>{}); if(this.opened===c.id)this.opened=null;
     },
-    clone(c){                                                 // prefill the new-task modal with this card's settings
+    clone(c){
       this.form={title:c.title||'',cwd:c.cwd||'',prompt:c.prompt||'',model:c.model||'',effort:c.effort||'medium'};
       this.showNew=true; this.formMsg='';
       this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus());
