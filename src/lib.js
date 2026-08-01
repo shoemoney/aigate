@@ -37,6 +37,39 @@ export function tokenMatches(provided, expected) {
   return crypto.timingSafeEqual(a, b);
 }
 
+// ---- dashboard session cookie (stateless, signed) ----------------------
+// A signed value "<exp_ms>.<hmac>" the browser holds as an HttpOnly cookie after
+// a password login, so the raw bearer token never enters the browser. Stateless:
+// no server-side session store — the HMAC (keyed by the shared secret) IS the
+// proof. Rotating the secret (token or password) invalidates every live cookie.
+export function signSession(secret, expMs) {
+  const exp = String(expMs);
+  const sig = crypto.createHmac('sha256', 'aigate-sess|' + secret).update(exp).digest('hex');
+  return exp + '.' + sig;
+}
+// True only for an un-expired value whose signature verifies (timing-safe). Never
+// throws on garbage input — a forged/absent cookie is just false.
+export function verifySession(secret, value) {
+  if (typeof value !== 'string') return false;
+  const dot = value.indexOf('.');
+  if (dot <= 0) return false;
+  const exp = value.slice(0, dot), sig = value.slice(dot + 1);
+  if (!/^\d+$/.test(exp)) return false;
+  const want = crypto.createHmac('sha256', 'aigate-sess|' + secret).update(exp).digest('hex');
+  if (!tokenMatches(sig, want)) return false;
+  return Number(exp) > Date.now();
+}
+// Pull one cookie value out of a Cookie header. '' when absent/malformed.
+export function parseCookie(header, name) {
+  if (typeof header !== 'string' || !header) return '';
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    if (part.slice(0, eq).trim() === name) { try { return decodeURIComponent(part.slice(eq + 1).trim()); } catch { return part.slice(eq + 1).trim(); } }
+  }
+  return '';
+}
+
 // ---- ipv4 helpers -------------------------------------------------------
 // Parse an IPv4 (optionally ::ffff: mapped) to a uint32, or null if malformed.
 // Validates each octet is 0..255 — garbage like '999.1.1.1' / 'abc' → null.

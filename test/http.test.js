@@ -12,8 +12,10 @@ import WebSocket from 'ws';
 // process.env takes precedence over any repo .env (Node does not override
 // already-set vars), so this never touches real data.
 const TOKEN = 'test-token-' + crypto.randomBytes(8).toString('hex');
+const DASH_PW = 'master-' + crypto.randomBytes(6).toString('hex');
 const DB = join(tmpdir(), `aigate-test-${process.pid}-${Date.now()}.db`);
 process.env.AIGATE_TOKEN = TOKEN;
+process.env.AIGATE_DASHBOARD_PASSWORD = DASH_PW;
 process.env.AIGATE_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
 process.env.AIGATE_DB = DB;
 process.env.AIGATE_POLL_MS = '0';
@@ -51,6 +53,37 @@ test('GET /api/accounts without token → 401 with JSON body', async () => {
 
 test('?token= query auth is dead — header-only → 401', async () => {
   assert.equal((await fetch(base + `/api/accounts?token=${TOKEN}`)).status, 401);
+});
+
+test('dashboard master password: login → session cookie authorizes the browser', async () => {
+  // wrong password → 401 (and counts toward the brute-force lockout)
+  let r = await fetch(base + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'nope' }) });
+  assert.equal(r.status, 401);
+  assert.deepEqual(await r.json(), { error: 'wrong password' });
+
+  // correct password → 200 + an HttpOnly SameSite session cookie
+  r = await fetch(base + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: DASH_PW }) });
+  assert.equal(r.status, 200);
+  const setc = r.headers.get('set-cookie');
+  assert.match(setc, /aigate_sess=\d+\.[a-f0-9]{64}/);
+  assert.match(setc, /HttpOnly/i);
+  assert.match(setc, /SameSite=Strict/i);
+  const cookie = setc.split(';')[0];   // aigate_sess=<val>
+
+  // the cookie alone (NO bearer) now authorizes an API call
+  r = await fetch(base + '/api/accounts', { headers: { cookie } });
+  assert.equal(r.status, 200);
+
+  // a forged/garbage cookie does NOT
+  r = await fetch(base + '/api/accounts', { headers: { cookie: 'aigate_sess=9999999999999.' + 'f'.repeat(64) } });
+  assert.equal(r.status, 401);
+
+  // logout clears the cookie (Max-Age=0)
+  r = await fetch(base + '/api/logout', { method: 'POST' });
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('set-cookie'), /aigate_sess=;[^]*Max-Age=0/i);
+
+  authOk('::ffff:127.0.0.1'); authOk('127.0.0.1');   // clear the one bad-password fail we just logged
 });
 
 test('GET // (a directory) → 404, not a hang', async () => {

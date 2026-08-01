@@ -18,7 +18,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSy
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive } from './lib.js';
+import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID } from './providers.js';
 
 // ---- config -------------------------------------------------------------
@@ -31,6 +31,15 @@ const VERSION = (process.env.AIGATE_VERSION || '').trim() || JSON.parse(readFile
 const PORT = Number(process.env.PORT || 20200);
 const HOST = process.env.HOST || '0.0.0.0';
 const TOKEN = process.env.AIGATE_TOKEN || '';
+// Optional human-friendly master password for the dashboard. When set, a browser
+// can POST it to /api/login and get a signed HttpOnly session cookie — so a person
+// types a memorable password instead of pasting the raw bearer TOKEN, and the token
+// never enters the browser. Empty = password login disabled (bearer only). The
+// cookie is signed by TOKEN|PASSWORD, so rotating either invalidates live sessions.
+const DASH_PW = process.env.AIGATE_DASHBOARD_PASSWORD || '';
+const SESS_SECRET = TOKEN + '|' + DASH_PW;
+const SESS_COOKIE = 'aigate_sess';
+const SESS_TTL_MS = Number(process.env.AIGATE_SESSION_TTL_MS || 3650 * 24 * 3600 * 1000);   // ~10y ("forever")
 const DB_PATH = process.env.AIGATE_DB || join(__dir, '..', 'data', 'aigate.db');
 const CUTOFF = Number(process.env.AIGATE_HEADROOM_CUTOFF || 95);
 // Optional network gate (defense-in-depth under the bearer token). Comma-sep
@@ -320,7 +329,9 @@ function sweepAuthFails() {
 // header-only: a ?token= bearer would land in edge (NPM) access logs and outlive rotation
 const authed = (req) => {
   const h = req.headers.authorization || '';
-  return h.startsWith('Bearer ') && tokenMatches(h.slice(7), TOKEN);
+  if (h.startsWith('Bearer ') && tokenMatches(h.slice(7), TOKEN)) return true;   // machine clients
+  // browser: a signed session cookie from a password login (only when configured)
+  return !!DASH_PW && verifySession(SESS_SECRET, parseCookie(req.headers.cookie, SESS_COOKIE));
 };
 const reqIp = (req) => clientIp(req.headers, req.socket.remoteAddress, { trustProxy: TRUST_PROXY, proxies: TRUSTED_PROXIES });
 // collect Buffers and decode ONCE: coercing each chunk to a string splits a multibyte
@@ -430,6 +441,28 @@ const server = http.createServer(async (req, res) => {
   // + the docker healthcheck path shouldn't be able to lock themselves out).
   const clientAddr = reqIp(req);
   if (authLocked(clientAddr)) { console.warn('[auth] locked', clientAddr); return json(res, 429, { error: 'too many auth failures — try again later' }); }
+
+  // dashboard password login → signed HttpOnly session cookie (no token in the browser).
+  // Pre-auth on purpose, but throttled by the same lockout so a guess loop isn't free.
+  if (p === '/api/login' && req.method === 'POST') {
+    if (!DASH_PW) return json(res, 400, { error: 'password login not configured (set AIGATE_DASHBOARD_PASSWORD)' });
+    const b = await body(req);
+    if (b && b.__oversized) return json(res, 413, { error: 'body too large' });
+    if (!tokenMatches(String((b && b.password) || ''), DASH_PW)) {
+      authFail(clientAddr); console.error('[auth] bad dashboard password', clientAddr);
+      return json(res, 401, { error: 'wrong password' });
+    }
+    authOk(clientAddr);
+    const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
+    const cookie = `${SESS_COOKIE}=${signSession(SESS_SECRET, Date.now() + SESS_TTL_MS)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESS_TTL_MS / 1000)}${secure}`;
+    res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': cookie });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+  if (p === '/api/logout' && req.method === 'POST') {
+    res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': `${SESS_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+
   if (!authed(req)) { authFail(clientAddr); console.error('[auth] denied', clientAddr, req.method, p); return json(res, 401, { error: 'unauthorized' }); }
   authOk(clientAddr);
 

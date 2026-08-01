@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { join, sep } from 'node:path';
-import { makeVault, tokenMatches, ip2int, ipAllowed, clientIp, safeStaticPath, tokenIsAlive } from '../src/lib.js';
+import { makeVault, tokenMatches, ip2int, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie } from '../src/lib.js';
 
 const KEY = crypto.randomBytes(32);
 
@@ -135,4 +135,23 @@ test('safeStaticPath: sibling dir starting with "public" is blocked (bug #1)', (
 });
 test('safeStaticPath: parent-traversal blocked', () => {
   assert.equal(safeStaticPath('/srv/public', '/../../etc/passwd'), null);
+});
+
+test('signSession/verifySession: round-trips, rejects tamper/expiry/wrong-secret', () => {
+  const secret = 'tok|pw';
+  const good = signSession(secret, Date.now() + 60000);
+  assert.equal(verifySession(secret, good), true);                       // fresh + valid
+  assert.equal(verifySession('tok|other', good), false);                 // secret rotated (pw changed)
+  assert.equal(verifySession(secret, signSession(secret, Date.now() - 1)), false);  // expired
+  assert.equal(verifySession(secret, good.slice(0, -1) + '0'), false);   // signature tampered
+  assert.equal(verifySession(secret, good.replace(/^\d+/, (n) => String(Number(n) + 1))), false);  // exp tampered (sig no longer matches)
+  for (const junk of ['', 'nodot', '.abc', '123.', 'abc.def', null, undefined, 42])
+    assert.equal(verifySession(secret, junk), false);                    // garbage never throws, never passes
+});
+test('parseCookie: extracts one value, tolerates spacing/absence', () => {
+  assert.equal(parseCookie('a=1; aigate_sess=xyz; b=2', 'aigate_sess'), 'xyz');
+  assert.equal(parseCookie('aigate_sess=only', 'aigate_sess'), 'only');
+  assert.equal(parseCookie('other=1', 'aigate_sess'), '');
+  assert.equal(parseCookie('', 'aigate_sess'), '');
+  assert.equal(parseCookie(undefined, 'aigate_sess'), '');
 });

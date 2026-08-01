@@ -199,10 +199,10 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
 <div id="login">
   <form class="login-card" id="loginform">
     <div class="logo"><span>🛡</span>AIGATE</div>
-    <label for="tok">API token</label>
-    <input id="tok" type="password" placeholder="paste token" autocomplete="off" autofocus>
-    <div class="hint"><code>AIGATE_TOKEN</code> from your .env</div>
-    <button class="btn accent" type="submit" style="align-self:flex-start">Connect</button>
+    <label for="tok">Master password</label>
+    <input id="tok" type="password" placeholder="master password" autocomplete="current-password" autofocus>
+    <div class="hint">signs you in and stays signed in on this browser</div>
+    <button class="btn accent" type="submit" style="align-self:flex-start">Sign in</button>
     <div id="loginmsg" role="alert"></div>
   </form>
 </div>
@@ -333,10 +333,13 @@ let notifyOn=false, runFlash=false, lastInboxN=0;
 let seeding=false, pendingLive=0, lastLiveNote=0;
 
 /* ---------------- api plumbing (proven v1) ---------------- */
-async function api(path){const r=await fetch(path,{headers:{authorization:'Bearer '+TOKEN}});if(r.status===401||r.status===429)throw r.status;return r.json();}
+// cookie-first: the session cookie (set by /api/login) auths the browser, so send it
+// with credentials and only add a Bearer header if a raw token was pasted (machine use).
+async function api(path){const r=await fetch(path,{credentials:'same-origin',headers:TOKEN?{authorization:'Bearer '+TOKEN}:{}});if(r.status===401||r.status===429)throw r.status;return r.json();}
 // mutation helper — returns {status,ok,body} so callers can branch on 400/404/409/502
 async function send(method,path,body){
-  const r=await fetch(path,{method,headers:{authorization:'Bearer '+TOKEN,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+  const headers={'content-type':'application/json'};if(TOKEN)headers.authorization='Bearer '+TOKEN;
+  const r=await fetch(path,{method,credentials:'same-origin',headers,body:body===undefined?undefined:JSON.stringify(body)});
   const j=await r.json().catch(()=>({}));
   return {status:r.status,ok:r.ok,body:j};
 }
@@ -346,18 +349,21 @@ function kick(){localStorage.removeItem('aigate_token');location.reload();}
 function loginMsg(m){$('#loginmsg').textContent=m;}
 async function save(ev){
   if(ev)ev.preventDefault();
-  const t=$('#tok').value.trim();
-  if(!t){loginMsg('paste the token first');return;}
-  TOKEN=t;localStorage.aigate_token=TOKEN;
-  loginMsg('connecting…');
-  boot();
+  const t=$('#tok').value;
+  if(!t){loginMsg('enter the master password');return;}
+  loginMsg('signing in…');
+  const r=await send('POST','/api/login',{password:t});
+  if(r.status===200){$('#tok').value='';TOKEN='';localStorage.removeItem('aigate_token');loginMsg('');boot();}
+  else if(r.status===401)loginMsg('wrong password — try again');
+  else if(r.status===429)loginMsg('too many attempts — locked out, try later');
+  else if(r.status===400)loginMsg('password login is not enabled on the server');
+  else loginMsg("can't reach server — try again");
 }
 async function boot(){
-  if(!TOKEN)return;
   let s;
   try{s=await api('/api/stats');}
   catch(e){
-    if(e===401){localStorage.removeItem('aigate_token');loginMsg('token rejected — check it and try again');}
+    if(e===401){TOKEN='';localStorage.removeItem('aigate_token');$('#login').hidden=false;$('#hdr').hidden=true;$('#app').hidden=true;$('#ftr').hidden=true;$('#tok').focus();}
     else if(e===429){loginMsg('too many auth failures — locked out, try later');}
     else{loginMsg("can't reach server, retrying…");setTimeout(boot,3000);}
     return;
@@ -842,7 +848,7 @@ function startClock(){
 // login
 $('#loginform').addEventListener('submit',save);
 // logout
-$('#logout').onclick=()=>{localStorage.removeItem('aigate_token');location.reload();};
+$('#logout').onclick=async()=>{try{await send('POST','/api/logout');}catch(_){}localStorage.removeItem('aigate_token');TOKEN='';location.reload();};
 // notification bell
 $('#bell').onclick=async()=>{
   const b=$('#bell');
