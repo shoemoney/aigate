@@ -1,220 +1,926 @@
-<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>aigate</title>
 <style>
-  :root{--bg:#0b0e14;--panel:#141922;--line:#232a36;--fg:#e6edf3;--dim:#8b98a9;
-        --green:#3fb950;--yellow:#d29922;--red:#f85149;--accent:#58a6ff}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,SF Pro,Segoe UI,sans-serif}
-  header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
-  header h1{font-size:16px;margin:0;letter-spacing:.5px}
-  header .logo{font-size:20px}
-  .dot{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red)}
-  .dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
-  .wrap{padding:20px;max-width:1200px;margin:0 auto;display:grid;gap:20px}
-  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
-  h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin:0 0 10px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
-  .acct .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-  .acct .name{font-weight:600;font-size:15px}
-  .acct .badge{font-size:11px;color:var(--dim)}
-  .badge.stale{color:var(--yellow);opacity:.7}
-  .bar{margin:9px 0}
-  .bar .lbl{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-bottom:4px}
-  .bar .lbl b{color:var(--fg)}
-  .track{height:8px;border-radius:6px;background:#0b0e14;overflow:hidden;border:1px solid var(--line)}
-  .fill{height:100%;transition:width .4s ease,background .4s}
-  .runaway{border-color:var(--red);box-shadow:0 0 0 1px var(--red),0 0 20px -6px var(--red)}
-  .needsauth{border-color:#d29922;box-shadow:0 0 0 1px #d29922}
-  .disabled{opacity:.45}
-  table{width:100%;border-collapse:collapse}
-  td,th{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);font-size:13px}
-  th{color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
-  .feed{max-height:420px;overflow:auto;font:12px/1.6 ui-monospace,Menlo,monospace}
-  .feed .row{padding:6px 10px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:baseline}
-  .feed .t{color:var(--dim);white-space:nowrap}
-  .feed .a{color:var(--accent);white-space:nowrap}
-  .feed .h{color:var(--yellow);white-space:nowrap}
-  .feed .p{color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-  .cols{display:grid;gap:20px;grid-template-columns:1fr 1fr}
-  @media(max-width:820px){.cols{grid-template-columns:1fr}}
-  .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
-  form.keyform{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
-  form.keyform label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--dim)}
-  form.keyform input{width:auto}
-  button.del{background:var(--red);color:#fff;padding:4px 10px;font-size:12px}
-  #login{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px}
-  input{background:var(--panel);border:1px solid var(--line);color:var(--fg);padding:10px 12px;border-radius:8px;width:320px;font-size:14px}
-  button{background:var(--accent);color:#001; border:0;padding:10px 16px;border-radius:8px;font-weight:600;cursor:pointer}
-</style></head>
+/* ============ control-room tokens (approved mockup variant-a) ============ */
+:root{
+  --bg:#101211; --panel:#171916; --inset:#0c0e0c; --line:#262a24;
+  --fg:#e8e6df; --dim:#8f9089; --accent:#e8b34b;
+  --ok:#5fae7a; --warn:#d99a3d; --crit:#e05d44;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+.num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.dim{color:var(--dim)} .ok{color:var(--ok)} .warn{color:var(--warn)} .crit{color:var(--crit)} .acc{color:var(--accent)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+::selection{background:rgba(232,179,75,.25)}
+.vhidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+[hidden]{display:none!important}
+
+/* ---------- login overlay ---------- */
+#login{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
+.login-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:36px 34px 30px;width:min(420px,94vw);display:flex;flex-direction:column;gap:11px}
+.login-card .logo{font-weight:700;font-size:17px;letter-spacing:.18em;margin-bottom:6px}
+.login-card .logo span{margin-right:9px}
+.login-card label{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.login-card .hint{font-size:13px;color:var(--dim)}
+.login-card .hint code{font-family:var(--mono);font-size:12.5px;color:var(--accent)}
+.login-card input{background:var(--inset);border:1px solid var(--line);border-radius:4px;color:var(--fg);font-family:var(--mono);font-size:14px;padding:11px 12px;width:100%}
+.login-card input::placeholder{color:var(--dim)}
+#loginmsg{font-family:var(--mono);font-size:12.5px;color:var(--crit);min-height:18px;margin-top:2px}
+
+/* ---------- header ---------- */
+header{position:sticky;top:0;z-index:20;background:rgba(16,18,17,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.hwrap{max-width:1240px;margin:0 auto;padding:0 24px;min-height:62px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.logo{font-weight:700;font-size:15px;letter-spacing:.18em;white-space:nowrap}
+.logo span{margin-right:8px}
+.live{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:13px;color:var(--ok)}
+.live i{width:8px;height:8px;border-radius:50%;background:var(--ok);animation:pulse 2.2s ease-in-out infinite}
+.live.off{color:var(--crit)}
+.live.off i{background:var(--crit);animation:none}
+.rollup{font-family:var(--mono);font-size:13px;color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.clock{font-size:14px;color:var(--fg)}
+.btn{padding:6px 13px;border:1px solid var(--line);border-radius:4px;font-size:14px;color:var(--dim);transition:.15s}
+.btn:hover{color:var(--fg);border-color:var(--dim);background:var(--panel)}
+.btn.accent{border-color:rgba(232,179,75,.5);color:var(--accent)}
+.btn.accent:hover{background:rgba(232,179,75,.08);border-color:var(--accent)}
+.btn.sm{padding:4px 10px;font-size:12.5px;font-family:var(--mono)}
+.btn[aria-pressed="true"]{border-color:rgba(232,179,75,.55);color:var(--accent);background:rgba(232,179,75,.06)}
+
+/* ---------- critical banner ---------- */
+.banner{background:var(--crit);color:#17110e;font-weight:600;font-size:15px}
+.banner div{max-width:1240px;margin:0 auto;padding:11px 24px;display:flex;gap:10px;align-items:baseline}
+.banner b{font-family:var(--mono);font-size:12.5px;letter-spacing:.14em}
+
+/* ---------- layout / sections ---------- */
+main{max-width:1240px;margin:0 auto;padding:0 24px}
+section{padding:38px 0 42px;border-top:1px solid var(--line)}
+section:first-child{border-top:0}
+.sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:22px}
+.sec-num{font-family:var(--mono);font-size:13px;color:var(--accent)}
+.sec-head h2{font-size:14px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+.sec-note{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--dim)}
+
+/* ---------- inbox ---------- */
+.inbox-row{display:flex;align-items:center;gap:12px;padding:13px 16px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--crit);border-radius:4px;margin-bottom:9px;transition:.15s}
+.inbox-row.warn-row{border-left-color:var(--warn)}
+.inbox-row:hover{border-color:#333830}
+.inbox-row p{font-size:15px;flex:1;min-width:0}
+.inbox-row code{font-family:var(--mono);font-size:13.5px;background:var(--inset);border:1px solid var(--line);border-radius:3px;padding:2px 7px;color:var(--accent)}
+.x{color:var(--dim);padding:5px 9px;border-radius:3px;font-family:var(--mono)}
+.x:hover{color:var(--crit);background:var(--inset)}
+
+/* ---------- account cards ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:22px 22px 17px;display:flex;flex-direction:column;gap:15px;transition:border-color .15s}
+.card:hover{border-color:#333830}
+.card.is-parked{opacity:.85}.card.is-disabled{opacity:.62}
+.card-head{display:flex;align-items:center;gap:10px}
+.acct{font-family:var(--mono);font-size:17px;font-weight:600}
+.alabel{font-size:13px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid rgba(232,179,75,.55);border-radius:3px;padding:3px 7px;font-family:var(--mono)}
+.chip{margin-left:auto;font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;padding:4px 9px;border:1px solid;border-radius:3px;background:transparent;white-space:nowrap}
+.chip.c-ok{color:var(--ok);border-color:rgba(95,174,122,.55)}
+.chip.c-warn{color:var(--warn);border-color:rgba(217,154,61,.55)}
+.chip.c-crit{color:var(--crit);border-color:rgba(224,93,68,.6)}
+.chip.c-dim{color:var(--dim);border-color:var(--line)}
+.hero-row{display:flex;align-items:flex-end;justify-content:space-between;gap:14px}
+.hero-num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:42px;font-weight:600;line-height:1;letter-spacing:-.01em}
+.hero-num small{font-size:21px;font-weight:400;opacity:.75;margin-left:2px}
+.hero-num.pulse{animation:pulse 2.6s ease-in-out infinite}
+.hero-label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-top:7px}
+.spark{width:128px;height:38px;background:var(--inset);border:1px solid var(--line);border-radius:3px;padding:4px;flex:none}
+.spark svg{display:block;width:100%;height:100%}
+.gauges{display:flex;flex-direction:column;gap:13px}
+.g-top{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+.g-top b{font-weight:500;text-transform:none;letter-spacing:0}
+.track{position:relative;height:7px;background:var(--inset);border:1px solid var(--line);border-radius:3px}
+.fill{position:absolute;top:0;left:0;bottom:0;border-radius:2px}
+.fill.ok{background:var(--ok)}.fill.warn{background:var(--warn)}.fill.crit{background:var(--crit)}.fill.neu{background:#b9b7ab}
+.tick{position:absolute;top:-3px;width:1px;height:13px;background:var(--dim);opacity:.55}
+.tick.t95{width:2px;background:var(--accent);opacity:1}
+.ticklabels{position:relative;height:14px;margin-top:4px;font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+.ticklabels span{position:absolute;transform:translateX(-50%)}
+.ticklabels .l95{color:var(--accent)}
+.burn{font-family:var(--mono);font-size:13px;min-height:19px}
+.reauth{background:var(--inset);border:1px solid rgba(224,93,68,.35);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.reauth label{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--crit)}
+.reauth .row{display:flex;gap:8px}
+.reauth input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:3px;color:var(--fg);font-family:var(--mono);font-size:13.5px;padding:8px 10px}
+.reauth input::placeholder{color:var(--dim)}
+.reauth small{font-size:12.5px;color:var(--dim)}
+.editpanel{background:var(--inset);border:1px solid var(--line);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:7px}
+.editpanel label{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.editpanel label:not(:first-child){margin-top:4px}
+.editpanel input{background:var(--panel);border:1px solid var(--line);border-radius:3px;color:var(--fg);font-family:var(--mono);font-size:13.5px;padding:8px 10px}
+.editpanel input::placeholder{color:var(--dim)}
+.editpanel .row{display:flex;gap:8px;margin-top:4px}
+.pmsg{font-family:var(--mono);font-size:12px;color:var(--crit);min-height:0}
+.cardmsg{font-family:var(--mono);font-size:12px;color:var(--crit)}
+.card-foot{display:flex;align-items:center;margin-top:auto;padding-top:13px;border-top:1px solid var(--line);gap:8px}
+.updated{font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+.acts{margin-left:auto;display:flex;align-items:center;gap:4px}
+.acts button{font-family:var(--mono);font-size:14.5px;color:var(--dim);padding:5px 9px;border:1px solid transparent;border-radius:3px;transition:.15s}
+.acts button:hover{color:var(--fg);border-color:var(--line);background:var(--inset)}
+.acts button[aria-pressed="true"]{color:var(--accent);border-color:rgba(232,179,75,.45)}
+.acts .del:hover{color:var(--crit);border-color:rgba(224,93,68,.4)}
+.acts .edit-pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;letter-spacing:.05em;color:var(--dim);border:1px solid var(--line);border-radius:20px;padding:4px 12px;margin-right:4px}
+.acts .edit-pill svg{flex:none}
+.acts .edit-pill:hover{color:var(--accent);border-color:rgba(232,179,75,.55);background:rgba(232,179,75,.06)}
+.acts .edit-pill[aria-expanded="true"]{color:var(--accent);border-color:rgba(232,179,75,.55);background:rgba(232,179,75,.06)}
+
+/* ---------- activity ---------- */
+.act-grid{display:grid;grid-template-columns:1.7fr 1fr;gap:26px}
+.act-grid>div{min-width:0}
+.toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:14px}
+.toolbar .lbl{font-family:var(--mono);font-size:11.5px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase}
+.fchip{font-family:var(--mono);font-size:12.5px;color:var(--dim);border:1px solid var(--line);border-radius:20px;padding:4px 13px;transition:.15s}
+.fchip:hover{color:var(--fg);border-color:var(--dim)}
+.fchip.on{color:var(--accent);border-color:rgba(232,179,75,.55);background:rgba(232,179,75,.06)}
+.scrollx{overflow-x:auto}
+.feedmax{max-height:620px;overflow-y:auto}
+.feed{min-width:620px}
+.frow{display:grid;grid-template-columns:46px 104px 82px 62px 66px 1fr;gap:11px;align-items:baseline;padding:9px 9px;border-radius:3px;font-size:13.5px;transition:background .12s}
+.frow:hover{background:#1b1e1a}
+.frow.head{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);border-radius:0;padding-bottom:9px}
+.frow.head:hover{background:none}
+.frow>span{font-family:var(--mono);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow .t{color:var(--dim)} .frow .h{color:var(--dim)} .frow .m{color:var(--dim)} .frow .tk{text-align:right;color:var(--dim)}
+.frow .snip{color:var(--fg);opacity:.85;font-family:var(--sans);font-size:13.5px}
+.frow.fail .snip,.frow.fail .tk,.frow.fail .m{color:var(--crit)}
+.frow.fail{box-shadow:inset 2px 0 0 var(--crit);background:rgba(224,93,68,.05)}
+.frow.fail:hover{background:rgba(224,93,68,.09)}
+h3.sub{font-family:var(--mono);font-size:12.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:13px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:left;padding:0 9px 9px;border-bottom:1px solid var(--line);font-weight:500}
+td{padding:11px 9px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:13px}
+tbody tr{transition:background .12s}tbody tr:hover{background:#1b1e1a}
+td.r,th.r{text-align:right}
+
+/* ---------- provider keys ---------- */
+.disclosure{width:100%;display:flex;align-items:center;gap:10px;padding:15px 18px;background:var(--panel);border:1px solid var(--line);border-radius:5px;font-size:15px;transition:.15s;text-align:left}
+.disclosure:hover{border-color:var(--dim)}
+.disclosure .caret{font-family:var(--mono);color:var(--accent);font-size:13px}
+.disclosure .hint{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+.keys-panel{margin-top:12px}
+.keys-wrap{min-width:720px}
+.st-ok{color:var(--ok)}.st-dead{color:var(--crit)}
+.kacts{white-space:nowrap;text-align:right}
+.kacts button{font-family:var(--mono);color:var(--dim);padding:3px 8px;border-radius:3px}
+.kacts button:hover{color:var(--fg);background:var(--inset)}
+.kacts .del:hover{color:var(--crit)}
+.addform{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px;padding-top:15px;border-top:1px solid var(--line);align-items:center}
+.addform input{background:var(--inset);border:1px solid var(--line);border-radius:4px;color:var(--fg);font-family:var(--mono);font-size:13.5px;padding:9px 11px}
+.addform input::placeholder{color:var(--dim)}
+.addform .p{width:140px}.addform .l{width:160px}.addform .k{flex:1;min-width:200px}
+.kmsg{font-family:var(--mono);font-size:12.5px;min-height:18px;margin-top:10px}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--line)}
+footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var(--mono);font-size:12.5px;color:var(--dim)}
+
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:980px){.act-grid{grid-template-columns:1fr}}
+@media (max-width:760px){.rollup{display:none}.hwrap{gap:12px;padding-top:8px;padding-bottom:8px}}
+@media (max-width:420px){main{padding:0 14px}.hwrap{padding:0 14px}.hero-num{font-size:34px}.spark{width:100px}}
+</style>
+</head>
 <body>
+
+<!-- ============ login overlay ============ -->
 <div id="login">
-  <div class="logo" style="font-size:32px">🛡️ aigate</div>
-  <div style="color:var(--dim)">Enter API token</div>
-  <input id="tok" type="password" placeholder="AIGATE_TOKEN" autofocus>
-  <button onclick="save()">Connect</button>
-  <div id="loginmsg" style="color:var(--red);font-size:12px;min-height:16px"></div>
+  <form class="login-card" id="loginform">
+    <div class="logo"><span>🛡</span>AIGATE</div>
+    <label for="tok">API token</label>
+    <input id="tok" type="password" placeholder="paste token" autocomplete="off" autofocus>
+    <div class="hint"><code>AIGATE_TOKEN</code> from your .env</div>
+    <button class="btn accent" type="submit" style="align-self:flex-start">Connect</button>
+    <div id="loginmsg" role="alert"></div>
+  </form>
 </div>
 
-<header style="display:none" id="hdr">
-  <span class="logo">🛡️</span><h1>AIGATE</h1>
-  <span class="dot" id="live" title="live"></span>
-  <span style="margin-left:auto;color:var(--dim);font-size:12px" id="clock"></span>
-</header>
-<div class="wrap" style="display:none" id="app">
-  <section><h2>Accounts — live usage</h2><div class="grid" id="accts"></div></section>
-  <section><h2>Provider API keys</h2>
-    <div class="card" style="margin-bottom:14px">
-      <form class="keyform" id="keyform">
-        <label>Provider
-          <input id="kprov" list="provlist" placeholder="openai" autocomplete="off" style="width:200px">
-          <datalist id="provlist"></datalist>
-        </label>
-        <label>Label <span style="opacity:.6">(optional)</span>
-          <input id="klabel" placeholder="prod" style="width:150px">
-        </label>
-        <label>API key
-          <input id="kkey" type="password" placeholder="paste secret" style="width:300px">
-        </label>
-        <button type="submit">Add key</button>
-        <span id="khint" class="mono" style="color:var(--dim)"></span>
-      </form>
-      <div id="kmsg" style="margin-top:10px;font-size:12px;min-height:16px"></div>
-    </div>
-    <table id="keys"><thead><tr><th>Provider</th><th>Label</th><th>Key</th><th>Status</th><th>Added</th><th>Last used</th><th></th></tr></thead><tbody></tbody></table>
-  </section>
-  <div class="cols">
-    <section class="card"><h2>Live activity</h2><div class="feed" id="feed"></div></section>
-    <section class="card"><h2>By host / device</h2><table id="hosts"><thead><tr><th>Host</th><th>Requests</th><th>Tokens</th><th>Last</th></tr></thead><tbody></tbody></table></section>
+<!-- ============ header ============ -->
+<header id="hdr" hidden tabindex="-1">
+  <div class="hwrap">
+    <div class="logo"><span>🛡</span>AIGATE</div>
+    <div class="live off" id="live" role="status"><i></i><span id="live-label">offline</span></div>
+    <div class="rollup" id="rollup"></div>
+    <div class="clock num" id="clock" aria-hidden="true"></div>
+    <button class="btn" id="bell" aria-pressed="false" aria-label="enable browser notifications" title="browser notifications">🔔</button>
+    <button class="btn" id="logout">log out</button>
   </div>
+</header>
+
+<!-- ============ critical banner ============ -->
+<div class="banner" id="banner" hidden>
+  <div><b>CRITICAL</b><span>0 accounts selectable — every account is parked, disabled, or needs re-auth. Requests are failing.</span></div>
 </div>
+
+<main id="app" hidden>
+
+  <!-- 01 · action-required inbox -->
+  <section id="sec-inbox" hidden>
+    <div class="sec-head"><span class="sec-num">01</span><h2>Action required</h2><span class="sec-note" id="inbox-note"></span></div>
+    <div id="inbox"></div>
+  </section>
+
+  <!-- 02 · account cards -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>Accounts — live usage</h2><span class="sec-note">hero = worst window · sorted by severity · cutoff 95</span></div>
+    <div class="grid" id="cards"></div>
+  </section>
+
+  <!-- 03 · activity -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>Activity</h2><span class="sec-note" id="feed-note"></span></div>
+    <div class="act-grid">
+      <div>
+        <div class="toolbar">
+          <button class="btn sm" id="pause" aria-pressed="false">⏸ pause</button>
+          <span class="lbl">filter</span>
+          <span id="fchips"></span>
+        </div>
+        <div class="scrollx feedmax"><div class="feed" id="feed" role="log" aria-live="off" aria-label="activity feed">
+          <div class="frow head"><span>age</span><span>account</span><span>host</span><span>model</span><span class="tk">tokens</span><span>prompt</span></div>
+        </div></div>
+        <span class="vhidden" id="livenote" aria-live="polite"></span>
+      </div>
+      <div>
+        <h3 class="sub">By host / device</h3>
+        <div class="scrollx"><table id="hosts">
+          <thead><tr><th>host</th><th class="r">requests</th><th class="r">tokens</th><th class="r">last seen</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 · provider api keys -->
+  <section>
+    <button class="disclosure" id="keys-toggle" aria-expanded="false" aria-controls="keys-panel">
+      <span class="caret" id="keys-caret">▸</span>
+      <span id="keys-title">Provider API keys · 0</span>
+      <span class="hint" id="keys-hint">click to expand</span>
+    </button>
+    <div class="keys-panel" id="keys-panel" hidden>
+      <div class="scrollx"><div class="keys-wrap"><table id="keys">
+        <thead><tr><th>provider</th><th>label</th><th>key</th><th>status</th><th>added</th><th>last used</th><th>verified</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table></div></div>
+      <div class="kmsg" id="kmsg" role="status"></div>
+      <form class="addform" id="addform">
+        <input class="p" id="kprov" list="provlist" placeholder="provider" aria-label="provider" autocomplete="off">
+        <datalist id="provlist"></datalist>
+        <input class="l" id="klabel" placeholder="label" aria-label="label" autocomplete="off">
+        <input class="k" id="kkey" type="password" placeholder="sk-…" aria-label="api key" autocomplete="off">
+        <button class="btn accent sm" type="submit">Add</button>
+        <span class="dim mono" id="khint" style="font-size:12px"></span>
+      </form>
+    </div>
+  </section>
+
+</main>
+
+<footer id="ftr" hidden><div id="foot">aigate · 30-day log retention</div></footer>
 
 <script>
+'use strict';
+/* ================================================================
+   aigate dashboard — control-room redesign (phase 1)
+   single self-contained file · vanilla JS · no external libs
+   ================================================================ */
+
+/* ---------------- helpers ---------------- */
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
-let TOKEN=localStorage.aigate_token||'';
-let statsT;
-function save(){TOKEN=$('#tok').value.trim();localStorage.aigate_token=TOKEN;boot();}
-function color(p){return p>=80?'var(--red)':p>=50?'var(--yellow)':'var(--green)'}
-const fmtAge=s=>s<60?s+'s':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600)+'h':Math.floor(s/86400)+'d';  // fmtAge(90)==='1m', fmtAge(3600)==='1h'
+// fmtAge(90)==='1m', fmtAge(3600)==='1h'
+const fmtAge=s=>s<60?Math.max(0,Math.round(s))+'s':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600)+'h':Math.floor(s/86400)+'d';
 // sqlite timestamps are bare UTC ("2026-07-11 18:30:00", no Z) — V8 parses those as LOCAL; stamp them UTC. ISO-Z (live WS rows) passes through.
-const toDate=s=>new Date(/[TZ]/.test(String(s))?s:String(s).replace(' ','T')+'Z');  // +toDate('2026-07-11 18:30:00') === Date.UTC(2026,6,11,18,30,0)
+const toDate=s=>new Date(/[TZ]/.test(String(s))?s:String(s).replace(' ','T')+'Z');
+const fmtNum=n=>{n=Number(n)||0;return n>=1e6?(n/1e6).toFixed(2)+'M':n.toLocaleString('en-US')};
+const hhmm=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+// selection cutoff is env-configurable SERVER-side (AIGATE_CUTOFF); the dashboard hardcodes the shipped default 95.
+const CUTOFF=95;
+const STALE_S=1500;            // >25min without a usage poll → stale
+const worstOf=a=>Math.max(a.five_hour_pct||0,a.seven_day_pct||0);
+const hcls=v=>v>=95?'crit':v>=80?'warn':'ok';      // hero / text threshold color
+const fcls=v=>v>=95?'crit':v>=80?'warn':v>=50?'neu':'ok';  // gauge fill color
+const eligible=a=>!a.disabled&&!a.reauth_needed&&a.has_token&&!a.parked&&worstOf(a)<CUTOFF;
 
-function renderAccounts(list){
-  const el=$('#accts'); el.innerHTML='';
-  if(!list||!list.length){el.innerHTML='<div class="card" style="color:var(--dim)">no accounts yet — run <span class="mono">claude setup-token</span>, then add the <span class="mono">sk-ant-oat01…</span> line via the add-account skill or <span class="mono">POST /api/accounts</span> (paste the token there, never here)</div>';return;}
-  for(const a of list){
-    const worst=Math.max(a.five_hour_pct||0,a.seven_day_pct||0);
-    const run=worst>=80, card=document.createElement('div');
-    const parkTxt=a.parked_until?'→'+toDate(a.parked_until).toLocaleTimeString():'';
-    const badge=a.disabled?'disabled':a.reauth_needed?'🔑 re-auth':a.parked?'⏸ parked'+parkTxt:(a.has_token?'ready':'no token');
-    // usage_age_s absent → old server, fall back to the raw usage_updated line; null → never polled
-    const ageKnown=a.usage_age_s!==undefined, stale=ageKnown&&a.usage_age_s>1500;
-    const updated=!ageKnown?'updated '+(a.usage_updated||'never'):a.usage_age_s==null?'never':fmtAge(a.usage_age_s)+' ago';
-    card.className='card acct'+(run?' runaway':'')+(a.reauth_needed?' needsauth':'')+(a.disabled||a.parked?' disabled':'');
-    card.innerHTML=`<div class="top"><span class="name">${esc(a.account)}</span>
-      <span class="badge">${badge} ${run?'🚨':''}</span></div>
-      ${bar('5-hour',a.five_hour_pct)}${bar('weekly',a.seven_day_pct)}
-      <div class="badge${stale?' stale':''}" style="margin-top:8px">${updated}</div>`;
-    el.appendChild(card);
+/* ---------------- state ---------------- */
+let TOKEN=localStorage.aigate_token||'';
+let ws=null, statsT=null, clockOn=false;
+let ACCTS=[], KEYS=[], HOSTS=[], PROVIDERS=[], VERSION='';
+let acctsAt=0;                          // ms epoch when ACCTS arrived (ages usage_age_s on tick)
+const rings=new Map();                  // account → [{t,v}] worst-% ring buffer (cap 40)
+const prevWorst=new Map();              // account → previous worst (79→80 runaway transition)
+let FEED=[];                            // newest-first rows {kind,ts,account,host,model,tokens,text,fail}
+let paused=false, queue=[];
+const fAccounts=new Set(), fHosts=new Set();      // active filter chips
+const seenAccounts=new Set(), seenHosts=new Set();
+const dismissed=new Set();              // session-only inbox dismissals
+let editState=null;                     // open edit panel {account,name,label,tok,focus}
+const reauthDrafts=new Map();           // account → in-flight pasted token
+let notifyOn=false, runFlash=false, lastInboxN=0;
+let seeding=false, pendingLive=0, lastLiveNote=0;
+
+/* ---------------- api plumbing (proven v1) ---------------- */
+async function api(path){const r=await fetch(path,{headers:{authorization:'Bearer '+TOKEN}});if(r.status===401||r.status===429)throw r.status;return r.json();}
+// mutation helper — returns {status,ok,body} so callers can branch on 400/404/409/502
+async function send(method,path,body){
+  const r=await fetch(path,{method,headers:{authorization:'Bearer '+TOKEN,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({}));
+  return {status:r.status,ok:r.ok,body:j};
+}
+function kick(){localStorage.removeItem('aigate_token');location.reload();}
+
+/* ---------------- login / boot ---------------- */
+function loginMsg(m){$('#loginmsg').textContent=m;}
+async function save(ev){
+  if(ev)ev.preventDefault();
+  const t=$('#tok').value.trim();
+  if(!t){loginMsg('paste the token first');return;}
+  TOKEN=t;localStorage.aigate_token=TOKEN;
+  loginMsg('connecting…');
+  boot();
+}
+async function boot(){
+  if(!TOKEN)return;
+  let s;
+  try{s=await api('/api/stats');}
+  catch(e){
+    if(e===401){localStorage.removeItem('aigate_token');loginMsg('token rejected — check it and try again');}
+    else if(e===429){loginMsg('too many auth failures — locked out, try later');}
+    else{loginMsg("can't reach server, retrying…");setTimeout(boot,3000);}
+    return;
+  }
+  // authed — reveal app
+  $('#login').hidden=true;$('#hdr').hidden=false;$('#app').hidden=false;$('#ftr').hidden=false;
+  ingestStats(s);
+  try{await loadProviders();renderKeys(await api('/api/keys'));}catch(e){if(e===401)return kick();}
+  seeding=true;FEED=[];
+  try{await seedFeed();}catch(e){if(e===401)return kick();}
+  seeding=false;renderFeed();buildChips();
+  api('/api/capabilities').then(c=>{VERSION=c.version||'';$('#foot').textContent='aigate'+(VERSION?' v'+esc(VERSION):'')+' · 30-day log retention';}).catch(()=>{});
+  connect();
+  startClock();
+  $('#hdr').focus({preventScroll:true});
+}
+
+/* ---------------- websocket (proven v1 plumbing) ---------------- */
+function setLive(on){
+  $('#live').classList.toggle('off',!on);
+  $('#live-label').textContent=on?'live':'reconnecting';
+}
+function connect(){
+  if(ws&&(ws.readyState===0||ws.readyState===1))return;   // already CONNECTING/OPEN — don't spawn a duplicate socket (double onmessage, reconnect storm)
+  ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',['aigate','bearer.'+TOKEN]);
+  ws.onopen=async()=>{setLive(true);
+    try{const s=await api('/api/stats');ingestStats(s);
+      renderKeys(await api('/api/keys'));
+      seeding=true;FEED=[];await seedFeed();seeding=false;renderFeed();buildChips();
+    }catch(e){seeding=false;if(e===401)kick();}};
+  ws.onclose=()=>{setLive(false);setTimeout(connect,2000)};
+  ws.onmessage=e=>{const m=JSON.parse(e.data);
+    if(m.type==='accounts')ingestAccounts(m.data);
+    else if(m.type==='keys')renderKeys(m.data);
+    else if(m.type==='prompt'){feedEvent(m.data,'prompt');clearTimeout(statsT);statsT=setTimeout(()=>api('/api/stats').then(s=>renderHosts(s.by_host)).catch(()=>{}),1500)}  // debounced hosts refresh
+    else if(m.type==='access')feedEvent(m.data,'access');
+  };
+}
+
+/* ---------------- accounts ingest / derived chrome ---------------- */
+function ingestStats(s){                    // REST /api/stats — seeds rings once, renders everything
+  ACCTS=s.accounts||[];acctsAt=Date.now();
+  const now=Date.now();
+  for(const a of ACCTS)if(!rings.has(a.account))rings.set(a.account,[{t:now,v:worstOf(a)}]);
+  detectTransitions();renderAccounts();renderHosts(s.by_host);renderChrome();
+}
+function ingestAccounts(list){              // WS 'accounts' push — append ring samples
+  ACCTS=list||[];acctsAt=Date.now();
+  const now=Date.now();
+  for(const a of ACCTS){
+    let r=rings.get(a.account);if(!r){r=[];rings.set(a.account,r);}
+    r.push({t:now,v:worstOf(a)});if(r.length>40)r.shift();
+  }
+  detectTransitions();renderAccounts();renderChrome();
+}
+function detectTransitions(){               // 79→80 runaway edge → notify + title badge
+  for(const a of ACCTS){
+    const w=worstOf(a),prev=prevWorst.get(a.account);
+    if(prev!==undefined&&prev<80&&w>=80){
+      runFlash=true;updateTitle();
+      if(notifyOn&&'Notification'in window&&Notification.permission==='granted'){
+        try{new Notification('aigate — runaway account',{body:a.account+' hit '+Math.round(w)+'% of its worst window'});}catch(_){}
+      }
+    }
+    prevWorst.set(a.account,w);
   }
 }
-function bar(lbl,p){p=Math.round(p||0);return `<div class="bar"><div class="lbl">${lbl}<b>${p}%</b></div>
-  <div class="track"><div class="fill" style="width:${p}%;background:${color(p)}"></div></div></div>`}
-
-function addFeed(d){
-  const f=$('#feed'),r=document.createElement('div');r.className='row';
-  const t=(d.ts?toDate(d.ts):new Date()).toLocaleTimeString();
-  r.innerHTML=`<span class="t">${t}</span><span class="a">${esc(d.account||'?')}</span><span class="h">${esc(d.host||'')}</span><span class="p">${esc(d.prompt||d.action||'')}</span>`;
-  f.prepend(r); while(f.children.length>200)f.lastChild.remove();
+function curAge(a){                          // usage_age_s aged to now
+  if(a.usage_age_s==null)return null;
+  return a.usage_age_s+(Date.now()-acctsAt)/1000;
 }
-async function api(path){const r=await fetch(path,{headers:{authorization:'Bearer '+TOKEN}});if(r.status===401)throw 401;return r.json();}
+function renderChrome(){                     // rollup · banner · inbox · title (from latest accounts+keys)
+  const n=ACCTS.length, sel=ACCTS.filter(eligible).length;
+  const parked=ACCTS.filter(a=>a.parked&&!a.disabled).length;
+  const reauth=ACCTS.filter(a=>a.reauth_needed).length;
+  const kw=KEYS.filter(k=>k.status==='working').length, kd=KEYS.filter(k=>k.status==='dead').length;
+  const ages=ACCTS.map(curAge).filter(x=>x!=null);
+  const minAge=ages.length?Math.min(...ages):null;
+  let r=n?sel+'/'+n+' selectable · '+parked+' parked · '+reauth+' re-auth':'no accounts yet';
+  if(KEYS.length)r+=' · keys '+kw+'✓ '+kd+'✗';
+  $('#rollup').innerHTML=esc(r)+(minAge!=null?' · polled <span data-rage data-base="'+Math.round(minAge)+'" data-at="'+Date.now()+'">'+fmtAge(minAge)+' ago</span>':'');
+  $('#banner').hidden=!(n>0&&sel===0);
+  renderInbox();
+}
+
+/* ---------------- 01 · action-required inbox ---------------- */
+function renderInbox(){
+  const box=$('#inbox');const items=[];
+  for(const a of ACCTS){
+    if(a.reauth_needed&&!dismissed.has('reauth:'+a.account))
+      items.push({id:'reauth:'+a.account,warn:false,copy:true,
+        html:'<b>'+esc(a.account)+'</b> needs re-auth — run <code>claude setup-token</code>, then paste the new token on its card'});
+    const age=curAge(a);
+    if(!a.reauth_needed&&age!=null&&age>STALE_S&&!dismissed.has('stale:'+a.account))
+      items.push({id:'stale:'+a.account,warn:true,copy:false,
+        html:'<b>'+esc(a.account)+'</b> hasn\'t reported usage in '+fmtAge(age)+' — poll may be failing'});
+  }
+  for(const k of KEYS){
+    if(k.status==='dead'&&!dismissed.has('deadkey:'+k.id))
+      items.push({id:'deadkey:'+k.id,warn:false,copy:false,
+        html:'provider key <b>\''+esc(k.provider)+(k.label?' · '+esc(k.label):'')+'\'</b> is dead — last check failed'});
+  }
+  box.innerHTML=items.map(it=>
+    '<div class="inbox-row'+(it.warn?' warn-row':'')+'" data-iid="'+esc(it.id)+'"><p>'+it.html+'</p>'+
+    (it.copy?'<button class="btn sm" data-copy="claude setup-token">copy cmd</button>':'')+
+    '<button class="x" data-dismiss aria-label="dismiss">✕</button></div>').join('');
+  $('#sec-inbox').hidden=items.length===0;
+  $('#inbox-note').textContent=items.length?items.length+' open':'';
+  lastInboxN=items.length;updateTitle();
+}
+function updateTitle(){
+  document.title=(runFlash?'⚠ ':'')+(lastInboxN?'('+lastInboxN+') ':'')+'aigate';
+}
+
+/* ---------------- 02 · account cards ---------------- */
+function sevRank(a){                         // re-auth → runaway → no-token → stale → ready → parked → disabled
+  const w=worstOf(a),age=curAge(a);
+  if(a.reauth_needed)return 0;
+  if(w>=80)return 1;
+  if(!a.has_token)return 2;
+  if(age!=null&&age>STALE_S)return 3;
+  if(!a.disabled&&!a.parked)return 4;
+  if(a.parked&&!a.disabled)return 5;
+  return 6;
+}
+function chipOf(a){
+  const w=worstOf(a);
+  if(a.disabled)return{t:'DISABLED',c:'dim'};
+  if(a.reauth_needed)return{t:'RE-AUTH',c:'crit'};
+  if(a.parked)return{t:'PARKED'+(a.parked_until?' →'+hhmm(toDate(a.parked_until)):''),c:'dim'};
+  if(!a.has_token)return{t:'NO TOKEN',c:'warn'};
+  if(w>=80)return{t:'RUNAWAY',c:'warn'};
+  return{t:'READY',c:'ok'};
+}
+const gauge=(label,v)=>{
+  v=Math.round(v||0);
+  return '<div>'+
+   '<div class="g-top"><span>'+label+'</span><b class="num '+hcls(v)+'">'+v+'%</b></div>'+
+   '<div class="track" role="img" aria-label="'+label+' '+v+' percent">'+
+    '<div class="fill '+fcls(v)+'" style="width:'+Math.min(100,v)+'%"></div>'+
+    '<i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%" title="selection cutoff"></i>'+
+   '</div>'+
+   '<div class="ticklabels"><span style="left:50%">50</span><span style="left:80%">80</span><span class="l95" style="left:95%">95</span></div>'+
+  '</div>';
+};
+function sparkHtml(name,stale){
+  const s=rings.get(name)||[];
+  let pts;
+  if(s.length===0)pts='';
+  else if(s.length===1){const y=30-Math.min(100,Math.max(0,s[0].v))/100*30;pts='0,'+y+' 110,'+y;}
+  else pts=s.map((p,i)=>{const x=(i/(s.length-1)*110).toFixed(1),y=(30-Math.min(100,Math.max(0,p.v))/100*30).toFixed(1);return x+','+y;}).join(' ');
+  const col=s.length?hcls(s[s.length-1].v):'dim';
+  const stroke=col==='dim'?'var(--dim)':col==='ok'?'var(--ok)':col==='warn'?'var(--warn)':'var(--crit)';
+  return '<div class="spark" aria-hidden="true"><svg viewBox="0 0 110 30" preserveAspectRatio="none">'+
+   (pts?'<polyline points="'+pts+'" fill="none" stroke="'+stroke+'" stroke-width="1.5"'+(stale?' stroke-dasharray="3 3"':'')+'/>':'')+
+  '</svg></div>';
+}
+function burnLine(a){
+  if(a.disabled)return['disabled · excluded from selection','dim'];
+  if(a.reauth_needed)return['— polling paused · re-auth required','dim'];
+  if(a.parked)return['parked'+(a.parked_until?' until '+hhmm(toDate(a.parked_until)):'')+' · requests routed to next account','dim'];
+  const s=rings.get(a.account)||[];
+  if(s.length<2)return['— collecting samples','dim'];
+  const first=s[0],last=s[s.length-1],dtH=(last.t-first.t)/3600000;
+  if(dtH<30/3600)return['— steady','dim'];          // window too small to rate honestly
+  const rate=(last.v-first.v)/dtH;
+  if(rate>0.5){
+    const g5=a.five_hour_pct||0;
+    if(g5>=100)return['↑'+rate.toFixed(1)+'%/h · 5h window exhausted','crit'];
+    const left=(100-g5)/rate;
+    return['↑'+rate.toFixed(1)+'%/h · 5h window exhausts in ~'+(left>=1?Math.round(left)+'h':Math.max(1,Math.round(left*60))+'m'),g5>=80?'warn':'dim'];
+  }
+  if(rate<-0.5)return['↓ recovering','ok'];
+  return['— steady','dim'];
+}
+function updatedHtml(a){
+  if(a.usage_age_s===undefined)return '<span class="updated">updated '+esc(a.usage_updated||'never')+'</span>'; // old server without usage_age_s
+  if(a.usage_age_s===null)return '<span class="updated">never polled</span>';
+  const stale=a.usage_age_s>STALE_S;
+  return '<span class="updated">updated <span data-rage data-base="'+a.usage_age_s+'" data-at="'+acctsAt+'" data-warn="'+STALE_S+'" class="'+(stale?'warn':'')+'">'+fmtAge(a.usage_age_s)+' ago</span>'+(stale?' · stale':'')+'</span>';
+}
+function renderAccounts(){
+  const el=$('#cards');
+  if(!ACCTS.length){
+    el.innerHTML='<div class="card" style="color:var(--dim)">no accounts yet — run <span class="mono acc">claude setup-token</span>, then add the <span class="mono acc">sk-ant-oat01…</span> line via the add-account skill or <span class="mono acc">POST /api/accounts</span> (paste the token there, never here)</div>';
+    return;
+  }
+  const sorted=[...ACCTS].sort((x,y)=>sevRank(x)-sevRank(y)||worstOf(y)-worstOf(x));
+  const nextPick=sorted.filter(eligible).sort((x,y)=>worstOf(x)-worstOf(y))[0];
+  el.innerHTML=sorted.map((a,i)=>{
+    const w=worstOf(a),chip=chipOf(a),age=curAge(a),stale=age!=null&&age>STALE_S;
+    const[burnTxt,burnCls]=burnLine(a);
+    const editing=editState&&editState.account===a.account;
+    const rd=reauthDrafts.get(a.account)||'';
+    return '<article class="card'+(a.parked&&!a.disabled?' is-parked':'')+(a.disabled?' is-disabled':'')+'" data-acct="'+esc(a.account)+'">'+
+     '<div class="card-head">'+
+      '<span class="acct">'+esc(a.account)+'</span>'+
+      (a.label?'<span class="alabel">'+esc(a.label)+'</span>':'')+
+      (nextPick&&nextPick.account===a.account?'<span class="badge">next to be picked</span>':'')+
+      '<span class="chip c-'+chip.c+'">'+chip.t+'</span>'+
+     '</div>'+
+     '<div class="hero-row">'+
+      '<div><span class="hero-num '+hcls(w)+(w>=80&&!a.disabled?' pulse':'')+'">'+Math.round(w)+'<small>%</small></span>'+
+       '<span class="hero-label">worst window</span></div>'+
+      sparkHtml(a.account,stale)+
+     '</div>'+
+     '<div class="gauges">'+gauge('5-hour',a.five_hour_pct)+gauge('weekly',a.seven_day_pct)+'</div>'+
+     '<p class="burn '+burnCls+'">'+burnTxt+'</p>'+
+     (a.reauth_needed?
+       '<div class="reauth">'+
+        '<label for="rt-'+i+'">re-auth required</label>'+
+        '<div class="row"><input id="rt-'+i+'" type="password" placeholder="paste new setup-token…" autocomplete="off" value="'+esc(rd)+'"><button class="btn accent sm" data-rsave>save</button></div>'+
+        '<div class="pmsg" data-rmsg hidden></div>'+
+        '<small>aigate verifies the token, then resumes polling automatically.</small>'+
+       '</div>':'')+
+     (editing?
+       '<div class="editpanel" id="ep-'+i+'">'+
+        '<label for="en-'+i+'">display name</label>'+
+        '<input id="en-'+i+'" data-f="name" type="text" value="'+esc(editState.name)+'" autocomplete="off">'+
+        '<label for="el-'+i+'">label (optional)</label>'+
+        '<input id="el-'+i+'" data-f="label" type="text" value="'+esc(editState.label)+'" placeholder="e.g. shared ci account" autocomplete="off">'+
+        '<label for="et-'+i+'">replace setup-token (optional)</label>'+
+        '<input id="et-'+i+'" data-f="tok" type="password" value="'+esc(editState.tok)+'" placeholder="sk-ant-oat01… — leave blank to keep current" autocomplete="off">'+
+        '<div class="row"><button class="btn accent sm" data-esave>save</button><button class="btn sm" data-ecancel>cancel</button></div>'+
+        '<div class="pmsg" data-emsg hidden></div>'+
+       '</div>':'')+
+     '<div class="cardmsg" data-cmsg hidden></div>'+
+     '<div class="card-foot">'+
+      updatedHtml(a)+
+      '<div class="acts">'+
+       '<button class="edit-pill" data-act="edit" title="edit" aria-label="edit '+esc(a.account)+'" aria-expanded="'+(editing?'true':'false')+'"'+(editing?' aria-controls="ep-'+i+'"':'')+'><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M8.3 1.7l2 2L4.5 9.5l-2.7.7.7-2.7L8.3 1.7z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>edit</button>'+
+       '<button data-act="refresh" title="refresh" aria-label="refresh '+esc(a.account)+'">↻</button>'+
+       '<button data-act="toggle" title="'+(a.disabled?'enable':'disable')+'" aria-label="'+(a.disabled?'enable':'disable')+' '+esc(a.account)+'" aria-pressed="'+(a.disabled?'true':'false')+'">'+(a.disabled?'▶':'⏸')+'</button>'+
+       '<button data-act="del" class="del" title="delete" aria-label="delete '+esc(a.account)+'">✕</button>'+
+      '</div>'+
+     '</div>'+
+    '</article>';
+  }).join('');
+  if(editState){                              // restore focus into the reopened panel
+    const p=[...el.querySelectorAll('.editpanel')][0];
+    if(p){const f=p.querySelector('[data-f="'+(editState.focus||'name')+'"]')||p.querySelector('input');if(f){f.focus();f.setSelectionRange(f.value.length,f.value.length);}}
+  }
+}
+
+/* ---------------- card actions ---------------- */
+function cardMsg(card,msg){const m=card.querySelector('[data-cmsg]');if(!m)return;if(!msg){m.hidden=true;m.textContent='';}else{m.hidden=false;m.textContent=msg;}}
+function pmsg(card,sel,msg){const m=card.querySelector(sel);if(!m)return;if(!msg){m.hidden=true;m.textContent='';}else{m.hidden=false;m.textContent=msg;}}
+async function doRefresh(card,a,btn){
+  btn.disabled=true;cardMsg(card,'polling '+a.account+'…');
+  try{
+    const r=await send('POST','/api/accounts/'+encodeURIComponent(a.account)+'/refresh');
+    if(r.status===401)return kick();
+    if(r.status===502)cardMsg(card,'poll failed — '+(r.body.error||'upstream error'));   // poll failure: inline, no alarm
+    else if(!r.ok)cardMsg(card,r.body.error||('HTTP '+r.status));
+    else cardMsg(card,'');                       // success → server broadcasts fresh accounts
+  }catch(_){cardMsg(card,'network error — try again');}
+  btn.disabled=false;
+}
+async function doToggle(card,a){
+  try{
+    const r=await send('POST','/api/accounts/'+encodeURIComponent(a.account)+'/disabled',{disabled:!a.disabled});
+    if(r.status===401)return kick();
+    if(!r.ok)cardMsg(card,r.body.error||('HTTP '+r.status));
+  }catch(_){cardMsg(card,'network error — try again');}
+}
+async function doDelete(card,a){
+  if(!confirm('Delete account "'+a.account+'"? This cannot be undone.'))return;
+  try{
+    const r=await send('DELETE','/api/accounts/'+encodeURIComponent(a.account));
+    if(r.status===401)return kick();
+    if(!r.ok)cardMsg(card,r.body.error||('HTTP '+r.status));
+    if(editState&&editState.account===a.account)editState=null;
+  }catch(_){cardMsg(card,'network error — try again');}
+}
+function toggleEdit(a){
+  if(editState&&editState.account===a.account){editState=null;}
+  else editState={account:a.account,name:a.account,label:a.label||'',tok:'',focus:'name'};
+  renderAccounts();
+}
+async function saveEdit(card,a){
+  const g=f=>{const i=card.querySelector('[data-f="'+f+'"]');return i?i.value.trim():'';};
+  const name=g('name'),label=g('label'),tok=g('tok');
+  const err=m=>pmsg(card,'[data-emsg]',m);
+  err('');
+  if(!name)return err('name is required');
+  if(/[/\s]/.test(name))return err('name cannot contain spaces or slashes');
+  const renamed=name!==a.account,relabeled=label!==(a.label||'');
+  if(!renamed&&!relabeled&&!tok){editState=null;renderAccounts();return;}
+  try{
+    if(renamed||relabeled){
+      const body={};if(renamed)body.account=name;if(relabeled)body.label=label;
+      const r=await send('PATCH','/api/accounts/'+encodeURIComponent(a.account),body);
+      if(r.status===401)return kick();
+      if(r.status===404&&(r.body.error==='not found'||!r.body.error))return err('rename requires server update'); // pre-PATCH server
+      if(!r.ok)return err(r.body.error||('HTTP '+r.status));      // 404 unknown account · 400 bad name · 409 conflict
+      a.account=name;if(relabeled)a.label=label;                  // apply locally; broadcast may follow
+    }
+    if(tok){
+      const r=await send('POST','/api/accounts',{account:name,setup_token:tok,label:label});
+      if(r.status===401)return kick();
+      if(!r.ok)return err(r.body.error||('HTTP '+r.status));
+    }
+    editState=null;renderAccounts();renderChrome();
+  }catch(_){err('network error — try again');}
+}
+async function saveReauth(card,a){
+  const inp=card.querySelector('.reauth input');
+  const tok=inp?inp.value.trim():'';
+  const err=m=>pmsg(card,'[data-rmsg]',m);
+  err('');
+  if(!tok)return err('paste the setup-token first');
+  try{
+    const r=await send('POST','/api/accounts',{account:a.account,setup_token:tok,label:a.label||''});
+    if(r.status===401)return kick();
+    if(!r.ok)return err(r.body.error||('HTTP '+r.status));   // surfaces the 400 code#state explanation
+    reauthDrafts.delete(a.account);
+  }catch(_){err('network error — try again');}
+}
+
+/* ---------------- 03 · activity feed ---------------- */
+function rowFrom(d,kind){
+  const ts=d.ts?+toDate(d.ts):Date.now();
+  if(kind==='access'){
+    const fail=!!(d.result&&d.result!=='ok');
+    return{kind,ts,account:d.account||'',host:d.host||'',model:'—',tokens:'—',
+      text:'▸ '+(d.action||'')+(d.result?' — '+d.result:''),fail};
+  }
+  return{kind,ts,account:d.account||'?',host:d.host||'',model:d.model||'—',
+    tokens:d.tokens!=null?fmtNum(d.tokens):'—',text:d.prompt||'',fail:false};
+}
+function feedEvent(d,kind){
+  if(paused){queue.push({d,kind});return;}
+  addRows([rowFrom(d,kind)]);
+}
+function addRows(rows){
+  let newVals=false;
+  for(const r of rows){
+    FEED.unshift(r);if(FEED.length>200)FEED.length=200;
+    if(r.account&&!seenAccounts.has(r.account)){seenAccounts.add(r.account);newVals=true;}
+    if(r.host&&!seenHosts.has(r.host)){seenHosts.add(r.host);newVals=true;}
+    if(!seeding)pendingLive++;
+  }
+  if(newVals)buildChips();
+  renderFeed();
+}
 // seed the feed from BOTH prompt logs and access events; an old server that 404s /api/access yields no access rows
 async function seedFeed(){
   const logs=await api('/api/logs?limit=50');   // 401 here propagates → logout; access is best-effort
   const acc=await api('/api/access?limit=50').then(r=>Array.isArray(r)?r:[]).catch(()=>[]);
-  [...logs,...acc.map(r=>({...r,prompt:'▸ '+r.action+(r.result&&r.result!=='ok'?' — '+r.result:'')}))]
-    .sort((a,b)=>toDate(a.ts)-toDate(b.ts)).forEach(addFeed);
+  const rows=[...logs.map(d=>rowFrom(d,'prompt')),...acc.map(d=>rowFrom(d,'access'))]
+    .sort((a,b)=>a.ts-b.ts);
+  addRows(rows);
+}
+function feedFiltered(){
+  return FEED.filter(r=>
+    (!fAccounts.size||fAccounts.has(r.account))&&(!fHosts.size||fHosts.has(r.host)));
+}
+function renderFeed(){
+  const f=$('#feed');
+  const head='<div class="frow head"><span>age</span><span>account</span><span>host</span><span>model</span><span class="tk">tokens</span><span>prompt</span></div>';
+  const rows=feedFiltered();
+  const fails=rows.filter(r=>r.fail).length;
+  $('#feed-note').textContent=rows.length?(fails?fails+' failed in view':rows.length+' rows'):'';
+  f.innerHTML=head+(rows.length?rows.map(r=>
+    '<div class="frow'+(r.fail?' fail':'')+'">'+
+     '<span class="t" data-rts="'+r.ts+'">'+fmtAge((Date.now()-r.ts)/1000)+'</span>'+
+     '<span>'+esc(r.account||'—')+'</span>'+
+     '<span class="h">'+esc(r.host||'')+'</span>'+
+     '<span class="m">'+esc(r.model)+'</span>'+
+     '<span class="tk num">'+esc(r.tokens)+'</span>'+
+     '<span class="snip">'+esc(r.text)+'</span>'+
+    '</div>').join(''):'<div class="frow"><span class="t"></span><span class="dim" style="grid-column:2/-1">no activity yet</span></div>');
+}
+function buildChips(){
+  const c=$('#fchips');let html='';
+  for(const a of[...seenAccounts].sort())html+='<button class="fchip'+(fAccounts.has(a)?' on':'')+'" data-kind="a" data-v="'+esc(a)+'" aria-pressed="'+fAccounts.has(a)+'">'+esc(a)+'</button>';
+  for(const h of[...seenHosts].sort())html+='<button class="fchip'+(fHosts.has(h)?' on':'')+'" data-kind="h" data-v="'+esc(h)+'" aria-pressed="'+fHosts.has(h)+'">host · '+esc(h)+'</button>';
+  if(fAccounts.size||fHosts.size)html+='<button class="fchip" data-clear>✕ clear</button>';
+  c.innerHTML=html;
+}
+function renderHosts(rows){
+  HOSTS=rows||[];
+  const tb=$('#hosts tbody');
+  if(!HOSTS.length){tb.innerHTML='<tr><td colspan="4" class="dim">no traffic yet</td></tr>';return;}
+  tb.innerHTML=HOSTS.map(h=>{
+    const ts=h.last?+toDate(h.last):null;
+    const age=ts?(Date.now()-ts)/1000:null;
+    return '<tr><td>'+esc(h.host||'—')+'</td><td class="r num">'+fmtNum(h.requests)+'</td><td class="r num">'+fmtNum(h.tokens)+'</td>'+
+     '<td class="r num '+(age!=null&&age>STALE_S?'warn':'dim')+'"'+(ts?' data-rts="'+ts+'" data-warn="'+STALE_S+'"':'')+'>'+(ts?fmtAge(age)+' ago':'—')+'</td></tr>';
+  }).join('');
 }
 
-// ---- provider keys ----
-let PROVIDERS=[];
+/* ---------------- 04 · provider keys ---------------- */
 async function loadProviders(){
   PROVIDERS=await api('/api/providers');
-  const dl=$('#provlist'); dl.innerHTML='';
+  const dl=$('#provlist');dl.innerHTML='';
   for(const p of PROVIDERS){const o=document.createElement('option');o.value=p.id;o.label=p.name;dl.appendChild(o);}
 }
 function providerHint(){
-  const id=$('#kprov').value.trim(), p=PROVIDERS.find(x=>x.id===id);
-  $('#khint').textContent=p?(p.prefix?`↳ ${p.name} — keys usually start "${p.prefix}"`:`↳ ${p.name}`):(id?'↳ custom provider':'');
+  const id=$('#kprov').value.trim(),p=PROVIDERS.find(x=>x.id===id);
+  $('#khint').textContent=p?(p.prefix?'↳ '+p.name+' — keys usually start "'+p.prefix+'"':'↳ '+p.name):(id?'↳ custom provider':'');
 }
-async function loadKeys(){renderKeys(await api('/api/keys'));}
 function renderKeys(rows){
-  const tb=$('#keys tbody'); tb.innerHTML='';
-  if(!rows||!rows.length){tb.innerHTML='<tr><td colspan="7" style="color:var(--dim)">no keys yet — add one above</td></tr>';return;}
-  for(const k of rows){
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${esc(k.provider)}</td><td>${esc(k.label||'—')}</td><td class="mono">${esc(k.key_hint||'—')}</td>
-      <td>${esc(k.status||'')}</td><td class="mono">${k.created_at?toDate(k.created_at).toLocaleString():''}</td>
-      <td class="mono">${k.last_used?toDate(k.last_used).toLocaleString():'<span style="color:var(--dim)">never</span>'}${k.stale?' <span class="badge stale" title="never fetched or idle >90d">stale</span>':''}</td>
-      <td><button class="del">✕</button></td>`;
-    tr.querySelector('.del').onclick=()=>delKey(k.id);
-    tb.appendChild(tr);
-  }
+  KEYS=rows||[];
+  $('#keys-title').textContent='Provider API keys · '+KEYS.length;
+  const tb=$('#keys tbody');
+  if(!KEYS.length){tb.innerHTML='<tr><td colspan="8" class="dim">no keys yet — add one below</td></tr>';renderChrome();return;}
+  tb.innerHTML=KEYS.map(k=>{
+    const stCls=k.status==='working'?'st-ok':k.status==='dead'?'st-dead':'dim';
+    const rel=(v,empty)=>{if(!v)return empty||'—';const ts=+toDate(v);return '<span data-rts="'+ts+'">'+fmtAge((Date.now()-ts)/1000)+'</span> ago';};
+    return '<tr data-kid="'+k.id+'">'+
+     '<td>'+esc(k.provider)+'</td>'+
+     '<td class="dim">'+esc(k.label||'—')+'</td>'+
+     '<td class="mono dim">'+esc(k.key_hint||'—')+'</td>'+
+     '<td class="'+stCls+'">'+esc(k.status||'unknown')+'</td>'+
+     '<td class="dim">'+rel(k.created_at)+'</td>'+
+     '<td>'+(k.last_used?rel(k.last_used):'<span class="dim">never</span>')+(k.stale?' <span class="badge" title="never fetched or idle >90d">stale</span>':'')+'</td>'+
+     '<td class="dim">'+rel(k.last_checked,'—')+'</td>'+
+     '<td class="kacts"><button data-krefresh title="re-verify" aria-label="re-verify '+esc(k.provider)+' '+(k.label||'')+'">↻</button>'+
+      '<button data-kdel class="del" title="delete" aria-label="delete '+esc(k.provider)+' '+(k.label||'')+'">✕</button></td>'+
+    '</tr>';
+  }).join('');
+  renderChrome();
 }
 async function addKey(e){
   e.preventDefault();
-  const provider=$('#kprov').value.trim(), key=$('#kkey').value.trim(), label=$('#klabel').value.trim(), msg=$('#kmsg');
-  if(!provider||!key){msg.style.color='var(--red)';msg.textContent='provider + key required';return;}
+  const provider=$('#kprov').value.trim(),key=$('#kkey').value.trim(),label=$('#klabel').value.trim(),msg=$('#kmsg');
+  if(!provider||!key){msg.style.color='var(--crit)';msg.textContent='provider + key required';return;}
   msg.style.color='var(--dim)';msg.textContent='adding…';
   try{
-    const r=await fetch('/api/keys',{method:'POST',headers:{authorization:'Bearer '+TOKEN,'content-type':'application/json'},body:JSON.stringify({provider,key,label})});
-    const j=await r.json().catch(()=>({}));
-    if(r.ok){msg.style.color='var(--green)';msg.textContent='✓ added '+provider;$('#kkey').value='';$('#klabel').value='';loadKeys();}
-    else{msg.style.color='var(--red)';msg.textContent='✗ '+(j.error||('HTTP '+r.status));}
-  }catch(err){msg.style.color='var(--red)';msg.textContent='✗ '+err;}
+    const r=await send('POST','/api/keys',{provider,key,label});
+    if(r.status===401)return kick();
+    if(r.ok){msg.style.color='var(--ok)';msg.textContent='✓ added '+provider;$('#kkey').value='';$('#klabel').value='';}  // no refetch — server broadcasts 'keys'
+    else{msg.style.color='var(--crit)';msg.textContent='✗ '+(r.body.error||('HTTP '+r.status));}
+  }catch(err){msg.style.color='var(--crit)';msg.textContent='✗ '+err;}
 }
-async function delKey(id){
-  if(!confirm('Delete this key?'))return;
-  await fetch('/api/keys/'+id,{method:'DELETE',headers:{authorization:'Bearer '+TOKEN}});
-  loadKeys();
+async function delKey(k){
+  if(!confirm('Delete key '+k.provider+(k.label?' · '+k.label:'')+' ('+(k.key_hint||'')+')?'))return;
+  const msg=$('#kmsg');
+  const r=await send('DELETE','/api/keys/'+k.id).catch(err=>({error:String(err)}));
+  if(r.status===401)return kick();
+  if(r.ok){msg.style.color='var(--dim)';msg.textContent='deleted';}  // no refetch — broadcast updates the table
+  else{msg.style.color='var(--crit)';msg.textContent='✗ '+((r.body&&r.body.error)||r.error||('HTTP '+r.status));}
 }
-function renderHosts(rows){const tb=$('#hosts tbody');tb.innerHTML='';for(const h of rows||[]){
-  tb.insertAdjacentHTML('beforeend',`<tr><td>${esc(h.host||'—')}</td><td>${h.requests}</td><td>${h.tokens||0}</td><td>${h.last?toDate(h.last).toLocaleString():''}</td></tr>`)}}
+async function refreshKey(k){
+  const msg=$('#kmsg');msg.style.color='var(--dim)';msg.textContent='checking '+k.provider+'…';
+  const r=await send('POST','/api/keys/'+k.id+'/refresh').catch(err=>({error:String(err)}));
+  if(r.status===401)return kick();
+  if(r.status===502){msg.style.color='var(--crit)';msg.textContent='✗ check failed — '+((r.body&&r.body.error)||'upstream error');return;}
+  if(r.ok){
+    msg.style.color='var(--ok)';
+    msg.textContent=r.body&&r.body.checked===false?'↳ no liveness probe for this provider':('✓ '+k.provider+' — '+(r.body&&r.body.alive?'working':'dead'));
+  }else{msg.style.color='var(--crit)';msg.textContent='✗ '+((r.body&&r.body.error)||r.error||('HTTP '+r.status));}
+}
 
-let ws;
-function connect(){
-  if(ws&&(ws.readyState===0||ws.readyState===1))return;   // already CONNECTING/OPEN — don't spawn a duplicate socket (double onmessage, reconnect storm)
-  ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',['aigate','bearer.'+TOKEN]);
-  ws.onopen=async()=>{$('#live').classList.add('on');
-    try{const s=await api('/api/stats');renderAccounts(s.accounts);renderHosts(s.by_host);
-      renderKeys(await api('/api/keys'));
-      $('#feed').innerHTML='';await seedFeed();
-    }catch(e){if(e===401){localStorage.removeItem('aigate_token');location.reload();}}};
-  ws.onclose=()=>{$('#live').classList.remove('on');setTimeout(connect,2000)};
-  ws.onmessage=e=>{const m=JSON.parse(e.data);
-    if(m.type==='accounts')renderAccounts(m.data);
-    else if(m.type==='keys')renderKeys(m.data);
-    else if(m.type==='prompt'){addFeed(m.data);clearTimeout(statsT);statsT=setTimeout(()=>api('/api/stats').then(s=>renderHosts(s.by_host)).catch(()=>{}),1500)}
-    else if(m.type==='access')addFeed({...m.data,prompt:'▸ '+m.data.action+(m.data.result&&m.data.result!=='ok'?' — '+m.data.result:'')});
+/* ---------------- clock / relative-time re-tick ---------------- */
+function startClock(){
+  if(clockOn)return;clockOn=true;
+  const tick=()=>{
+    const now=Date.now();
+    $('#clock').textContent=new Date().toTimeString().slice(0,8);
+    document.querySelectorAll('[data-rts]').forEach(el=>{
+      const age=(now-+el.dataset.rts)/1000;
+      const hostCell=el.tagName==='TD';
+      el.textContent=fmtAge(age)+(hostCell?' ago':'');
+      if(el.dataset.warn)el.classList.toggle('warn',age>+el.dataset.warn);
+    });
+    document.querySelectorAll('[data-rage]').forEach(el=>{
+      const age=+el.dataset.base+(now-+el.dataset.at)/1000;
+      el.textContent=fmtAge(age)+' ago';
+      if(el.dataset.warn)el.classList.toggle('warn',age>+el.dataset.warn);
+    });
+    if(pendingLive>0&&now-lastLiveNote>=5000){   // polite feed summary, at most every 5s
+      $('#livenote').textContent=pendingLive+' new event'+(pendingLive===1?'':'s');
+      pendingLive=0;lastLiveNote=now;
+    }
   };
+  tick();setInterval(tick,1000);
 }
-async function boot(){
-  if(!TOKEN)return;
-  try{const s=await api('/api/stats');renderAccounts(s.accounts);renderHosts(s.by_host);
-    await loadProviders();await loadKeys();
-    await seedFeed();}
-  catch(e){
-    if(e===401){localStorage.removeItem('aigate_token');$('#loginmsg').textContent='token rejected — check it and try again';}
-    else{$('#loginmsg').textContent="can't reach server, retrying…";setTimeout(boot,3000);}
-    return;}
-  $('#login').style.display='none';$('#hdr').style.display='flex';$('#app').style.display='grid';
-  $('#keyform').onsubmit=addKey; $('#kprov').oninput=providerHint;
-  connect();
-  setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString(),1000);
-}
-$('#tok').onkeydown=e=>e.key==='Enter'&&save();
+
+/* ---------------- static UI wiring ---------------- */
+// login
+$('#loginform').addEventListener('submit',save);
+// logout
+$('#logout').onclick=()=>{localStorage.removeItem('aigate_token');location.reload();};
+// notification bell
+$('#bell').onclick=async()=>{
+  const b=$('#bell');
+  if(!('Notification'in window)){b.title='notifications unsupported in this browser';return;}
+  if(notifyOn){notifyOn=false;}
+  else if(Notification.permission==='granted'){notifyOn=true;}
+  else if(Notification.permission==='denied'){b.title='notifications blocked — allow them in browser settings';return;}
+  else{try{notifyOn=(await Notification.requestPermission())==='granted';}catch(_){notifyOn=false;}}
+  b.setAttribute('aria-pressed',String(notifyOn));
+  b.setAttribute('aria-label',notifyOn?'disable browser notifications':'enable browser notifications');
+  b.title=notifyOn?'notifications on':'browser notifications';
+};
+// clear the runaway title flash on any interaction
+['pointerdown','keydown'].forEach(ev=>window.addEventListener(ev,()=>{if(runFlash){runFlash=false;updateTitle();}},{passive:true}));
+// inbox: dismiss + copy (session-only dismissals)
+$('#inbox').addEventListener('click',e=>{
+  const cp=e.target.closest('[data-copy]');
+  if(cp){try{navigator.clipboard&&navigator.clipboard.writeText(cp.dataset.copy);}catch(_){}
+    cp.textContent='copied';setTimeout(()=>cp.textContent='copy cmd',1200);return;}
+  const d=e.target.closest('[data-dismiss]');
+  if(d){const row=d.closest('.inbox-row');if(row)dismissed.add(row.dataset.iid);renderInbox();}
+});
+// cards: one delegated handler survives re-renders
+$('#cards').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const card=b.closest('.card');if(!card)return;
+  const a=ACCTS.find(x=>x.account===card.dataset.acct);if(!a)return;
+  if(b.dataset.act==='edit')toggleEdit(a);
+  else if(b.dataset.act==='refresh')doRefresh(card,a,b);
+  else if(b.dataset.act==='toggle')doToggle(card,a);
+  else if(b.dataset.act==='del')doDelete(card,a);
+  else if(b.hasAttribute('data-esave'))saveEdit(card,a);
+  else if(b.hasAttribute('data-ecancel')){editState=null;renderAccounts();}
+  else if(b.hasAttribute('data-rsave'))saveReauth(card,a);
+});
+$('#cards').addEventListener('input',e=>{
+  const card=e.target.closest('.card');if(!card)return;
+  const name=card.dataset.acct;
+  if(editState&&editState.account===name&&e.target.dataset.f)editState[e.target.dataset.f]=e.target.value;
+  if(e.target.closest('.reauth'))reauthDrafts.set(name,e.target.value);
+});
+$('#cards').addEventListener('focusin',e=>{
+  if(editState&&e.target.dataset.f)editState.focus=e.target.dataset.f;
+});
+// feed: pause/resume (queue silently while paused) + filter chips
+$('#pause').onclick=e=>{
+  const b=e.currentTarget;paused=!paused;
+  b.textContent=paused?'▶ resume':'⏸ pause';
+  b.classList.toggle('accent',paused);b.setAttribute('aria-pressed',String(paused));
+  if(!paused&&queue.length){const rows=queue.map(q=>rowFrom(q.d,q.kind));queue=[];addRows(rows);}
+};
+$('#fchips').addEventListener('click',e=>{
+  const c=e.target.closest('.fchip');if(!c)return;
+  if(c.hasAttribute('data-clear')){fAccounts.clear();fHosts.clear();}
+  else{const set=c.dataset.kind==='a'?fAccounts:fHosts;
+    set.has(c.dataset.v)?set.delete(c.dataset.v):set.add(c.dataset.v);}
+  buildChips();renderFeed();
+});
+// keys disclosure + table actions + add form
+$('#keys-toggle').onclick=()=>{
+  const p=$('#keys-panel'),open=p.hidden;
+  p.hidden=!open;
+  $('#keys-toggle').setAttribute('aria-expanded',String(open));
+  $('#keys-caret').textContent=open?'▾':'▸';
+  $('#keys-hint').textContent=open?'click to collapse':'click to expand';
+};
+$('#keys').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const tr=b.closest('tr');if(!tr)return;
+  const k=KEYS.find(x=>String(x.id)===tr.dataset.kid);if(!k)return;
+  if(b.hasAttribute('data-krefresh'))refreshKey(k);
+  else if(b.hasAttribute('data-kdel'))delKey(k);
+});
+$('#addform').onsubmit=addKey;
+$('#kprov').oninput=providerHint;
+
+/* ---------------- go ---------------- */
 boot();
 </script>
-</body></html>
+</body>
+</html>

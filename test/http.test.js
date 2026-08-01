@@ -714,6 +714,70 @@ test('POST /api/accounts/:name/disabled on an unknown account → 404, not a sil
     body: JSON.stringify({ disabled: 1 }) });
   assert.equal(r.status, 404);
 });
+test('PATCH /api/accounts/:name — rename keeps label + token, label-only keeps name', async () => {
+  // dedicated accounts (ren-*) so the shared alice/bob state stays untouched
+  const post = (b) => fetch(base + '/api/accounts', { method: 'POST', headers: H, body: JSON.stringify(b) });
+  const patch = (name, b) => fetch(base + `/api/accounts/${name}`, { method: 'PATCH', headers: H, body: JSON.stringify(b) });
+  const acct = async (name) => (await (await fetch(base + '/api/accounts', { headers: H })).json()).find((a) => a.account === name);
+  await post({ account: 'ren-a', setup_token: 'sk-ant-oat01-renasecret', label: 'first' });
+
+  // rename ok — the edit pill's rename path; label + vault token must SURVIVE it
+  let r = await patch('ren-a', { account: 'ren-c' });
+  assert.equal(r.status, 200);
+  let j = await r.json();
+  assert.deepEqual(j, { ok: true, account: 'ren-c', label: 'first' });
+  assert.ok(!(await acct('ren-a')), 'old name is gone from the list');
+  assert.equal((await acct('ren-c')).label, 'first');
+  assert.ok(db.prepare('SELECT token_enc FROM accounts WHERE account=?').get('ren-c').token_enc, 'token row survived the rename');
+
+  // label-only ok — name unchanged
+  r = await patch('ren-c', { label: 'second' });
+  assert.equal(r.status, 200);
+  j = await r.json();
+  assert.deepEqual(j, { ok: true, account: 'ren-c', label: 'second' });
+  assert.equal((await acct('ren-c')).label, 'second');
+
+  // audited: rename logs 'old → new' under the NEW name, relabel logs 'label update'
+  const log = db.prepare(`SELECT account,result FROM access_log WHERE action='account-rename'`).all();
+  assert.ok(log.some((x) => x.account === 'ren-c' && x.result === 'ren-a → ren-c'), 'rename audited');
+  assert.ok(log.some((x) => x.account === 'ren-c' && x.result === 'label update'), 'relabel audited');
+
+  db.prepare(`DELETE FROM accounts WHERE account IN ('ren-a','ren-c')`).run();   // cleanup
+});
+test('PATCH /api/accounts/:name — rejection matrix (404/400/409)', async () => {
+  const post = (b) => fetch(base + '/api/accounts', { method: 'POST', headers: H, body: JSON.stringify(b) });
+  const patch = (name, b) => fetch(base + `/api/accounts/${name}`, { method: 'PATCH', headers: H, body: JSON.stringify(b) });
+  await post({ account: 'ren-x', setup_token: 'sk-ant-oat01-renx', label: 'x' });
+  await post({ account: 'ren-y', setup_token: 'sk-ant-oat01-reny', label: 'y' });
+
+  // 404 unknown account
+  let r = await patch('ren-ghost', { label: 'z' });
+  assert.equal(r.status, 404);
+  assert.match((await r.json()).error, /unknown account ren-ghost/);
+
+  // 400 bad names: spaces / slash / whitespace-only (same rule as POST)
+  for (const bad of ['has space', 'a/b', '   ']) {
+    r = await patch('ren-x', { account: bad });
+    assert.equal(r.status, 400, JSON.stringify(bad));
+    assert.match((await r.json()).error, /account name cannot contain spaces or slashes/);
+  }
+
+  // 409 rename onto an existing name
+  r = await patch('ren-x', { account: 'ren-y' });
+  assert.equal(r.status, 409);
+  assert.match((await r.json()).error, /account ren-y already exists/);
+
+  // 400 empty body — neither account nor label given
+  r = await patch('ren-x', {});
+  assert.equal(r.status, 400);
+  assert.match((await r.json()).error, /nothing to update/);
+
+  // nothing above may have mutated the rows
+  const names = (await (await fetch(base + '/api/accounts', { headers: H })).json()).map((a) => a.account);
+  assert.ok(names.includes('ren-x') && names.includes('ren-y'), 'rows untouched by rejected PATCHes');
+
+  db.prepare(`DELETE FROM accounts WHERE account IN ('ren-x','ren-y')`).run();   // cleanup
+});
 test('malformed %-encoding in a path → 400, not 500 (bug B9)', async () => {
   const r = await fetch(base + '/api/keys/%C3%28', { headers: H });   // 0xC3 0x28 = invalid UTF-8, decodeURIComponent throws
   assert.equal(r.status, 400);

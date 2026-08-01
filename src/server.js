@@ -196,6 +196,11 @@ const q = {
   delAccount: db.prepare(`DELETE FROM accounts WHERE account=? RETURNING label`),
   setDisabled: db.prepare(`UPDATE accounts SET disabled=? WHERE account=?`),
   setReauth: db.prepare(`UPDATE accounts SET reauth_needed=? WHERE account=?`),
+  // rename/relabel for the dashboard edit pill: getAccount reads the row first (existence
+  // + current label) so PATCH can change name, label, or both — the label SURVIVES a
+  // rename because updateAccount writes it back in the same statement (token_enc untouched).
+  getAccount: db.prepare(`SELECT account,label FROM accounts WHERE account=?`),
+  updateAccount: db.prepare(`UPDATE accounts SET account=?, label=? WHERE account=?`),
   updUsage: db.prepare(`UPDATE accounts SET five_hour_pct=?, seven_day_pct=?, usage_updated=datetime('now') WHERE account=?`),
   // park an over-limit account for a TTL WITHOUT clobbering its real usage — pickRanked
   // skips it until parked_until passes (auto-recover); the poller keeps its % honest.
@@ -534,6 +539,27 @@ const server = http.createServer(async (req, res) => {
       logAccess(name, '', reqIp(req), 'account-delete', dead.label);
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true });
+    }
+    // rename/relabel — backs the dashboard's per-card edit pill. The label lives on the
+    // account ROW (not the name), so a rename rewrites name+label in one UPDATE: the label
+    // survives the rename and the encrypted token is never touched by it.
+    if (p.startsWith('/api/accounts/') && req.method === 'PATCH') {
+      const name = decodeURIComponent(p.split('/')[3]); const b = await body(req);
+      const row = q.getAccount.get(name);
+      if (!row) return json(res, 404, { error: 'unknown account ' + name });
+      const newName = b.account === undefined ? name : String(b.account).trim();
+      // same constraint as POST /api/accounts — '/' or whitespace in a name breaks the
+      // /api/accounts/<name>/<verb> path parsing (split('/')[3]) for every verb route.
+      if (!newName || /[/\s]/.test(newName)) return json(res, 400, { error: 'account name cannot contain spaces or slashes' });
+      if (newName !== name && q.getAccount.get(newName)) return json(res, 409, { error: 'account ' + newName + ' already exists' });
+      if (b.account === undefined && b.label === undefined) return json(res, 400, { error: 'nothing to update' });
+      const label = b.label === undefined ? row.label : String(b.label);
+      // .changes guard like the sibling mutation routes: deleted between our read and the
+      // UPDATE (TOCTOU) must 404, not return {ok:true} over a silent no-op.
+      if (q.updateAccount.run(newName, label, name).changes === 0) return json(res, 404, { error: 'unknown account ' + name });
+      logAccess(newName, '', reqIp(req), 'account-rename', name === newName ? 'label update' : name + ' → ' + newName);
+      broadcast('accounts', q.listAccounts.all());
+      return json(res, 200, { ok: true, account: newName, label });
     }
     if (p.startsWith('/api/accounts/') && p.endsWith('/disabled') && req.method === 'POST') {
       const name = decodeURIComponent(p.split('/')[3]); const b = await body(req);
