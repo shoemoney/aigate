@@ -134,6 +134,24 @@ function openDb(path = DB_PATH) {
           created_at   TEXT NOT NULL DEFAULT (datetime('now')),
           UNIQUE(provider, key_hint)
         );
+        CREATE TABLE IF NOT EXISTS board_cards (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          title       TEXT DEFAULT '',
+          cwd         TEXT DEFAULT '',                -- directory the worker runs claude in
+          model       TEXT DEFAULT '',                -- claude --model (blank = account default)
+          effort      TEXT DEFAULT 'medium',          -- low | medium | high | max
+          prompt      TEXT NOT NULL,                  -- the current/pending prompt to run
+          status      TEXT NOT NULL DEFAULT 'todo',   -- todo | running | done | error
+          turns       TEXT DEFAULT '[]',              -- JSON [{prompt,summary,ok,ts}] conversation thread
+          session_id  TEXT,                           -- Claude Code session id for --resume (context continuity)
+          worker      TEXT,
+          error       TEXT,
+          position    INTEGER DEFAULT 0,
+          created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+          claimed_at  TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_board_status ON board_cards(status, position, id);
         CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
         CREATE INDEX IF NOT EXISTS idx_req_host ON request_log(host);
         DROP INDEX IF EXISTS idx_req_acct;
@@ -268,6 +286,27 @@ const q = {
   getKeyRow: db.prepare(`SELECT id,provider,key_enc,label FROM provider_keys WHERE id=?`),
   setKeyStatus: db.prepare(`UPDATE provider_keys SET status=?, last_checked=datetime('now') WHERE id=?`),
   keyStatusCounts: db.prepare(`SELECT status, count(*) AS c FROM provider_keys GROUP BY status`),
+  // --- kanban board (cards ARE the queue; workers claim over HTTP) ---
+  listCards: db.prepare(`SELECT id,title,cwd,model,effort,prompt,status,turns,session_id,worker,error,position,created_at,updated_at,claimed_at
+    FROM board_cards ORDER BY position, id`),
+  getCard: db.prepare(`SELECT * FROM board_cards WHERE id=?`),
+  insertCard: db.prepare(`INSERT INTO board_cards(title,cwd,model,effort,prompt,status,position)
+    VALUES(?,?,?,?,?,'todo',?) RETURNING *`),
+  // atomic claim: node:sqlite is synchronous so this single UPDATE serializes concurrent
+  // worker claims — two workers can never grab the same card. RETURNING gives the row (or none).
+  claimNext: db.prepare(`UPDATE board_cards SET status='running', worker=?, claimed_at=datetime('now'), updated_at=datetime('now')
+    WHERE id=(SELECT id FROM board_cards WHERE status='todo' ORDER BY position, id LIMIT 1) RETURNING *`),
+  // finish: append this run to the turns thread, store session id, flip to done/error
+  finishCard: db.prepare(`UPDATE board_cards SET status=?, turns=?, session_id=COALESCE(?,session_id), error=?, updated_at=datetime('now')
+    WHERE id=? RETURNING *`),
+  // followup: user adds another prompt on a settled card → re-queue; session_id is kept so
+  // the worker's --resume continues the SAME Claude conversation with full context.
+  followupCard: db.prepare(`UPDATE board_cards SET prompt=?, status='todo', error=NULL, worker=NULL, claimed_at=NULL, updated_at=datetime('now')
+    WHERE id=? RETURNING *`),
+  patchCard: db.prepare(`UPDATE board_cards SET title=?, position=?, updated_at=datetime('now') WHERE id=? RETURNING *`),
+  retryCard: db.prepare(`UPDATE board_cards SET status='todo', error=NULL, worker=NULL, claimed_at=NULL, updated_at=datetime('now') WHERE id=? RETURNING *`),
+  delCard: db.prepare(`DELETE FROM board_cards WHERE id=? RETURNING id`),
+  maxCardPos: db.prepare(`SELECT COALESCE(MAX(position),0) AS m FROM board_cards`),
 };
 
 // ---- websocket hub ------------------------------------------------------
@@ -735,6 +774,81 @@ const server = http.createServer(async (req, res) => {
       ];
       res.writeHead(200, { 'content-type': 'text/plain; version=0.0.4' });
       return res.end(L.join('\n') + '\n');
+    }
+
+    // --- kanban board: cards carry a prompt; fleet workers claim over HTTP, run
+    // `ai -p` (the account-rotating wrapper, official claude binary, never relayed
+    // through here) and post the result back. SQLite is the single source of truth. ---
+    if (p === '/api/board' && req.method === 'GET')
+      return json(res, 200, q.listCards.all());
+    if (p === '/api/board' && req.method === 'POST') {
+      const b = await body(req);
+      if (b.__oversized) return json(res, 413, { error: 'body too large' });
+      const prompt = String(b.prompt || '').trim();
+      if (!prompt) return json(res, 400, { error: 'prompt required' });
+      const effort = ['low', 'medium', 'high', 'max'].includes(b.effort) ? b.effort : 'medium';
+      const card = q.insertCard.get(String(b.title || '').slice(0, 200), String(b.cwd || '').slice(0, 1000),
+        String(b.model || '').slice(0, 80), effort, prompt, q.maxCardPos.get().m + 1);
+      broadcast('board', q.listCards.all());
+      return json(res, 200, card);
+    }
+    // atomic claim of the next todo card (worker queue pop). 204 = queue empty.
+    if (p === '/api/board/claim' && req.method === 'POST') {
+      const card = q.claimNext.get(String((await body(req)).worker || reqIp(req)).slice(0, 120));
+      if (!card) { res.writeHead(204); return res.end(); }
+      logAccess('board', card.worker || '', reqIp(req), 'claim', `card ${card.id}`);
+      broadcast('board', q.listCards.all());
+      return json(res, 200, { id: card.id, prompt: card.prompt, cwd: card.cwd, model: card.model, effort: card.effort, session_id: card.session_id });
+    }
+    // worker returns Claude's output → append the turn, store session id (--resume continuity), flip done/error
+    if (p.startsWith('/api/board/') && p.endsWith('/result') && req.method === 'POST') {
+      const id = Number(p.split('/')[3]);
+      const cur = q.getCard.get(id);
+      if (!cur) return json(res, 404, { error: 'unknown card ' + id });
+      const b = await body(req);
+      if (b.__oversized) return json(res, 413, { error: 'body too large' });
+      const ok = b.ok !== false && !b.error;
+      let turns; try { turns = JSON.parse(cur.turns || '[]'); } catch { turns = []; }
+      turns.push({ prompt: cur.prompt, summary: b.result != null ? String(b.result) : '', ok, ts: new Date().toISOString() });
+      const card = q.finishCard.get(ok ? 'done' : 'error', JSON.stringify(turns),
+        b.session_id ? String(b.session_id).slice(0, 200) : null, b.error ? String(b.error).slice(0, 2000) : null, id);
+      logAccess('board', card.worker || '', reqIp(req), 'result', `card ${id} ${card.status}`);
+      broadcast('board', q.listCards.all());
+      return json(res, 200, card);
+    }
+    // inline follow-up: add another prompt to a settled card → re-queue (kept session_id → --resume)
+    if (p.startsWith('/api/board/') && p.endsWith('/followup') && req.method === 'POST') {
+      const b = await body(req);
+      if (b.__oversized) return json(res, 413, { error: 'body too large' });
+      const prompt = String(b.prompt || '').trim();
+      if (!prompt) return json(res, 400, { error: 'prompt required' });
+      const card = q.followupCard.get(prompt, Number(p.split('/')[3]));
+      if (!card) return json(res, 404, { error: 'unknown card' });
+      broadcast('board', q.listCards.all());
+      return json(res, 200, card);
+    }
+    if (p.startsWith('/api/board/') && p.endsWith('/retry') && req.method === 'POST') {
+      const card = q.retryCard.get(Number(p.split('/')[3]));
+      if (!card) return json(res, 404, { error: 'unknown card' });
+      broadcast('board', q.listCards.all());
+      return json(res, 200, card);
+    }
+    // rename / reorder only — the prompt itself is immutable once submitted (locked until Claude replies)
+    if (p.startsWith('/api/board/') && req.method === 'PATCH') {
+      const cur = q.getCard.get(Number(p.split('/')[3]));
+      if (!cur) return json(res, 404, { error: 'unknown card' });
+      const b = await body(req);
+      if (b.__oversized) return json(res, 413, { error: 'body too large' });
+      const card = q.patchCard.get(b.title !== undefined ? String(b.title).slice(0, 200) : cur.title,
+        b.position !== undefined ? Number(b.position) || 0 : cur.position, cur.id);
+      broadcast('board', q.listCards.all());
+      return json(res, 200, card);
+    }
+    if (p.startsWith('/api/board/') && req.method === 'DELETE') {
+      const dead = q.delCard.get(Number(p.split('/').pop()));
+      if (!dead) return json(res, 404, { error: 'unknown card' });
+      broadcast('board', q.listCards.all());
+      return json(res, 200, { ok: true });
     }
 
     return json(res, 404, { error: 'not found' });

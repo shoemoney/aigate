@@ -985,3 +985,98 @@ test('POST /api/keys/import vaults many keys, reporting per-row ok/error (F11)',
   const keys = await (await fetch(base + '/api/keys', { headers: H })).json();
   assert.ok(keys.some((k) => /1111/.test(k.key_hint)) && keys.some((k) => /2222/.test(k.key_hint)));
 });
+
+// ---- kanban board ----------------------------------------------------------
+const P = (path, method, body) => fetch(base + path, { method, headers: H, body: body === undefined ? undefined : JSON.stringify(body) });
+
+test('board routes require auth (401 without bearer)', async () => {
+  assert.equal((await fetch(base + '/api/board')).status, 401);
+  assert.equal((await fetch(base + '/api/board/claim', { method: 'POST' })).status, 401);
+});
+
+test('board: create → list shows a todo card with cwd/model/effort', async () => {
+  const r = await P('/api/board', 'POST', { title: 'demo', cwd: '/tmp/x', prompt: 'do the thing', model: 'claude-sonnet-5', effort: 'high' });
+  assert.equal(r.status, 200);
+  const card = await r.json();
+  assert.equal(card.status, 'todo');
+  assert.equal(card.model, 'claude-sonnet-5');
+  assert.equal(card.effort, 'high');
+  const list = await (await P('/api/board', 'GET')).json();
+  assert.ok(list.some((c) => c.id === card.id && c.prompt === 'do the thing'));
+});
+
+test('board: create rejects empty prompt (400) and invalid effort defaults to medium', async () => {
+  assert.equal((await P('/api/board', 'POST', { prompt: '   ' })).status, 400);
+  const card = await (await P('/api/board', 'POST', { prompt: 'x', effort: 'bogus' })).json();
+  assert.equal(card.effort, 'medium');
+});
+
+test('board: atomic claim hands a card out exactly once', async () => {
+  // fresh isolated DB may already hold cards from earlier tests — drain to a known floor,
+  // then add one card and prove two concurrent claims can't both get it.
+  while ((await (await P('/api/board/claim', 'POST', {})).status) === 200) { /* drain */ }
+  const card = await (await P('/api/board', 'POST', { prompt: 'claim-me', cwd: '/tmp', model: 'claude-opus-5', effort: 'low' })).json();
+  const [a, b] = await Promise.all([P('/api/board/claim', 'POST', { worker: 'w1' }), P('/api/board/claim', 'POST', { worker: 'w2' })]);
+  const codes = [a.status, b.status].sort();
+  assert.deepEqual(codes, [200, 204]);                       // one gets it, one gets nothing
+  const won = await (a.status === 200 ? a : b).json();
+  assert.equal(won.id, card.id);
+  assert.equal(won.cwd, '/tmp');
+  assert.equal(won.model, 'claude-opus-5');
+  // claimed card is now 'running'
+  const list = await (await P('/api/board', 'GET')).json();
+  assert.equal(list.find((c) => c.id === card.id).status, 'running');
+});
+
+test('board: result appends a turn, stores session id, flips to done', async () => {
+  const card = await (await P('/api/board', 'POST', { prompt: 'summarize' })).json();
+  await P('/api/board/claim', 'POST', {});                    // (may claim an earlier card; claim this one specifically below is unnecessary — result targets by id)
+  const r = await P(`/api/board/${card.id}/result`, 'POST', { ok: true, result: 'Done:\n- did X', session_id: 'sess-abc' });
+  assert.equal(r.status, 200);
+  const done = await r.json();
+  assert.equal(done.status, 'done');
+  assert.equal(done.session_id, 'sess-abc');
+  const turns = JSON.parse(done.turns);
+  assert.equal(turns.length, 1);
+  assert.match(turns[0].summary, /did X/);
+  assert.equal(turns[0].prompt, 'summarize');
+});
+
+test('board: followup re-queues a settled card keeping its session id', async () => {
+  const card = await (await P('/api/board', 'POST', { prompt: 'first' })).json();
+  await P(`/api/board/${card.id}/result`, 'POST', { ok: true, result: 'r1', session_id: 'keep-me' });
+  const r = await P(`/api/board/${card.id}/followup`, 'POST', { prompt: 'second' });
+  assert.equal(r.status, 200);
+  const c2 = await r.json();
+  assert.equal(c2.status, 'todo');
+  assert.equal(c2.prompt, 'second');
+  assert.equal(c2.session_id, 'keep-me');                    // session survives → --resume continues context
+});
+
+test('board: result with ok:false → error status carries the message', async () => {
+  const card = await (await P('/api/board', 'POST', { prompt: 'boom' })).json();
+  const c = await (await P(`/api/board/${card.id}/result`, 'POST', { ok: false, error: 'directory not found' })).json();
+  assert.equal(c.status, 'error');
+  assert.match(c.error, /directory not found/);
+  // retry resets it to todo
+  const back = await (await P(`/api/board/${card.id}/retry`, 'POST')).json();
+  assert.equal(back.status, 'todo');
+  assert.equal(back.error, null);
+});
+
+test('board: delete removes the card; unknown ids 404', async () => {
+  const card = await (await P('/api/board', 'POST', { prompt: 'gone' })).json();
+  assert.equal((await P(`/api/board/${card.id}`, 'DELETE')).status, 200);
+  assert.equal((await P(`/api/board/${card.id}`, 'DELETE')).status, 404);
+  assert.equal((await P('/api/board/99999/result', 'POST', { ok: true })).status, 404);
+});
+
+test('board: WS pushes a board event on mutation', async () => {
+  const ws = new WebSocket(base.replace('http', 'ws') + '/ws', ['aigate', 'bearer.' + TOKEN]);
+  await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej); });
+  const got = new Promise((res) => ws.on('message', (d) => { const m = JSON.parse(d); if (m.type === 'board') res(m.data); }));
+  await P('/api/board', 'POST', { prompt: 'ws-ping' });
+  const data = await got;
+  assert.ok(Array.isArray(data) && data.some((c) => c.prompt === 'ws-ping'));
+  ws.close();
+});
