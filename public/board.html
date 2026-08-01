@@ -124,6 +124,9 @@
   /* done completion moment: green ripple ring + checkmark bloom */
   .ripple{position:absolute;inset:0;border-radius:14px;pointer-events:none;z-index:4;box-shadow:0 0 0 0 rgba(34,201,138,.75);animation:ripple 1s ease-out}
   .bloom{position:absolute;top:50%;left:50%;pointer-events:none;z-index:5;color:var(--done);font-weight:900;font-size:34px;text-shadow:0 0 18px rgba(34,201,138,.85);animation:bloom 1.05s var(--spring)}
+  /* next-up: the rank-1 Todo card is what a worker claims next — a quiet anticipation halo */
+  .nexthalo{position:absolute;inset:0;border-radius:14px;pointer-events:none;z-index:1;
+    box-shadow:0 0 0 1px rgba(107,124,255,.5),0 0 20px -2px rgba(107,124,255,.5);animation:nextpulse 2.6s ease-in-out infinite}
 
   .thread{margin-top:10px;border-top:1px dashed var(--line);padding-top:9px;display:flex;flex-direction:column;gap:9px}
   .turn .tp{font-size:11.5px;color:var(--cyan);font-weight:600;margin-bottom:2px}
@@ -179,6 +182,7 @@
   @keyframes sheenmove{from{background-position:130% 0}to{background-position:-130% 0}}
   @keyframes ripple{to{box-shadow:0 0 0 22px rgba(34,201,138,0)}}
   @keyframes bloom{0%{transform:translate(-50%,-50%) scale(0);opacity:0}30%{opacity:1}55%{transform:translate(-50%,-50%) scale(1.18)}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}
+  @keyframes nextpulse{0%,100%{opacity:.45}50%{opacity:1}}
 
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
@@ -216,6 +220,7 @@
              @click="expand(c)" @keydown.enter.prevent="expand(c)" @keydown.space.prevent="expand(c)"
              @keydown.alt.up.prevent="col.key==='todo'&&moveCard(c,-1)" @keydown.alt.down.prevent="col.key==='todo'&&moveCard(c,1)">
           <span v-if="flashing[c.id]" class="sheen" aria-hidden="true"></span>
+          <span v-if="col.key==='todo'&&idx===0&&dragId==null&&!filter" class="nexthalo" aria-hidden="true" title="next to be claimed"></span>
           <template v-if="celebrating[c.id]"><span class="ripple" aria-hidden="true"></span><span class="bloom" aria-hidden="true">✓</span></template>
           <div class="head">
             <span v-if="col.key==='todo'" class="grip" title="drag to reprioritize" aria-hidden="true">⋮⋮</span>
