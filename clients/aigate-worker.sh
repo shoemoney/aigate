@@ -12,6 +12,9 @@ set -uo pipefail
 : "${AIGATE_URL:?not set — run: set -a; . ~/.claude/aigate/env; set +a}"
 : "${AIGATE_TOKEN:?not set — run: set -a; . ~/.claude/aigate/env; set +a}"
 AI_CMD="${AIGATE_AI_CMD:-ai}"
+# extra args passed BEFORE -p (e.g. the `ai` wrapper defaults to --chrome, which hangs a
+# headless worker — set AIGATE_AI_PREARGS=--no-chrome). Word-split on spaces.
+PRE=(); [ -n "${AIGATE_AI_PREARGS:-}" ] && read -ra PRE <<< "$AIGATE_AI_PREARGS"
 IDLE="${AIGATE_WORKER_IDLE:-3}"
 WORKER="$(hostname -s)/$$"
 AUTH=(-H "Authorization: Bearer $AIGATE_TOKEN")
@@ -19,6 +22,15 @@ AUTH=(-H "Authorization: Bearer $AIGATE_TOKEN")
 # top-level JSON field → stdout (empty on any error); same convention as hydrate.sh
 jget(){ python3 -c 'import sys,json
 try: print(json.load(sys.stdin).get("'"$1"'","") or "")
+except Exception: print("")' 2>/dev/null; }
+
+# claude `-p --output-format json` returns EITHER a single result object OR an ARRAY of
+# events whose LAST element carries result/session_id (varies by claude version) — handle both.
+aiget(){ python3 -c 'import sys,json
+try:
+    d=json.load(sys.stdin)
+    if isinstance(d,list): d=(d[-1] if d else {})
+    print(d.get("'"$1"'","") or "")
 except Exception: print("")' 2>/dev/null; }
 
 # post {ok,result,session_id,error} for a card; body built with json.dumps so a
@@ -58,10 +70,10 @@ while :; do
   resume=();  [ -n "$sid" ]   && resume=(--resume "$sid")
   modelarg=(); [ -n "$model" ] && modelarg=(--model "$model")
   full_prompt="$prompt"$'\n\n'"[effort: ${effort:-medium}] $SUMMARY_RULE"
-  out="$( cd "${cwd:-$PWD}" && "$AI_CMD" -p --output-format json "${resume[@]}" "${modelarg[@]}" "$full_prompt" 2>/dev/null )"; rc=$?
+  out="$( cd "${cwd:-$PWD}" && "$AI_CMD" "${PRE[@]}" -p --output-format json "${resume[@]}" "${modelarg[@]}" "$full_prompt" 2>/dev/null )"; rc=$?
   if [ "$rc" -eq 0 ] && [ -n "$out" ]; then
-    # claude --output-format json envelope: {result, session_id, ...}
-    post_result "$id" true "$(printf '%s' "$out" | jget result)" "$(printf '%s' "$out" | jget session_id)" ""
+    # claude --output-format json envelope: {result, session_id, ...} (or an array whose last elem has them)
+    post_result "$id" true "$(printf '%s' "$out" | aiget result)" "$(printf '%s' "$out" | aiget session_id)" ""
   else
     post_result "$id" false "" "" "ai run failed (rc=$rc): $(printf '%.500s' "$out")"
   fi
