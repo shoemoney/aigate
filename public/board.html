@@ -25,6 +25,8 @@
   header .dot{width:10px;height:10px;border-radius:50%;background:var(--done);box-shadow:0 0 12px var(--done);animation:pulse 2.4s infinite}
   header .dot.off{background:var(--err);box-shadow:0 0 12px var(--err)}
   header .spacer{flex:1}
+  header .filter{background:var(--bg2);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:7px 11px;font:inherit;font-size:13px;width:min(320px,32vw);margin-left:6px}
+  header .filter:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(107,124,255,.15)}
   .btn{border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:8px 14px;border-radius:10px;
     font-weight:600;cursor:pointer;transition:.16s transform,.16s box-shadow,.16s border-color;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
   .btn:hover{transform:translateY(-1px);border-color:var(--accent);box-shadow:0 6px 18px rgba(107,124,255,.25)}
@@ -44,6 +46,8 @@
   .col h2 .pip{width:9px;height:9px;border-radius:50%}
   .col h2 .glyph{font:700 10px/1 var(--mono);color:var(--bg);width:14px;height:14px;border-radius:4px;display:grid;place-items:center}
   .col .count{margin-left:auto;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:1px 9px;font-size:11px;color:var(--dim)}
+  .col .list{max-height:calc(100vh - 200px);overflow-y:auto;overflow-x:hidden;position:relative;scrollbar-width:thin}
+  .col .list::-webkit-scrollbar{width:7px}.col .list::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
   .col.todo    h2 .pip{background:var(--todo)} .col.todo    h2 .glyph{background:var(--todo)}
   .col.running h2 .pip{background:var(--run)}  .col.running h2 .glyph{background:var(--run)}
   .col.done    h2 .pip{background:var(--done)} .col.done    h2 .glyph{background:var(--done)}
@@ -80,7 +84,10 @@
   .card.error{border-color:#5a2730}
   .card .spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(245,165,36,.35);border-top-color:var(--run);border-radius:50%;animation:spin .7s linear infinite;flex:none}
 
-  .summary{margin-top:10px;border-top:1px dashed var(--line);padding-top:9px;font-size:12.5px;color:var(--ink);white-space:pre-wrap}
+  .thread{margin-top:10px;border-top:1px dashed var(--line);padding-top:9px;display:flex;flex-direction:column;gap:9px}
+  .turn .tp{font-size:11.5px;color:var(--accent);font-weight:600;margin-bottom:2px}
+  .turn .tp::before{content:"› "}
+  .summary{font-size:12.5px;color:var(--ink);white-space:pre-wrap}
   .errbox{margin-top:9px;color:var(--err);font-size:12px;white-space:pre-wrap;font-family:var(--mono)}
   .followrow{margin-top:10px;display:flex;gap:7px}
   .followrow input{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:7px 9px;font:inherit;font-size:12.5px}
@@ -135,8 +142,9 @@
 <div id="app" v-cloak>
   <header>
     <div class="brand"><span class="dot" :class="{off:!live}"></span> aigate <span style="color:var(--dim);font-weight:600">board</span></div>
+    <input class="filter" ref="filter" v-model="filter" placeholder="filter by id, title, dir, prompt… ( / )" aria-label="filter cards" @keydown.escape="filter=''">
     <div class="spacer"></div>
-    <span class="kbd" title="keyboard: n new · Esc close · Cmd/Ctrl+Enter submit">n</span>
+    <span class="kbd" title="keyboard: n new · / filter · Esc close · Cmd/Ctrl+Enter submit">n</span>
     <a class="btn ghost sm" href="/">← dashboard</a>
     <button class="btn primary" @click="openNew">+ New task</button>
   </header>
@@ -144,7 +152,7 @@
   <div class="board">
     <div v-for="col in columns" :key="col.key" class="col" :class="col.key">
       <h2><span class="glyph">{{col.glyph}}</span>{{col.label}}<span class="count">{{cards(col.key).length}}</span></h2>
-      <transition-group name="flip" tag="div" style="position:relative">
+      <transition-group name="flip" tag="div" class="list">
         <div v-for="c in cards(col.key)" :key="c.id" class="card" :class="[c.status,{open:opened===c.id}]"
              tabindex="0" role="button" :aria-expanded="opened===c.id"
              @click="expand(c)" @keydown.enter.prevent="expand(c)" @keydown.space.prevent="expand(c)">
@@ -165,18 +173,24 @@
 
           <transition name="exp">
             <div v-if="opened===c.id" @click.stop>
-              <div v-if="lastSummary(c)" class="summary">{{lastSummary(c)}}</div>
+              <div v-if="c.turns&&c.turns.length" class="thread">
+                <div v-for="(t,i) in c.turns" :key="i" class="turn">
+                  <div v-if="c.turns.length>1" class="tp">{{t.prompt}}</div>
+                  <div class="summary" :style="t.ok===false?'color:var(--err)':''">{{t.summary||'(no output)'}}</div>
+                </div>
+              </div>
               <div v-if="c.status==='error'&&c.error" class="errbox">⚠ {{c.error}}</div>
               <div v-if="c.status!=='running'&&c.status!=='todo'" class="followrow">
-                <input v-model="followText[c.id]" placeholder="Add a follow-up prompt (keeps context)…"
+                <input v-model="followText[c.id]" :disabled="!!sending[c.id]" placeholder="Add a follow-up prompt (keeps context)…"
                        @keydown.enter="followup(c)" @keydown.escape="opened=null">
-                <button class="btn sm primary" @click="followup(c)">Send</button>
+                <button class="btn sm primary" @click="followup(c)" :disabled="!!sending[c.id]">{{sending[c.id]?'Sending…':'Send'}}</button>
               </div>
               <div class="cardacts">
                 <button v-if="c.status==='error'" class="btn sm" @click="retry(c)">↻ Retry</button>
+                <button v-if="c.status!=='running'&&c.status!=='todo'" class="btn sm icon" @click="clone(c)" title="clone as new task">⎘ Clone</button>
                 <button v-if="c.prompt" class="btn sm icon" @click="copy(c.prompt,'prompt')" title="copy prompt">⧉ prompt</button>
                 <button v-if="lastSummary(c)" class="btn sm icon" @click="copy(lastSummary(c),'summary')" title="copy summary">⧉ summary</button>
-                <button class="btn sm danger" @click="del(c)">🗑 Close</button>
+                <button class="btn sm danger" @click="del(c)">{{confirmDel===c.id?'Confirm close?':'🗑 Close'}}</button>
                 <span v-if="c.turns&&c.turns.length" class="turns">{{c.turns.length}} turn{{c.turns.length>1?'s':''}}</span>
               </div>
             </div>
@@ -249,8 +263,8 @@ async function api(path,opts={}){
 const { createApp } = Vue;
 createApp({
   data(){return{
-    all:[], live:false, showNew:false, busy:false, formMsg:'', announce:'',
-    opened:null, followText:{}, now:Date.now(),
+    all:[], live:false, showNew:false, busy:false, formMsg:'', announce:'', filter:'',
+    opened:null, followText:{}, sending:{}, confirmDel:null, now:Date.now(),
     form:{title:'',cwd:'',prompt:'',model:'',effort:'medium'},
     columns:[
       {key:'todo',label:'Todo',glyph:'○',empty:'No queued tasks — press n to add one.'},
@@ -260,7 +274,12 @@ createApp({
     ],
   }},
   methods:{
-    cards(status){return this.all.filter(c=>c.status===status)},
+    cards(status){
+      const f=this.filter.trim().toLowerCase();
+      let list=this.all.filter(c=>c.status===status);
+      if(f)list=list.filter(c=>('#'+c.id+' '+(c.title||'')+' '+(c.cwd||'')+' '+(c.prompt||'')).toLowerCase().includes(f));
+      return list;
+    },
     base(p){return (p||'').replace(/\/+$/,'').split('/').pop()||p},
     untitled(c){return (c.prompt||'').slice(0,40)+((c.prompt||'').length>40?'…':'')},
     statusLabel(s){return {todo:'queued',running:'running',done:'done',error:'error'}[s]||s},
@@ -268,7 +287,8 @@ createApp({
     lastSummary(c){const t=this.parseTurns(c);return t.length?t[t.length-1].summary:''},
     tms(s){return s?Date.parse(s.replace(' ','T')+'Z'):0},
     fmtDur(ms){if(ms<0)ms=0;const s=Math.floor(ms/1000);if(s<60)return s+'s';const m=Math.floor(s/60);if(m<60)return m+'m '+String(s%60).padStart(2,'0')+'s';const h=Math.floor(m/60);return h+'h '+String(m%60).padStart(2,'0')+'m'},
-    timer(c){                                                 // running → live elapsed; settled → total duration
+    timer(c){                                                 // todo → queued age; running → live elapsed; settled → total duration
+      if(c.status==='todo'&&c.created_at)return this.fmtDur(this.now-this.tms(c.created_at));
       if(c.status==='running'&&c.claimed_at)return this.fmtDur(this.now-this.tms(c.claimed_at));
       if((c.status==='done'||c.status==='error')&&c.claimed_at){
         const t=this.parseTurns(c);const end=t.length?Date.parse(t[t.length-1].ts):this.tms(c.updated_at);
@@ -297,16 +317,28 @@ createApp({
       this.busy=false;
     },
     async followup(c){
-      const txt=(this.followText[c.id]||'').trim(); if(!txt)return;
-      this.followText[c.id]='';
-      await api('/api/board/'+c.id+'/followup',{method:'POST',body:JSON.stringify({prompt:txt})}).catch(()=>{});
+      const txt=(this.followText[c.id]||'').trim(); if(!txt||this.sending[c.id])return;
+      this.sending[c.id]=true;
+      try{ await api('/api/board/'+c.id+'/followup',{method:'POST',body:JSON.stringify({prompt:txt})}); this.followText[c.id]=''; }
+      catch(e){} finally{ this.sending[c.id]=false; }
     },
     async retry(c){ await api('/api/board/'+c.id+'/retry',{method:'POST'}).catch(()=>{}); },
-    async del(c){ await api('/api/board/'+c.id,{method:'DELETE'}).catch(()=>{}); if(this.opened===c.id)this.opened=null; },
+    del(c){                                                   // two-step: first click arms, second confirms (3s window)
+      if(this.confirmDel!==c.id){ this.confirmDel=c.id; setTimeout(()=>{ if(this.confirmDel===c.id)this.confirmDel=null; },3000); return; }
+      this.confirmDel=null;
+      api('/api/board/'+c.id,{method:'DELETE'}).catch(()=>{}); if(this.opened===c.id)this.opened=null;
+    },
+    clone(c){                                                 // prefill the new-task modal with this card's settings
+      this.form={title:c.title||'',cwd:c.cwd||'',prompt:c.prompt||'',model:c.model||'',effort:c.effort||'medium'};
+      this.showNew=true; this.formMsg='';
+      this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus());
+    },
     onKey(e){
       const typing=/^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName||''));
       if(e.key==='Escape'){ if(this.showNew)this.showNew=false; else if(this.opened!=null)this.opened=null; return; }
-      if(!typing && (e.key==='n'||e.key==='N') && !this.showNew){ e.preventDefault(); this.openNew(); }
+      if(typing)return;
+      if((e.key==='n'||e.key==='N') && !this.showNew){ e.preventDefault(); this.openNew(); }
+      else if(e.key==='/'){ e.preventDefault(); this.$refs.filter&&this.$refs.filter.focus(); }
     },
     connect(){
       const ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',
