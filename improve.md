@@ -161,3 +161,12 @@
 ## Stop condition
 
 stop_votes=0 / n_parsed=5. Loop ends when stop_votes >= 3 OR agree queue is empty of shippable UI work.
+
+## Loop complete
+- Rounds run: 3 (jury of 5 models each: claude-opus-5, gpt-5.6-luna, gemini-3.6-flash, grok-4.20, deepseek-v4-flash)
+- Shipped: R1 ~12 items (mono/timers/status-pills/reduced-motion/keyboard/chevron/copy/a11y),
+  R2 7 items (thread history/filter/queued-age/clone/column-scroll/delete-confirm/follow-up-pending)
+- Stopped: R3 = nits only + 1 stop vote → agree queue held no shippable design work
+- Outstanding (features, NOT design — for a future feature pass): cancel/abort a running task,
+  drag-reorder Todo, live terminal-tail preview
+- Verification: 130/130 tests pass each round; board rendered in real browser with 0 console errors
