@@ -109,6 +109,8 @@ section:first-child{border-top:0}
 .ticklabels{position:relative;height:14px;margin-top:4px;font-family:var(--mono);font-size:9.5px;color:var(--dim)}
 .ticklabels span{position:absolute;transform:translateX(-50%)}
 .ticklabels .l95{color:var(--accent)}
+.greset{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;color:var(--dim);margin-top:3px}
+.greset [data-until]{color:var(--fg)}
 .burn{font-family:var(--mono);font-size:13px;min-height:19px}
 .reauth{background:var(--inset);border:1px solid rgba(224,93,68,.35);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:8px}
 .reauth label{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--crit)}
@@ -307,6 +309,12 @@ const fmtAge=s=>s<60?Math.max(0,Math.round(s))+'s':s<3600?Math.floor(s/60)+'m':s
 const toDate=s=>new Date(/[TZ]/.test(String(s))?s:String(s).replace(' ','T')+'Z');
 const fmtNum=n=>{n=Number(n)||0;return n>=1e6?(n/1e6).toFixed(2)+'M':n.toLocaleString('en-US')};
 const hhmm=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+// countdown "in 2h 14m" / "in 5d 3h" from a millisecond delta; weekday+time from a Date
+const fmtUntil=ms=>{if(ms<=0)return'now';const s=Math.round(ms/1000);
+  if(s<3600)return'in '+Math.max(1,Math.round(s/60))+'m';
+  if(s<86400){const h=Math.floor(s/3600),m=Math.round(s%3600/60);return'in '+h+'h'+(m?' '+m+'m':'');}
+  const d=Math.floor(s/86400),h=Math.round(s%86400/3600);return'in '+d+'d'+(h?' '+h+'h':'');};
+const wkhhmm=d=>d.toLocaleDateString([],{weekday:'short'})+' '+hhmm(d);
 // selection cutoff is env-configurable SERVER-side (AIGATE_CUTOFF); the dashboard hardcodes the shipped default 95.
 const CUTOFF=95;
 const STALE_S=1500;            // >25min without a usage poll → stale
@@ -388,7 +396,7 @@ function setLive(on){
 }
 function connect(){
   if(ws&&(ws.readyState===0||ws.readyState===1))return;   // already CONNECTING/OPEN — don't spawn a duplicate socket (double onmessage, reconnect storm)
-  ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',['aigate','bearer.'+TOKEN]);
+  ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',TOKEN?['aigate','bearer.'+TOKEN]:['aigate']);
   ws.onopen=async()=>{setLive(true);
     try{const s=await api('/api/stats');ingestStats(s);
       renderKeys(await api('/api/keys'));
@@ -498,8 +506,11 @@ function chipOf(a){
   if(w>=80)return{t:'RUNAWAY',c:'warn'};
   return{t:'READY',c:'ok'};
 }
-const gauge=(label,v)=>{
+const gauge=(label,v,reset)=>{
   v=Math.round(v||0);
+  let rline='';
+  if(reset){const t=reset*1000,d=new Date(t);
+    rline='<div class="greset">resets '+esc(wkhhmm(d))+' · <span data-until="'+t+'">'+esc(fmtUntil(t-Date.now()))+'</span></div>';}
   return '<div>'+
    '<div class="g-top"><span>'+label+'</span><b class="num '+hcls(v)+'">'+v+'%</b></div>'+
    '<div class="track" role="img" aria-label="'+label+' '+v+' percent">'+
@@ -507,6 +518,7 @@ const gauge=(label,v)=>{
     '<i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%" title="selection cutoff"></i>'+
    '</div>'+
    '<div class="ticklabels"><span style="left:50%">50</span><span style="left:80%">80</span><span class="l95" style="left:95%">95</span></div>'+
+   rline+
   '</div>';
 };
 function sparkHtml(name,stale){
@@ -570,7 +582,7 @@ function renderAccounts(){
        '<span class="hero-label">worst window</span></div>'+
       sparkHtml(a.account,stale)+
      '</div>'+
-     '<div class="gauges">'+gauge('5-hour',a.five_hour_pct)+gauge('weekly',a.seven_day_pct)+'</div>'+
+     '<div class="gauges">'+gauge('5-hour',a.five_hour_pct,a.five_hour_reset)+gauge('weekly',a.seven_day_pct,a.seven_day_reset)+'</div>'+
      '<p class="burn '+burnCls+'">'+burnTxt+'</p>'+
      (a.reauth_needed?
        '<div class="reauth">'+
@@ -836,6 +848,7 @@ function startClock(){
       el.textContent=fmtAge(age)+' ago';
       if(el.dataset.warn)el.classList.toggle('warn',age>+el.dataset.warn);
     });
+    document.querySelectorAll('[data-until]').forEach(el=>{el.textContent=fmtUntil(+el.dataset.until-now);});
     if(pendingLive>0&&now-lastLiveNote>=5000){   // polite feed summary, at most every 5s
       $('#livenote').textContent=pendingLive+' new event'+(pendingLive===1?'':'s');
       pendingLive=0;lastLiveNote=now;

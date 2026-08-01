@@ -468,6 +468,17 @@ test('WS auth via bearer.<token> subprotocol — no token in the URL', async () 
   assert.equal(m.type, 'accounts');
 });
 
+test('WS auth via session cookie — the master-password browser has no in-page token', async () => {
+  const lr = await fetch(base + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: DASH_PW }) });
+  const cookie = lr.headers.get('set-cookie').split(';')[0];
+  const m = await new Promise((resolve, reject) => {
+    const ws = new WebSocket(base.replace('http', 'ws') + '/ws', ['aigate'], { headers: { cookie } });
+    ws.on('message', (d) => { ws.close(); resolve(JSON.parse(d)); });
+    ws.on('error', reject);
+  });
+  assert.equal(m.type, 'accounts');
+});
+
 test('WS with no auth is destroyed before any message', async () => {
   await new Promise((resolve, reject) => {
     const ws = new WebSocket(base.replace('http', 'ws') + '/ws');
@@ -810,6 +821,15 @@ test('PATCH /api/accounts/:name — rejection matrix (404/400/409)', async () =>
   assert.ok(names.includes('ren-x') && names.includes('ren-y'), 'rows untouched by rejected PATCHes');
 
   db.prepare(`DELETE FROM accounts WHERE account IN ('ren-x','ren-y')`).run();   // cleanup
+});
+test('GET /api/accounts surfaces the 5h/7d reset epochs (dashboard reset-time)', async () => {
+  await fetch(base + '/api/accounts', { method: 'POST', headers: H, body: JSON.stringify({ account: 'rst-a', setup_token: 'sk-ant-oat01-rst', label: '' }) });
+  // the poller's updResets write, simulated directly (unix epoch seconds)
+  db.prepare('UPDATE accounts SET five_hour_reset=?, seven_day_reset=? WHERE account=?').run(1785613200, 1785675600, 'rst-a');
+  const a = (await (await fetch(base + '/api/accounts', { headers: H })).json()).find((x) => x.account === 'rst-a');
+  assert.equal(a.five_hour_reset, 1785613200);
+  assert.equal(a.seven_day_reset, 1785675600);
+  db.prepare(`DELETE FROM accounts WHERE account='rst-a'`).run();   // cleanup
 });
 test('malformed %-encoding in a path → 400, not 500 (bug B9)', async () => {
   const r = await fetch(base + '/api/keys/%C3%28', { headers: H });   // 0xC3 0x28 = invalid UTF-8, decodeURIComponent throws

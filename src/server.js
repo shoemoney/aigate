@@ -187,6 +187,12 @@ if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === 'rea
 // migration: park an over-limit account by TTL instead of clobbering its usage
 if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === 'parked_until'))
   db.exec(`ALTER TABLE accounts ADD COLUMN parked_until TEXT`);
+// migration: the 5h/7d rate-limit window RESET times (unix epoch seconds) straight from
+// Anthropic's ratelimit-unified-{5h,7d}-reset headers, so the dashboard can show when
+// each window rolls over. Nullable — unpolled accounts / older responses simply have none.
+for (const col of ['five_hour_reset', 'seven_day_reset'])
+  if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === col))
+    db.exec(`ALTER TABLE accounts ADD COLUMN ${col} INTEGER`);
 
 // prepared once
 const q = {
@@ -197,7 +203,7 @@ const q = {
     ON CONFLICT(account) DO UPDATE SET token_enc=excluded.token_enc, label=excluded.label, reauth_needed=0`),
   // parked computed in the SAME clock domain as pickRanked — clients get a plain 0/1
   // instead of parsing a bare sqlite UTC string (no Z) in the right timezone.
-  listAccounts: db.prepare(`SELECT account,label,five_hour_pct,seven_day_pct,usage_updated,disabled,reauth_needed,parked_until,
+  listAccounts: db.prepare(`SELECT account,label,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset,usage_updated,disabled,reauth_needed,parked_until,
     (parked_until IS NOT NULL AND parked_until > datetime('now')) AS parked,
     CAST(strftime('%s','now') - strftime('%s', usage_updated) AS INTEGER) AS usage_age_s,
     (token_enc IS NOT NULL) AS has_token FROM accounts ORDER BY account`),
@@ -211,6 +217,9 @@ const q = {
   getAccount: db.prepare(`SELECT account,label FROM accounts WHERE account=?`),
   updateAccount: db.prepare(`UPDATE accounts SET account=?, label=? WHERE account=?`),
   updUsage: db.prepare(`UPDATE accounts SET five_hour_pct=?, seven_day_pct=?, usage_updated=datetime('now') WHERE account=?`),
+  // window reset epochs — only the poller has these (the fleet's usage hook doesn't), so
+  // it's a separate write; COALESCE keeps the last-known reset when a header is missing.
+  updResets: db.prepare(`UPDATE accounts SET five_hour_reset=COALESCE(?,five_hour_reset), seven_day_reset=COALESCE(?,seven_day_reset) WHERE account=?`),
   // park an over-limit account for a TTL WITHOUT clobbering its real usage — pickRanked
   // skips it until parked_until passes (auto-recover); the poller keeps its % honest.
   parkAccount: db.prepare(`UPDATE accounts SET parked_until=datetime('now', ?) WHERE account=?`),
@@ -745,8 +754,11 @@ server.on('upgrade', (req, socket, head) => {
   // same '//' trap as the request handler, but this listener is SYNC — an unguarded
   // throw here is uncaughtException → shutdown(1) → autoheal crash-loop, pre-auth
   let path; try { path = new URL(req.url, 'http://x').pathname; } catch { socket.destroy(); return; }
+  // bearer rides the subprotocol (machine clients); a browser on the master password
+  // has no token in-page, so also accept its signed session cookie (same as authed()).
   const wsAuthed = String(req.headers['sec-websocket-protocol'] || '').split(',')
-    .some((p) => p.trim().startsWith('bearer.') && tokenMatches(p.trim().slice(7), TOKEN));
+    .some((p) => p.trim().startsWith('bearer.') && tokenMatches(p.trim().slice(7), TOKEN))
+    || (!!DASH_PW && verifySession(SESS_SECRET, parseCookie(req.headers.cookie, SESS_COOKIE)));
   if (path !== '/ws' || !wsAuthed || !ipAllowed(reqIp(req), ALLOW_CIDR)) { console.warn('[ws] denied', reqIp(req)); socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => {
     // a mid-send ECONNRESET (sleeping laptop tab) otherwise emits an unlistened
@@ -800,6 +812,11 @@ async function pollAccountUsage(account, token) {
     const five = Math.round((f5 || 0) * 100);
     const seven = Math.round((f7 || 0) * 100);
     q.updUsage.run(five, seven, account);
+    // window reset times (unix epoch seconds) — for the dashboard's "resets …" line.
+    // Absent/garbage → null → COALESCE keeps the last-known value.
+    const rs5 = parseInt(r.headers.get('anthropic-ratelimit-unified-5h-reset'), 10);
+    const rs7 = parseInt(r.headers.get('anthropic-ratelimit-unified-7d-reset'), 10);
+    q.updResets.run(Number.isFinite(rs5) ? rs5 : null, Number.isFinite(rs7) ? rs7 : null, account);
     return { account, five, seven, status: r.status, alive };
   } catch (e) {
     // network error: can't tell if the token is dead → leave the flag as-is
