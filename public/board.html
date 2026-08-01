@@ -117,6 +117,13 @@
   .card.drop-before::before,.card.drop-after::after{content:"";position:absolute;left:6px;right:6px;height:3px;border-radius:3px;
     background:linear-gradient(90deg,var(--todo),var(--violet));box-shadow:0 0 12px 1px rgba(107,124,255,.8);z-index:6}
   .card.drop-before::before{top:-7px} .card.drop-after::after{bottom:-7px}
+  .card.settled{animation:settle .42s var(--spring)}          /* drop-release overshoot */
+  /* live-update sheen: brief sweep whenever a card patches over the WS */
+  .sheen{position:absolute;inset:0;border-radius:14px;pointer-events:none;z-index:4;
+    background:linear-gradient(105deg,transparent 32%,rgba(160,185,255,.14) 50%,transparent 68%);background-size:220% 100%;animation:sheenmove .7s ease}
+  /* done completion moment: green ripple ring + checkmark bloom */
+  .ripple{position:absolute;inset:0;border-radius:14px;pointer-events:none;z-index:4;box-shadow:0 0 0 0 rgba(34,201,138,.75);animation:ripple 1s ease-out}
+  .bloom{position:absolute;top:50%;left:50%;pointer-events:none;z-index:5;color:var(--done);font-weight:900;font-size:34px;text-shadow:0 0 18px rgba(34,201,138,.85);animation:bloom 1.05s var(--spring)}
 
   .thread{margin-top:10px;border-top:1px dashed var(--line);padding-top:9px;display:flex;flex-direction:column;gap:9px}
   .turn .tp{font-size:11.5px;color:var(--cyan);font-weight:600;margin-bottom:2px}
@@ -168,6 +175,10 @@
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   @keyframes modalin{from{opacity:0;transform:scale(.94) translateY(-8px)}to{opacity:1;transform:none}}
   @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @keyframes settle{0%{transform:scale(1.06)}55%{transform:scale(.975)}100%{transform:none}}
+  @keyframes sheenmove{from{background-position:130% 0}to{background-position:-130% 0}}
+  @keyframes ripple{to{box-shadow:0 0 0 22px rgba(34,201,138,0)}}
+  @keyframes bloom{0%{transform:translate(-50%,-50%) scale(0);opacity:0}30%{opacity:1}55%{transform:translate(-50%,-50%) scale(1.18)}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}
 
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
@@ -175,6 +186,7 @@
     .card:hover{transform:none}.card.dragging{transform:none}
     .card .spin{animation:none;border-top-color:var(--run)}
     header .dot{animation:none}.summary .ln{opacity:1;animation:none}
+    .card.settled{animation:none}.sheen,.bloom{display:none}.ripple{animation:none;box-shadow:none}
   }
 </style>
 </head>
@@ -196,12 +208,15 @@
       </h2>
       <transition-group name="flip" tag="div" class="list">
         <div v-for="(c,idx) in cards(col.key)" :key="c.id" class="card"
-             :class="[c.status,{open:opened===c.id,dragging:dragId===c.id,'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
+             :class="[c.status,{open:opened===c.id,dragging:dragId===c.id,settled:justMoved===c.id,flash:flashing[c.id],'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
              tabindex="0" role="button" :aria-expanded="opened===c.id"
              :draggable="col.key==='todo'"
              @dragstart="col.key==='todo'&&dragStart(c,$event)" @dragend="dragEnd"
              @dragover="col.key==='todo'&&dragOver(c,$event)" @drop="col.key==='todo'&&drop(c)"
-             @click="expand(c)" @keydown.enter.prevent="expand(c)" @keydown.space.prevent="expand(c)">
+             @click="expand(c)" @keydown.enter.prevent="expand(c)" @keydown.space.prevent="expand(c)"
+             @keydown.alt.up.prevent="col.key==='todo'&&moveCard(c,-1)" @keydown.alt.down.prevent="col.key==='todo'&&moveCard(c,1)">
+          <span v-if="flashing[c.id]" class="sheen" aria-hidden="true"></span>
+          <template v-if="celebrating[c.id]"><span class="ripple" aria-hidden="true"></span><span class="bloom" aria-hidden="true">✓</span></template>
           <div class="head">
             <span v-if="col.key==='todo'" class="grip" title="drag to reprioritize" aria-hidden="true">⋮⋮</span>
             <span v-if="col.key==='todo'" class="rank">{{idx+1}}</span>
@@ -316,6 +331,8 @@ createApp({
     all:[], live:false, showNew:false, busy:false, formMsg:'', announce:'', filter:'',
     opened:null, followText:{}, sending:{}, confirmDel:null, now:Date.now(),
     dragId:null, dragOverId:null, dragOverPos:'before',
+    celebrating:{}, flashing:{}, justMoved:null,
+    _seen:{},
     form:{title:'',cwd:'',prompt:'',model:'',effort:'medium'},
     columns:[
       {key:'todo',label:'Todo',glyph:'○',empty:'No queued tasks — press n to add one.'},
@@ -349,10 +366,31 @@ createApp({
       return '';
     },
     ingest(list){
-      const prev=Object.fromEntries(this.all.map(c=>[c.id,c.status]));
       const next=list.map(c=>({...c,turns:this.parseTurns(c)}));
-      for(const c of next){ if(prev[c.id]&&prev[c.id]!==c.status) this.announce=`Card ${c.id} ${this.statusLabel(c.status)}`; }
+      for(const c of next){
+        const was=this._seen[c.id];
+        if(was){
+          if(was.status!==c.status){ this.announce=`Card ${c.id} ${this.statusLabel(c.status)}`;
+            if(c.status==='done') this.celebrate(c.id); }
+          if(was.updated_at!==c.updated_at) this.flash(c.id);   // live-update sheen on any WS patch
+        }
+        this._seen[c.id]={status:c.status,updated_at:c.updated_at};
+      }
+      for(const id of Object.keys(this._seen)) if(!next.some(c=>c.id==id)) delete this._seen[id];
       this.all=next;
+    },
+    celebrate(id){ this.celebrating[id]=true; setTimeout(()=>{delete this.celebrating[id];},1100); },
+    flash(id){ this.flashing[id]=true; setTimeout(()=>{delete this.flashing[id];},700); },
+    settle(id){ this.justMoved=id; setTimeout(()=>{ if(this.justMoved===id)this.justMoved=null; },440); },
+    async reorder(ids){
+      ids.forEach((id,i)=>{const card=this.all.find(c=>c.id===id);if(card)card.position=i;});  // optimistic
+      await api('/api/board/reorder',{method:'POST',body:JSON.stringify({ids})}).catch(()=>{});
+      this.announce='Queue reordered';
+    },
+    async moveCard(c,dir){                                     // keyboard reorder (Alt+↑/↓), a11y complement to DnD
+      const ids=this.cards('todo').map(x=>x.id); const i=ids.indexOf(c.id); const j=i+dir;
+      if(i<0||j<0||j>=ids.length)return;
+      ids.splice(j,0,ids.splice(i,1)[0]); this.settle(c.id); await this.reorder(ids);
     },
     async load(){ try{ this.ingest(await (await api('/api/board')).json()); }catch(e){} },
     expand(c){ this.opened = this.opened===c.id ? null : c.id; },
@@ -369,11 +407,8 @@ createApp({
       const ids=this.cards('todo').map(c=>c.id).filter(id=>id!==src);
       let at=ids.indexOf(target.id); if(this.dragOverPos==='after')at+=1;
       ids.splice(at,0,src);
-      this.dragId=null;
-      // optimistic: apply new positions locally so it feels instant, then persist
-      ids.forEach((id,i)=>{const card=this.all.find(c=>c.id===id);if(card)card.position=i;});
-      await api('/api/board/reorder',{method:'POST',body:JSON.stringify({ids})}).catch(()=>{});
-      this.announce='Queue reordered';
+      this.dragId=null; this.settle(src);                      // spring overshoot on the landed card
+      await this.reorder(ids);
     },
     async create(){
       if(!this.form.prompt.trim()){this.formMsg='prompt is required';return;}
