@@ -10,86 +10,125 @@
     --line:#223044; --ink:#e6edf6; --dim:#8ea1ba; --faint:#5f728c;
     --todo:#6b7cff; --run:#f5a524; --done:#22c98a; --err:#ff5d6c;
     --accent:#6b7cff; --glow:0 0 0 1px var(--line), 0 8px 30px rgba(0,0,0,.45);
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{background:radial-gradient(1200px 700px at 80% -10%,#16233b 0%,var(--bg) 55%) fixed,var(--bg);
-    color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif;-webkit-font-smoothing:antialiased}
+    color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif;
+    -webkit-font-smoothing:antialiased;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
   a{color:var(--accent)}
+  code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
   header{display:flex;align-items:center;gap:14px;padding:16px 22px;border-bottom:1px solid var(--line);
     background:linear-gradient(180deg,rgba(24,34,52,.7),rgba(19,27,40,.4));backdrop-filter:blur(8px);position:sticky;top:0;z-index:20}
-  header .brand{font-weight:800;letter-spacing:.3px;font-size:18px;display:flex;align-items:center;gap:9px}
+  header .brand{font-weight:800;letter-spacing:.2px;font-size:18px;display:flex;align-items:center;gap:9px}
   header .dot{width:10px;height:10px;border-radius:50%;background:var(--done);box-shadow:0 0 12px var(--done);animation:pulse 2.4s infinite}
   header .dot.off{background:var(--err);box-shadow:0 0 12px var(--err)}
   header .spacer{flex:1}
   .btn{border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:8px 14px;border-radius:10px;
-    font-weight:600;cursor:pointer;transition:.16s transform,.16s box-shadow,.16s border-color}
+    font-weight:600;cursor:pointer;transition:.16s transform,.16s box-shadow,.16s border-color;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
   .btn:hover{transform:translateY(-1px);border-color:var(--accent);box-shadow:0 6px 18px rgba(107,124,255,.25)}
+  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .btn.primary{background:linear-gradient(135deg,#6b7cff,#8a6bff);border-color:transparent;color:#fff}
   .btn.ghost{background:transparent}
   .btn.sm{padding:5px 10px;font-size:12px;border-radius:8px}
+  .btn.icon{padding:5px 8px;font-size:12px}
   .btn.danger:hover{border-color:var(--err);box-shadow:0 6px 18px rgba(255,93,108,.25)}
+  .kbd{font:11px/1 var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:2px 5px;color:var(--dim);background:var(--bg2)}
 
   .board{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:20px;max-width:1600px;margin:0 auto;align-items:start}
   @media(max-width:1100px){.board{grid-template-columns:repeat(2,1fr)}}
   @media(max-width:640px){.board{grid-template-columns:1fr}}
   .col{background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);border-radius:16px;padding:12px;min-height:120px}
-  .col h2{margin:2px 4px 12px;font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:var(--dim);display:flex;align-items:center;gap:8px}
+  .col h2{margin:2px 4px 12px;font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:var(--dim);display:flex;align-items:center;gap:8px;position:sticky;top:0}
   .col h2 .pip{width:9px;height:9px;border-radius:50%}
+  .col h2 .glyph{font:700 10px/1 var(--mono);color:var(--bg);width:14px;height:14px;border-radius:4px;display:grid;place-items:center}
   .col .count{margin-left:auto;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:1px 9px;font-size:11px;color:var(--dim)}
-  .col.todo h2 .pip{background:var(--todo)} .col.running h2 .pip{background:var(--run)}
-  .col.done h2 .pip{background:var(--done)} .col.error h2 .pip{background:var(--err)}
+  .col.todo    h2 .pip{background:var(--todo)} .col.todo    h2 .glyph{background:var(--todo)}
+  .col.running h2 .pip{background:var(--run)}  .col.running h2 .glyph{background:var(--run)}
+  .col.done    h2 .pip{background:var(--done)} .col.done    h2 .glyph{background:var(--done)}
+  .col.error   h2 .pip{background:var(--err)}  .col.error   h2 .glyph{background:var(--err)}
 
   .card{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:11px;
     box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;position:relative;overflow:hidden}
   .card:hover{border-color:#31456a}
-  .card .ttl{font-weight:700;margin-bottom:4px;display:flex;gap:8px;align-items:baseline}
-  .card .id{color:var(--faint);font-size:11px;font-weight:600}
-  .card .prompt{color:var(--dim);font-size:12.5px;white-space:pre-wrap;max-height:64px;overflow:hidden;
-    -webkit-mask-image:linear-gradient(180deg,#000 60%,transparent);mask-image:linear-gradient(180deg,#000 60%,transparent)}
+  .card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .card .head{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+  .card .id{color:var(--faint);font-size:11px;font-weight:600;font-family:var(--mono)}
+  .card .ttl{font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card .chev{color:var(--faint);font-size:11px;transition:transform .2s;flex:none}
+  .card.open .chev{transform:rotate(90deg)}
+  .status{font:700 9.5px/1 ui-sans-serif;text-transform:uppercase;letter-spacing:.6px;padding:3px 7px;border-radius:6px;flex:none;display:inline-flex;align-items:center;gap:4px}
+  .status::before{content:"";width:6px;height:6px;border-radius:2px}
+  .status.todo{color:#aab4ff;background:rgba(107,124,255,.12)} .status.todo::before{background:var(--todo);border-radius:50%}
+  .status.running{color:#ffcf8f;background:rgba(245,165,36,.13)} .status.running::before{background:var(--run);clip-path:polygon(0 0,100% 50%,0 100%)}
+  .status.done{color:#88f0c4;background:rgba(34,201,138,.12)} .status.done::before{background:var(--done);clip-path:polygon(50% 0,100% 100%,0 100%)}
+  .status.error{color:#ff9aa4;background:rgba(255,93,108,.12)} .status.error::before{background:var(--err)}
+  .card .timer{font-family:var(--mono);font-size:11px;color:var(--dim);flex:none}
+  .card .prompt{color:var(--dim);font-size:12.5px;white-space:pre-wrap;max-height:60px;overflow:hidden;
+    -webkit-mask-image:linear-gradient(180deg,#000 58%,transparent);mask-image:linear-gradient(180deg,#000 58%,transparent)}
+  .card.open .prompt{max-height:none;-webkit-mask-image:none;mask-image:none;color:var(--ink)}
   .card .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
   .tag{font-size:10.5px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim);background:var(--panel);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
-  .tag.model{color:#a9b6ff;border-color:#33407a} .tag.effort{color:#ffd08a;border-color:#5a4a2a}
-  .tag.dir{color:#8fe3c0;border-color:#2c5344}
+  .tag.model,.tag.dir{font-family:var(--mono);font-size:10px}
+  .tag.model{color:#a9b6ff;border-color:#33407a} .tag.dir{color:#8fe3c0;border-color:#2c5344}
+  .tag.effort{color:var(--faint)}                       /* low/medium stay quiet */
+  .tag.effort.hot{color:#ffd08a;border-color:#5a4a2a;background:rgba(245,165,36,.08)}  /* high/max stand out */
   .card.running{border-color:var(--run)}
-  .card.running::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,rgba(245,165,36,.10) 50%,transparent 70%);
-    background-size:200% 100%;animation:shimmer 1.4s linear infinite;pointer-events:none}
+  .card.running::after{content:"";position:absolute;inset:0;border-radius:14px;pointer-events:none;
+    box-shadow:inset 0 0 0 1px var(--run);animation:runglow 1.9s ease-in-out infinite}
   .card.error{border-color:#5a2730}
-  .card .spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(245,165,36,.35);border-top-color:var(--run);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-1px}
+  .card .spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(245,165,36,.35);border-top-color:var(--run);border-radius:50%;animation:spin .7s linear infinite;flex:none}
 
   .summary{margin-top:10px;border-top:1px dashed var(--line);padding-top:9px;font-size:12.5px;color:var(--ink);white-space:pre-wrap}
-  .errbox{margin-top:9px;color:var(--err);font-size:12px;white-space:pre-wrap}
+  .errbox{margin-top:9px;color:var(--err);font-size:12px;white-space:pre-wrap;font-family:var(--mono)}
   .followrow{margin-top:10px;display:flex;gap:7px}
   .followrow input{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:7px 9px;font:inherit;font-size:12.5px}
   .followrow input:focus{outline:none;border-color:var(--accent)}
-  .cardacts{margin-top:9px;display:flex;gap:6px;flex-wrap:wrap}
+  .cardacts{margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .cardacts .turns{color:var(--faint);font-size:11px;margin-left:auto}
 
   /* modal */
   .scrim{position:fixed;inset:0;background:rgba(4,7,12,.62);backdrop-filter:blur(6px);display:flex;align-items:flex-start;justify-content:center;padding:7vh 16px;z-index:40}
   .modal{width:min(560px,100%);background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);border-radius:18px;box-shadow:var(--glow);padding:20px}
-  .modal h3{margin:0 0 14px;font-size:17px}
+  .modal h3{margin:0 0 14px;font-size:17px;display:flex;align-items:center;gap:8px}
   .field{margin-bottom:13px}
   .field label{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:5px}
   .field input,.field textarea,.field select{width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:10px 11px;font:inherit}
+  .field input.mono,.field textarea{font-family:var(--mono);font-size:13px}
   .field textarea{min-height:110px;resize:vertical}
   .field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(107,124,255,.18)}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:6px}
+  .modal .actions{display:flex;gap:10px;justify-content:flex-end;align-items:center;margin-top:6px}
+  .modal .actions .hint{margin-right:auto;color:var(--faint);font-size:11px}
   .msg{color:var(--err);font-size:12px;min-height:16px;margin-top:2px}
 
-  /* transitions */
-  .flip-move{transition:transform .45s cubic-bezier(.2,.8,.2,1)}
-  .flip-enter-active{transition:all .4s cubic-bezier(.2,.8,.2,1)}
-  .flip-leave-active{transition:all .3s ease;position:absolute;width:calc(100% - 24px)}
-  .flip-enter-from{opacity:0;transform:translateY(-10px) scale(.96)}
-  .flip-leave-to{opacity:0;transform:scale(.94)}
+  /* transitions — tightened for operator pace */
+  .flip-move{transition:transform .26s cubic-bezier(.2,.8,.2,1)}
+  .flip-enter-active{transition:all .22s cubic-bezier(.2,.8,.2,1)}
+  .flip-leave-active{transition:all .18s ease;position:absolute;width:calc(100% - 24px)}
+  .flip-enter-from{opacity:0;transform:translateY(-8px) scale(.97)}
+  .flip-leave-to{opacity:0;transform:scale(.95)}
   .fade-enter-active,.fade-leave-active{transition:opacity .18s}
   .fade-enter-from,.fade-leave-to{opacity:0}
-  .empty{color:var(--faint);font-size:12px;text-align:center;padding:16px 6px}
+  .exp-enter-active,.exp-leave-active{transition:max-height .28s ease,opacity .2s;overflow:hidden}
+  .exp-enter-from,.exp-leave-to{max-height:0;opacity:0}
+  .exp-enter-to,.exp-leave-from{max-height:600px;opacity:1}
+  .empty{color:var(--faint);font-size:12px;text-align:center;padding:16px 6px;line-height:1.7}
+
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
   @keyframes spin{to{transform:rotate(360deg)}}
-  @keyframes shimmer{to{background-position:-200% 0}}
+  @keyframes runglow{0%,100%{box-shadow:inset 0 0 0 1px rgba(245,165,36,.35)}50%{box-shadow:inset 0 0 0 1px rgba(245,165,36,.9),0 0 14px rgba(245,165,36,.18)}}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* the jury was unanimous: honor reduced-motion — kill sweeps/flips/pulses, keep legible statics */
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+    .card.running::after{animation:none;box-shadow:inset 0 0 0 1px var(--run)}
+    .card .spin{animation:none;border-top-color:var(--run)}
+    header .dot{animation:none}
+  }
 </style>
 </head>
 <body>
@@ -97,64 +136,74 @@
   <header>
     <div class="brand"><span class="dot" :class="{off:!live}"></span> aigate <span style="color:var(--dim);font-weight:600">board</span></div>
     <div class="spacer"></div>
+    <span class="kbd" title="keyboard: n new · Esc close · Cmd/Ctrl+Enter submit">n</span>
     <a class="btn ghost sm" href="/">← dashboard</a>
     <button class="btn primary" @click="openNew">+ New task</button>
   </header>
 
   <div class="board">
     <div v-for="col in columns" :key="col.key" class="col" :class="col.key">
-      <h2><span class="pip"></span>{{col.label}}<span class="count">{{cards(col.key).length}}</span></h2>
+      <h2><span class="glyph">{{col.glyph}}</span>{{col.label}}<span class="count">{{cards(col.key).length}}</span></h2>
       <transition-group name="flip" tag="div" style="position:relative">
-        <div v-for="c in cards(col.key)" :key="c.id" class="card" :class="c.status" @click="expand(c)">
-          <div class="ttl"><span class="id">#{{c.id}}</span> {{c.title||untitled(c)}}
-            <span v-if="c.status==='running'" style="margin-left:auto"><span class="spin"></span></span>
+        <div v-for="c in cards(col.key)" :key="c.id" class="card" :class="[c.status,{open:opened===c.id}]"
+             tabindex="0" role="button" :aria-expanded="opened===c.id"
+             @click="expand(c)" @keydown.enter.prevent="expand(c)" @keydown.space.prevent="expand(c)">
+          <div class="head">
+            <span class="id">#{{c.id}}</span>
+            <span class="ttl">{{c.title||untitled(c)}}</span>
+            <span class="status" :class="c.status">{{statusLabel(c.status)}}</span>
+            <span v-if="timer(c)" class="timer">⏱ {{timer(c)}}</span>
+            <span v-if="c.status==='running'" class="spin" aria-hidden="true"></span>
+            <span class="chev" aria-hidden="true">▸</span>
           </div>
           <div class="prompt">{{c.prompt}}</div>
           <div class="meta">
             <span v-if="c.cwd" class="tag dir" :title="c.cwd">📁 {{base(c.cwd)}}</span>
             <span class="tag model">{{c.model||'default'}}</span>
-            <span class="tag effort">effort:{{c.effort||'medium'}}</span>
+            <span class="tag effort" :class="{hot:c.effort==='high'||c.effort==='max'}">effort:{{c.effort||'medium'}}</span>
           </div>
 
-          <template v-if="opened===c.id">
-            <transition name="fade">
-              <div>
-                <div v-if="lastSummary(c)" class="summary">{{lastSummary(c)}}</div>
-                <div v-if="c.status==='error'&&c.error" class="errbox">⚠ {{c.error}}</div>
-                <div v-if="c.status!=='running'&&c.status!=='todo'" class="followrow" @click.stop>
-                  <input v-model="followText[c.id]" placeholder="Add a follow-up prompt…" @keydown.enter="followup(c)">
-                  <button class="btn sm primary" @click="followup(c)">Send</button>
-                </div>
-                <div class="cardacts" @click.stop>
-                  <button v-if="c.status==='error'" class="btn sm" @click="retry(c)">↻ Retry</button>
-                  <button class="btn sm danger" @click="del(c)">🗑 Close</button>
-                  <span v-if="c.turns&&c.turns.length>1" style="color:var(--faint);font-size:11px;align-self:center">{{c.turns.length}} turns</span>
-                </div>
+          <transition name="exp">
+            <div v-if="opened===c.id" @click.stop>
+              <div v-if="lastSummary(c)" class="summary">{{lastSummary(c)}}</div>
+              <div v-if="c.status==='error'&&c.error" class="errbox">⚠ {{c.error}}</div>
+              <div v-if="c.status!=='running'&&c.status!=='todo'" class="followrow">
+                <input v-model="followText[c.id]" placeholder="Add a follow-up prompt (keeps context)…"
+                       @keydown.enter="followup(c)" @keydown.escape="opened=null">
+                <button class="btn sm primary" @click="followup(c)">Send</button>
               </div>
-            </transition>
-          </template>
+              <div class="cardacts">
+                <button v-if="c.status==='error'" class="btn sm" @click="retry(c)">↻ Retry</button>
+                <button v-if="c.prompt" class="btn sm icon" @click="copy(c.prompt,'prompt')" title="copy prompt">⧉ prompt</button>
+                <button v-if="lastSummary(c)" class="btn sm icon" @click="copy(lastSummary(c),'summary')" title="copy summary">⧉ summary</button>
+                <button class="btn sm danger" @click="del(c)">🗑 Close</button>
+                <span v-if="c.turns&&c.turns.length" class="turns">{{c.turns.length}} turn{{c.turns.length>1?'s':''}}</span>
+              </div>
+            </div>
+          </transition>
         </div>
       </transition-group>
-      <div v-if="cards(col.key).length===0" class="empty">— empty —</div>
+      <div v-if="cards(col.key).length===0" class="empty">{{col.empty}}</div>
     </div>
   </div>
 
   <!-- new task modal -->
   <transition name="fade">
-    <div v-if="showNew" class="scrim" @click.self="showNew=false">
-      <div class="modal">
+    <div v-if="showNew" class="scrim" @click.self="showNew=false" @keydown.escape="showNew=false">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="New task">
         <h3>New task</h3>
         <div class="field">
           <label>Title <span style="color:var(--faint)">(optional)</span></label>
-          <input v-model="form.title" placeholder="Short label for the card" @keydown.meta.enter="create">
+          <input v-model="form.title" placeholder="Short label for the card" ref="firstField" @keydown.meta.enter="create" @keydown.ctrl.enter="create">
         </div>
         <div class="field">
           <label>Directory</label>
-          <input v-model="form.cwd" placeholder="/Users/you/Projects/thing  (where claude runs)">
+          <input class="mono" v-model="form.cwd" placeholder="/Users/you/Projects/thing  (where claude runs)">
         </div>
         <div class="field">
           <label>Prompt</label>
-          <textarea v-model="form.prompt" placeholder="What should Claude do? (locked once submitted — follow up inline after it replies)"></textarea>
+          <textarea v-model="form.prompt" placeholder="What should Claude do? (locked once submitted — follow up inline after it replies)"
+                    @keydown.meta.enter="create" @keydown.ctrl.enter="create"></textarea>
         </div>
         <div class="row2">
           <div class="field">
@@ -176,12 +225,15 @@
         </div>
         <div class="msg">{{formMsg}}</div>
         <div class="actions">
+          <span class="hint"><span class="kbd">⌘⏎</span> add</span>
           <button class="btn ghost" @click="showNew=false">Cancel</button>
           <button class="btn primary" @click="create" :disabled="busy">{{busy?'Adding…':'Add to board'}}</button>
         </div>
       </div>
     </div>
   </transition>
+
+  <div class="sr" aria-live="polite">{{announce}}</div>
 </div>
 
 <script src="/vue.global.prod.js"></script>
@@ -197,24 +249,43 @@ async function api(path,opts={}){
 const { createApp } = Vue;
 createApp({
   data(){return{
-    all:[], live:false, showNew:false, busy:false, formMsg:'',
-    opened:null, followText:{},
+    all:[], live:false, showNew:false, busy:false, formMsg:'', announce:'',
+    opened:null, followText:{}, now:Date.now(),
     form:{title:'',cwd:'',prompt:'',model:'',effort:'medium'},
     columns:[
-      {key:'todo',label:'Todo'},{key:'running',label:'Running'},
-      {key:'done',label:'Done'},{key:'error',label:'Error'},
+      {key:'todo',label:'Todo',glyph:'○',empty:'No queued tasks — press n to add one.'},
+      {key:'running',label:'Running',glyph:'▸',empty:'Nothing in flight.'},
+      {key:'done',label:'Done',glyph:'✓',empty:'Finished tasks land here.'},
+      {key:'error',label:'Error',glyph:'!',empty:'No failures. 🎉'},
     ],
   }},
   methods:{
     cards(status){return this.all.filter(c=>c.status===status)},
     base(p){return (p||'').replace(/\/+$/,'').split('/').pop()||p},
     untitled(c){return (c.prompt||'').slice(0,40)+((c.prompt||'').length>40?'…':'')},
+    statusLabel(s){return {todo:'queued',running:'running',done:'done',error:'error'}[s]||s},
     parseTurns(c){try{return JSON.parse(c.turns||'[]')}catch{return[]}},
     lastSummary(c){const t=this.parseTurns(c);return t.length?t[t.length-1].summary:''},
-    ingest(list){ this.all = list.map(c=>({...c,turns:this.parseTurns(c)})); },
+    tms(s){return s?Date.parse(s.replace(' ','T')+'Z'):0},
+    fmtDur(ms){if(ms<0)ms=0;const s=Math.floor(ms/1000);if(s<60)return s+'s';const m=Math.floor(s/60);if(m<60)return m+'m '+String(s%60).padStart(2,'0')+'s';const h=Math.floor(m/60);return h+'h '+String(m%60).padStart(2,'0')+'m'},
+    timer(c){                                                 // running → live elapsed; settled → total duration
+      if(c.status==='running'&&c.claimed_at)return this.fmtDur(this.now-this.tms(c.claimed_at));
+      if((c.status==='done'||c.status==='error')&&c.claimed_at){
+        const t=this.parseTurns(c);const end=t.length?Date.parse(t[t.length-1].ts):this.tms(c.updated_at);
+        return this.fmtDur(end-this.tms(c.claimed_at));
+      }
+      return '';
+    },
+    ingest(list){
+      const prev=Object.fromEntries(this.all.map(c=>[c.id,c.status]));
+      const next=list.map(c=>({...c,turns:this.parseTurns(c)}));
+      for(const c of next){ if(prev[c.id]&&prev[c.id]!==c.status) this.announce=`Card ${c.id} ${this.statusLabel(c.status)}`; }
+      this.all=next;
+    },
     async load(){ try{ this.ingest(await (await api('/api/board')).json()); }catch(e){} },
     expand(c){ this.opened = this.opened===c.id ? null : c.id; },
-    openNew(){ this.showNew=true; this.formMsg=''; },
+    openNew(){ this.showNew=true; this.formMsg=''; this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus()); },
+    async copy(text,what){ try{ await navigator.clipboard.writeText(text); this.announce=`Copied ${what}`; }catch{} },
     async create(){
       if(!this.form.prompt.trim()){this.formMsg='prompt is required';return;}
       this.busy=true;this.formMsg='';
@@ -232,6 +303,11 @@ createApp({
     },
     async retry(c){ await api('/api/board/'+c.id+'/retry',{method:'POST'}).catch(()=>{}); },
     async del(c){ await api('/api/board/'+c.id,{method:'DELETE'}).catch(()=>{}); if(this.opened===c.id)this.opened=null; },
+    onKey(e){
+      const typing=/^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName||''));
+      if(e.key==='Escape'){ if(this.showNew)this.showNew=false; else if(this.opened!=null)this.opened=null; return; }
+      if(!typing && (e.key==='n'||e.key==='N') && !this.showNew){ e.preventDefault(); this.openNew(); }
+    },
     connect(){
       const ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',
         TOKEN?['aigate','bearer.'+TOKEN]:['aigate']);
@@ -240,7 +316,12 @@ createApp({
       ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='board')this.ingest(m.data);}catch{}};
     },
   },
-  mounted(){ this.load(); this.connect(); },
+  mounted(){
+    this.load(); this.connect();
+    this._tick=setInterval(()=>{this.now=Date.now();},1000);
+    window.addEventListener('keydown',this.onKey);
+  },
+  unmounted(){ clearInterval(this._tick); window.removeEventListener('keydown',this.onKey); },
 }).mount('#app');
 </script>
 <style>[v-cloak]{display:none}</style>
