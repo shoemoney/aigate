@@ -16,7 +16,8 @@ AI_CMD="${AIGATE_AI_CMD:-ai}"
 # headless worker — set AIGATE_AI_PREARGS=--no-chrome). Word-split on spaces.
 PRE=(); [ -n "${AIGATE_AI_PREARGS:-}" ] && read -ra PRE <<< "$AIGATE_AI_PREARGS"
 IDLE="${AIGATE_WORKER_IDLE:-3}"
-WORKER="$(hostname -s)/$$"
+HOST="$(hostname -s)"
+WORKER="$HOST/$$"
 AUTH=(-H "Authorization: Bearer $AIGATE_TOKEN")
 
 # top-level JSON field → stdout (empty on any error); same convention as hydrate.sh
