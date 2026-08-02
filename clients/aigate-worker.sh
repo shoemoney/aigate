@@ -135,16 +135,19 @@ while :; do
   modelarg=(); [ -n "$model" ] && modelarg=(--model "$model")
   full_prompt="$BRIEF"$'\n\n=== YOUR TASK ===\n'"$prompt"$'\n\n'"[effort: ${effort:-medium}] $SUMMARY_RULE"
   post_activity "$id" "starting"
-  # stream-json so we can report tool/thinking activity LIVE while it runs; capture to a file,
-  # tail it in the background posting heartbeats, then parse the final result off the stream.
   tmpf="$(mktemp)"
+  # LIVENESS HEARTBEAT — claude batches its stream-json output (nothing lands until it flushes),
+  # so tailing alone can go silent for a whole run and the worker would drop off the roster / the
+  # card would look stuck. This posts elapsed every few seconds so the panel always shows it alive.
+  ( hb0=$(date +%s); while :; do sleep 4; post_activity "$id" "working $(( $(date +%s) - hb0 ))s"; done ) & hbpid=$!
+  # run it (stream-json) to a file; tail posts tool/thinking activity as the stream flushes
   ( cd "${cwd:-$PWD}" && "$AI_CMD" "${PRE[@]}" -p --output-format stream-json --verbose "${resume[@]}" "${modelarg[@]}" "$full_prompt" ) >"$tmpf" 2>/dev/null &
   aipid=$!
   ( tail -n +1 -F "$tmpf" 2>/dev/null | while IFS= read -r line; do
       act="$(printf '%s' "$line" | activity_of)"; [ -n "$act" ] && post_activity "$id" "$act"
     done ) & tailpid=$!
   wait "$aipid"; rc=$?
-  sleep 0.4; kill "$tailpid" 2>/dev/null; wait "$tailpid" 2>/dev/null
+  kill "$hbpid" "$tailpid" 2>/dev/null; wait "$hbpid" "$tailpid" 2>/dev/null
   out="$(cat "$tmpf")"; rm -f "$tmpf"
   parsed="$(printf '%s' "$out" | stream_final)"
   if [ "$rc" -eq 0 ] && [ -n "$parsed" ] && [ "$(printf '%s' "$parsed" | jget result)" != "" ]; then
