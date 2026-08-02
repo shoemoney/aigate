@@ -316,9 +316,14 @@ const q = {
   setCardPos: db.prepare(`UPDATE board_cards SET position=?, updated_at=datetime('now') WHERE id=? AND status='todo'`),
 };
 
-// live worker boxes: host → last-claim ms (in-memory; every worker polls /api/board/claim
-// continuously, so this is a fresh liveness roster for the create-modal host picker)
-const workerHosts = new Map();
+// live worker roster: workerId (host/pid) → {host, lastSeen, cardId, activity, actTs}.
+// Fed by /api/board/claim (idle polls) + /api/board/activity (streamed tool/thinking heartbeats
+// during a run). Powers the create-modal host picker AND the bottom worker-activity panel.
+const workers = new Map();
+const liveHosts = () => {
+  const cut = Date.now() - 120000;
+  return [...new Set([...workers.values()].filter((w) => w.lastSeen > cut && w.host).map((w) => w.host))].sort();
+};
 
 // ---- websocket hub ------------------------------------------------------
 // browsers abort unless the server echoes one offered subprotocol — echo 'aigate', never the bearer
@@ -803,17 +808,39 @@ const server = http.createServer(async (req, res) => {
       broadcast('board', q.listCards.all());
       return json(res, 200, card);
     }
-    // list worker boxes seen claiming in the last 2 min → the host dropdown in the create modal
-    if (p === '/api/board/hosts' && req.method === 'GET') {
-      const cutoff = Date.now() - 120000;
-      return json(res, 200, [...workerHosts].filter(([, t]) => t > cutoff).map(([h]) => h).sort());
+    // live worker boxes (for the create-modal host picker)
+    if (p === '/api/board/hosts' && req.method === 'GET')
+      return json(res, 200, liveHosts());
+    // full worker roster for the bottom activity panel: who's online, on what card, doing what
+    if (p === '/api/board/workers' && req.method === 'GET') {
+      const now = Date.now();
+      for (const [id, w] of workers) if (now - w.lastSeen > 300000) workers.delete(id);   // prune dead (>5min)
+      return json(res, 200, [...workers.entries()].filter(([, w]) => now - w.lastSeen < 60000)
+        .map(([id, w]) => ({ worker: id, host: w.host || '?', cardId: w.cardId || null, activity: w.activity || null, ageMs: now - w.lastSeen, idle: !w.cardId })));
+    }
+    // streamed activity heartbeat from a running worker (tool/thinking) — keeps it "live" + fresh
+    if (p === '/api/board/activity' && req.method === 'POST') {
+      const b = await body(req);
+      const worker = String(b.worker || reqIp(req)).slice(0, 120);
+      const w = workers.get(worker) || {};
+      w.host = String(b.host || w.host || '').slice(0, 120);
+      w.cardId = Number(b.cardId) || w.cardId || null;
+      w.activity = String(b.activity || '').slice(0, 100);
+      w.actTs = w.lastSeen = Date.now();
+      workers.set(worker, w);
+      return json(res, 200, { ok: true });
     }
     // atomic claim of the next todo card for THIS worker's box (204 = nothing for it).
     if (p === '/api/board/claim' && req.method === 'POST') {
       const b = await body(req);
       const host = String(b.host || '').slice(0, 120);
-      if (host) workerHosts.set(host, Date.now());               // every poll (even empty) marks the box live
-      const card = q.claimNext.get(String(b.worker || reqIp(req)).slice(0, 120), host);
+      const worker = String(b.worker || reqIp(req)).slice(0, 120);
+      const w = workers.get(worker) || {};
+      w.host = host || w.host || ''; w.lastSeen = Date.now();
+      const card = q.claimNext.get(worker, host);
+      if (card) { w.cardId = card.id; w.activity = 'claimed'; w.actTs = Date.now(); }
+      else { w.cardId = null; w.activity = null; }
+      workers.set(worker, w);
       if (!card) { res.writeHead(204); return res.end(); }
       logAccess('board', card.worker || '', reqIp(req), 'claim', `card ${card.id}`);
       broadcast('board', q.listCards.all());

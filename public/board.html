@@ -219,6 +219,24 @@
   .empty{color:var(--faint);font-size:12px;text-align:center;padding:16px 6px;line-height:1.7}
   .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
+  /* live worker activity panel — sticky footer, one box per host */
+  .workerbar{position:sticky;bottom:0;z-index:15;display:flex;gap:10px;align-items:stretch;padding:8px 12px;overflow-x:auto;
+    background:linear-gradient(0deg,rgba(10,14,20,.97),rgba(15,21,32,.82));backdrop-filter:blur(12px);border-top:1px solid var(--line);box-shadow:0 -8px 24px -12px rgba(0,0,0,.7)}
+  .workerbar .wbtitle{font:700 9px/1 ui-sans-serif;text-transform:uppercase;letter-spacing:1.4px;color:var(--faint);writing-mode:vertical-rl;transform:rotate(180deg);align-self:center;flex:none}
+  .wboxes{display:flex;gap:10px}
+  .wbox{background:linear-gradient(180deg,#1a2536,#151f2e);border:1px solid var(--line);border-radius:12px;padding:7px 10px;min-width:180px;flex:none}
+  .whead{display:flex;align-items:center;gap:6px;font:700 12px/1 var(--mono);margin-bottom:6px;color:var(--ink)}
+  .wdot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+  .wdot.busy{background:var(--run);box-shadow:0 0 9px var(--run);animation:pulse 1.6s infinite}
+  .wcount{margin-left:auto;font:10px/1 var(--mono);color:var(--dim);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:2px 6px}
+  .wrow{display:flex;gap:7px;font-size:11px;line-height:1.7;align-items:baseline}
+  .wrow.idle{opacity:.5}
+  .wpid{font-family:var(--mono);color:var(--faint);flex:none;width:38px}
+  .widle{font-family:var(--mono);color:var(--dim)}
+  .wact{font-family:var(--mono);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px}
+  .wact b{color:var(--run);margin-right:3px}
+  .wempty{color:var(--faint);font-size:11px;padding:8px;align-self:center}
+
   @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes sweep{to{--a:360deg}}
   @property --a{syntax:'<angle>';inherits:false;initial-value:0deg}
@@ -326,6 +344,22 @@
     </div>
   </div>
 
+  <!-- live worker activity panel -->
+  <div class="workerbar">
+    <div class="wbtitle">workers</div>
+    <div class="wboxes">
+      <div v-for="g in workerGroups" :key="g.host" class="wbox">
+        <div class="whead"><span class="wdot" :class="{busy:g.busy}"></span>{{g.host}}<span class="wcount">{{g.busy}}/{{g.total}}</span></div>
+        <div class="wrow" v-for="w in g.rows" :key="w.worker" :class="{idle:w.idle}">
+          <span class="wpid">·{{w.pid}}</span>
+          <span v-if="w.idle" class="widle">idle · {{ago(w.ageMs)}}</span>
+          <span v-else class="wact"><b>#{{w.cardId}}</b> {{w.activity||'…'}}</span>
+        </div>
+      </div>
+    </div>
+    <div v-if="!workerGroups.length" class="wempty">no workers online</div>
+  </div>
+
   <!-- new task modal -->
   <transition name="fade">
     <div v-if="showNew" class="scrim" @click.self="showNew=false" @keydown.escape="showNew=false">
@@ -403,7 +437,7 @@ createApp({
     celebrating:{}, flashing:{}, alarming:{}, justMoved:null, lastMsgAt:0, flying:{}, copied:'',
     wasDisconnected:false, catchup:'',
     _seen:{},
-    form:{title:'',cwd:'',prompt:'',model:'',effort:'medium',host:''}, hosts:[],
+    form:{title:'',cwd:'',prompt:'',model:'',effort:'medium',host:''}, hosts:[], workers:[],
     columns:[
       {key:'todo',label:'Todo',glyph:'○',empty:'No queued tasks — press n to add one.'},
       {key:'running',label:'Running',glyph:'▸',empty:'Nothing in flight.'},
@@ -413,6 +447,16 @@ createApp({
   }},
   computed:{
     hasError(){ return this.all.some(c=>c.status==='error'); },
+    workerGroups(){                                            // group the live worker roster by box
+      const g={};
+      for(const w of this.workers){
+        (g[w.host]=g[w.host]||{host:w.host,total:0,busy:0,rows:[]});
+        g[w.host].total++; if(!w.idle)g[w.host].busy++;
+        g[w.host].rows.push({...w,pid:(w.worker||'').split('/').pop()});
+      }
+      return Object.values(g).sort((a,b)=>a.host.localeCompare(b.host))
+        .map(x=>({...x,rows:x.rows.sort((a,b)=>(a.idle-b.idle)||(''+a.pid).localeCompare(''+b.pid))}));
+    },
   },
   watch:{
     showNew(v){ if(!v && this._prevFocus && this._prevFocus.focus) this.$nextTick(()=>this._prevFocus.focus()); },  // restore focus on modal close
@@ -522,6 +566,8 @@ createApp({
     async load(){ try{ this.ingest(await (await api('/api/board')).json()); }catch(e){} },
     expand(c){ this.opened = this.opened===c.id ? null : c.id; },
     async loadHosts(){ try{ this.hosts=await (await api('/api/board/hosts')).json(); }catch{} },
+    async loadWorkers(){ try{ this.workers=await (await api('/api/board/workers')).json(); }catch{} },
+    ago(ms){ const s=Math.round(ms/1000); return s<60?s+'s':Math.round(s/60)+'m'; },
     openNew(){ this._prevFocus=document.activeElement; this.loadHosts(); this.showNew=true; this.formMsg=''; this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus()); },
     async copy(text,what,id){ try{ await navigator.clipboard.writeText(text); this.announce=`Copied ${what}`; this.copied=id+':'+what; clearTimeout(this._cpT); this._cpT=setTimeout(()=>{this.copied='';},1000); }catch{} },
     alarm(id){ this.alarming[id]=true; setTimeout(()=>{delete this.alarming[id];},1000); },
@@ -603,11 +649,12 @@ createApp({
     },
   },
   mounted(){
-    this.load(); this.connect();
+    this.load(); this.connect(); this.loadWorkers();
     this._tick=setInterval(()=>{this.now=Date.now();},1000);
+    this._wtick=setInterval(()=>this.loadWorkers(),2000);   // live worker activity poll
     window.addEventListener('keydown',this.onKey);
   },
-  unmounted(){ clearInterval(this._tick); window.removeEventListener('keydown',this.onKey); },
+  unmounted(){ clearInterval(this._tick); clearInterval(this._wtick); window.removeEventListener('keydown',this.onKey); },
 }).mount('#app');
 </script>
 <style>[v-cloak]{display:none}</style>

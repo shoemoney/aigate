@@ -46,6 +46,37 @@ print(json.dumps({"ok": sys.argv[2]=="true", "result": sys.argv[3],
         --data-binary @- "$AIGATE_URL/api/board/$1/result" >/dev/null 2>&1
 }
 
+# report what this worker is doing right now (drives the live activity panel)
+post_activity(){ # cardId activity
+  python3 -c 'import json,sys;print(json.dumps({"worker":sys.argv[1],"host":sys.argv[2],"cardId":int(sys.argv[3]),"activity":sys.argv[4][:90]}))' \
+    "$WORKER" "$HOST" "$1" "$2" \
+    | curl -s -m5 -X POST "${AUTH[@]}" -H 'content-type: application/json' --data-binary @- "$AIGATE_URL/api/board/activity" >/dev/null 2>&1 || true
+}
+# one stream-json line -> a short human activity string ("using Bash — npm test", "responding", …)
+activity_of(){ python3 -c 'import sys,json
+try:
+    d=json.loads(sys.stdin.read()); t=d.get("type")
+    if t=="assistant":
+        for c in d.get("message",{}).get("content",[]):
+            if c.get("type")=="tool_use":
+                i=c.get("input",{}) or {}; hint=i.get("command") or i.get("file_path") or i.get("path") or i.get("pattern") or i.get("url") or ""
+                print(("using "+c.get("name","tool")+((" — "+str(hint)) if hint else ""))[:90]); break
+            if c.get("type")=="text" and c.get("text","").strip(): print("responding"); break
+    elif t=="user": print("ran tool")
+    elif t=="result": print("finishing")
+except Exception: pass' 2>/dev/null; }
+# scan the whole NDJSON stream for the final result event -> {"result":..,"session_id":..}
+stream_final(){ python3 -c 'import sys,json
+res="";sid=""
+for ln in sys.stdin:
+    ln=ln.strip()
+    if not ln: continue
+    try: d=json.loads(ln)
+    except Exception: continue
+    if d.get("session_id"): sid=d.get("session_id")
+    if d.get("type")=="result": res=d.get("result","") or res
+print(json.dumps({"result":res,"session_id":sid}))' 2>/dev/null; }
+
 # the card asks Claude to finish with a tight bullet summary — that's what the board shows.
 # ponytail: effort has no native claude CLI flag, so we pass it as a directive line;
 # tune this mapping (or wire a real flag) if the fleet grows a proper effort knob.
@@ -103,11 +134,22 @@ while :; do
   resume=();  [ -n "$sid" ]   && resume=(--resume "$sid")
   modelarg=(); [ -n "$model" ] && modelarg=(--model "$model")
   full_prompt="$BRIEF"$'\n\n=== YOUR TASK ===\n'"$prompt"$'\n\n'"[effort: ${effort:-medium}] $SUMMARY_RULE"
-  out="$( cd "${cwd:-$PWD}" && "$AI_CMD" "${PRE[@]}" -p --output-format json "${resume[@]}" "${modelarg[@]}" "$full_prompt" 2>/dev/null )"; rc=$?
-  if [ "$rc" -eq 0 ] && [ -n "$out" ]; then
-    # claude --output-format json envelope: {result, session_id, ...} (or an array whose last elem has them)
-    post_result "$id" true "$(printf '%s' "$out" | aiget result)" "$(printf '%s' "$out" | aiget session_id)" ""
+  post_activity "$id" "starting"
+  # stream-json so we can report tool/thinking activity LIVE while it runs; capture to a file,
+  # tail it in the background posting heartbeats, then parse the final result off the stream.
+  tmpf="$(mktemp)"
+  ( cd "${cwd:-$PWD}" && "$AI_CMD" "${PRE[@]}" -p --output-format stream-json --verbose "${resume[@]}" "${modelarg[@]}" "$full_prompt" ) >"$tmpf" 2>/dev/null &
+  aipid=$!
+  ( tail -n +1 -F "$tmpf" 2>/dev/null | while IFS= read -r line; do
+      act="$(printf '%s' "$line" | activity_of)"; [ -n "$act" ] && post_activity "$id" "$act"
+    done ) & tailpid=$!
+  wait "$aipid"; rc=$?
+  sleep 0.4; kill "$tailpid" 2>/dev/null; wait "$tailpid" 2>/dev/null
+  out="$(cat "$tmpf")"; rm -f "$tmpf"
+  parsed="$(printf '%s' "$out" | stream_final)"
+  if [ "$rc" -eq 0 ] && [ -n "$parsed" ] && [ "$(printf '%s' "$parsed" | jget result)" != "" ]; then
+    post_result "$id" true "$(printf '%s' "$parsed" | jget result)" "$(printf '%s' "$parsed" | jget session_id)" ""
   else
-    post_result "$id" false "" "" "ai run failed (rc=$rc): $(printf '%.500s' "$out")"
+    post_result "$id" false "" "" "ai run failed (rc=$rc): $(printf '%.400s' "$out" | tr -d '\000')"
   fi
 done
