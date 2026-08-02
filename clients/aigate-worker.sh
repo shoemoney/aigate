@@ -62,7 +62,7 @@ GIT — if you change anything in a git repo: commit (conventional message; hous
 CREDENTIALS / APIs — secrets are NOT in the repo; they live in the aigate vault:
     set -a; . ~/.claude/aigate/env; set +a
     curl -s -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL/api/keys/<provider>"   # -> {provider,label,key}
-  Providers: openrouter google github brave exa firecrawl perplexity replicate fal elevenlabs deepgram huggingface groq together fireworks xai kimi cloudflare aws tavily apify context7 gmail venice fontawesome anthropic. Full list: GET "$AIGATE_URL/api/capabilities".
+  Providers: openrouter google github brave exa firecrawl perplexity replicate fal elevenlabs deepgram huggingface groq together fireworks xai kimi cloudflare aws tavily apify context7 gmail venice fontawesome. Full live list: GET "$AIGATE_URL/api/capabilities". (You do NOT need a raw Anthropic API key — you already ARE Claude via the selected account.)
   - EMAIL: operator is jeremy@shoemoney.com; Gmail app-cred vaulted under provider "gmail" -> imap.gmail.com:993 / smtp.gmail.com:587, or the gmail-imap-watch skill.
   - AWS: credentials are already on this box at ~/.aws (config/credentials/sso) — the aws CLI is configured; no vault fetch needed.
 
