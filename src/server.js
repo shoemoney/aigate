@@ -140,6 +140,7 @@ function openDb(path = DB_PATH) {
           cwd         TEXT DEFAULT '',                -- directory the worker runs claude in
           model       TEXT DEFAULT '',                -- claude --model (blank = account default)
           effort      TEXT DEFAULT 'medium',          -- low | medium | high | max
+          host        TEXT DEFAULT '',                -- target worker host ('' = any box may claim it)
           prompt      TEXT NOT NULL,                  -- the current/pending prompt to run
           status      TEXT NOT NULL DEFAULT 'todo',   -- todo | running | done | error
           turns       TEXT DEFAULT '[]',              -- JSON [{prompt,summary,ok,ts}] conversation thread
@@ -211,6 +212,9 @@ if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === 'par
 for (const col of ['five_hour_reset', 'seven_day_reset'])
   if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === col))
     db.exec(`ALTER TABLE accounts ADD COLUMN ${col} INTEGER`);
+// migration: board cards gained an optional target host (route a card to a specific worker box)
+if (!db.prepare(`PRAGMA table_info(board_cards)`).all().some((c) => c.name === 'host'))
+  db.exec(`ALTER TABLE board_cards ADD COLUMN host TEXT DEFAULT ''`);
 
 // prepared once
 const q = {
@@ -287,15 +291,16 @@ const q = {
   setKeyStatus: db.prepare(`UPDATE provider_keys SET status=?, last_checked=datetime('now') WHERE id=?`),
   keyStatusCounts: db.prepare(`SELECT status, count(*) AS c FROM provider_keys GROUP BY status`),
   // --- kanban board (cards ARE the queue; workers claim over HTTP) ---
-  listCards: db.prepare(`SELECT id,title,cwd,model,effort,prompt,status,turns,session_id,worker,error,position,created_at,updated_at,claimed_at
+  listCards: db.prepare(`SELECT id,title,cwd,model,effort,host,prompt,status,turns,session_id,worker,error,position,created_at,updated_at,claimed_at
     FROM board_cards ORDER BY position, id`),
   getCard: db.prepare(`SELECT * FROM board_cards WHERE id=?`),
-  insertCard: db.prepare(`INSERT INTO board_cards(title,cwd,model,effort,prompt,status,position)
-    VALUES(?,?,?,?,?,'todo',?) RETURNING *`),
+  insertCard: db.prepare(`INSERT INTO board_cards(title,cwd,model,effort,host,prompt,status,position)
+    VALUES(?,?,?,?,?,?,'todo',?) RETURNING *`),
   // atomic claim: node:sqlite is synchronous so this single UPDATE serializes concurrent
   // worker claims — two workers can never grab the same card. RETURNING gives the row (or none).
+  // host filter: a worker only claims cards addressed to its box (host=?) or to any box (host='').
   claimNext: db.prepare(`UPDATE board_cards SET status='running', worker=?, claimed_at=datetime('now'), updated_at=datetime('now')
-    WHERE id=(SELECT id FROM board_cards WHERE status='todo' ORDER BY position, id LIMIT 1) RETURNING *`),
+    WHERE id=(SELECT id FROM board_cards WHERE status='todo' AND (host='' OR host=?) ORDER BY position, id LIMIT 1) RETURNING *`),
   // finish: append this run to the turns thread, store session id, flip to done/error
   finishCard: db.prepare(`UPDATE board_cards SET status=?, turns=?, session_id=COALESCE(?,session_id), error=?, updated_at=datetime('now')
     WHERE id=? RETURNING *`),
@@ -310,6 +315,10 @@ const q = {
   // drag-to-reorder priority: only todo cards reorder (workers own running); lower pos claimed first
   setCardPos: db.prepare(`UPDATE board_cards SET position=?, updated_at=datetime('now') WHERE id=? AND status='todo'`),
 };
+
+// live worker boxes: host → last-claim ms (in-memory; every worker polls /api/board/claim
+// continuously, so this is a fresh liveness roster for the create-modal host picker)
+const workerHosts = new Map();
 
 // ---- websocket hub ------------------------------------------------------
 // browsers abort unless the server echoes one offered subprotocol — echo 'aigate', never the bearer
@@ -790,13 +799,21 @@ const server = http.createServer(async (req, res) => {
       if (!prompt) return json(res, 400, { error: 'prompt required' });
       const effort = ['low', 'medium', 'high', 'max'].includes(b.effort) ? b.effort : 'medium';
       const card = q.insertCard.get(String(b.title || '').slice(0, 200), String(b.cwd || '').slice(0, 1000),
-        String(b.model || '').slice(0, 80), effort, prompt, q.maxCardPos.get().m + 1);
+        String(b.model || '').slice(0, 80), effort, String(b.host || '').slice(0, 120), prompt, q.maxCardPos.get().m + 1);
       broadcast('board', q.listCards.all());
       return json(res, 200, card);
     }
-    // atomic claim of the next todo card (worker queue pop). 204 = queue empty.
+    // list worker boxes seen claiming in the last 2 min → the host dropdown in the create modal
+    if (p === '/api/board/hosts' && req.method === 'GET') {
+      const cutoff = Date.now() - 120000;
+      return json(res, 200, [...workerHosts].filter(([, t]) => t > cutoff).map(([h]) => h).sort());
+    }
+    // atomic claim of the next todo card for THIS worker's box (204 = nothing for it).
     if (p === '/api/board/claim' && req.method === 'POST') {
-      const card = q.claimNext.get(String((await body(req)).worker || reqIp(req)).slice(0, 120));
+      const b = await body(req);
+      const host = String(b.host || '').slice(0, 120);
+      if (host) workerHosts.set(host, Date.now());               // every poll (even empty) marks the box live
+      const card = q.claimNext.get(String(b.worker || reqIp(req)).slice(0, 120), host);
       if (!card) { res.writeHead(204); return res.end(); }
       logAccess('board', card.worker || '', reqIp(req), 'claim', `card ${card.id}`);
       broadcast('board', q.listCards.all());

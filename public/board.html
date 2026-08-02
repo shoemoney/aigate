@@ -128,7 +128,8 @@
   .card.open .prompt{max-height:none;-webkit-mask-image:none;mask-image:none;color:var(--ink)}
   .card .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
   .tag{font-size:10.5px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim);background:var(--panel);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
-  .tag.model,.tag.dir{font-family:var(--mono);font-size:10px}
+  .tag.model,.tag.dir,.tag.host{font-family:var(--mono);font-size:10px}
+  .tag.host{color:#c9b3ff;border-color:#3a3160;background:rgba(162,107,255,.08)}   /* pinned to a box */
   .tag.model{color:#a9b6ff;border-color:#33407a} .tag.dir{color:#8fe3c0;border-color:#2c5344}
   /* graduated effort ramp: low→max reads as a color scale, not a binary */
   .tag.effort.eff-low{color:var(--faint)}
@@ -290,6 +291,7 @@
             <span v-if="c.cwd" class="tag dir" :title="c.cwd">📁 {{base(c.cwd)}}</span>
             <span class="tag model" :style="modelStyle(c.model)">{{c.model||'default'}}</span>
             <span class="tag effort" :class="'eff-'+(c.effort||'medium')">effort:{{c.effort||'medium'}}</span>
+            <span v-if="c.host" class="tag host">🖥 {{c.host}}</span>
           </div>
 
           <transition name="exp">
@@ -333,9 +335,18 @@
           <label>Title <span style="color:var(--faint)">(optional)</span></label>
           <input v-model="form.title" placeholder="Short label for the card" ref="firstField" @keydown.meta.enter="create" @keydown.ctrl.enter="create">
         </div>
-        <div class="field">
-          <label>Directory</label>
-          <input class="mono" v-model="form.cwd" placeholder="/Users/you/Projects/thing  (where claude runs)">
+        <div class="row2">
+          <div class="field">
+            <label>Directory</label>
+            <input class="mono" v-model="form.cwd" placeholder="~/Projects/thing (where claude runs)">
+          </div>
+          <div class="field">
+            <label>Run on <span style="color:var(--faint)">(host)</span></label>
+            <select v-model="form.host">
+              <option value="">Any available box</option>
+              <option v-for="h in hosts" :key="h" :value="h">{{h}}</option>
+            </select>
+          </div>
         </div>
         <div class="field">
           <label>Prompt</label>
@@ -392,7 +403,7 @@ createApp({
     celebrating:{}, flashing:{}, alarming:{}, justMoved:null, lastMsgAt:0, flying:{}, copied:'',
     wasDisconnected:false, catchup:'',
     _seen:{},
-    form:{title:'',cwd:'',prompt:'',model:'',effort:'medium'},
+    form:{title:'',cwd:'',prompt:'',model:'',effort:'medium',host:''}, hosts:[],
     columns:[
       {key:'todo',label:'Todo',glyph:'○',empty:'No queued tasks — press n to add one.'},
       {key:'running',label:'Running',glyph:'▸',empty:'Nothing in flight.'},
@@ -510,7 +521,8 @@ createApp({
     },
     async load(){ try{ this.ingest(await (await api('/api/board')).json()); }catch(e){} },
     expand(c){ this.opened = this.opened===c.id ? null : c.id; },
-    openNew(){ this._prevFocus=document.activeElement; this.showNew=true; this.formMsg=''; this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus()); },
+    async loadHosts(){ try{ this.hosts=await (await api('/api/board/hosts')).json(); }catch{} },
+    openNew(){ this._prevFocus=document.activeElement; this.loadHosts(); this.showNew=true; this.formMsg=''; this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus()); },
     async copy(text,what,id){ try{ await navigator.clipboard.writeText(text); this.announce=`Copied ${what}`; this.copied=id+':'+what; clearTimeout(this._cpT); this._cpT=setTimeout(()=>{this.copied='';},1000); }catch{} },
     alarm(id){ this.alarming[id]=true; setTimeout(()=>{delete this.alarming[id];},1000); },
     medianDone(){                                              // rolling median completion time from the Done cohort
@@ -553,7 +565,7 @@ createApp({
       try{
         const r=await api('/api/board',{method:'POST',body:JSON.stringify(this.form)});
         if(!r.ok){this.formMsg=(await r.json().catch(()=>({}))).error||'failed';this.busy=false;return;}
-        this.showNew=false;this.form={title:'',cwd:this.form.cwd,prompt:'',model:this.form.model,effort:this.form.effort};
+        this.showNew=false;this.form={title:'',cwd:this.form.cwd,prompt:'',model:this.form.model,effort:this.form.effort,host:this.form.host};
       }catch(e){this.formMsg='request failed';}
       this.busy=false;
     },
@@ -570,8 +582,8 @@ createApp({
       api('/api/board/'+c.id,{method:'DELETE'}).catch(()=>{}); if(this.opened===c.id)this.opened=null;
     },
     clone(c){
-      this._prevFocus=document.activeElement;
-      this.form={title:c.title||'',cwd:c.cwd||'',prompt:c.prompt||'',model:c.model||'',effort:c.effort||'medium'};
+      this._prevFocus=document.activeElement; this.loadHosts();
+      this.form={title:c.title||'',cwd:c.cwd||'',prompt:c.prompt||'',model:c.model||'',effort:c.effort||'medium',host:c.host||''};
       this.showNew=true; this.formMsg='';
       this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus());
     },

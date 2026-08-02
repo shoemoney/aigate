@@ -80,7 +80,7 @@ SKILLS — you have the full local skill set (add-key, nginx-proxy-manager-ops, 
 echo "aigate-worker $WORKER → $AIGATE_URL" >&2
 while :; do
   claim="$(curl -s -m10 -X POST "${AUTH[@]}" -H 'content-type: application/json' \
-      -d "{\"worker\":\"$WORKER\"}" "$AIGATE_URL/api/board/claim")"
+      -d "{\"worker\":\"$WORKER\",\"host\":\"$HOST\"}" "$AIGATE_URL/api/board/claim")"
   id="$(printf '%s' "$claim" | jget id)"
   [ -n "$id" ] || { sleep "$IDLE"; continue; }   # 204/empty = queue empty
   prompt="$(printf '%s' "$claim" | jget prompt)"

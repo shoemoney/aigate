@@ -1080,3 +1080,17 @@ test('board: WS pushes a board event on mutation', async () => {
   assert.ok(Array.isArray(data) && data.some((c) => c.prompt === 'ws-ping'));
   ws.close();
 });
+
+test('board: host targeting — a pinned card is only claimable by its box', async () => {
+  while ((await (await P('/api/board/claim', 'POST', { host: 'drainer' })).status) === 200) { /* drain any-host cards */ }
+  const pinned = await (await P('/api/board', 'POST', { prompt: 'reek-only', host: 'reek' })).json();
+  assert.equal(pinned.host, 'reek');
+  // a different box must NOT get it
+  assert.equal((await P('/api/board/claim', 'POST', { worker: 'wick/1', host: 'wick' })).status, 204);
+  // the targeted box does
+  const got = await (await P('/api/board/claim', 'POST', { worker: 'reek/1', host: 'reek' })).json();
+  assert.equal(got.id, pinned.id);
+  // both boxes now show as live workers
+  const hosts = await (await P('/api/board/hosts', 'GET')).json();
+  assert.ok(hosts.includes('reek') && hosts.includes('wick'));
+});
