@@ -71,6 +71,13 @@
   /* ambient error state: the whole room quietly signals trouble while any Error card exists */
   .errvignette{position:fixed;inset:0;pointer-events:none;z-index:1;opacity:0;transition:opacity .6s ease;box-shadow:inset 0 0 170px 24px rgba(255,93,108,.16)}
   .errvignette.on{opacity:1}
+  /* read-focus: when a card is expanded, dim the rest so the eye locks onto the open thread */
+  .board.reading .card:not(.open){opacity:.5;filter:saturate(.7);transition:opacity .2s,filter .2s}
+  /* running column runs "hot": a faint amber ambient while any worker is executing (mirrors the error vignette at column scope) */
+  .col.running.hot{box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 18px 40px -22px rgba(0,0,0,.8),inset 0 0 55px -18px rgba(245,165,36,.28)}
+  /* reconnect catch-up digest pill */
+  header .catchup{font-size:11px;color:#ffcf8f;background:rgba(245,165,36,.12);border:1px solid #5a4a2a;border-radius:20px;padding:2px 9px;cursor:pointer;white-space:nowrap;margin-left:2px}
+  header .catchup:hover{background:rgba(245,165,36,.2)}
   .col.todo    h2 .glyph{background:var(--todo)}
   .col.running h2 .glyph{background:var(--run)}
   .col.done    h2 .glyph{background:var(--done)}
@@ -81,11 +88,13 @@
   .col .list::-webkit-scrollbar{width:7px}.col .list::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
 
   .card{background:linear-gradient(180deg,#1a2536,#161f2e);border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:11px;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 6px 18px -8px rgba(0,0,0,.7);cursor:pointer;position:relative;overflow:hidden;
-    transition:transform .14s var(--spring),box-shadow .18s,border-color .16s}
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 6px 18px -8px rgba(0,0,0,.7),0 10px 22px -14px var(--halo,transparent);cursor:pointer;position:relative;overflow:hidden;
+    transition:transform .14s var(--spring),box-shadow .18s,border-color .16s,opacity .3s}
   .card:hover{transform:translateY(-2px);border-color:#31456a;box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 14px 30px -12px rgba(0,0,0,.75),0 0 20px -6px var(--halo,transparent)}
-  .card.todo{--halo:rgba(107,124,255,.4)} .card.running{--halo:rgba(245,165,36,.45)}
-  .card.done{--halo:rgba(34,201,138,.4)} .card.error{--halo:rgba(255,93,108,.45)}
+  /* status-tinted resting elevation + interaction color agrees with the card's own status hue */
+  .card.todo{--halo:rgba(107,124,255,.4)} .card.running{--halo:rgba(245,165,36,.45);--accent:var(--run)}
+  .card.done{--halo:rgba(34,201,138,.4);--accent:var(--done)} .card.error{--halo:rgba(255,93,108,.45);--accent:var(--err)}
+  .card.flying{opacity:0;pointer-events:none}                 /* held invisible while its flight-ghost travels */
   .card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .card .head{display:flex;align-items:center;gap:8px;margin-bottom:5px}
   .card .grip{color:var(--faint);font-size:13px;cursor:grab;flex:none;letter-spacing:-2px;opacity:.6;transition:opacity .15s}
@@ -99,8 +108,9 @@
   .status{font:700 9.5px/1 ui-sans-serif;text-transform:uppercase;letter-spacing:.6px;padding:3px 8px;border-radius:6px;flex:none;display:inline-flex;align-items:center;gap:4px;color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.2),inset 0 -2px 4px rgba(0,0,0,.25)}
   .status::before{content:"";width:6px;height:6px;border-radius:2px;background:rgba(255,255,255,.9)}
   .status.todo{background:linear-gradient(135deg,#6b7cff,#8a6bff)} .status.todo::before{border-radius:50%}
-  .status.running{background:linear-gradient(135deg,#f5a524,#ff8f3a)} .status.running::before{clip-path:polygon(0 0,100% 50%,0 100%)}
-  .status.done{background:linear-gradient(135deg,#22c98a,#2fd6b0)} .status.done::before{clip-path:polygon(50% 0,100% 100%,0 100%)}
+  /* dark ink on the light-luminance running/done gradients — white failed WCAG AA (~1.7:1) */
+  .status.running{background:linear-gradient(135deg,#f5a524,#ff8f3a);color:#3a1e00} .status.running::before{clip-path:polygon(0 0,100% 50%,0 100%);background:rgba(0,0,0,.6)}
+  .status.done{background:linear-gradient(135deg,#22c98a,#2fd6b0);color:#04241a} .status.done::before{clip-path:polygon(50% 0,100% 100%,0 100%);background:rgba(0,0,0,.55)}
   .status.error{background:linear-gradient(135deg,#ff5d6c,#ff7a54)}
   .card .timer{font-family:var(--mono);font-size:11px;color:var(--dim);flex:none;transition:color .4s}
   /* staleness heat ramp: the longer a card waits in Todo, the warmer its age reads */
@@ -229,6 +239,7 @@
   <header>
     <div class="brand"><span class="dot" :class="{off:!live}"></span> aigate <span style="color:var(--dim);font-weight:600">board</span></div>
     <span class="livemeta" :class="{off:!live}">{{liveLabel()}}</span>
+    <span v-if="catchup" class="catchup" role="status" @click="catchup=''" title="dismiss">{{catchup}} ✕</span>
     <input class="filter" ref="filter" v-model="filter" placeholder="filter by id, title, dir, prompt… ( / )" aria-label="filter cards" @keydown.escape="filter=''">
     <div class="spacer"></div>
     <span class="kbd" title="keyboard: n new · / filter · Esc close · Cmd/Ctrl+Enter submit">n</span>
@@ -237,14 +248,14 @@
   </header>
 
   <div class="errvignette" :class="{on:hasError}" aria-hidden="true"></div>
-  <div class="board" :class="{dragging:dragId!=null}">
-    <div v-for="col in columns" :key="col.key" class="col" :class="col.key">
+  <div class="board" :class="{dragging:dragId!=null,reading:opened!=null}">
+    <div v-for="col in columns" :key="col.key" class="col" :class="[col.key,{hot: col.key==='running' && cards('running').length>0}]">
       <h2><span class="glyph">{{col.glyph}}</span>{{col.label}}
         <span class="count" :class="['ct-'+col.key,{alarm: col.key==='error' && cards('error').length>0}]"><transition name="roll"><span class="roll" :key="cards(col.key).length">{{cards(col.key).length}}</span></transition></span>
       </h2>
       <transition-group name="flip" tag="div" class="list">
         <div v-for="(c,idx) in cards(col.key)" :key="c.id" class="card" :data-id="c.id"
-             :class="[c.status,staleClass(c),{open:opened===c.id,dragging:dragId===c.id,settled:justMoved===c.id,flash:flashing[c.id],'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
+             :class="[c.status,staleClass(c),{open:opened===c.id,dragging:dragId===c.id,settled:justMoved===c.id,flash:flashing[c.id],flying:flying[c.id],'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
              tabindex="0" role="button" :aria-expanded="opened===c.id"
              :draggable="col.key==='todo'"
              @dragstart="col.key==='todo'&&dragStart(c,$event)" @dragend="dragEnd"
@@ -368,7 +379,8 @@ createApp({
     all:[], live:false, showNew:false, busy:false, formMsg:'', announce:'', filter:'',
     opened:null, followText:{}, sending:{}, confirmDel:null, now:Date.now(),
     dragId:null, dragOverId:null, dragOverPos:'before',
-    celebrating:{}, flashing:{}, justMoved:null, lastMsgAt:0,
+    celebrating:{}, flashing:{}, justMoved:null, lastMsgAt:0, flying:{},
+    wasDisconnected:false, catchup:'',
     _seen:{},
     form:{title:'',cwd:'',prompt:'',model:'',effort:'medium'},
     columns:[
@@ -415,14 +427,15 @@ createApp({
     ingest(list){
       const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
       const next=list.map(c=>({...c,turns:this.parseTurns(c)}));
-      const flights=[];
+      const flights=[]; const digest={done:0,error:0,moved:0}; const catchup=this.wasDisconnected;
       for(const c of next){
         const was=this._seen[c.id];
         if(was){
           if(was.status!==c.status){ this.announce=`Card ${c.id} ${this.statusLabel(c.status)}`;
             if(c.status==='done') this.celebrate(c.id);
+            if(catchup){ if(c.status==='done')digest.done++; else if(c.status==='error')digest.error++; else digest.moved++; }
             // capture the OLD on-screen rect NOW (before Vue re-renders) so we can fly the card across
-            if(!reduce){ const el=document.querySelector('.card[data-id="'+c.id+'"]'); if(el) flights.push({id:c.id,from:el.getBoundingClientRect(),status:c.status}); }
+            if(!reduce&&!catchup){ const el=document.querySelector('.card[data-id="'+c.id+'"]'); if(el) flights.push({id:c.id,from:el.getBoundingClientRect(),status:c.status}); }
           }
           if(was.updated_at!==c.updated_at) this.flash(c.id);   // live-update sheen on any WS patch
         }
@@ -431,22 +444,30 @@ createApp({
       for(const id of Object.keys(this._seen)) if(!next.some(c=>c.id==id)) delete this._seen[id];
       this.all=next;
       for(const f of flights) this.flyCard(f);                  // animate the cross-column move
+      // reconnect catch-up: surface the burst of state that landed all at once after a WS gap
+      if(catchup){
+        this.wasDisconnected=false;
+        const parts=[]; if(digest.done)parts.push(digest.done+' done'); if(digest.error)parts.push(digest.error+' error'); if(digest.moved)parts.push(digest.moved+' moved');
+        if(parts.length){ this.catchup=parts.join(' · ')+' while you were away'; clearTimeout(this._cuT); this._cuT=setTimeout(()=>{this.catchup='';},9000); }
+      }
     },
     // fly a ghost of the card from its old column to its new one (reactive status handoff)
     flyCard(f){
+      this.flying[f.id]=true;                                   // hide the real destination card until the ghost lands (shared-element)
       this.$nextTick(()=>{
         // scope to the NEW column — a leaving transition-group ghost still carries the same
         // data-id at the OLD position, which would read as a zero-distance move and skip the flight
-        const el=document.querySelector('.col.'+f.status+' .card[data-id="'+f.id+'"]'); if(!el)return;
+        const el=document.querySelector('.col.'+f.status+' .card[data-id="'+f.id+'"]'); if(!el){delete this.flying[f.id];return;}
         const to=el.getBoundingClientRect();
         const dx=f.from.left-to.left, dy=f.from.top-to.top;
-        if(Math.abs(dx)<10 && Math.abs(dy)<10) return;          // no real move → skip
+        if(Math.abs(dx)<10 && Math.abs(dy)<10){ delete this.flying[f.id]; return; }  // no real move → skip
         const g=document.createElement('div');
         g.className='flightclone '+f.status;
         g.style.cssText='left:'+to.left+'px;top:'+to.top+'px;width:'+to.width+'px;height:'+Math.min(to.height,72)+'px;transform:translate('+dx+'px,'+dy+'px)';
         document.body.appendChild(g);
-        requestAnimationFrame(()=>{ g.style.transform='translate(0,0)'; g.style.opacity='0'; });
-        setTimeout(()=>g.remove(),520);
+        requestAnimationFrame(()=>{ g.style.transform='translate(0,0)'; });
+        setTimeout(()=>{ g.style.opacity='0'; delete this.flying[f.id]; },440);       // ghost lands → real card fades in as ghost fades out
+        setTimeout(()=>g.remove(),640);
       });
     },
     staleClass(c){                                              // queued-card age heat ramp
@@ -529,7 +550,7 @@ createApp({
       const ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',
         TOKEN?['aigate','bearer.'+TOKEN]:['aigate']);
       ws.onopen=()=>{this.live=true;this.load();};
-      ws.onclose=()=>{this.live=false;setTimeout(()=>this.connect(),2000);};
+      ws.onclose=()=>{this.live=false;this.wasDisconnected=true;setTimeout(()=>this.connect(),2000);};
       ws.onmessage=e=>{this.lastMsgAt=Date.now();try{const m=JSON.parse(e.data);if(m.type==='board')this.ingest(m.data);}catch{}};
     },
   },
