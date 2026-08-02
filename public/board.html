@@ -59,15 +59,25 @@
   .col.running::before{background:linear-gradient(90deg,var(--run),#ffd08a)}
   .col.done::before{background:linear-gradient(90deg,var(--done),var(--cyan))}
   .col.error::before{background:linear-gradient(90deg,var(--err),#ff9aa4)}
-  .col h2{margin:6px 4px 12px;font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:var(--dim);display:flex;align-items:center;gap:8px;position:sticky;top:0}
+  .col h2{margin:2px -4px 10px;padding:8px 8px;font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:var(--dim);display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:3;
+    background:linear-gradient(180deg,rgba(19,27,40,.94),rgba(19,27,40,.72));backdrop-filter:blur(8px);border-radius:10px;box-shadow:0 6px 14px -10px rgba(0,0,0,.8)}
   .col h2 .glyph{font:700 10px/1 var(--mono);color:var(--bg);width:14px;height:14px;border-radius:4px;display:grid;place-items:center}
   .col .count{margin-left:auto;background:var(--panel2);border:1px solid var(--line);border-radius:20px;min-width:24px;text-align:center;padding:1px 9px;font-size:11px;color:var(--dim);overflow:hidden;height:18px;position:relative}
   .col .count .roll{display:block}
+  /* count badges carry their column's severity; a nonzero Error count is impossible to miss */
+  .col .count.ct-todo{color:#aab4ff} .col .count.ct-running{color:#ffcf8f}
+  .col .count.ct-done{color:#88f0c4} .col .count.ct-error{color:#ff9aa4}
+  .col .count.alarm{background:var(--err);border-color:transparent;color:#fff;box-shadow:0 0 12px -2px rgba(255,93,108,.7)}
+  /* ambient error state: the whole room quietly signals trouble while any Error card exists */
+  .errvignette{position:fixed;inset:0;pointer-events:none;z-index:1;opacity:0;transition:opacity .6s ease;box-shadow:inset 0 0 170px 24px rgba(255,93,108,.16)}
+  .errvignette.on{opacity:1}
   .col.todo    h2 .glyph{background:var(--todo)}
   .col.running h2 .glyph{background:var(--run)}
   .col.done    h2 .glyph{background:var(--done)}
   .col.error   h2 .glyph{background:var(--err)}
-  .col .list{max-height:calc(100vh - 200px);overflow-y:auto;overflow-x:hidden;position:relative;scrollbar-width:thin}
+  .col .list{max-height:calc(100vh - 200px);overflow-y:auto;overflow-x:hidden;position:relative;scrollbar-width:thin;
+    -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 12px),transparent 100%);
+    mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 12px),transparent 100%)}
   .col .list::-webkit-scrollbar{width:7px}.col .list::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
 
   .card{background:linear-gradient(180deg,#1a2536,#161f2e);border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:11px;
@@ -105,8 +115,11 @@
   .tag{font-size:10.5px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim);background:var(--panel);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
   .tag.model,.tag.dir{font-family:var(--mono);font-size:10px}
   .tag.model{color:#a9b6ff;border-color:#33407a} .tag.dir{color:#8fe3c0;border-color:#2c5344}
-  .tag.effort{color:var(--faint)}
-  .tag.effort.hot{color:#ffd08a;border-color:#5a4a2a;background:rgba(245,165,36,.1)}
+  /* graduated effort ramp: low→max reads as a color scale, not a binary */
+  .tag.effort.eff-low{color:var(--faint)}
+  .tag.effort.eff-medium{color:#7fd6df;border-color:#2c4a52}
+  .tag.effort.eff-high{color:#ffd08a;border-color:#5a4a2a;background:rgba(245,165,36,.1)}
+  .tag.effort.eff-max{color:#ff9aa4;border-color:#5a2730;background:rgba(255,93,108,.12);font-weight:700}
 
   /* running: rotating conic-gradient border sweep — premium, low opacity, not noisy */
   .card.running{border-color:transparent}
@@ -223,10 +236,11 @@
     <button class="btn primary" @click="openNew">+ New task</button>
   </header>
 
+  <div class="errvignette" :class="{on:hasError}" aria-hidden="true"></div>
   <div class="board" :class="{dragging:dragId!=null}">
     <div v-for="col in columns" :key="col.key" class="col" :class="col.key">
       <h2><span class="glyph">{{col.glyph}}</span>{{col.label}}
-        <span class="count"><transition name="roll"><span class="roll" :key="cards(col.key).length">{{cards(col.key).length}}</span></transition></span>
+        <span class="count" :class="['ct-'+col.key,{alarm: col.key==='error' && cards('error').length>0}]"><transition name="roll"><span class="roll" :key="cards(col.key).length">{{cards(col.key).length}}</span></transition></span>
       </h2>
       <transition-group name="flip" tag="div" class="list">
         <div v-for="(c,idx) in cards(col.key)" :key="c.id" class="card" :data-id="c.id"
@@ -253,8 +267,8 @@
           <div class="prompt">{{c.prompt}}</div>
           <div class="meta">
             <span v-if="c.cwd" class="tag dir" :title="c.cwd">📁 {{base(c.cwd)}}</span>
-            <span class="tag model">{{c.model||'default'}}</span>
-            <span class="tag effort" :class="{hot:c.effort==='high'||c.effort==='max'}">effort:{{c.effort||'medium'}}</span>
+            <span class="tag model" :style="modelStyle(c.model)">{{c.model||'default'}}</span>
+            <span class="tag effort" :class="'eff-'+(c.effort||'medium')">effort:{{c.effort||'medium'}}</span>
           </div>
 
           <transition name="exp">
@@ -364,12 +378,22 @@ createApp({
       {key:'error',label:'Error',glyph:'!',empty:'No failures. 🎉'},
     ],
   }},
+  computed:{
+    hasError(){ return this.all.some(c=>c.status==='error'); },
+  },
   methods:{
     cards(status){
       const f=this.filter.trim().toLowerCase();
       let list=this.all.filter(c=>c.status===status);
       if(f)list=list.filter(c=>('#'+c.id+' '+(c.title||'')+' '+(c.cwd||'')+' '+(c.prompt||'')).toLowerCase().includes(f));
+      // Done/Error float the just-touched card to top (newest activity first); FLIP animates the reorder
+      if(status==='done'||status==='error') list=[...list].sort((a,b)=>this.tms(b.updated_at)-this.tms(a.updated_at));
       return list;
+    },
+    modelStyle(m){                                            // deterministic model→hue so operators scan by color
+      m=(m||'').toLowerCase();
+      const h=m.includes('opus')?'#a26bff':m.includes('sonnet')?'#35d6e5':m.includes('haiku')?'#22c98a':m.includes('fable')?'#f5a524':'';
+      return h?{color:h,borderColor:h+'66'}:{};
     },
     base(p){return (p||'').replace(/\/+$/,'').split('/').pop()||p},
     untitled(c){return (c.prompt||'').slice(0,40)+((c.prompt||'').length>40?'…':'')},
