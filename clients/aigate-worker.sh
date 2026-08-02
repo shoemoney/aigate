@@ -50,6 +50,17 @@ print(json.dumps({"ok": sys.argv[2]=="true", "result": sys.argv[3],
 # tune this mapping (or wire a real flag) if the fleet grows a proper effort knob.
 SUMMARY_RULE='When finished, end your reply with a section titled "Done:" listing, as specific bullet points, exactly what you did (files changed, commands run, decisions made). Be concrete, not vague.'
 
+# Operating briefing prepended to every card so headless card-Claude knows its context + where
+# the fleet's credentials live (it runs in a bare cwd and otherwise has no idea these exist).
+BRIEF='You are running headlessly as an autonomous aigate BOARD WORKER on the fleet (host '"$HOST"'). No human is watching this run: do not ask questions — make reasonable decisions and finish. Permissions are already bypassed.
+- If you change code in a git repo, COMMIT and PUSH it (conventional commit message, and per house rule NO AI attribution) so the work persists and syncs back across the fleet. Never leave uncommitted changes behind.
+- API KEYS / SECRETS are NOT in the repo — they live in the aigate vault. To use ANY provider API, source the vault env then fetch the key:
+    set -a; . ~/.claude/aigate/env; set +a
+    curl -s -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL/api/keys/<provider>"   # -> JSON {provider,label,key}
+  Vaulted providers include: openrouter, google, github, brave, exa, firecrawl, perplexity, replicate, fal, elevenlabs, deepgram, huggingface, groq, together, fireworks, xai, kimi, cloudflare, aws, tavily, apify, context7, gmail. Full list: GET "$AIGATE_URL/api/capabilities".
+- EMAIL: the operator is jeremy@shoemoney.com. A Gmail app credential is vaulted under provider "gmail" (fetch it as above) — use imap.gmail.com / smtp.gmail.com, or the gmail-imap-watch skill.
+- You have the full local skill set (add-key, etc.). Invoke a skill by DESCRIBING the task in natural language (e.g. "vault this openai key: sk-..."), not by typing a raw /slash-command, because this prompt has trailing instructions appended.'
+
 echo "aigate-worker $WORKER → $AIGATE_URL" >&2
 while :; do
   claim="$(curl -s -m10 -X POST "${AUTH[@]}" -H 'content-type: application/json' \
@@ -75,7 +86,7 @@ while :; do
   fi
   resume=();  [ -n "$sid" ]   && resume=(--resume "$sid")
   modelarg=(); [ -n "$model" ] && modelarg=(--model "$model")
-  full_prompt="$prompt"$'\n\n'"[effort: ${effort:-medium}] $SUMMARY_RULE"
+  full_prompt="$BRIEF"$'\n\n=== YOUR TASK ===\n'"$prompt"$'\n\n'"[effort: ${effort:-medium}] $SUMMARY_RULE"
   out="$( cd "${cwd:-$PWD}" && "$AI_CMD" "${PRE[@]}" -p --output-format json "${resume[@]}" "${modelarg[@]}" "$full_prompt" 2>/dev/null )"; rc=$?
   if [ "$rc" -eq 0 ] && [ -n "$out" ]; then
     # claude --output-format json envelope: {result, session_id, ...} (or an array whose last elem has them)
