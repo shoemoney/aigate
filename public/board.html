@@ -30,6 +30,8 @@
   header .brand{font-weight:800;letter-spacing:.2px;font-size:18px;display:flex;align-items:center;gap:9px}
   header .dot{width:10px;height:10px;border-radius:50%;background:var(--done);box-shadow:0 0 12px var(--done);animation:pulse 2.4s infinite}
   header .dot.off{background:var(--err);box-shadow:0 0 12px var(--err)}
+  header .livemeta{font-size:11px;color:var(--done);font-variant-numeric:tabular-nums;letter-spacing:.2px;margin-left:-4px}
+  header .livemeta.off{color:var(--err)}
   header .spacer{flex:1}
   header .filter{background:var(--bg2);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:7px 11px;font:inherit;font-size:13px;width:min(320px,32vw);margin-left:6px;transition:.18s box-shadow,.18s border-color}
   header .filter:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(107,124,255,.15)}
@@ -90,7 +92,12 @@
   .status.running{background:linear-gradient(135deg,#f5a524,#ff8f3a)} .status.running::before{clip-path:polygon(0 0,100% 50%,0 100%)}
   .status.done{background:linear-gradient(135deg,#22c98a,#2fd6b0)} .status.done::before{clip-path:polygon(50% 0,100% 100%,0 100%)}
   .status.error{background:linear-gradient(135deg,#ff5d6c,#ff7a54)}
-  .card .timer{font-family:var(--mono);font-size:11px;color:var(--dim);flex:none}
+  .card .timer{font-family:var(--mono);font-size:11px;color:var(--dim);flex:none;transition:color .4s}
+  /* staleness heat ramp: the longer a card waits in Todo, the warmer its age reads */
+  .card .timer.stale-warm{color:#f5a524}
+  .card .timer.stale-hot{color:#ff7a6a;font-weight:700;animation:stalepulse 2.2s ease-in-out infinite}
+  .card.stale-hot{box-shadow:inset 2px 0 0 var(--err),inset 0 1px 0 rgba(255,255,255,.04),0 6px 18px -8px rgba(0,0,0,.7)}
+  .card.stale-warm{box-shadow:inset 2px 0 0 var(--run),inset 0 1px 0 rgba(255,255,255,.04),0 6px 18px -8px rgba(0,0,0,.7)}
   .card .prompt{color:var(--dim);font-size:12.5px;white-space:pre-wrap;max-height:60px;overflow:hidden;
     -webkit-mask-image:linear-gradient(180deg,#000 58%,transparent);mask-image:linear-gradient(180deg,#000 58%,transparent)}
   .card.open .prompt{max-height:none;-webkit-mask-image:none;mask-image:none;color:var(--ink)}
@@ -127,6 +134,14 @@
   /* next-up: the rank-1 Todo card is what a worker claims next — a quiet anticipation halo */
   .nexthalo{position:absolute;inset:0;border-radius:14px;pointer-events:none;z-index:1;
     box-shadow:0 0 0 1px rgba(107,124,255,.5),0 0 20px -2px rgba(107,124,255,.5);animation:nextpulse 2.6s ease-in-out infinite}
+  /* cross-column flight: a colored ghost slides from a card's old column to its new one */
+  .flightclone{position:fixed;z-index:60;border-radius:12px;pointer-events:none;opacity:.92;
+    box-shadow:0 18px 40px -10px rgba(0,0,0,.7),0 0 22px -3px var(--fg,rgba(107,124,255,.6));
+    transition:transform .5s cubic-bezier(.4,.9,.3,1),opacity .5s ease}
+  .flightclone.todo{background:linear-gradient(135deg,#6b7cff,#8a6bff);--fg:rgba(107,124,255,.6)}
+  .flightclone.running{background:linear-gradient(135deg,#f5a524,#ff8f3a);--fg:rgba(245,165,36,.6)}
+  .flightclone.done{background:linear-gradient(135deg,#22c98a,#2fd6b0);--fg:rgba(34,201,138,.6)}
+  .flightclone.error{background:linear-gradient(135deg,#ff5d6c,#ff7a54);--fg:rgba(255,93,108,.6)}
 
   .thread{margin-top:10px;border-top:1px dashed var(--line);padding-top:9px;display:flex;flex-direction:column;gap:9px}
   .turn .tp{font-size:11.5px;color:var(--cyan);font-weight:600;margin-bottom:2px}
@@ -183,6 +198,7 @@
   @keyframes ripple{to{box-shadow:0 0 0 22px rgba(34,201,138,0)}}
   @keyframes bloom{0%{transform:translate(-50%,-50%) scale(0);opacity:0}30%{opacity:1}55%{transform:translate(-50%,-50%) scale(1.18)}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}
   @keyframes nextpulse{0%,100%{opacity:.45}50%{opacity:1}}
+  @keyframes stalepulse{0%,100%{opacity:1}50%{opacity:.5}}
 
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
@@ -190,7 +206,8 @@
     .card:hover{transform:none}.card.dragging{transform:none}
     .card .spin{animation:none;border-top-color:var(--run)}
     header .dot{animation:none}.summary .ln{opacity:1;animation:none}
-    .card.settled{animation:none}.sheen,.bloom{display:none}.ripple{animation:none;box-shadow:none}
+    .card.settled{animation:none}.sheen,.bloom,.flightclone{display:none}.ripple{animation:none;box-shadow:none}
+    .card .timer.stale-hot{animation:none}
   }
 </style>
 </head>
@@ -198,6 +215,7 @@
 <div id="app" v-cloak>
   <header>
     <div class="brand"><span class="dot" :class="{off:!live}"></span> aigate <span style="color:var(--dim);font-weight:600">board</span></div>
+    <span class="livemeta" :class="{off:!live}">{{liveLabel()}}</span>
     <input class="filter" ref="filter" v-model="filter" placeholder="filter by id, title, dir, prompt… ( / )" aria-label="filter cards" @keydown.escape="filter=''">
     <div class="spacer"></div>
     <span class="kbd" title="keyboard: n new · / filter · Esc close · Cmd/Ctrl+Enter submit">n</span>
@@ -211,8 +229,8 @@
         <span class="count"><transition name="roll"><span class="roll" :key="cards(col.key).length">{{cards(col.key).length}}</span></transition></span>
       </h2>
       <transition-group name="flip" tag="div" class="list">
-        <div v-for="(c,idx) in cards(col.key)" :key="c.id" class="card"
-             :class="[c.status,{open:opened===c.id,dragging:dragId===c.id,settled:justMoved===c.id,flash:flashing[c.id],'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
+        <div v-for="(c,idx) in cards(col.key)" :key="c.id" class="card" :data-id="c.id"
+             :class="[c.status,staleClass(c),{open:opened===c.id,dragging:dragId===c.id,settled:justMoved===c.id,flash:flashing[c.id],'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
              tabindex="0" role="button" :aria-expanded="opened===c.id"
              :draggable="col.key==='todo'"
              @dragstart="col.key==='todo'&&dragStart(c,$event)" @dragend="dragEnd"
@@ -228,7 +246,7 @@
             <span class="id">#{{c.id}}</span>
             <span class="ttl">{{c.title||untitled(c)}}</span>
             <span class="status" :class="c.status">{{statusLabel(c.status)}}</span>
-            <span v-if="timer(c)" class="timer">⏱ {{timer(c)}}</span>
+            <span v-if="timer(c)" class="timer" :class="staleClass(c)">⏱ {{timer(c)}}</span>
             <span v-if="c.status==='running'" class="spin" aria-hidden="true"></span>
             <span class="chev" aria-hidden="true">▸</span>
           </div>
@@ -336,7 +354,7 @@ createApp({
     all:[], live:false, showNew:false, busy:false, formMsg:'', announce:'', filter:'',
     opened:null, followText:{}, sending:{}, confirmDel:null, now:Date.now(),
     dragId:null, dragOverId:null, dragOverPos:'before',
-    celebrating:{}, flashing:{}, justMoved:null,
+    celebrating:{}, flashing:{}, justMoved:null, lastMsgAt:0,
     _seen:{},
     form:{title:'',cwd:'',prompt:'',model:'',effort:'medium'},
     columns:[
@@ -371,18 +389,52 @@ createApp({
       return '';
     },
     ingest(list){
+      const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
       const next=list.map(c=>({...c,turns:this.parseTurns(c)}));
+      const flights=[];
       for(const c of next){
         const was=this._seen[c.id];
         if(was){
           if(was.status!==c.status){ this.announce=`Card ${c.id} ${this.statusLabel(c.status)}`;
-            if(c.status==='done') this.celebrate(c.id); }
+            if(c.status==='done') this.celebrate(c.id);
+            // capture the OLD on-screen rect NOW (before Vue re-renders) so we can fly the card across
+            if(!reduce){ const el=document.querySelector('.card[data-id="'+c.id+'"]'); if(el) flights.push({id:c.id,from:el.getBoundingClientRect(),status:c.status}); }
+          }
           if(was.updated_at!==c.updated_at) this.flash(c.id);   // live-update sheen on any WS patch
         }
         this._seen[c.id]={status:c.status,updated_at:c.updated_at};
       }
       for(const id of Object.keys(this._seen)) if(!next.some(c=>c.id==id)) delete this._seen[id];
       this.all=next;
+      for(const f of flights) this.flyCard(f);                  // animate the cross-column move
+    },
+    // fly a ghost of the card from its old column to its new one (reactive status handoff)
+    flyCard(f){
+      this.$nextTick(()=>{
+        // scope to the NEW column — a leaving transition-group ghost still carries the same
+        // data-id at the OLD position, which would read as a zero-distance move and skip the flight
+        const el=document.querySelector('.col.'+f.status+' .card[data-id="'+f.id+'"]'); if(!el)return;
+        const to=el.getBoundingClientRect();
+        const dx=f.from.left-to.left, dy=f.from.top-to.top;
+        if(Math.abs(dx)<10 && Math.abs(dy)<10) return;          // no real move → skip
+        const g=document.createElement('div');
+        g.className='flightclone '+f.status;
+        g.style.cssText='left:'+to.left+'px;top:'+to.top+'px;width:'+to.width+'px;height:'+Math.min(to.height,72)+'px;transform:translate('+dx+'px,'+dy+'px)';
+        document.body.appendChild(g);
+        requestAnimationFrame(()=>{ g.style.transform='translate(0,0)'; g.style.opacity='0'; });
+        setTimeout(()=>g.remove(),520);
+      });
+    },
+    staleClass(c){                                              // queued-card age heat ramp
+      if(c.status!=='todo'||!c.created_at)return '';
+      const min=(this.now-this.tms(c.created_at))/60000;
+      return min>=10?'stale-hot':min>=2?'stale-warm':'';
+    },
+    liveLabel(){
+      if(!this.live)return 'reconnecting…';
+      if(!this.lastMsgAt)return 'live';
+      const s=Math.round((this.now-this.lastMsgAt)/1000);
+      return s<3?'live':s<90?s+'s ago':Math.round(s/60)+'m ago';
     },
     celebrate(id){ this.celebrating[id]=true; setTimeout(()=>{delete this.celebrating[id];},1100); },
     flash(id){ this.flashing[id]=true; setTimeout(()=>{delete this.flashing[id];},700); },
@@ -454,7 +506,7 @@ createApp({
         TOKEN?['aigate','bearer.'+TOKEN]:['aigate']);
       ws.onopen=()=>{this.live=true;this.load();};
       ws.onclose=()=>{this.live=false;setTimeout(()=>this.connect(),2000);};
-      ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='board')this.ingest(m.data);}catch{}};
+      ws.onmessage=e=>{this.lastMsgAt=Date.now();try{const m=JSON.parse(e.data);if(m.type==='board')this.ingest(m.data);}catch{}};
     },
   },
   mounted(){
