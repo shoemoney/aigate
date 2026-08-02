@@ -38,7 +38,12 @@
   .btn{border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:8px 14px;border-radius:10px;
     font-weight:600;cursor:pointer;transition:.16s transform,.16s box-shadow,.16s border-color;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
   .btn:hover{transform:translateY(-1px);border-color:var(--accent);box-shadow:0 6px 18px rgba(107,124,255,.25)}
+  .btn:active{transform:translateY(0) scale(.97);box-shadow:inset 0 2px 7px rgba(0,0,0,.35)}   /* tactile press */
   .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .btn.ok{color:var(--done);border-color:#2c5344}                                              /* copy-confirm */
+  /* disabled controls must LOOK inert (were visually identical to live) */
+  .btn:disabled,.field input:disabled,.field textarea:disabled,.followrow input:disabled{opacity:.55;cursor:not-allowed}
+  .btn:disabled:hover{transform:none;box-shadow:none;border-color:var(--line)}
   .btn.primary{background:linear-gradient(135deg,#6b7cff,#8a6bff);border-color:transparent;color:#fff;box-shadow:0 4px 16px rgba(107,124,255,.35)}
   .btn.primary:hover{box-shadow:0 8px 24px rgba(138,107,255,.45)}
   .btn.ghost{background:transparent}
@@ -154,6 +159,9 @@
   /* done completion moment: green ripple ring + checkmark bloom */
   .ripple{position:absolute;inset:0;border-radius:14px;pointer-events:none;z-index:4;box-shadow:0 0 0 0 rgba(34,201,138,.75);animation:ripple 1s ease-out}
   .bloom{position:absolute;top:50%;left:50%;pointer-events:none;z-index:5;color:var(--done);font-weight:900;font-size:34px;text-shadow:0 0 18px rgba(34,201,138,.85);animation:bloom 1.05s var(--spring)}
+  /* error arrival: red twin of the done ripple+bloom so a failure pinpoints its own card */
+  .errpulse{position:absolute;inset:0;border-radius:14px;pointer-events:none;z-index:4;box-shadow:0 0 0 0 rgba(255,93,108,.8);animation:errripple 1s ease-out}
+  .errmark{position:absolute;top:50%;left:50%;pointer-events:none;z-index:5;color:var(--err);font-weight:900;font-size:34px;text-shadow:0 0 18px rgba(255,93,108,.85);animation:bloom 1.05s var(--spring)}
   /* next-up: the rank-1 Todo card is what a worker claims next — a quiet anticipation halo */
   .nexthalo{position:absolute;inset:0;border-radius:14px;pointer-events:none;z-index:1;
     box-shadow:0 0 0 1px rgba(107,124,255,.5),0 0 20px -2px rgba(107,124,255,.5);animation:nextpulse 2.6s ease-in-out infinite}
@@ -219,6 +227,7 @@
   @keyframes settle{0%{transform:scale(1.06)}55%{transform:scale(.975)}100%{transform:none}}
   @keyframes sheenmove{from{background-position:130% 0}to{background-position:-130% 0}}
   @keyframes ripple{to{box-shadow:0 0 0 22px rgba(34,201,138,0)}}
+  @keyframes errripple{to{box-shadow:0 0 0 22px rgba(255,93,108,0)}}
   @keyframes bloom{0%{transform:translate(-50%,-50%) scale(0);opacity:0}30%{opacity:1}55%{transform:translate(-50%,-50%) scale(1.18)}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}
   @keyframes nextpulse{0%,100%{opacity:.45}50%{opacity:1}}
   @keyframes stalepulse{0%,100%{opacity:1}50%{opacity:.5}}
@@ -229,7 +238,7 @@
     .card:hover{transform:none}.card.dragging{transform:none}
     .card .spin{animation:none;border-top-color:var(--run)}
     header .dot{animation:none}.summary .ln{opacity:1;animation:none}
-    .card.settled{animation:none}.sheen,.bloom,.flightclone{display:none}.ripple{animation:none;box-shadow:none}
+    .card.settled{animation:none}.sheen,.bloom,.errmark,.flightclone{display:none}.ripple,.errpulse{animation:none;box-shadow:none}
     .card .timer.stale-hot{animation:none}
   }
 </style>
@@ -255,7 +264,7 @@
       </h2>
       <transition-group name="flip" tag="div" class="list">
         <div v-for="(c,idx) in cards(col.key)" :key="c.id" class="card" :data-id="c.id"
-             :class="[c.status,staleClass(c),{open:opened===c.id,dragging:dragId===c.id,settled:justMoved===c.id,flash:flashing[c.id],flying:flying[c.id],'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
+             :class="[c.status,staleClass(c),runOverClass(c),{open:opened===c.id,dragging:dragId===c.id,settled:justMoved===c.id,flash:flashing[c.id],flying:flying[c.id],'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
              tabindex="0" role="button" :aria-expanded="opened===c.id"
              :draggable="col.key==='todo'"
              @dragstart="col.key==='todo'&&dragStart(c,$event)" @dragend="dragEnd"
@@ -265,13 +274,14 @@
           <span v-if="flashing[c.id]" class="sheen" aria-hidden="true"></span>
           <span v-if="col.key==='todo'&&idx===0&&dragId==null&&!filter" class="nexthalo" aria-hidden="true" title="next to be claimed"></span>
           <template v-if="celebrating[c.id]"><span class="ripple" aria-hidden="true"></span><span class="bloom" aria-hidden="true">✓</span></template>
+          <template v-if="alarming[c.id]"><span class="errpulse" aria-hidden="true"></span><span class="errmark" aria-hidden="true">!</span></template>
           <div class="head">
             <span v-if="col.key==='todo'" class="grip" title="drag to reprioritize" aria-hidden="true">⋮⋮</span>
             <span v-if="col.key==='todo'" class="rank">{{idx+1}}</span>
             <span class="id">#{{c.id}}</span>
             <span class="ttl">{{c.title||untitled(c)}}</span>
             <span class="status" :class="c.status">{{statusLabel(c.status)}}</span>
-            <span v-if="timer(c)" class="timer" :class="staleClass(c)">⏱ {{timer(c)}}</span>
+            <span v-if="timer(c)" class="timer" :class="[staleClass(c),runOverClass(c)]">⏱ {{timer(c)}}</span>
             <span v-if="c.status==='running'" class="spin" aria-hidden="true"></span>
             <span class="chev" aria-hidden="true">▸</span>
           </div>
@@ -301,8 +311,8 @@
               <div class="cardacts">
                 <button v-if="c.status==='error'" class="btn sm" @click="retry(c)">↻ Retry</button>
                 <button v-if="c.status!=='running'&&c.status!=='todo'" class="btn sm icon" @click="clone(c)" title="clone as new task">⎘ Clone</button>
-                <button v-if="c.prompt" class="btn sm icon" @click="copy(c.prompt,'prompt')" title="copy prompt">⧉ prompt</button>
-                <button v-if="lastSummary(c)" class="btn sm icon" @click="copy(lastSummary(c),'summary')" title="copy summary">⧉ summary</button>
+                <button v-if="c.prompt" class="btn sm icon" :class="{ok:copied===c.id+':prompt'}" @click="copy(c.prompt,'prompt',c.id)" title="copy prompt">{{copied===c.id+':prompt'?'✓ copied':'⧉ prompt'}}</button>
+                <button v-if="lastSummary(c)" class="btn sm icon" :class="{ok:copied===c.id+':summary'}" @click="copy(lastSummary(c),'summary',c.id)" title="copy summary">{{copied===c.id+':summary'?'✓ copied':'⧉ summary'}}</button>
                 <button class="btn sm danger" @click="del(c)">{{confirmDel===c.id?'Confirm close?':'🗑 Close'}}</button>
                 <span v-if="c.turns&&c.turns.length" class="turns">{{c.turns.length}} turn{{c.turns.length>1?'s':''}}</span>
               </div>
@@ -317,7 +327,7 @@
   <!-- new task modal -->
   <transition name="fade">
     <div v-if="showNew" class="scrim" @click.self="showNew=false" @keydown.escape="showNew=false">
-      <div class="modal" role="dialog" aria-modal="true" aria-label="New task">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="New task" @keydown.tab="trapTab">
         <h3>New task</h3>
         <div class="field">
           <label>Title <span style="color:var(--faint)">(optional)</span></label>
@@ -379,7 +389,7 @@ createApp({
     all:[], live:false, showNew:false, busy:false, formMsg:'', announce:'', filter:'',
     opened:null, followText:{}, sending:{}, confirmDel:null, now:Date.now(),
     dragId:null, dragOverId:null, dragOverPos:'before',
-    celebrating:{}, flashing:{}, justMoved:null, lastMsgAt:0, flying:{},
+    celebrating:{}, flashing:{}, alarming:{}, justMoved:null, lastMsgAt:0, flying:{}, copied:'',
     wasDisconnected:false, catchup:'',
     _seen:{},
     form:{title:'',cwd:'',prompt:'',model:'',effort:'medium'},
@@ -392,6 +402,9 @@ createApp({
   }},
   computed:{
     hasError(){ return this.all.some(c=>c.status==='error'); },
+  },
+  watch:{
+    showNew(v){ if(!v && this._prevFocus && this._prevFocus.focus) this.$nextTick(()=>this._prevFocus.focus()); },  // restore focus on modal close
   },
   methods:{
     cards(status){
@@ -433,6 +446,7 @@ createApp({
         if(was){
           if(was.status!==c.status){ this.announce=`Card ${c.id} ${this.statusLabel(c.status)}`;
             if(c.status==='done') this.celebrate(c.id);
+            else if(c.status==='error') this.alarm(c.id);     // pinpoint which card failed (red twin of celebrate)
             if(catchup){ if(c.status==='done')digest.done++; else if(c.status==='error')digest.error++; else digest.moved++; }
             // capture the OLD on-screen rect NOW (before Vue re-renders) so we can fly the card across
             if(!reduce&&!catchup){ const el=document.querySelector('.card[data-id="'+c.id+'"]'); if(el) flights.push({id:c.id,from:el.getBoundingClientRect(),status:c.status}); }
@@ -496,12 +510,33 @@ createApp({
     },
     async load(){ try{ this.ingest(await (await api('/api/board')).json()); }catch(e){} },
     expand(c){ this.opened = this.opened===c.id ? null : c.id; },
-    openNew(){ this.showNew=true; this.formMsg=''; this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus()); },
-    async copy(text,what){ try{ await navigator.clipboard.writeText(text); this.announce=`Copied ${what}`; }catch{} },
+    openNew(){ this._prevFocus=document.activeElement; this.showNew=true; this.formMsg=''; this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus()); },
+    async copy(text,what,id){ try{ await navigator.clipboard.writeText(text); this.announce=`Copied ${what}`; this.copied=id+':'+what; clearTimeout(this._cpT); this._cpT=setTimeout(()=>{this.copied='';},1000); }catch{} },
+    alarm(id){ this.alarming[id]=true; setTimeout(()=>{delete this.alarming[id];},1000); },
+    medianDone(){                                              // rolling median completion time from the Done cohort
+      const ds=this.all.filter(c=>c.status==='done'&&c.claimed_at).map(c=>{const t=this.parseTurns(c);const end=t.length?Date.parse(t[t.length-1].ts):this.tms(c.updated_at);return end-this.tms(c.claimed_at);}).filter(x=>x>0).sort((a,b)=>a-b);
+      return ds.length?ds[Math.floor(ds.length/2)]:0;
+    },
+    runOverClass(c){                                           // running card overrunning peer median → warm/hot (wedged-worker hint)
+      if(c.status!=='running'||!c.claimed_at)return '';
+      const med=this.medianDone(); if(!med)return '';
+      const el=this.now-this.tms(c.claimed_at);
+      return el>4*med?'stale-hot':el>2*med?'stale-warm':'';
+    },
+    trapTab(e){                                                // keep Tab focus inside the modal (a11y)
+      const f=[...this.$el.querySelectorAll('.modal input,.modal textarea,.modal select,.modal button')].filter(x=>!x.disabled&&x.offsetParent!==null);
+      if(!f.length)return; const first=f[0], last=f[f.length-1];
+      if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); last.focus(); }
+      else if(!e.shiftKey&&document.activeElement===last){ e.preventDefault(); first.focus(); }
+    },
     // --- drag & drop reorder (Todo priority) ---
     dragStart(c,e){ this.dragId=c.id; e.dataTransfer.effectAllowed='move'; try{e.dataTransfer.setData('text/plain',String(c.id))}catch{} },
     dragOver(c,e){ if(this.dragId==null||c.id===this.dragId)return; e.preventDefault();
-      const r=e.currentTarget.getBoundingClientRect(); this.dragOverId=c.id; this.dragOverPos=(e.clientY-r.top)<r.height/2?'before':'after'; },
+      const r=e.currentTarget.getBoundingClientRect(); this.dragOverId=c.id; this.dragOverPos=(e.clientY-r.top)<r.height/2?'before':'after';
+      // native HTML5 DnD won't auto-scroll an inner overflow container — nudge it so off-screen ranks are reachable
+      const list=e.currentTarget.closest('.list');
+      if(list){ const lr=list.getBoundingClientRect();
+        if(e.clientY-lr.top<44) list.scrollTop-=14; else if(lr.bottom-e.clientY<44) list.scrollTop+=14; } },
     dragEnd(){ this.dragId=null; this.dragOverId=null; },
     async drop(target){
       const src=this.dragId; this.dragOverId=null;
@@ -535,6 +570,7 @@ createApp({
       api('/api/board/'+c.id,{method:'DELETE'}).catch(()=>{}); if(this.opened===c.id)this.opened=null;
     },
     clone(c){
+      this._prevFocus=document.activeElement;
       this.form={title:c.title||'',cwd:c.cwd||'',prompt:c.prompt||'',model:c.model||'',effort:c.effort||'medium'};
       this.showNew=true; this.formMsg='';
       this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus());
