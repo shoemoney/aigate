@@ -58,6 +58,12 @@ while :; do
   [ -n "$id" ] || { sleep "$IDLE"; continue; }   # 204/empty = queue empty
   prompt="$(printf '%s' "$claim" | jget prompt)"
   cwd="$(printf '%s' "$claim" | jget cwd)"
+  # expand a leading ~ / ~/… ourselves — it's a literal char inside a quoted var, the shell
+  # never expands it, so `[ -d "~" ]` and `cd "~"` would both fail "directory not found"
+  case "$cwd" in
+    "~")   cwd="$HOME" ;;
+    "~/"*) cwd="$HOME/${cwd#\~/}" ;;
+  esac
   model="$(printf '%s' "$claim" | jget model)"
   effort="$(printf '%s' "$claim" | jget effort)"
   sid="$(printf '%s' "$claim" | jget session_id)"
