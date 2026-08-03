@@ -999,10 +999,18 @@ test('board: create → list shows a todo card with cwd/model/effort', async () 
   assert.equal(r.status, 200);
   const card = await r.json();
   assert.equal(card.status, 'todo');
+  assert.equal(card.cwd, '/tmp/x');       // was never checked — a dropped cwd column would have gone unnoticed
   assert.equal(card.model, 'claude-sonnet-5');
   assert.equal(card.effort, 'high');
   const list = await (await P('/api/board', 'GET')).json();
-  assert.ok(list.some((c) => c.id === card.id && c.prompt === 'do the thing'));
+  const listed = list.find((c) => c.id === card.id);
+  assert.ok(listed, 'card missing from GET /api/board list');
+  // GET /api/board (listCards) selects its own column list — assert THROUGH it, not just the
+  // POST echo, so a column dropped from that SELECT (cwd/model/effort) fails here, not silently.
+  assert.equal(listed.prompt, 'do the thing');
+  assert.equal(listed.cwd, '/tmp/x');
+  assert.equal(listed.model, 'claude-sonnet-5');
+  assert.equal(listed.effort, 'high');
 });
 
 test('board: create rejects empty prompt (400) and invalid effort defaults to medium', async () => {
@@ -1093,4 +1101,38 @@ test('board: host targeting — a pinned card is only claimable by its box', asy
   // both boxes now show as live workers
   const hosts = await (await P('/api/board/hosts', 'GET')).json();
   assert.ok(hosts.includes('reek') && hosts.includes('wick'));
+});
+
+test('board: activity heartbeat updates the roster; workers list shows it non-idle', async () => {
+  const worker = 'activity-tester/1';
+  const r = await P('/api/board/activity', 'POST', { worker, host: 'act-host', cardId: 42, activity: 'running tests' });
+  assert.equal(r.status, 200);
+  const roster = await (await P('/api/board/workers', 'GET')).json();
+  const mine = roster.find((w) => w.worker === worker);
+  assert.ok(mine, 'worker not present in roster after activity POST');
+  assert.equal(mine.idle, false);
+  assert.equal(mine.activity, 'running tests');
+  assert.equal(mine.host, 'act-host');
+  assert.equal(mine.cardId, 42);
+});
+
+test('board: hosts lists a host after it claims (even with no card available)', async () => {
+  const hostsBefore = await (await P('/api/board/hosts', 'GET')).json();
+  assert.ok(!hostsBefore.includes('claim-host-x'));
+  const r = await P('/api/board/claim', 'POST', { worker: 'claim-host-x/1', host: 'claim-host-x' });
+  assert.equal(r.status, 204);   // no card queued for it — still registers as a live worker
+  const hostsAfter = await (await P('/api/board/hosts', 'GET')).json();
+  assert.ok(hostsAfter.includes('claim-host-x'));
+});
+
+test('board: reorder persists position order', async () => {
+  const a = await (await P('/api/board', 'POST', { prompt: 'reorder-a' })).json();
+  const b = await (await P('/api/board', 'POST', { prompt: 'reorder-b' })).json();
+  const c = await (await P('/api/board', 'POST', { prompt: 'reorder-c' })).json();
+  const r = await P('/api/board/reorder', 'POST', { ids: [c.id, a.id, b.id] });
+  assert.equal(r.status, 200);
+  const list = await (await P('/api/board', 'GET')).json();
+  const idx = (id) => list.findIndex((card) => card.id === id);
+  assert.ok(idx(c.id) < idx(a.id));
+  assert.ok(idx(a.id) < idx(b.id));
 });
