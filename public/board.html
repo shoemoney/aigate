@@ -130,6 +130,11 @@
   .tag{font-size:10.5px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim);background:var(--panel);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
   .tag.model,.tag.dir,.tag.host{font-family:var(--mono);font-size:10px}
   .tag.host{color:#c9b3ff;border-color:#3a3160;background:rgba(162,107,255,.08)}   /* pinned to a box */
+  .tag.host.offline{color:var(--err);border-color:#5a2730;border-style:dashed;background:rgba(255,93,108,.08)}   /* pinned box is down → card can't be claimed */
+  /* running card mirrors its worker's live activity (one truth with the footer panel) */
+  .card .livewire{font-family:var(--mono);font-size:11px;color:var(--cyan);margin:1px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* card ↔ worker-row cross-highlight */
+  .card.linked{border-color:var(--cyan);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 14px 30px -12px rgba(0,0,0,.75),0 0 22px -4px rgba(53,214,229,.55)}
   .tag.model{color:#a9b6ff;border-color:#33407a} .tag.dir{color:#8fe3c0;border-color:#2c5344}
   /* graduated effort ramp: low→max reads as a color scale, not a binary */
   .tag.effort.eff-low{color:var(--faint)}
@@ -222,15 +227,23 @@
   /* live worker activity panel — sticky footer, one box per host */
   .workerbar{position:sticky;bottom:0;z-index:15;display:flex;gap:10px;align-items:stretch;padding:8px 12px;overflow-x:auto;
     background:linear-gradient(0deg,rgba(10,14,20,.97),rgba(15,21,32,.82));backdrop-filter:blur(12px);border-top:1px solid var(--line);box-shadow:0 -8px 24px -12px rgba(0,0,0,.7)}
-  .workerbar .wbtitle{font:700 9px/1 ui-sans-serif;text-transform:uppercase;letter-spacing:1.4px;color:var(--faint);writing-mode:vertical-rl;transform:rotate(180deg);align-self:center;flex:none}
+  .wrail{display:flex;flex-direction:column;align-items:center;gap:6px;flex:none;align-self:center}
+  .workerbar .wbtitle{font:700 9px/1 ui-sans-serif;text-transform:uppercase;letter-spacing:1.4px;color:var(--faint);writing-mode:vertical-rl;transform:rotate(180deg)}
+  .wcap{font:700 11px/1 var(--mono);color:var(--dim);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px 6px}   /* fleet capacity glance */
   .wboxes{display:flex;gap:10px}
   .wbox{background:linear-gradient(180deg,#1a2536,#151f2e);border:1px solid var(--line);border-radius:12px;padding:7px 10px;min-width:180px;flex:none}
-  .whead{display:flex;align-items:center;gap:6px;font:700 12px/1 var(--mono);margin-bottom:6px;color:var(--ink)}
+  .whead{display:flex;align-items:center;gap:6px;font:700 12px/1 var(--mono);margin-bottom:6px;color:var(--ink);cursor:pointer;border-radius:6px;padding:2px 3px;margin:-2px -3px 5px;transition:background .15s}
+  .whead:hover{background:rgba(107,124,255,.12)}
+  .whead.active{background:rgba(107,124,255,.2);box-shadow:inset 0 0 0 1px var(--accent)}
   .wdot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
   .wdot.busy{background:var(--run);box-shadow:0 0 9px var(--run);animation:pulse 1.6s infinite}
   .wcount{margin-left:auto;font:10px/1 var(--mono);color:var(--dim);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:2px 6px}
-  .wrow{display:flex;gap:7px;font-size:11px;line-height:1.7;align-items:baseline}
+  .wrow{display:flex;gap:7px;font-size:11px;line-height:1.7;align-items:baseline;border-radius:5px;padding:0 3px;margin:0 -3px}
   .wrow.idle{opacity:.5}
+  .wrow.clickable{cursor:pointer}
+  .wrow.clickable:hover,.wrow.linked{background:rgba(53,214,229,.14);box-shadow:inset 0 0 0 1px rgba(53,214,229,.4)}
+  .wrow.stalled .wact,.wrow.stalled .wact b{color:var(--err)}
+  .wstall{color:var(--err);margin-left:4px}
   .wpid{font-family:var(--mono);color:var(--faint);flex:none;width:38px}
   .widle{font-family:var(--mono);color:var(--dim)}
   .wact{font-family:var(--mono);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px}
@@ -283,7 +296,8 @@
       </h2>
       <transition-group name="flip" tag="div" class="list">
         <div v-for="(c,idx) in cards(col.key)" :key="c.id" class="card" :data-id="c.id"
-             :class="[c.status,staleClass(c),runOverClass(c),{open:opened===c.id,dragging:dragId===c.id,settled:justMoved===c.id,flash:flashing[c.id],flying:flying[c.id],'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
+             :class="[c.status,staleClass(c),runOverClass(c),{open:opened===c.id,dragging:dragId===c.id,settled:justMoved===c.id,flash:flashing[c.id],flying:flying[c.id],linked:linked===c.id,'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
+             @mouseenter="c.status==='running'&&(linked=c.id)" @mouseleave="linked===c.id&&(linked=null)"
              tabindex="0" role="button" :aria-expanded="opened===c.id"
              :draggable="col.key==='todo'"
              @dragstart="col.key==='todo'&&dragStart(c,$event)" @dragend="dragEnd"
@@ -304,12 +318,13 @@
             <span v-if="c.status==='running'" class="spin" aria-hidden="true"></span>
             <span class="chev" aria-hidden="true">▸</span>
           </div>
+          <div v-if="c.status==='running'&&cardActivity[c.id]" class="livewire">⚡ {{cardActivity[c.id]}}</div>
           <div class="prompt">{{c.prompt}}</div>
           <div class="meta">
             <span v-if="c.cwd" class="tag dir" :title="c.cwd">📁 {{base(c.cwd)}}</span>
             <span class="tag model" :style="modelStyle(c.model)">{{c.model||'default'}}</span>
             <span class="tag effort" :class="'eff-'+(c.effort||'medium')">effort:{{c.effort||'medium'}}</span>
-            <span v-if="c.host" class="tag host">🖥 {{c.host}}</span>
+            <span v-if="c.host" class="tag host" :class="{offline:!liveHostSet.has(c.host)}">🖥 {{c.host}}{{liveHostSet.has(c.host)?'':' · offline'}}</span>
           </div>
 
           <transition name="exp">
@@ -346,14 +361,22 @@
 
   <!-- live worker activity panel -->
   <div class="workerbar">
-    <div class="wbtitle">workers</div>
+    <div class="wrail">
+      <div class="wbtitle">workers</div>
+      <div v-if="workers.length" class="wcap" :title="fleet.busy+' of '+fleet.total+' workers busy'">{{fleet.busy}}/{{fleet.total}}</div>
+    </div>
     <div class="wboxes">
       <div v-for="g in workerGroups" :key="g.host" class="wbox">
-        <div class="whead"><span class="wdot" :class="{busy:g.busy}"></span>{{g.host}}<span class="wcount">{{g.busy}}/{{g.total}}</span></div>
-        <div class="wrow" v-for="w in g.rows" :key="w.worker" :class="{idle:w.idle}">
+        <div class="whead" :class="{active:filter===g.host}" @click="filterHost(g.host)" title="filter the board to this box">
+          <span class="wdot" :class="{busy:g.busy}"></span>{{g.host}}<span class="wcount">{{g.busy}}/{{g.total}}</span>
+        </div>
+        <div class="wrow" v-for="w in g.rows" :key="w.worker"
+             :class="{idle:w.idle, stalled:w.stalled, linked:!w.idle&&linked===w.cardId, clickable:!w.idle}"
+             @click="!w.idle&&jumpToCard(w.cardId)" @mouseenter="!w.idle&&(linked=w.cardId)" @mouseleave="linked===w.cardId&&(linked=null)"
+             :title="w.idle?'':(w.stalled?'no activity change >90s — possibly wedged':'jump to card #'+w.cardId)">
           <span class="wpid">·{{w.pid}}</span>
           <span v-if="w.idle" class="widle">idle · {{ago(w.ageMs)}}</span>
-          <span v-else class="wact"><b>#{{w.cardId}}</b> {{w.activity||'…'}}</span>
+          <span v-else class="wact"><b>#{{w.cardId}}</b> {{w.activity||'…'}}<span v-if="w.stalled" class="wstall" title="stalled">⚠</span></span>
         </div>
       </div>
     </div>
@@ -378,7 +401,7 @@
             <label>Run on <span style="color:var(--faint)">(host)</span></label>
             <select v-model="form.host">
               <option value="">Any available box</option>
-              <option v-for="h in hosts" :key="h" :value="h">{{h}}</option>
+              <option v-for="h in hosts" :key="h" :value="h">{{h}}{{hostLoadLabel(h)}}</option>
             </select>
           </div>
         </div>
@@ -435,8 +458,8 @@ createApp({
     opened:null, followText:{}, sending:{}, confirmDel:null, now:Date.now(),
     dragId:null, dragOverId:null, dragOverPos:'before',
     celebrating:{}, flashing:{}, alarming:{}, justMoved:null, lastMsgAt:0, flying:{}, copied:'',
-    wasDisconnected:false, catchup:'',
-    _seen:{},
+    wasDisconnected:false, catchup:'', linked:null,
+    _seen:{}, _wstall:{},
     form:{title:'',cwd:'',prompt:'',model:'',effort:'medium',host:''}, hosts:[], workers:[],
     columns:[
       {key:'todo',label:'Todo',glyph:'○',empty:'No queued tasks — press n to add one.'},
@@ -457,6 +480,10 @@ createApp({
       return Object.values(g).sort((a,b)=>a.host.localeCompare(b.host))
         .map(x=>({...x,rows:x.rows.sort((a,b)=>(a.idle-b.idle)||(''+a.pid).localeCompare(''+b.pid))}));
     },
+    liveHostSet(){ return new Set(this.workers.map(w=>w.host)); },      // boxes with workers online right now
+    hostLoad(){ const m={}; for(const g of this.workerGroups) m[g.host]={busy:g.busy,total:g.total}; return m; },
+    cardActivity(){ const m={}; for(const w of this.workers) if(!w.idle&&w.cardId) m[w.cardId]=w.activity; return m; },  // running card → its worker's live activity
+    fleet(){ return {busy:this.workers.filter(w=>!w.idle).length, total:this.workers.length}; },
   },
   watch:{
     showNew(v){ if(!v && this._prevFocus && this._prevFocus.focus) this.$nextTick(()=>this._prevFocus.focus()); },  // restore focus on modal close
@@ -465,7 +492,7 @@ createApp({
     cards(status){
       const f=this.filter.trim().toLowerCase();
       let list=this.all.filter(c=>c.status===status);
-      if(f)list=list.filter(c=>('#'+c.id+' '+(c.title||'')+' '+(c.cwd||'')+' '+(c.prompt||'')).toLowerCase().includes(f));
+      if(f)list=list.filter(c=>('#'+c.id+' '+(c.title||'')+' '+(c.cwd||'')+' '+(c.prompt||'')+' '+(c.host||'')).toLowerCase().includes(f));
       // Done/Error float the just-touched card to top (newest activity first); FLIP animates the reorder
       if(status==='done'||status==='error') list=[...list].sort((a,b)=>this.tms(b.updated_at)-this.tms(a.updated_at));
       return list;
@@ -566,7 +593,28 @@ createApp({
     async load(){ try{ this.ingest(await (await api('/api/board')).json()); }catch(e){} },
     expand(c){ this.opened = this.opened===c.id ? null : c.id; },
     async loadHosts(){ try{ this.hosts=await (await api('/api/board/hosts')).json(); }catch{} },
-    async loadWorkers(){ try{ this.workers=await (await api('/api/board/workers')).json(); }catch{} },
+    async loadWorkers(){
+      try{
+        const list=await (await api('/api/board/workers')).json();
+        const now=Date.now();
+        for(const w of list){                                  // detect a wedged busy worker: activity string frozen >90s
+          if(w.idle){ w.stalled=false; continue; }
+          const prev=this._wstall[w.worker];
+          if(!prev || prev.activity!==w.activity) this._wstall[w.worker]={activity:w.activity,changedAt:now};
+          w.stalled=(now-this._wstall[w.worker].changedAt)>90000;
+        }
+        const live=new Set(list.map(w=>w.worker));
+        for(const k of Object.keys(this._wstall)) if(!live.has(k)) delete this._wstall[k];
+        this.workers=list;
+      }catch{}
+    },
+    jumpToCard(id){                                            // click a worker row → land on its card
+      this.opened=id;
+      this.$nextTick(()=>{ const el=document.querySelector('.card[data-id="'+id+'"]');
+        if(el){ el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'}); this.flash(id); } });
+    },
+    filterHost(h){ this.filter=(this.filter===h?'':h); },       // click a box header → scope the board to that host
+    hostLoadLabel(h){ const g=this.hostLoad[h]; if(!g) return ' — offline'; return g.busy>=g.total?` — ${g.busy}/${g.total} full`:g.busy?` — ${g.busy}/${g.total} busy`:' — idle'; },
     ago(ms){ const s=Math.round(ms/1000); return s<60?s+'s':Math.round(s/60)+'m'; },
     openNew(){ this._prevFocus=document.activeElement; this.loadHosts(); this.showNew=true; this.formMsg=''; this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus()); },
     async copy(text,what,id){ try{ await navigator.clipboard.writeText(text); this.announce=`Copied ${what}`; this.copied=id+':'+what; clearTimeout(this._cpT); this._cpT=setTimeout(()=>{this.copied='';},1000); }catch{} },
