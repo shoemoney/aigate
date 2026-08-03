@@ -215,6 +215,13 @@ for (const col of ['five_hour_reset', 'seven_day_reset'])
 // migration: board cards gained an optional target host (route a card to a specific worker box)
 if (!db.prepare(`PRAGMA table_info(board_cards)`).all().some((c) => c.name === 'host'))
   db.exec(`ALTER TABLE board_cards ADD COLUMN host TEXT DEFAULT ''`);
+// migration: hosts now stored short ('mbp', not 'mbp.shoemoney.ai') — one-time backfill of
+// existing rows, gated on its own sentinel per the ADD-COLUMN-idempotency note above.
+if (!db.prepare(`SELECT 1 FROM meta WHERE k='host_backfill_done'`).get()) {
+  db.exec(`UPDATE request_log SET host = substr(host,1,instr(host,'.')-1) WHERE host LIKE '%.%'`);
+  db.exec(`UPDATE access_log SET host = substr(host,1,instr(host,'.')-1) WHERE host LIKE '%.%'`);
+  db.prepare(`INSERT INTO meta(k,v) VALUES('host_backfill_done','1')`).run();
+}
 
 // prepared once
 const q = {
@@ -339,6 +346,7 @@ function broadcast(type, data) {
 }
 // every audited event also hits the live feed — an audit row nobody sees is not accountability
 function logAccess(account, host, ip, action, result) {
+  host = shortHost(host);
   q.insAccess.run(account, host, ip, action, result);
   broadcast('access', { account, host, ip, action, result });
 }
@@ -398,6 +406,10 @@ const authed = (req) => {
   return !!DASH_PW && verifySession(SESS_SECRET, parseCookie(req.headers.cookie, SESS_COOKIE));
 };
 const reqIp = (req) => clientIp(req.headers, req.socket.remoteAddress, { trustProxy: TRUST_PROXY, proxies: TRUSTED_PROXIES });
+// FQDN → short hostname: everything before the first '.' (empty/undefined-safe). One
+// box may report 'mbp.shoemoney.ai' one call and 'mbp' the next — normalize so they
+// collapse to the same row instead of splitting stats/routing across both spellings.
+const shortHost = (h) => String(h || '').split('.')[0];
 // collect Buffers and decode ONCE: coercing each chunk to a string splits a multibyte
 // UTF-8 sequence (emoji/CJK) across TCP boundaries into replacement chars; the 1MB cap
 // must count bytes, not UTF-16 units. Never rejects (bad/oversized body → {}).
@@ -744,8 +756,8 @@ const server = http.createServer(async (req, res) => {
       if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'payload too large' })); }
       // store scrubbed + truncated: every read already substr's to 400 — never retain full prompts
       const prompt = scrub(b.prompt).slice(0, 400);
-      q.insReq.run(b.account || '', b.host || '', reqIp(req), b.cwd || '', b.model || '', prompt, b.tokens ?? null);
-      broadcast('prompt', { account: b.account, host: b.host, ip: reqIp(req), cwd: b.cwd, model: b.model,
+      q.insReq.run(b.account || '', shortHost(b.host), reqIp(req), b.cwd || '', b.model || '', prompt, b.tokens ?? null);
+      broadcast('prompt', { account: b.account, host: shortHost(b.host), ip: reqIp(req), cwd: b.cwd, model: b.model,
         prompt, ts: new Date().toISOString() });
       return json(res, 200, { ok: true });
     }
@@ -823,7 +835,7 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req);
       const worker = String(b.worker || reqIp(req)).slice(0, 120);
       const w = workers.get(worker) || {};
-      w.host = String(b.host || w.host || '').slice(0, 120);
+      w.host = shortHost(String(b.host || w.host || '').slice(0, 120));
       w.cardId = Number(b.cardId) || w.cardId || null;
       w.activity = String(b.activity || '').slice(0, 100);
       w.actTs = w.lastSeen = Date.now();
@@ -833,7 +845,7 @@ const server = http.createServer(async (req, res) => {
     // atomic claim of the next todo card for THIS worker's box (204 = nothing for it).
     if (p === '/api/board/claim' && req.method === 'POST') {
       const b = await body(req);
-      const host = String(b.host || '').slice(0, 120);
+      const host = shortHost(String(b.host || '').slice(0, 120));
       const worker = String(b.worker || reqIp(req)).slice(0, 120);
       const w = workers.get(worker) || {};
       w.host = host || w.host || ''; w.lastSeen = Date.now();
@@ -1152,4 +1164,4 @@ if (isMain) {
     console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
 }
 
-export { server, db, pollUsage, pollProviderKeys, backupNow, openDb, isWeakToken, authFail, authLocked, authOk };
+export { server, db, pollUsage, pollProviderKeys, backupNow, openDb, isWeakToken, authFail, authLocked, authOk, shortHost };

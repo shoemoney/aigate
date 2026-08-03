@@ -23,7 +23,7 @@ process.env.HOST = '127.0.0.1';
 delete process.env.AIGATE_ALLOW_CIDR;
 delete process.env.AIGATE_TRUST_PROXY;
 
-const { server, db, backupNow, openDb, isWeakToken, pollProviderKeys, authFail, authLocked, authOk } = await import('../src/server.js');
+const { server, db, backupNow, openDb, isWeakToken, pollProviderKeys, authFail, authLocked, authOk, shortHost } = await import('../src/server.js');
 const BACKUPS = join(tmpdir(), 'backups');   // dirname(DB)/backups
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
@@ -223,6 +223,20 @@ test('POST /api/events/usage + /limit for an unknown account → 404, not silent
     assert.equal(r.status, 404, ev);
     assert.match((await r.json()).error, /unknown account ghost/);
   }
+});
+
+test('shortHost: strips everything after the first dot, empty/undefined-safe', () => {
+  assert.equal(shortHost('mbp.shoemoney.ai'), 'mbp');
+  assert.equal(shortHost('mbp'), 'mbp');
+  assert.equal(shortHost(''), '');
+  assert.equal(shortHost(undefined), '');
+});
+
+test('POST /api/events/prompt stores an FQDN host as the short name', async () => {
+  await fetch(base + '/api/events/prompt', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'alice', host: 'mbp.shoemoney.ai', prompt: 'host normalize check' }) });
+  const [row] = await (await fetch(base + '/api/logs?limit=1', { headers: H })).json();
+  assert.equal(row.host, 'mbp');
 });
 
 test('POST /api/events/prompt truncates stored prompt to 400 chars', async () => {
