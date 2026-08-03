@@ -273,11 +273,12 @@ const q = {
   // windowed per-second throughput: normalize host to substr before first '.' (falls back to
   // the raw host when there's no dot) so 'web1.local' and 'web1.other' merge into one 'web1'
   // row — GROUP BY repeats the CASE expression rather than the alias for sqlite portability.
-  statByHost1h: db.prepare(`SELECT CASE WHEN instr(host,'.')>0 THEN substr(host,1,instr(host,'.')-1) ELSE host END AS host,
-    count(*) AS requests, sum(coalesce(tokens,0)) AS tokens
-    FROM request_log WHERE ts >= datetime('now','-1 hour')
-    GROUP BY CASE WHEN instr(host,'.')>0 THEN substr(host,1,instr(host,'.')-1) ELSE host END
-    ORDER BY requests DESC`),
+  // normalize the host ONCE in a subquery (repeating the CASE in SELECT + GROUP BY tripped an
+  // intermittent SQLite logic error) — group by the alias instead.
+  statByHost1h: db.prepare(`SELECT host, count(*) AS requests, sum(coalesce(tokens,0)) AS tokens FROM (
+      SELECT CASE WHEN instr(host,'.')>0 THEN substr(host,1,instr(host,'.')-1) ELSE host END AS host, tokens
+      FROM request_log WHERE ts >= datetime('now','-1 hour')
+    ) GROUP BY host ORDER BY requests DESC`),
   addKey: db.prepare(`INSERT INTO provider_keys(provider,label,key_enc,key_hint,status,last_checked)
     VALUES(?,?,?,?,?,datetime('now'))
     ON CONFLICT(provider,key_hint) DO UPDATE SET key_enc=excluded.key_enc, label=excluded.label,
