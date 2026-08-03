@@ -259,7 +259,7 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
       <div>
         <h3 class="sub">By host / device</h3>
         <div class="scrollx"><table id="hosts">
-          <thead><tr><th>host</th><th class="r">requests</th><th class="r">tokens</th><th class="r">last seen</th></tr></thead>
+          <thead><tr><th>host</th><th class="r">requests</th><th class="r">tokens</th><th class="r">last seen</th><th class="r">tps</th></tr></thead>
           <tbody></tbody>
         </table></div>
       </div>
@@ -407,7 +407,7 @@ function connect(){
   ws.onmessage=e=>{const m=JSON.parse(e.data);
     if(m.type==='accounts')ingestAccounts(m.data);
     else if(m.type==='keys')renderKeys(m.data);
-    else if(m.type==='prompt'){feedEvent(m.data,'prompt');clearTimeout(statsT);statsT=setTimeout(()=>api('/api/stats').then(s=>renderHosts(s.by_host)).catch(()=>{}),1500)}  // debounced hosts refresh
+    else if(m.type==='prompt'){feedEvent(m.data,'prompt');clearTimeout(statsT);statsT=setTimeout(()=>api('/api/stats').then(s=>renderHosts(s.by_host,s.by_host_1h)).catch(()=>{}),1500)}  // debounced hosts refresh
     else if(m.type==='access')feedEvent(m.data,'access');
   };
 }
@@ -417,7 +417,7 @@ function ingestStats(s){                    // REST /api/stats — seeds rings o
   ACCTS=s.accounts||[];acctsAt=Date.now();
   const now=Date.now();
   for(const a of ACCTS)if(!rings.has(a.account))rings.set(a.account,[{t:now,v:worstOf(a)}]);
-  detectTransitions();renderAccounts();renderHosts(s.by_host);renderChrome();
+  detectTransitions();renderAccounts();renderHosts(s.by_host,s.by_host_1h);renderChrome();
 }
 function ingestAccounts(list){              // WS 'accounts' push — append ring samples
   ACCTS=list||[];acctsAt=Date.now();
@@ -757,15 +757,18 @@ function buildChips(){
   if(fAccounts.size||fHosts.size)html+='<button class="fchip" data-clear>✕ clear</button>';
   c.innerHTML=html;
 }
-function renderHosts(rows){
+function renderHosts(rows,rows1h){
   HOSTS=rows||[];
+  const tps1h=new Map((rows1h||[]).map(r=>[r.host,r]));
   const tb=$('#hosts tbody');
-  if(!HOSTS.length){tb.innerHTML='<tr><td colspan="4" class="dim">no traffic yet</td></tr>';return;}
+  if(!HOSTS.length){tb.innerHTML='<tr><td colspan="5" class="dim">no traffic yet</td></tr>';return;}
   tb.innerHTML=HOSTS.map(h=>{
     const ts=h.last?+toDate(h.last):null;
     const age=ts?(Date.now()-ts)/1000:null;
+    const r1h=tps1h.get((h.host||'').split('.')[0]);
     return '<tr><td>'+esc(h.host||'—')+'</td><td class="r num">'+fmtNum(h.requests)+'</td><td class="r num">'+fmtNum(h.tokens)+'</td>'+
-     '<td class="r num '+(age!=null&&age>STALE_S?'warn':'dim')+'"'+(ts?' data-rts="'+ts+'" data-warn="'+STALE_S+'"':'')+'>'+(ts?fmtAge(age)+' ago':'—')+'</td></tr>';
+     '<td class="r num '+(age!=null&&age>STALE_S?'warn':'dim')+'"'+(ts?' data-rts="'+ts+'" data-warn="'+STALE_S+'"':'')+'>'+(ts?fmtAge(age)+' ago':'—')+'</td>'+
+     '<td class="r num">'+(r1h?r1h.tps:'—')+'</td></tr>';
   }).join('');
 }
 
