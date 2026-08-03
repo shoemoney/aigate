@@ -76,6 +76,20 @@
   /* ambient error state: the whole room quietly signals trouble while any Error card exists */
   .errvignette{position:fixed;inset:0;pointer-events:none;z-index:1;opacity:0;transition:opacity .6s ease;box-shadow:inset 0 0 170px 24px rgba(255,93,108,.16)}
   .errvignette.on{opacity:1}
+  /* 🔔 MORE COWBELL --------------------------------------------------------- */
+  /* completion spark fountain */
+  .sparklayer{position:fixed;inset:0;pointer-events:none;z-index:55}
+  .spark{position:absolute;width:5px;height:5px;border-radius:50%;transform:translate(-50%,-50%);animation:spark .95s ease-out forwards}
+  /* cross-column flight contrail */
+  .flightclone.trail{filter:blur(1px)}
+  /* board breathing — a slow ambient central glow so the room feels alive */
+  .breathe{position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(760px 520px at 50% 42%,rgba(107,124,255,.06),transparent 62%);animation:breathe 8s ease-in-out infinite}
+  /* queue-drained hero */
+  .allclear{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;z-index:12}
+  .ac-seal{font-family:var(--mono);font-weight:800;letter-spacing:.3em;text-transform:uppercase;color:var(--done);font-size:22px;text-shadow:0 0 24px rgba(34,201,138,.75)}
+  .ac-rings{position:absolute;width:8px;height:8px}
+  .ac-rings i{position:absolute;top:50%;left:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border:2px solid var(--done);border-radius:50%;opacity:0;animation:acring 3.4s ease-out infinite}
+  .ac-rings i:nth-child(2){animation-delay:1.13s} .ac-rings i:nth-child(3){animation-delay:2.26s}
   /* read-focus: when a card is expanded, dim the rest so the eye locks onto the open thread */
   .board.reading .card:not(.open){opacity:.5;filter:saturate(.7);transition:opacity .2s,filter .2s}
   /* running column runs "hot": a faint amber ambient while any worker is executing (mirrors the error vignette at column scope) */
@@ -261,6 +275,11 @@
   @keyframes ripple{to{box-shadow:0 0 0 22px rgba(34,201,138,0)}}
   @keyframes errripple{to{box-shadow:0 0 0 22px rgba(255,93,108,0)}}
   @keyframes bloom{0%{transform:translate(-50%,-50%) scale(0);opacity:0}30%{opacity:1}55%{transform:translate(-50%,-50%) scale(1.18)}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}
+  @keyframes spark{0%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(.25)}}
+  @keyframes breathe{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.07)}}
+  @keyframes acring{0%{width:8px;height:8px;margin:-4px 0 0 -4px;opacity:.7}100%{width:380px;height:380px;margin:-190px 0 0 -190px;opacity:0}}
+  @keyframes colbeat{0%,100%{box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 18px 40px -22px rgba(0,0,0,.8),inset 0 0 48px -18px rgba(245,165,36,.2)}50%{box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 18px 40px -22px rgba(0,0,0,.8),inset 0 0 72px -12px rgba(245,165,36,.45)}}
+  .col.running.hot{animation:colbeat 2.6s ease-in-out infinite}   /* 🫀 running column heartbeat */
   @keyframes nextpulse{0%,100%{opacity:.45}50%{opacity:1}}
   @keyframes stalepulse{0%,100%{opacity:1}50%{opacity:.5}}
 
@@ -272,6 +291,7 @@
     header .dot{animation:none}.summary .ln{opacity:1;animation:none}
     .card.settled{animation:none}.sheen,.bloom,.errmark,.flightclone{display:none}.ripple,.errpulse{animation:none;box-shadow:none}
     .card .timer.stale-hot{animation:none}
+    .breathe,.ac-rings,.sparklayer{display:none}.col.running.hot{animation:none}   /* cowbell → static under reduced-motion (ALL CLEAR seal stays) */
   }
 </style>
 </head>
@@ -288,7 +308,14 @@
     <button class="btn primary" @click="openNew">+ New task</button>
   </header>
 
+  <div class="breathe" aria-hidden="true"></div>
   <div class="errvignette" :class="{on:hasError}" aria-hidden="true"></div>
+  <transition name="fade">
+    <div v-if="allClear" class="allclear" aria-hidden="true">
+      <div class="ac-rings"><i></i><i></i><i></i></div>
+      <div class="ac-seal">✓ ALL CLEAR</div>
+    </div>
+  </transition>
   <div class="board" :class="{dragging:dragId!=null,reading:opened!=null}">
     <div v-for="col in columns" :key="col.key" class="col" :class="[col.key,{hot: col.key==='running' && cards('running').length>0}]">
       <h2><span class="glyph">{{col.glyph}}</span>{{col.label}}
@@ -470,6 +497,7 @@ createApp({
   }},
   computed:{
     hasError(){ return this.all.some(c=>c.status==='error'); },
+    allClear(){ return this.all.length>0 && !this.all.some(c=>c.status==='todo'||c.status==='running'); },  // queue drained → hero
     workerGroups(){                                            // group the live worker roster by box
       const g={};
       for(const w of this.workers){
@@ -561,9 +589,13 @@ createApp({
         g.className='flightclone '+f.status;
         g.style.cssText='left:'+to.left+'px;top:'+to.top+'px;width:'+to.width+'px;height:'+Math.min(to.height,72)+'px;transform:translate('+dx+'px,'+dy+'px)';
         document.body.appendChild(g);
-        requestAnimationFrame(()=>{ g.style.transform='translate(0,0)'; });
-        setTimeout(()=>{ g.style.opacity='0'; delete this.flying[f.id]; },440);       // ghost lands → real card fades in as ghost fades out
-        setTimeout(()=>g.remove(),640);
+        // 💫 warp contrail: two fading echoes chase the ghost along the path
+        const trails=[];
+        for(let k=1;k<=2;k++){ const t=g.cloneNode(); t.className='flightclone '+f.status+' trail';
+          t.style.opacity=String(0.3/k); t.style.transitionDelay=(k*55)+'ms'; document.body.appendChild(t); trails.push(t); }
+        requestAnimationFrame(()=>{ g.style.transform='translate(0,0)'; trails.forEach(t=>t.style.transform='translate(0,0)'); });
+        setTimeout(()=>{ g.style.opacity='0'; trails.forEach(t=>t.style.opacity='0'); delete this.flying[f.id]; },440);
+        setTimeout(()=>{ g.remove(); trails.forEach(t=>t.remove()); },700);
       });
     },
     staleClass(c){                                              // queued-card age heat ramp
@@ -577,7 +609,27 @@ createApp({
       const s=Math.round((this.now-this.lastMsgAt)/1000);
       return s<3?'live':s<90?s+'s ago':Math.round(s/60)+'m ago';
     },
-    celebrate(id){ this.celebrating[id]=true; setTimeout(()=>{delete this.celebrating[id];},1100); },
+    celebrate(id){
+      this.celebrating[id]=true; setTimeout(()=>{delete this.celebrating[id];},1100);
+      // streak: consecutive completions within 6s escalate the burst (spark → shower → confetti)
+      this._streak=(this._streakAt && Date.now()-this._streakAt<6000)?(this._streak||1)+1:1;
+      this._streakAt=Date.now();
+      this.sparkBurst(id,this._streak);
+    },
+    sparkBurst(id,streak){                                     // 🔔 status-tinted spark fountain out of the done card
+      if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+      this.$nextTick(()=>{
+        const el=document.querySelector('.col.done .card[data-id="'+id+'"]'); if(!el)return;
+        const r=el.getBoundingClientRect(), cx=r.left+r.width/2, cy=r.top+16;
+        const n=streak>=5?28:streak>=3?18:11, hue=streak>=5?'var(--amber)':streak>=3?'var(--cyan)':'var(--done)';
+        const layer=document.createElement('div'); layer.className='sparklayer';
+        for(let i=0;i<n;i++){ const s=document.createElement('span'); s.className='spark';
+          const a=Math.random()*6.283, d=42+Math.random()*70;
+          s.style.cssText='left:'+cx+'px;top:'+cy+'px;--dx:'+(Math.cos(a)*d).toFixed(0)+'px;--dy:'+(Math.sin(a)*d-34).toFixed(0)+'px;background:'+hue+';box-shadow:0 0 8px '+hue+';animation-delay:'+((i%6)*18)+'ms';
+          layer.appendChild(s); }
+        document.body.appendChild(layer); setTimeout(()=>layer.remove(),1050);
+      });
+    },
     flash(id){ this.flashing[id]=true; setTimeout(()=>{delete this.flashing[id];},700); },
     settle(id){ this.justMoved=id; setTimeout(()=>{ if(this.justMoved===id)this.justMoved=null; },440); },
     async reorder(ids){
