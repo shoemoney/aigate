@@ -1094,3 +1094,29 @@ test('board: host targeting — a pinned card is only claimable by its box', asy
   const hosts = await (await P('/api/board/hosts', 'GET')).json();
   assert.ok(hosts.includes('reek') && hosts.includes('wick'));
 });
+
+test('GET /api/stats — by_host_1h merges normalized hosts, rates are numeric, stale rows excluded', async () => {
+  const insReq = db.prepare(`INSERT INTO request_log(account,host,ip,cwd,model,prompt,tokens) VALUES(?,?,?,?,?,?,?)`);
+  insReq.run('a', 'web1.local', '1.1.1.1', '/', 'x', 'p', 100);
+  insReq.run('a', 'web1.other', '1.1.1.2', '/', 'x', 'p', 50);
+  // a row over an hour old — inserted with an explicit stale ts (the API always stamps 'now')
+  db.prepare(`INSERT INTO request_log(ts,account,host,ip,cwd,model,prompt,tokens) VALUES(datetime('now','-2 hours'),?,?,?,?,?,?,?)`)
+    .run('a', 'web1.ancient', '1.1.1.3', '/', 'x', 'p', 9999);
+
+  const s = await (await P('/api/stats', 'GET')).json();
+  assert.ok(Array.isArray(s.by_host_1h));
+  for (const row of s.by_host_1h) {
+    assert.ok(typeof row.host === 'string');
+    assert.equal(typeof row.requests, 'number');
+    assert.equal(typeof row.tokens, 'number');
+    assert.equal(typeof row.rps, 'number');
+    assert.equal(typeof row.tps, 'number');
+  }
+
+  const web1 = s.by_host_1h.find((r) => r.host === 'web1');
+  assert.ok(web1, 'normalized web1 row present');
+  assert.equal(web1.requests, 2);       // merged web1.local + web1.other
+  assert.equal(web1.tokens, 150);       // 100 + 50, ancient row's 9999 excluded
+  assert.equal(web1.rps, +(2 / 3600).toFixed(3));
+  assert.equal(web1.tps, +(150 / 3600).toFixed(2));
+});

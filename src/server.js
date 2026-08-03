@@ -263,6 +263,14 @@ const q = {
   pollAge: db.prepare(`SELECT CAST((julianday('now')-julianday(MAX(usage_updated)))*86400 AS INT) AS s FROM accounts WHERE usage_updated IS NOT NULL`),
   statByHost: db.prepare(`SELECT host, count(*) AS requests, sum(coalesce(tokens,0)) AS tokens,
     max(ts) AS last FROM request_log GROUP BY host ORDER BY requests DESC`),
+  // windowed per-second throughput: normalize host to substr before first '.' (falls back to
+  // the raw host when there's no dot) so 'web1.local' and 'web1.other' merge into one 'web1'
+  // row — GROUP BY repeats the CASE expression rather than the alias for sqlite portability.
+  statByHost1h: db.prepare(`SELECT CASE WHEN instr(host,'.')>0 THEN substr(host,1,instr(host,'.')-1) ELSE host END AS host,
+    count(*) AS requests, sum(coalesce(tokens,0)) AS tokens
+    FROM request_log WHERE ts >= datetime('now','-1 hour')
+    GROUP BY CASE WHEN instr(host,'.')>0 THEN substr(host,1,instr(host,'.')-1) ELSE host END
+    ORDER BY requests DESC`),
   addKey: db.prepare(`INSERT INTO provider_keys(provider,label,key_enc,key_hint,status,last_checked)
     VALUES(?,?,?,?,?,datetime('now'))
     ON CONFLICT(provider,key_hint) DO UPDATE SET key_enc=excluded.key_enc, label=excluded.label,
@@ -765,8 +773,12 @@ const server = http.createServer(async (req, res) => {
     // audit trail read path (access_log holds only hints/labels/actions, never secrets)
     if (p === '/api/access' && req.method === 'GET')
       return json(res, 200, q.recentAccess.all(Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 100, 1000))));
-    if (p === '/api/stats' && req.method === 'GET')
-      return json(res, 200, { by_host: q.statByHost.all(), accounts: q.listAccounts.all() });
+    if (p === '/api/stats' && req.method === 'GET') {
+      const by_host_1h = q.statByHost1h.all().map((r) => ({
+        ...r, rps: +(r.requests / 3600).toFixed(3), tps: +(r.tokens / 3600).toFixed(2),
+      }));
+      return json(res, 200, { by_host: q.statByHost.all(), by_host_1h, accounts: q.listAccounts.all() });
+    }
 
     // Prometheus text exposition (bearer-gated; the fleet already scrapes Prometheus, so
     // it can alert on 0 selectable / rising decrypt or poll failures). Numbers only.
