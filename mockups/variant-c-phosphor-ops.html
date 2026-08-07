@@ -1,0 +1,983 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIGATE — OPS CONSOLE · MOCK C “PHOSPHOR OPS”</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+/* ============ TOKENS ============ */
+:root{
+  --bg:#0a0f0b;
+  --panel:#101711;
+  --well:#0b110c;
+  --line:#1e2b22;
+  --line-bright:#2a3d30;
+  --txt:#c9d8cc;
+  --dim:#6b7d70;
+  --faint:#46564b;
+  --acc:#4ae08a;
+  --acc-dim:rgba(74,224,138,.10);
+  --amb:#e8b34b;
+  --amb-dim:rgba(232,179,75,.10);
+  --red:#f0604d;
+  --red-dim:rgba(240,96,77,.10);
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+
+/* ============ BASE ============ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  font:13px/1.45 var(--mono);
+  font-variant-numeric:tabular-nums;
+  color:var(--txt);
+  background:
+    radial-gradient(1200px 480px at 50% -12%,rgba(74,224,138,.05),transparent 60%),
+    var(--bg);
+  min-height:100vh;
+}
+::selection{background:rgba(74,224,138,.28);color:#eafff3}
+button{font-family:inherit}
+button:focus-visible,.inp:focus-visible{outline:1px solid var(--acc);outline-offset:2px}
+.micro{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.dim{color:var(--dim)}
+.c-ok{color:var(--acc)} .c-warn{color:var(--amb)} .c-crit{color:var(--red)}
+code{background:var(--well);border:1px solid var(--line);padding:0 4px;font-size:11px;color:var(--acc)}
+
+/* ============ BUTTONS ============ */
+.btn-ghost{
+  font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--dim);background:transparent;border:1px solid var(--line-bright);
+  padding:4px 10px;cursor:pointer;border-radius:0;
+  transition:color .12s,border-color .12s,background .12s;
+}
+.btn-ghost:hover{color:var(--acc);border-color:var(--acc);background:var(--acc-dim)}
+.btn-ghost.crit{color:#d97f70;border-color:rgba(240,96,77,.5)}
+.btn-ghost.crit:hover{color:var(--red);border-color:var(--red);background:var(--red-dim)}
+.ibtn{
+  width:26px;height:22px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--dim);background:transparent;border:1px solid var(--line-bright);
+  cursor:pointer;padding:0;border-radius:0;
+  transition:color .12s,border-color .12s,background .12s;
+}
+.ibtn:hover{color:var(--acc);border-color:var(--acc);background:var(--acc-dim)}
+.ibtn.danger:hover{color:var(--red);border-color:var(--red);background:var(--red-dim)}
+.chip-btn{
+  font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--dim);background:transparent;border:1px solid var(--line-bright);
+  padding:2px 7px;cursor:pointer;
+  transition:color .12s,border-color .12s,background .12s;
+}
+.chip-btn:hover{color:var(--txt);border-color:var(--dim)}
+.chip-btn.on{color:var(--acc);border-color:var(--acc);background:var(--acc-dim)}
+
+/* ============ STICKY HEADER ============ */
+.top{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  padding:8px 16px;
+  background:rgba(10,15,11,.9);
+  backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);
+}
+.t-cluster{display:flex;align-items:center;gap:10px}
+.logo{font-size:15px;line-height:1}
+.brand{font-size:13px;font-weight:700;letter-spacing:.18em}
+.brand .suffix{color:var(--faint);font-weight:400;letter-spacing:.1em}
+.live{
+  display:inline-flex;align-items:center;gap:7px;
+  border:1px solid var(--line-bright);padding:3px 9px;
+  font-size:10px;letter-spacing:.16em;color:var(--acc);
+}
+.live .dot{width:6px;height:6px;border-radius:50%;background:var(--acc);box-shadow:0 0 6px var(--acc)}
+.live-bad{display:none}
+body.critical .live{color:var(--amb);border-color:rgba(232,179,75,.5)}
+body.critical .live .dot{background:var(--amb);box-shadow:0 0 6px var(--amb)}
+body.critical .live-ok{display:none}
+body.critical .live-bad{display:inline}
+.t-rollup{
+  flex:1;text-align:center;
+  font-size:11px;letter-spacing:.06em;color:var(--dim);
+  min-width:260px;
+}
+.t-rollup b{font-weight:600;color:var(--txt)}
+.t-rollup i{font-style:normal;color:var(--faint);margin:0 7px}
+.ru-crit{display:none}
+body.critical .ru-normal{display:none}
+body.critical .ru-crit{display:inline}
+.t-right{margin-left:auto}
+.seg{display:inline-flex;align-items:center;border:1px solid var(--line-bright)}
+.seg-label{font-size:9px;letter-spacing:.16em;color:var(--faint);padding:0 7px;border-right:1px solid var(--line)}
+.seg button{
+  background:transparent;border:0;color:var(--dim);cursor:pointer;
+  font-size:9px;letter-spacing:.14em;padding:4px 9px;
+  transition:color .12s,background .12s;
+}
+.seg button:hover{color:var(--txt)}
+#demo-normal[aria-pressed="true"]{background:var(--acc-dim);color:var(--acc)}
+#demo-critical[aria-pressed="true"]{background:var(--red-dim);color:var(--red)}
+.clock{font-size:11px;color:var(--txt);letter-spacing:.08em;border:1px solid var(--line);padding:3px 9px;background:var(--well)}
+.clock .lbl{font-size:9px;letter-spacing:.14em;color:var(--faint);margin-right:6px}
+
+/* ============ PAGE WRAP ============ */
+.wrap{max-width:1280px;margin:0 auto;padding:14px 16px 8px;display:grid;gap:14px}
+
+/* ============ CRITICAL BANNER ============ */
+#crit{
+  display:none;align-items:baseline;gap:12px;
+  border-top:1px solid rgba(240,96,77,.5);border-bottom:1px solid rgba(240,96,77,.5);
+  background:linear-gradient(90deg,rgba(240,96,77,.14),rgba(240,96,77,.04));
+  color:#ff9d8d;padding:9px 14px;
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+}
+body.critical #crit{display:flex}
+.crit-tag{color:var(--red);font-weight:700;letter-spacing:.18em;white-space:nowrap}
+
+/* ============ PANELS ============ */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:2px;min-width:0}
+.p-head{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.p-title{font-size:11px;font-weight:600;letter-spacing:.16em;color:var(--txt)}
+.p-title::before{content:"// ";color:var(--faint)}
+.p-note{margin-left:auto;font-size:9px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase}
+.p-head .btn-ghost{margin-left:auto}
+.p-head .p-note + .btn-ghost{margin-left:0}
+.count{font-size:10px;letter-spacing:.1em;color:var(--red)}
+
+/* ============ INBOX ============ */
+.inbox-row{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 12px;font-size:12px;letter-spacing:.02em;
+}
+.inbox-row + .inbox-row{border-top:1px solid var(--line)}
+.inbox-row:hover{background:rgba(74,224,138,.03)}
+.sev-crit{box-shadow:inset 2px 0 0 var(--red)}
+.sev-warn{box-shadow:inset 2px 0 0 var(--amb)}
+.inbox-row .msg{flex:1;min-width:0}
+.inbox-row .acts{display:flex;gap:6px;flex-shrink:0}
+.inbox-clear{padding:10px 12px;font-size:11px;letter-spacing:.12em;color:var(--acc)}
+
+/* ============ SECTION HEADERS ============ */
+.sec-row{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:0 2px}
+.sec-title{font-size:11px;font-weight:600;letter-spacing:.16em;color:var(--txt)}
+.sec-title::before{content:"// ";color:var(--faint)}
+.sec-note{margin-left:auto;font-size:9px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase}
+.sec-note b{color:var(--red);font-weight:700}
+
+/* ============ ACCOUNT CARDS ============ */
+.acct-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:12px;margin-top:10px}
+.acct{
+  position:relative;background:var(--panel);border:1px solid var(--line);border-radius:2px;
+  padding:12px;transition:border-color .12s;min-width:0;
+}
+.acct:hover{border-color:var(--line-bright)}
+.acct::before{content:"";position:absolute;top:0;left:0;right:0;height:2px}
+.ac-ready::before{background:linear-gradient(90deg,rgba(74,224,138,.55),transparent 70%)}
+.ac-run::before{background:linear-gradient(90deg,rgba(232,179,75,.6),transparent 70%)}
+.ac-reauth::before{background:linear-gradient(90deg,rgba(240,96,77,.65),transparent 70%)}
+.ac-parked::before{background:linear-gradient(90deg,rgba(107,125,112,.6),transparent 70%)}
+.ac-disabled::before{background:linear-gradient(90deg,rgba(70,86,75,.5),transparent 70%)}
+
+.acct-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.acct-name{font-size:13px;font-weight:600;letter-spacing:.06em}
+.status{
+  margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  padding:2px 7px;border:1px solid;white-space:nowrap;
+}
+.st-ready{color:var(--acc);border-color:rgba(74,224,138,.55);background:rgba(74,224,138,.08)}
+.st-run{color:var(--amb);border-color:rgba(232,179,75,.55);background:rgba(232,179,75,.08)}
+.st-reauth{color:var(--red);border-color:rgba(240,96,77,.6);background:rgba(240,96,77,.09)}
+.st-parked{color:var(--dim);border-color:var(--line-bright);background:rgba(107,125,112,.08)}
+.st-disabled{color:var(--faint);border-color:var(--line);background:transparent}
+.acct.is-parked .status{color:var(--dim);border-color:var(--line-bright);background:rgba(107,125,112,.08)}
+.badge-pick{
+  font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--acc);border:1px solid var(--acc);background:rgba(74,224,138,.14);
+  padding:2px 6px;white-space:nowrap;
+}
+
+.hero-row{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:10px}
+.hero-num{font-size:30px;font-weight:600;line-height:1;letter-spacing:-.02em}
+.hero-num .pct{font-size:14px;margin-left:2px;opacity:.7}
+.h-ok{color:var(--acc);text-shadow:0 0 18px rgba(74,224,138,.22)}
+.h-warn{color:var(--amb);text-shadow:0 0 18px rgba(232,179,75,.22)}
+.h-crit{color:var(--red);text-shadow:0 0 18px rgba(240,96,77,.25)}
+.h-dim{color:var(--dim)}
+.hero-sub{margin-top:5px;font-size:9px;letter-spacing:.16em;color:var(--faint)}
+
+.spark{width:96px;height:28px;flex-shrink:0}
+.s-base{stroke:var(--line);stroke-width:1}
+.s-cut{stroke:rgba(240,96,77,.4);stroke-width:.75;stroke-dasharray:2 2}
+.s-line{fill:none;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.s-ok{stroke:var(--acc)} .s-warn{stroke:var(--amb)} .s-crit{stroke:var(--red)} .s-dim{stroke:var(--faint)}
+.s-stale{stroke-dasharray:3 2}
+.is-parked .spark{opacity:.45}
+
+/* --- gauges: segmented track, hairline ticks, hard 95 cutoff --- */
+.gauges{margin-top:12px;display:grid;gap:10px}
+.g-head{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-bottom:3px}
+.g-val{font-weight:600}
+.v-ok{color:var(--acc)} .v-warn{color:var(--amb)} .v-crit{color:var(--red)} .v-dim{color:var(--dim)}
+.g-track{position:relative;height:8px;background:var(--well);border:1px solid var(--line)}
+.g-track::before{
+  content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+  background:repeating-linear-gradient(90deg,transparent 0,transparent calc(10% - 1px),var(--bg) calc(10% - 1px),var(--bg) 10%);
+}
+.g-fill{position:absolute;top:0;bottom:0;left:0;z-index:1}
+.f-ok{background:linear-gradient(90deg,#2c9a5e,var(--acc));box-shadow:0 0 8px rgba(74,224,138,.3)}
+.f-warn{background:linear-gradient(90deg,#9a7a2e,var(--amb));box-shadow:0 0 8px rgba(232,179,75,.3)}
+.f-crit{background:linear-gradient(90deg,#a03a2c,var(--red));box-shadow:0 0 8px rgba(240,96,77,.4)}
+.f-dim{background:var(--faint)}
+.tick{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--faint);z-index:3}
+.tick.t95{top:-3px;bottom:-3px;background:var(--red);box-shadow:0 0 5px rgba(240,96,77,.7)}
+.g-ticks{position:relative;height:12px;margin-top:2px}
+.g-ticks span{
+  position:absolute;top:0;transform:translateX(-50%);
+  font-size:9px;letter-spacing:.08em;color:var(--faint);
+}
+.g-ticks span.t95{transform:translateX(-82%);color:var(--red);font-weight:700}
+
+.burn{margin-top:10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.b-ok{color:var(--acc)} .b-warn{color:var(--amb)} .b-crit{color:var(--red)} .b-dim{color:var(--dim)}
+
+.acct-meta{
+  margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+}
+.upd{font-size:9px;letter-spacing:.14em;color:var(--faint)}
+.upd.warn{color:var(--amb)}
+.acts{display:flex;gap:6px}
+
+/* --- team-alpha re-auth box --- */
+.reauth-box{margin-top:10px;border:1px dashed rgba(240,96,77,.45);background:rgba(240,96,77,.05);padding:8px}
+.rb-label{font-size:9px;letter-spacing:.16em;color:var(--red);margin-bottom:6px}
+.rb-row{display:flex;gap:6px}
+.rb-note{margin-top:7px;font-size:10px;line-height:1.55;color:var(--dim)}
+
+.inp{
+  width:100%;background:var(--well);border:1px solid var(--line);border-radius:0;
+  color:var(--txt);font:inherit;font-size:11px;padding:5px 8px;
+}
+.inp::placeholder{color:var(--faint)}
+.inp:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 1px rgba(74,224,138,.3)}
+
+/* ============ ACTIVITY ============ */
+.act-grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:14px;align-items:start}
+.feed-tools{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:7px 10px;border-bottom:1px solid var(--line);
+}
+.paused-tag{margin-left:auto;color:var(--amb);font-size:9px;letter-spacing:.14em}
+#feed.paused #feed-rows{opacity:.55}
+.scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.scroll-x::-webkit-scrollbar{height:8px;width:8px}
+.scroll-x::-webkit-scrollbar-thumb{background:var(--line-bright)}
+.scroll-x::-webkit-scrollbar-track{background:transparent}
+#feed-rows{min-width:560px}
+.fr{
+  display:grid;grid-template-columns:44px 78px 66px 56px 58px minmax(0,1fr);
+  gap:8px;align-items:baseline;padding:5px 10px;font-size:11px;
+}
+.fr + .fr{border-top:1px solid var(--line)}
+.fr-head{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);border-top:none}
+.feed-row:hover{background:rgba(74,224,138,.045)}
+.feed-row.dimmed{opacity:.25}
+.c-time{color:var(--faint)}
+.c-acct{color:var(--txt)}
+.c-host{color:var(--dim)}
+.c-model{color:var(--dim)}
+.c-model.m-opus{color:var(--txt)}
+.c-tok{text-align:right;color:var(--dim)}
+.c-snip{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.feed-row.fail{background:rgba(240,96,77,.06);box-shadow:inset 2px 0 0 var(--red)}
+.feed-row.fail:hover{background:rgba(240,96,77,.1)}
+.feed-row.fail .c-snip{color:var(--red)}
+
+/* ============ TABLES ============ */
+.tbl{width:100%;border-collapse:collapse;font-size:11px;min-width:320px}
+.tbl th{
+  text-align:left;font-weight:500;font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--faint);padding:7px 10px;border-bottom:1px solid var(--line);
+}
+.tbl td{padding:6px 10px;border-top:1px solid var(--line);color:var(--txt)}
+.tbl tbody tr:first-child td{border-top:none}
+.tbl tbody tr:hover{background:rgba(74,224,138,.04)}
+.tbl .num{text-align:right}
+.tbl td.dim,.tbl .num.dim{color:var(--dim)}
+.host-cell .hbar{display:block;margin-top:4px;height:3px;width:72px;background:var(--well)}
+.host-cell .hbar i{display:block;height:100%;background:var(--acc);opacity:.55}
+
+/* ============ PROVIDER KEYS ============ */
+.keys-toggle{
+  width:100%;display:flex;align-items:center;gap:9px;
+  background:none;border:0;cursor:pointer;text-align:left;
+  color:var(--txt);font-size:11px;font-weight:600;letter-spacing:.16em;
+  padding:10px 12px;text-transform:uppercase;
+  transition:color .12s;
+}
+.keys-toggle:hover{color:var(--acc)}
+.keys-toggle .caret{color:var(--faint);font-weight:400}
+.keys-toggle .hint{margin-left:auto;font-size:9px;font-weight:400;letter-spacing:.14em;color:var(--faint)}
+.keys-body{display:none;border-top:1px solid var(--line)}
+#keys-panel.open .keys-body{display:block}
+.keys-body .tbl{min-width:660px}
+.kst{font-size:10px;letter-spacing:.12em;font-weight:600}
+.kst.ok{color:var(--acc)} .kst.dead{color:var(--red)}
+.key-hint{color:var(--dim)}
+.row-acts{display:flex;gap:6px;justify-content:flex-end}
+.add-key{
+  display:grid;grid-template-columns:120px 1fr 1.6fr auto;gap:8px;
+  padding:10px;border-top:1px solid var(--line);background:rgba(11,17,12,.5);
+}
+.add-key .btn-ghost{color:var(--acc);border-color:rgba(74,224,138,.5)}
+.add-key .btn-ghost:hover{background:var(--acc-dim);border-color:var(--acc)}
+
+/* ============ FOOTER ============ */
+.foot{
+  border-top:1px solid var(--line);padding:12px 4px 18px;
+  text-align:center;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
+}
+
+/* ============ RESPONSIVE ============ */
+@media (max-width:1020px){
+  .act-grid{grid-template-columns:1fr}
+}
+@media (max-width:760px){
+  .top{gap:10px}
+  .t-rollup{order:3;flex-basis:100%;min-width:0;text-align:left;padding-top:7px;margin-top:2px;border-top:1px dashed var(--line)}
+  .t-right{margin-left:0}
+}
+@media (max-width:560px){
+  .add-key{grid-template-columns:1fr 1fr}
+  .add-key .btn-ghost{grid-column:1/-1}
+  .inbox-row{flex-wrap:wrap}
+  .inbox-row .msg{flex-basis:100%}
+}
+@media (max-width:420px){
+  .hero-num{font-size:26px}
+  .brand{letter-spacing:.12em}
+  .clock{display:none}
+}
+
+/* ============ MOTION ============ */
+@media (prefers-reduced-motion:no-preference){
+  .live .dot{animation:blink 2s ease-in-out infinite}
+  .h-pulse{animation:heropulse 2.6s ease-in-out infinite}
+}
+@keyframes blink{
+  0%,100%{box-shadow:0 0 0 0 rgba(74,224,138,.45)}
+  50%{box-shadow:0 0 0 4px rgba(74,224,138,0)}
+}
+@keyframes heropulse{
+  0%,100%{opacity:1}
+  50%{opacity:.55}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none !important;transition:none !important}
+}
+</style>
+<noscript><style>.keys-body{display:block}</style></noscript>
+</head>
+<body>
+
+<!-- ================= HEADER ================= -->
+<header class="top">
+  <div class="t-cluster">
+    <span class="logo" aria-hidden="true">🛡</span>
+    <span class="brand">AIGATE <span class="suffix">// OPS</span></span>
+    <span class="live" role="status">
+      <i class="dot" aria-hidden="true"></i><span class="live-ok">LIVE</span><span class="live-bad">RECONNECTING…</span>
+    </span>
+  </div>
+  <div class="t-rollup">
+    <span class="ru ru-normal"><b class="c-ok">4/6</b> selectable <i>·</i> <b class="c-warn">1</b> parked <i>·</i> <b class="c-crit">1</b> re-auth <i>·</i> keys <b class="c-ok">3✓</b> <b class="c-crit">1✗</b> <i>·</i> polled <b>3m</b> ago</span>
+    <span class="ru ru-crit"><b class="c-crit">0/6</b> selectable <i>·</i> <b class="c-warn">1</b> parked <i>·</i> <b class="c-crit">1</b> re-auth <i>·</i> keys <b class="c-ok">3✓</b> <b class="c-crit">1✗</b> <i>·</i> polled <b>3m</b> ago</span>
+  </div>
+  <div class="t-cluster t-right">
+    <span class="seg" role="group" aria-label="demo state">
+      <span class="seg-label">DEMO</span><button id="demo-normal" aria-pressed="true">NORMAL</button><button id="demo-critical" aria-pressed="false">CRITICAL</button>
+    </span>
+    <span class="clock"><span class="lbl">LOCAL</span><span id="clock">--:--:--</span></span>
+    <button class="btn-ghost">LOGOUT</button>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ================= CRITICAL BANNER ================= -->
+  <div id="crit" role="alert">
+    <span class="crit-tag">▲ CRITICAL</span>
+    <span>0 accounts selectable — every account is parked, disabled, or needs re-auth. Requests are failing.</span>
+  </div>
+
+  <!-- ================= ACTION-REQUIRED INBOX ================= -->
+  <section class="panel" aria-label="action required">
+    <div class="p-head">
+      <span class="p-title">ACTION REQUIRED</span>
+      <span class="count">[<span id="inbox-count">3</span>]</span>
+      <span class="p-note">dismissible</span>
+    </div>
+    <div id="inbox-rows">
+      <div class="inbox-row sev-crit">
+        <span class="msg"><b>team-alpha</b> needs re-auth — run <code>claude setup-token</code>, then paste the new token on its card</span>
+        <span class="acts">
+          <button class="ibtn" data-copy="claude setup-token" title="copy command" aria-label="copy setup-token command">⧉</button>
+          <button class="ibtn danger" data-dismiss title="dismiss" aria-label="dismiss re-auth notice">✕</button>
+        </span>
+      </div>
+      <div class="inbox-row sev-crit">
+        <span class="msg">provider key <b>'openai · prod'</b> is dead — last check failed</span>
+        <span class="acts">
+          <button class="ibtn danger" data-dismiss title="dismiss" aria-label="dismiss dead key notice">✕</button>
+        </span>
+      </div>
+      <div class="inbox-row sev-warn">
+        <span class="msg"><b>backup</b> hasn't reported usage in 25m — poll may be failing</span>
+        <span class="acts">
+          <button class="ibtn danger" data-dismiss title="dismiss" aria-label="dismiss stale backup notice">✕</button>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= ACCOUNTS ================= -->
+  <section aria-label="accounts — live usage">
+    <div class="sec-row">
+      <h2 class="sec-title">ACCOUNTS — LIVE USAGE</h2>
+      <span class="sec-note">severity sort · cutoff <b>95%</b> · 6 accounts</span>
+    </div>
+    <div class="acct-grid">
+
+      <!-- team-alpha · RE-AUTH -->
+      <article class="acct ac-reauth" data-acct="team-alpha">
+        <div class="acct-head">
+          <span class="acct-name">team-alpha</span>
+          <span class="status st-reauth" data-orig="RE-AUTH">RE-AUTH</span>
+        </div>
+        <div class="hero-row">
+          <div class="hero">
+            <div class="hero-num h-ok">34<span class="pct">%</span></div>
+            <div class="hero-sub">WORST · 5-HOUR · STALE</div>
+          </div>
+          <svg class="spark" viewBox="0 0 96 28" aria-hidden="true">
+            <line class="s-base" x1="0" y1="27" x2="96" y2="27"/>
+            <line class="s-cut" x1="0" y1="3.2" x2="96" y2="3.2"/>
+            <polyline class="s-line s-dim" points="0,18.8 8.7,18.6 17.5,18.3 26.2,18.1 34.9,17.8 43.6,17.8 52.4,17.8 61.1,17.8 69.8,17.8 78.5,17.8 87.3,17.8 96,17.8"/>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="g-head"><span>5-hour</span><span class="g-val v-ok">34%</span></div>
+            <div class="g-track">
+              <div class="g-fill f-ok" style="width:34%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="g-ticks"><span style="left:50%">50</span><span style="left:80%">80</span><span class="t95" style="left:95%">▲95</span></div>
+          </div>
+          <div class="gauge">
+            <div class="g-head"><span>weekly</span><span class="g-val v-ok">12%</span></div>
+            <div class="g-track">
+              <div class="g-fill f-ok" style="width:12%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="g-ticks"><span style="left:50%">50</span><span style="left:80%">80</span><span class="t95" style="left:95%">▲95</span></div>
+          </div>
+        </div>
+        <div class="burn b-crit">— telemetry halted · re-auth required</div>
+        <div class="reauth-box">
+          <div class="rb-label">RESTORE ACCESS</div>
+          <div class="rb-row">
+            <input class="inp" type="text" placeholder="paste new setup-token…" aria-label="paste new setup-token for team-alpha">
+            <button class="btn-ghost crit">SAVE</button>
+          </div>
+          <div class="rb-note">run <code>claude setup-token</code> on this account's host, paste the token above — card returns to READY on next poll.</div>
+        </div>
+        <div class="acct-meta">
+          <span class="upd">UPD 2M AGO</span>
+          <span class="acts">
+            <button class="ibtn" title="refresh now" aria-label="refresh team-alpha">↻</button>
+            <button class="ibtn" data-park title="park account" aria-label="park team-alpha" aria-pressed="false">⏸</button>
+            <button class="ibtn danger" title="delete account" aria-label="delete team-alpha">✕</button>
+          </span>
+        </div>
+      </article>
+
+      <!-- work · RUNAWAY -->
+      <article class="acct ac-run" data-acct="work">
+        <div class="acct-head">
+          <span class="acct-name">work</span>
+          <span class="status st-run" data-orig="RUNAWAY">RUNAWAY</span>
+        </div>
+        <div class="hero-row">
+          <div class="hero">
+            <div class="hero-num h-warn h-pulse">84<span class="pct">%</span></div>
+            <div class="hero-sub">WORST · 5-HOUR</div>
+          </div>
+          <svg class="spark" viewBox="0 0 96 28" aria-hidden="true">
+            <line class="s-base" x1="0" y1="27" x2="96" y2="27"/>
+            <line class="s-cut" x1="0" y1="3.2" x2="96" y2="3.2"/>
+            <polyline class="s-line s-warn" points="0,16.2 8.7,15.4 17.5,14.5 26.2,13.5 34.9,12.3 43.6,11.1 52.4,10.2 61.1,9.2 69.8,8.2 78.5,7.3 87.3,6.6 96,5.8"/>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="g-head"><span>5-hour</span><span class="g-val v-warn">84%</span></div>
+            <div class="g-track">
+              <div class="g-fill f-warn" style="width:84%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="g-ticks"><span style="left:50%">50</span><span style="left:80%">80</span><span class="t95" style="left:95%">▲95</span></div>
+          </div>
+          <div class="gauge">
+            <div class="g-head"><span>weekly</span><span class="g-val v-ok">61%</span></div>
+            <div class="g-track">
+              <div class="g-fill f-ok" style="width:61%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="g-ticks"><span style="left:50%">50</span><span style="left:80%">80</span><span class="t95" style="left:95%">▲95</span></div>
+          </div>
+        </div>
+        <div class="burn b-warn">↑ 9%/h · 5h window exhausts in ~45m</div>
+        <div class="acct-meta">
+          <span class="upd">UPD 4S AGO</span>
+          <span class="acts">
+            <button class="ibtn" title="refresh now" aria-label="refresh work">↻</button>
+            <button class="ibtn" data-park title="park account" aria-label="park work" aria-pressed="false">⏸</button>
+            <button class="ibtn danger" title="delete account" aria-label="delete work">✕</button>
+          </span>
+        </div>
+      </article>
+
+      <!-- personal · READY · next pick -->
+      <article class="acct ac-ready" data-acct="personal">
+        <div class="acct-head">
+          <span class="acct-name">personal</span>
+          <span class="badge-pick">» NEXT TO BE PICKED</span>
+          <span class="status st-ready" data-orig="READY">READY</span>
+        </div>
+        <div class="hero-row">
+          <div class="hero">
+            <div class="hero-num h-ok">41<span class="pct">%</span></div>
+            <div class="hero-sub">WORST · 5-HOUR</div>
+          </div>
+          <svg class="spark" viewBox="0 0 96 28" aria-hidden="true">
+            <line class="s-base" x1="0" y1="27" x2="96" y2="27"/>
+            <line class="s-cut" x1="0" y1="3.2" x2="96" y2="3.2"/>
+            <polyline class="s-line s-ok" points="0,18.8 8.7,18.6 17.5,18.1 26.2,17.8 34.9,17.6 43.6,17.4 52.4,17.1 61.1,16.9 69.8,16.6 78.5,16.4 87.3,16.4 96,16.2"/>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="g-head"><span>5-hour</span><span class="g-val v-ok">41%</span></div>
+            <div class="g-track">
+              <div class="g-fill f-ok" style="width:41%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="g-ticks"><span style="left:50%">50</span><span style="left:80%">80</span><span class="t95" style="left:95%">▲95</span></div>
+          </div>
+          <div class="gauge">
+            <div class="g-head"><span>weekly</span><span class="g-val v-ok">22%</span></div>
+            <div class="g-track">
+              <div class="g-fill f-ok" style="width:22%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="g-ticks"><span style="left:50%">50</span><span style="left:80%">80</span><span class="t95" style="left:95%">▲95</span></div>
+          </div>
+        </div>
+        <div class="burn b-ok">→ steady · ~3%/h</div>
+        <div class="acct-meta">
+          <span class="upd">UPD 2S AGO</span>
+          <span class="acts">
+            <button class="ibtn" title="refresh now" aria-label="refresh personal">↻</button>
+            <button class="ibtn" data-park title="park account" aria-label="park personal" aria-pressed="false">⏸</button>
+            <button class="ibtn danger" title="delete account" aria-label="delete personal">✕</button>
+          </span>
+        </div>
+      </article>
+
+      <!-- backup · READY but stale -->
+      <article class="acct ac-ready" data-acct="backup">
+        <div class="acct-head">
+          <span class="acct-name">backup</span>
+          <span class="status st-ready" data-orig="READY">READY</span>
+        </div>
+        <div class="hero-row">
+          <div class="hero">
+            <div class="hero-num h-ok">33<span class="pct">%</span></div>
+            <div class="hero-sub">WORST · WEEKLY · STALE</div>
+          </div>
+          <svg class="spark" viewBox="0 0 96 28" aria-hidden="true">
+            <line class="s-base" x1="0" y1="27" x2="96" y2="27"/>
+            <line class="s-cut" x1="0" y1="3.2" x2="96" y2="3.2"/>
+            <polyline class="s-line s-warn s-stale" points="0,18.1 8.7,18.1 17.5,18.3 26.2,18.1 34.9,18.1 43.6,18.3 52.4,18.1 61.1,18.1 69.8,18.1 78.5,18.1 87.3,18.1 96,18.1"/>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="g-head"><span>5-hour</span><span class="g-val v-ok">18%</span></div>
+            <div class="g-track">
+              <div class="g-fill f-ok" style="width:18%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="g-ticks"><span style="left:50%">50</span><span style="left:80%">80</span><span class="t95" style="left:95%">▲95</span></div>
+          </div>
+          <div class="gauge">
+            <div class="g-head"><span>weekly</span><span class="g-val v-ok">33%</span></div>
+            <div class="g-track">
+              <div class="g-fill f-ok" style="width:33%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="g-ticks"><span style="left:50%">50</span><span style="left:80%">80</span><span class="t95" style="left:95%">▲95</span></div>
+          </div>
+        </div>
+        <div class="burn b-warn">? unknown · no data for 25m</div>
+        <div class="acct-meta">
+          <span class="upd warn">▲ UPD 25M AGO — STALE</span>
+          <span class="acts">
+            <button class="ibtn" title="refresh now" aria-label="refresh backup">↻</button>
+            <button class="ibtn" data-park title="park account" aria-label="park backup" aria-pressed="false">⏸</button>
+            <button class="ibtn danger" title="delete account" aria-label="delete backup">✕</button>
+          </span>
+        </div>
+      </article>
+
+      <!-- client-x · PARKED -->
+      <article class="acct ac-parked is-parked" data-acct="client-x">
+        <div class="acct-head">
+          <span class="acct-name">client-x</span>
+          <span class="status st-parked" data-orig="READY" data-parked="PARKED →21:14">PARKED →21:14</span>
+        </div>
+        <div class="hero-row">
+          <div class="hero">
+            <div class="hero-num h-crit">96<span class="pct">%</span></div>
+            <div class="hero-sub">WORST · WEEKLY</div>
+          </div>
+          <svg class="spark" viewBox="0 0 96 28" aria-hidden="true">
+            <line class="s-base" x1="0" y1="27" x2="96" y2="27"/>
+            <line class="s-cut" x1="0" y1="3.2" x2="96" y2="3.2"/>
+            <polyline class="s-line s-crit" points="0,9.2 8.7,8.5 17.5,7.8 26.2,7.0 34.9,6.3 43.6,5.6 52.4,4.9 61.1,4.4 69.8,3.9 78.5,3.7 87.3,3.2 96,3.0"/>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="g-head"><span>5-hour</span><span class="g-val v-ok">74%</span></div>
+            <div class="g-track">
+              <div class="g-fill f-ok" style="width:74%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="g-ticks"><span style="left:50%">50</span><span style="left:80%">80</span><span class="t95" style="left:95%">▲95</span></div>
+          </div>
+          <div class="gauge">
+            <div class="g-head"><span>weekly</span><span class="g-val v-crit">96%</span></div>
+            <div class="g-track">
+              <div class="g-fill f-crit" style="width:96%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="g-ticks"><span style="left:50%">50</span><span style="left:80%">80</span><span class="t95" style="left:95%">▲95</span></div>
+          </div>
+        </div>
+        <div class="burn b-dim">⏸ parked until 21:14 · weekly resets in 3d</div>
+        <div class="acct-meta">
+          <span class="upd">UPD 12S AGO</span>
+          <span class="acts">
+            <button class="ibtn" title="refresh now" aria-label="refresh client-x">↻</button>
+            <button class="ibtn" data-park title="resume account" aria-label="resume client-x" aria-pressed="true">▶</button>
+            <button class="ibtn danger" title="delete account" aria-label="delete client-x">✕</button>
+          </span>
+        </div>
+      </article>
+
+      <!-- old-laptop · DISABLED -->
+      <article class="acct ac-disabled" data-acct="old-laptop">
+        <div class="acct-head">
+          <span class="acct-name">old-laptop</span>
+          <span class="status st-disabled" data-orig="DISABLED">DISABLED</span>
+        </div>
+        <div class="hero-row">
+          <div class="hero">
+            <div class="hero-num h-dim">12<span class="pct">%</span></div>
+            <div class="hero-sub">WORST · 5-HOUR</div>
+          </div>
+          <svg class="spark" viewBox="0 0 96 28" aria-hidden="true">
+            <line class="s-base" x1="0" y1="27" x2="96" y2="27"/>
+            <line class="s-cut" x1="0" y1="3.2" x2="96" y2="3.2"/>
+            <polyline class="s-line s-dim" points="0,23.1 8.7,23.1 17.5,22.9 26.2,23.1 34.9,23.1 43.6,23.4 52.4,23.1 61.1,23.1 69.8,23.1 78.5,23.1 87.3,23.1 96,23.1"/>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="g-head"><span>5-hour</span><span class="g-val v-dim">12%</span></div>
+            <div class="g-track">
+              <div class="g-fill f-dim" style="width:12%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="g-ticks"><span style="left:50%">50</span><span style="left:80%">80</span><span class="t95" style="left:95%">▲95</span></div>
+          </div>
+          <div class="gauge">
+            <div class="g-head"><span>weekly</span><span class="g-val v-dim">9%</span></div>
+            <div class="g-track">
+              <div class="g-fill f-dim" style="width:9%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="g-ticks"><span style="left:50%">50</span><span style="left:80%">80</span><span class="t95" style="left:95%">▲95</span></div>
+          </div>
+        </div>
+        <div class="burn b-dim">· disabled — no activity</div>
+        <div class="acct-meta">
+          <span class="upd">UPD 3D AGO</span>
+          <span class="acts">
+            <button class="ibtn" title="refresh now" aria-label="refresh old-laptop">↻</button>
+            <button class="ibtn" data-park title="park account" aria-label="park old-laptop" aria-pressed="false">⏸</button>
+            <button class="ibtn danger" title="delete account" aria-label="delete old-laptop">✕</button>
+          </span>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ================= ACTIVITY ================= -->
+  <section class="act-grid" aria-label="activity">
+
+    <!-- live feed -->
+    <section class="panel feed" id="feed" aria-label="live activity">
+      <div class="p-head">
+        <span class="p-title">LIVE ACTIVITY</span>
+        <span class="p-note">tail · 10 rows</span>
+        <button class="btn-ghost" id="btn-pause" aria-pressed="false">⏸ PAUSE</button>
+      </div>
+      <div class="feed-tools">
+        <span class="micro">FILTER:</span>
+        <button class="chip-btn" data-match="work" aria-pressed="false">work</button>
+        <button class="chip-btn" data-match="team-alpha" aria-pressed="false">team-alpha</button>
+        <button class="chip-btn" data-match="personal" aria-pressed="false">personal</button>
+        <button class="chip-btn" data-match="mbp" aria-pressed="false">mbp</button>
+        <span class="paused-tag" id="feed-paused" hidden>■ TAIL HELD — PAUSED</span>
+      </div>
+      <div class="scroll-x">
+        <div id="feed-rows">
+          <div class="fr fr-head"><span>time</span><span>acct</span><span>host</span><span>model</span><span style="text-align:right">tokens</span><span>prompt</span></div>
+          <div class="fr feed-row" data-acct="work" data-host="mbp"><span class="c-time">2s</span><span class="c-acct">work</span><span class="c-host">mbp</span><span class="c-model m-opus">opus</span><span class="c-tok">42,318</span><span class="c-snip">refactor quota scheduler to pick least-used…</span></div>
+          <div class="fr feed-row" data-acct="personal" data-host="mbp"><span class="c-time">6s</span><span class="c-acct">personal</span><span class="c-host">mbp</span><span class="c-model">sonnet</span><span class="c-tok">12,004</span><span class="c-snip">draft invoice email for the march retainer</span></div>
+          <div class="fr feed-row" data-acct="work" data-host="mbp"><span class="c-time">11s</span><span class="c-acct">work</span><span class="c-host">mbp</span><span class="c-model m-opus">opus</span><span class="c-tok">38,772</span><span class="c-snip">fix flaky backoff test in the poll loop</span></div>
+          <div class="fr feed-row fail" data-acct="" data-host="mbp"><span class="c-time">14s</span><span class="c-acct">—</span><span class="c-host">mbp</span><span class="c-model">—</span><span class="c-tok">0</span><span class="c-snip">select — none-available · request rejected</span></div>
+          <div class="fr feed-row" data-acct="team-alpha" data-host="mac-mini"><span class="c-time">23s</span><span class="c-acct">team-alpha</span><span class="c-host">mac-mini</span><span class="c-model">sonnet</span><span class="c-tok">9,531</span><span class="c-snip">summarize standup notes into tickets</span></div>
+          <div class="fr feed-row" data-acct="personal" data-host="mbp"><span class="c-time">31s</span><span class="c-acct">personal</span><span class="c-host">mbp</span><span class="c-model">haiku</span><span class="c-tok">2,140</span><span class="c-snip">rename branch, open draft pr</span></div>
+          <div class="fr feed-row" data-acct="work" data-host="mbp"><span class="c-time">40s</span><span class="c-acct">work</span><span class="c-host">mbp</span><span class="c-model m-opus">opus</span><span class="c-tok">51,208</span><span class="c-snip">trace burn spike to runaway subagent loop</span></div>
+          <div class="fr feed-row" data-acct="backup" data-host="ci-runner"><span class="c-time">58s</span><span class="c-acct">backup</span><span class="c-host">ci-runner</span><span class="c-model">sonnet</span><span class="c-tok">7,882</span><span class="c-snip">nightly: reconcile usage ledger</span></div>
+          <div class="fr feed-row fail" data-acct="team-alpha" data-host="mac-mini"><span class="c-time">1m</span><span class="c-acct">team-alpha</span><span class="c-host">mac-mini</span><span class="c-model">—</span><span class="c-tok">0</span><span class="c-snip">decrypt-fail — vault key rejected</span></div>
+          <div class="fr feed-row" data-acct="personal" data-host="mbp"><span class="c-time">2m</span><span class="c-acct">personal</span><span class="c-host">mbp</span><span class="c-model">sonnet</span><span class="c-tok">15,664</span><span class="c-snip">write changelog for v0.1.0</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- by host -->
+    <section class="panel" aria-label="by host / device">
+      <div class="p-head">
+        <span class="p-title">BY HOST / DEVICE</span>
+        <span class="p-note">3 hosts</span>
+      </div>
+      <div class="scroll-x">
+        <table class="tbl">
+          <thead>
+            <tr><th>host</th><th class="num">req</th><th class="num">tokens</th><th class="num">last seen</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="host-cell">mbp<span class="hbar"><i style="width:75%"></i></span></span></td>
+              <td class="num">1,204</td><td class="num">8.4M</td><td class="num dim">2s ago</td>
+            </tr>
+            <tr>
+              <td><span class="host-cell">mac-mini<span class="hbar"><i style="width:19%"></i></span></span></td>
+              <td class="num">312</td><td class="num">1.1M</td><td class="num dim">23s ago</td>
+            </tr>
+            <tr>
+              <td><span class="host-cell">ci-runner<span class="hbar"><i style="width:6%"></i></span></span></td>
+              <td class="num">98</td><td class="num">640K</td><td class="num dim">58s ago</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+
+  <!-- ================= PROVIDER API KEYS ================= -->
+  <section class="panel keys" id="keys-panel" aria-label="provider api keys">
+    <button class="keys-toggle" id="keys-toggle" aria-expanded="false" aria-controls="keys-body">
+      <span class="caret" id="keys-caret">▸</span> PROVIDER API KEYS · 4 <span class="hint" id="keys-hint">— click to expand</span>
+    </button>
+    <div class="keys-body" id="keys-body">
+      <div class="scroll-x">
+        <table class="tbl">
+          <thead>
+            <tr><th>provider</th><th>label</th><th>key</th><th>status</th><th>verified</th><th>added</th><th style="text-align:right">act</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>openai</td><td>prod</td><td class="key-hint">sk-…3f2a</td>
+              <td><span class="kst dead">DEAD</span></td>
+              <td class="dim" style="color:var(--red)">failed 41m ago</td><td class="dim">2025-08-30</td>
+              <td><span class="row-acts"><button class="ibtn" title="recheck key" aria-label="recheck openai prod">↻</button><button class="ibtn danger" title="delete key" aria-label="delete openai prod">✕</button></span></td>
+            </tr>
+            <tr>
+              <td>openai</td><td>staging</td><td class="key-hint">sk-…9c1d</td>
+              <td><span class="kst ok">WORKING</span></td>
+              <td class="dim">verified 2h ago</td><td class="dim">2025-09-12</td>
+              <td><span class="row-acts"><button class="ibtn" title="recheck key" aria-label="recheck openai staging">↻</button><button class="ibtn danger" title="delete key" aria-label="delete openai staging">✕</button></span></td>
+            </tr>
+            <tr>
+              <td>anthropic</td><td>main</td><td class="key-hint">sk-ant-…7e21</td>
+              <td><span class="kst ok">WORKING</span></td>
+              <td class="dim">verified 2h ago</td><td class="dim">2025-07-03</td>
+              <td><span class="row-acts"><button class="ibtn" title="recheck key" aria-label="recheck anthropic main">↻</button><button class="ibtn danger" title="delete key" aria-label="delete anthropic main">✕</button></span></td>
+            </tr>
+            <tr>
+              <td>google</td><td>experiments</td><td class="key-hint">AIza…x9q4</td>
+              <td><span class="kst ok">WORKING</span></td>
+              <td class="dim">verified 3h ago</td><td class="dim">2025-10-21</td>
+              <td><span class="row-acts"><button class="ibtn" title="recheck key" aria-label="recheck google experiments">↻</button><button class="ibtn danger" title="delete key" aria-label="delete google experiments">✕</button></span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <form class="add-key" onsubmit="return false" aria-label="add provider key">
+        <input class="inp" type="text" placeholder="provider" aria-label="provider">
+        <input class="inp" type="text" placeholder="label" aria-label="label">
+        <input class="inp" type="password" placeholder="key — stored in vault, never shown again" aria-label="api key">
+        <button class="btn-ghost" type="submit">+ ADD KEY</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ================= FOOTER ================= -->
+  <footer class="foot">aigate v0.1.0 · uptime 6d 4h · last backup 3h ago · 30-day log retention</footer>
+
+</main>
+
+<script>
+(function(){
+  "use strict";
+  var $  = function(s, r){ return (r || document).querySelector(s); };
+  var $$ = function(s, r){ return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+
+  /* --- header clock --- */
+  var clock = $('#clock');
+  function tick(){
+    var d = new Date();
+    var p = function(n){ return String(n).padStart(2, '0'); };
+    clock.textContent = p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+  tick(); setInterval(tick, 1000);
+
+  /* --- demo: normal / critical --- */
+  var btnN = $('#demo-normal'), btnC = $('#demo-critical');
+  function setState(crit){
+    document.body.classList.toggle('critical', crit);
+    btnN.setAttribute('aria-pressed', String(!crit));
+    btnC.setAttribute('aria-pressed', String(crit));
+  }
+  btnN.addEventListener('click', function(){ setState(false); });
+  btnC.addEventListener('click', function(){ setState(true); });
+
+  /* --- clipboard helper with file:// fallback --- */
+  function copyText(t){
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      return navigator.clipboard.writeText(t).then(function(){ return true; }, function(){ return legacy(t); });
+    }
+    return Promise.resolve(legacy(t));
+    function legacy(txt){
+      var ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch(e){}
+      ta.remove(); return ok;
+    }
+  }
+
+  /* --- inbox: dismiss + copy --- */
+  var inbox = $('#inbox-rows'), countEl = $('#inbox-count');
+  inbox.addEventListener('click', function(e){
+    var dis = e.target.closest('[data-dismiss]');
+    if (dis){
+      dis.closest('.inbox-row').remove();
+      var n = inbox.querySelectorAll('.inbox-row').length;
+      countEl.textContent = n;
+      if (n === 0){
+        var clear = document.createElement('div');
+        clear.className = 'inbox-clear';
+        clear.textContent = '✓ inbox clear — nothing needs attention';
+        inbox.appendChild(clear);
+      }
+      return;
+    }
+    var cp = e.target.closest('[data-copy]');
+    if (cp){
+      copyText(cp.getAttribute('data-copy')).then(function(ok){
+        var old = cp.textContent;
+        cp.textContent = ok ? '✓' : '!';
+        cp.style.color = ok ? 'var(--acc)' : 'var(--red)';
+        setTimeout(function(){ cp.textContent = old; cp.style.color = ''; }, 1400);
+      });
+    }
+  });
+
+  /* --- feed pause / resume --- */
+  var pauseBtn = $('#btn-pause'), feed = $('#feed'), pausedTag = $('#feed-paused');
+  pauseBtn.addEventListener('click', function(){
+    var paused = feed.classList.toggle('paused');
+    pauseBtn.textContent = paused ? '▶ RESUME' : '⏸ PAUSE';
+    pauseBtn.setAttribute('aria-pressed', String(paused));
+    pausedTag.hidden = !paused;
+  });
+
+  /* --- feed filter chips (cosmetic dimming) --- */
+  var chips = $$('.chip-btn');
+  var feedRows = $$('#feed-rows .feed-row');
+  function applyFilter(){
+    var active = chips.filter(function(c){ return c.classList.contains('on'); })
+                      .map(function(c){ return c.getAttribute('data-match'); });
+    feedRows.forEach(function(r){
+      var hit = active.length === 0 || active.some(function(m){
+        return r.getAttribute('data-acct') === m || r.getAttribute('data-host') === m;
+      });
+      r.classList.toggle('dimmed', !hit);
+    });
+  }
+  chips.forEach(function(c){
+    c.addEventListener('click', function(){
+      c.classList.toggle('on');
+      c.setAttribute('aria-pressed', String(c.classList.contains('on')));
+      applyFilter();
+    });
+  });
+
+  /* --- provider keys disclosure --- */
+  var kToggle = $('#keys-toggle'), kPanel = $('#keys-panel');
+  var kCaret = $('#keys-caret'), kHint = $('#keys-hint');
+  kToggle.addEventListener('click', function(){
+    var open = kPanel.classList.toggle('open');
+    kToggle.setAttribute('aria-expanded', String(open));
+    kCaret.textContent = open ? '▾' : '▸';
+    kHint.textContent = open ? '— click to collapse' : '— click to expand';
+  });
+
+  /* --- per-card park / resume toggle --- */
+  $$('[data-park]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var card = btn.closest('.acct');
+      var chip = card.querySelector('.status');
+      var parked = card.classList.toggle('is-parked');
+      chip.textContent = parked
+        ? (chip.getAttribute('data-parked') || 'PARKED')
+        : (chip.getAttribute('data-orig') || chip.textContent);
+      btn.textContent = parked ? '▶' : '⏸';
+      btn.title = parked ? 'resume account' : 'park account';
+      btn.setAttribute('aria-pressed', String(parked));
+    });
+  });
+})();
+</script>
+</body>
+</html>
