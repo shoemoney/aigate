@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -102,7 +102,7 @@ section:first-child{border-top:0}
 .g-top{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
 .g-top b{font-weight:500;text-transform:none;letter-spacing:0}
 .track{position:relative;height:7px;background:var(--inset);border:1px solid var(--line);border-radius:3px}
-.fill{position:absolute;top:0;left:0;bottom:0;border-radius:2px}
+.fill{position:absolute;top:0;left:0;bottom:0;border-radius:2px;transition:width .5s cubic-bezier(.4,0,.2,1)}
 .fill.ok{background:var(--ok)}.fill.warn{background:var(--warn)}.fill.crit{background:var(--crit)}.fill.neu{background:#b9b7ab}
 .tick{position:absolute;top:-3px;width:1px;height:13px;background:var(--dim);opacity:.55}
 .tick.t95{width:2px;background:var(--accent);opacity:1}
@@ -110,7 +110,7 @@ section:first-child{border-top:0}
 .ticklabels span{position:absolute;transform:translateX(-50%)}
 .ticklabels .l95{color:var(--accent)}
 .greset{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;color:var(--dim);margin-top:3px}
-.greset [data-until]{color:var(--fg)}
+.greset .until{color:var(--fg)}
 .burn{font-family:var(--mono);font-size:13px;min-height:19px}
 .reauth{background:var(--inset);border:1px solid rgba(224,93,68,.35);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:8px}
 .reauth label{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--crit)}
@@ -189,7 +189,41 @@ footer{border-top:1px solid var(--line)}
 footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var(--mono);font-size:12.5px;color:var(--dim)}
 
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- Vue transitions / skeleton (new — build-contract §5.2) ---------- */
+[v-cloak]{display:none}
+.card-move{transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
+.card-enter-active{transition:opacity .3s ease,transform .3s cubic-bezier(.34,1.56,.64,1)}
+.card-leave-active{transition:opacity .18s ease,transform .18s ease;position:absolute}
+.card-enter-from{opacity:0;transform:translateY(10px) scale(.97)}
+.card-leave-to{opacity:0;transform:scale(.96)}
+.feed-move{transition:transform .25s ease}
+.feed-enter-active{transition:opacity .25s ease,transform .25s ease}
+.feed-leave-active{transition:opacity .15s ease;position:absolute}
+.feed-enter-from{opacity:0;transform:translateY(-6px)}
+.feed-leave-to{opacity:0}
+.inbox-move{transition:transform .25s ease}
+.inbox-enter-active{transition:opacity .22s ease,transform .22s cubic-bezier(.34,1.56,.64,1)}
+.inbox-leave-active{transition:opacity .18s ease,transform .18s ease,max-height .22s ease,margin .22s ease,padding .22s ease;position:relative;overflow:hidden}
+.inbox-enter-from{opacity:0;transform:translateX(-14px)}
+.inbox-leave-to{opacity:0;transform:translateX(14px);max-height:0;margin-bottom:0;padding-top:0;padding-bottom:0}
+.panel-enter-active,.panel-leave-active{transition:max-height .28s ease,opacity .2s ease;overflow:hidden}
+.panel-enter-from,.panel-leave-to{max-height:0;opacity:0}
+.panel-enter-to,.panel-leave-from{max-height:400px;opacity:1}
+.banner-enter-active,.banner-leave-active{transition:transform .25s ease,opacity .2s ease}
+.banner-enter-from,.banner-leave-to{transform:translateY(-100%);opacity:0}
+.spark svg polyline{stroke-dasharray:1;stroke-dashoffset:1;animation:draw .6s ease forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.skeleton{max-width:1240px;margin:0 auto;padding:38px 24px}
+.sk-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:16px;margin-bottom:16px}
+.sk-card{height:190px;border-radius:6px;background:var(--panel);border:1px solid var(--line);
+  background-image:linear-gradient(100deg,var(--panel) 30%,#20241f 50%,var(--panel) 70%);
+  background-size:200% 100%;animation:shimmer 1.6s ease-in-out infinite}
+@keyframes shimmer{from{background-position:130% 0}to{background-position:-30% 0}}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
+  .spark svg polyline{stroke-dashoffset:0}   /* draw-in cut → show the full line, not a blank one */
+}
 @media (max-width:980px){.act-grid{grid-template-columns:1fr}}
 @media (max-width:760px){.rollup{display:none}.hwrap{gap:12px;padding-top:8px;padding-bottom:8px}}
 @media (max-width:420px){main{padding:0 14px}.hwrap{padding:0 14px}.hero-num{font-size:34px}.spark{width:100px}}
@@ -197,120 +231,287 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
 </head>
 <body>
 
-<!-- ============ login overlay ============ -->
-<div id="login">
-  <form class="login-card" id="loginform">
+<div id="app" v-cloak>
+
+<!-- ============ login overlay — #login / #loginmsg ids are load-bearing CSS (spec-css.md) ============ -->
+<div id="login" v-if="!authed">
+  <form class="login-card" @submit.prevent="doLogin">
     <div class="logo"><span>🛡</span>AIGATE</div>
     <label for="tok">Master password</label>
-    <input id="tok" type="password" placeholder="master password" autocomplete="current-password" autofocus>
+    <input id="tok" ref="tok" v-model="loginPw" type="password" placeholder="master password" autocomplete="current-password" autofocus>
     <div class="hint">signs you in and stays signed in on this browser</div>
     <button class="btn accent" type="submit" style="align-self:flex-start">Sign in</button>
-    <div id="loginmsg" role="alert"></div>
+    <div id="loginmsg" role="alert">{{ loginMsg }}</div>
   </form>
 </div>
 
-<!-- ============ header ============ -->
-<header id="hdr" hidden tabindex="-1">
+<!-- ============ header — MUST stay a <header> element (header{} CSS selector keys off the tag) ============ -->
+<header ref="hdr" tabindex="-1" v-if="authed">
   <div class="hwrap">
     <div class="logo"><span>🛡</span>AIGATE</div>
-    <div class="live off" id="live" role="status"><i></i><span id="live-label">offline</span></div>
-    <div class="rollup" id="rollup"></div>
-    <div class="clock num" id="clock" aria-hidden="true"></div>
+    <div class="live" :class="{off:!live}" role="status"><i></i><span>{{ liveLabel }}</span></div>
+    <div class="rollup">{{ rollupText }}<template v-if="polledText"> · polled <span>{{ polledText }}</span></template></div>
+    <div class="clock num" aria-hidden="true">{{ clockText }}</div>
     <a class="btn" href="/board.html" title="task board">🗂 board</a>
-    <button class="btn" id="bell" aria-pressed="false" aria-label="enable browser notifications" title="browser notifications">🔔</button>
-    <button class="btn" id="logout">log out</button>
+    <button class="btn" @click="toggleBell" :aria-pressed="String(notifyOn)"
+            :aria-label="notifyOn?'disable browser notifications':'enable browser notifications'"
+            :title="notifyOn?'notifications on':'browser notifications'">🔔</button>
+    <button class="btn" @click="doLogout">log out</button>
   </div>
 </header>
 
-<!-- ============ critical banner ============ -->
-<div class="banner" id="banner" hidden>
-  <div><b>CRITICAL</b><span>0 accounts selectable — every account is parked, disabled, or needs re-auth. Requests are failing.</span></div>
+<!-- ============ critical banner — flare spec §7 ============ -->
+<Transition name="banner">
+  <div class="banner" v-if="showBanner">
+    <div><b>CRITICAL</b><span>0 accounts selectable — every account is parked, disabled, or needs re-auth. Requests are failing.</span></div>
+  </div>
+</Transition>
+
+<!-- ============ ONE Suspense boundary, always mounted (never v-if'd) — contract §3/§11 ============ -->
+<Suspense>
+ <template #default>
+  <!-- <dashboard-body> is registered in JS (CORE) as {template:'<slot></slot>', async setup(){await bootGate}} —
+       a bare pass-through so Suspense can await bootGate without forking accounts/keys into a second store (D1).
+       Everything inside resolves against the ROOT's data/computed/methods, unchanged. -->
+  <dashboard-body>
+   <!-- MUST stay a <main> element (main{} CSS selector). No id — #app already owns the Vue mount point. -->
+   <main v-if="authed">
+
+    <!-- 01 · action-required inbox — section:first-child{border-top:0} still applies; v-if REMOVES the node when empty -->
+    <section v-if="inbox.length">
+      <div class="sec-head"><span class="sec-num">01</span><h2>Action required</h2>
+        <span class="sec-note">{{ inbox.length }} open</span></div>
+      <TransitionGroup name="inbox" tag="div" id="inbox">
+        <div v-for="it in inbox" :key="it.id" class="inbox-row" :class="{'warn-row':it.warn}">
+          <p><template v-for="(p,i) in it.parts" :key="i"><b v-if="p.t==='b'">{{ p.s }}</b><code v-else-if="p.t==='code'">{{ p.s }}</code><template v-else>{{ p.s }}</template></template></p>
+          <!-- copiedId (not a shared boolean) → each row's button state is independent (critique §1) -->
+          <button v-if="it.copy" class="btn sm" @click="copyCmd(it.id)">{{ copiedId===it.id?'copied':'copy cmd' }}</button>
+          <button class="x" @click="dismiss(it.id)" aria-label="dismiss">✕</button>
+        </div>
+      </TransitionGroup>
+    </section>
+
+    <!-- 02 · account cards -->
+    <section>
+      <div class="sec-head"><span class="sec-num">02</span><h2>Accounts — live usage</h2>
+        <span class="sec-note">hero = worst window · sorted by severity · cutoff 95</span></div>
+
+      <TransitionGroup name="card" tag="div" class="grid">
+        <!-- jury r1 (5/5 models, unanimous): .card is display:flex;flex-direction:column;gap:15px, so bare
+             text nodes + inline <span> chips each became a separate flex item and the sentence shattered
+             across 7 gap-separated lines. Pre-existing bug inherited from the vanilla original. One <p>
+             wrapper makes the whole sentence a single flex item so the chips flow inline again. -->
+        <div v-if="!accounts.length" key="empty" class="card" style="color:var(--dim)"><p>no accounts yet — run <span class="mono acc">claude setup-token</span>, then add the <span class="mono acc">sk-ant-oat01…</span> line via the add-account skill or <span class="mono acc">POST /api/accounts</span> (paste the token there, never here)</p></div>
+
+        <article v-for="a in sortedAccounts" :key="a.account" class="card"
+                 :class="{'is-parked':a.parked&&!a.disabled,'is-disabled':a.disabled}">
+          <div class="card-head">
+            <span class="acct">{{ a.account }}</span>
+            <span v-if="a.label" class="alabel">{{ a.label }}</span>
+            <span v-if="nextPickName===a.account" class="badge">next to be picked</span>
+            <span class="chip" :class="'c-'+chipOf(a).c">{{ chipOf(a).t }}</span>
+          </div>
+
+          <div class="hero-row">
+            <div><span class="hero-num" :class="[hcls(worstOf(a)),{pulse:worstOf(a)>=80&&!a.disabled}]">{{ heroShown[a.account] ?? Math.round(worstOf(a)) }}<small>%</small></span>
+              <span class="hero-label">worst window</span></div>
+            <!-- keyed by account (not points string) so a live data tick never replays the draw-in (spec-flare §8b) -->
+            <div class="spark" aria-hidden="true"><svg viewBox="0 0 110 30" preserveAspectRatio="none">
+              <polyline v-if="sparkPoints(a.account)" :key="a.account" pathLength="1" :points="sparkPoints(a.account)"
+                        fill="none" :stroke="sparkStroke(a.account)" stroke-width="1.5"
+                        :stroke-dasharray="isStale(a)?'3 3':null"/></svg></div>
+          </div>
+
+          <div class="gauges">
+            <!-- 5-hour -->
+            <div>
+              <div class="g-top"><span>5-hour</span><b class="num" :class="hcls(Math.round(a.five_hour_pct||0))">{{ Math.round(a.five_hour_pct||0) }}%</b></div>
+              <div class="track" role="img" :aria-label="'5-hour '+Math.round(a.five_hour_pct||0)+' percent'">
+                <div class="fill" :class="fcls(Math.round(a.five_hour_pct||0))" :style="{width:Math.min(100,Math.round(a.five_hour_pct||0))+'%'}"></div>
+                <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%" title="selection cutoff"></i>
+              </div>
+              <div class="ticklabels"><span style="left:50%">50</span><span style="left:80%">80</span><span class="l95" style="left:95%">95</span></div>
+              <!-- D4: .greset .until / <span class="until"> — NOT [data-until] -->
+              <div class="greset" v-if="gaugeReset(a.five_hour_reset)">resets {{ gaugeReset(a.five_hour_reset).when }} · <span class="until">{{ gaugeReset(a.five_hour_reset).until }}</span></div>
+            </div>
+            <!-- weekly (identical shape) -->
+            <div>
+              <div class="g-top"><span>weekly</span><b class="num" :class="hcls(Math.round(a.seven_day_pct||0))">{{ Math.round(a.seven_day_pct||0) }}%</b></div>
+              <div class="track" role="img" :aria-label="'weekly '+Math.round(a.seven_day_pct||0)+' percent'">
+                <div class="fill" :class="fcls(Math.round(a.seven_day_pct||0))" :style="{width:Math.min(100,Math.round(a.seven_day_pct||0))+'%'}"></div>
+                <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%" title="selection cutoff"></i>
+              </div>
+              <div class="ticklabels"><span style="left:50%">50</span><span style="left:80%">80</span><span class="l95" style="left:95%">95</span></div>
+              <div class="greset" v-if="gaugeReset(a.seven_day_reset)">resets {{ gaugeReset(a.seven_day_reset).when }} · <span class="until">{{ gaugeReset(a.seven_day_reset).until }}</span></div>
+            </div>
+          </div>
+
+          <p class="burn" :class="burnLine(a)[1]">{{ burnLine(a)[0] }}</p>
+
+          <Transition name="panel">
+            <div v-if="a.reauth_needed" class="reauth">
+              <label :for="'rt-'+a.account">re-auth required</label>
+              <div class="row"><input :id="'rt-'+a.account" v-model="reauthDrafts[a.account]" type="password" placeholder="paste new setup-token…" autocomplete="off">
+                <button class="btn accent sm" @click="saveReauth(a)">save</button></div>
+              <div class="pmsg" v-if="reauthMsgs[a.account]">{{ reauthMsgs[a.account] }}</div>
+              <small>aigate verifies the token, then resumes polling automatically.</small>
+            </div>
+          </Transition>
+
+          <Transition name="panel">
+            <div v-if="editState&&editState.account===a.account" class="editpanel" :id="'ep-'+a.account">
+              <label :for="'en-'+a.account">display name</label>
+              <!-- v-focus: local directive OWNED BY CARDS (directives:{focus:{mounted(el){el.focus();el.setSelectionRange(el.value.length,el.value.length)}}}).
+                   Replaces the old editState.focus + renderAccounts() DOM-hunt hack (D6) — Vue patches in place
+                   so a focused input in an unrelated card is never touched by this panel opening. -->
+              <input :id="'en-'+a.account" v-model="editState.name" type="text" autocomplete="off" v-focus>
+              <label :for="'el-'+a.account">label (optional)</label>
+              <input :id="'el-'+a.account" v-model="editState.label" type="text" placeholder="e.g. shared ci account" autocomplete="off">
+              <label :for="'et-'+a.account">replace setup-token (optional)</label>
+              <input :id="'et-'+a.account" v-model="editState.tok" type="password" placeholder="sk-ant-oat01… — leave blank to keep current" autocomplete="off">
+              <div class="row"><button class="btn accent sm" @click="saveEdit(a)">save</button><button class="btn sm" @click="cancelEdit">cancel</button></div>
+              <div class="pmsg" v-if="editMsg">{{ editMsg }}</div>
+            </div>
+          </Transition>
+
+          <div class="cardmsg" v-if="cardMsgs[a.account]">{{ cardMsgs[a.account] }}</div>
+          <div class="card-foot">
+            <span class="updated" :class="{warn:updatedInfo(a).stale}">{{ updatedInfo(a).text }}<template v-if="updatedInfo(a).stale"> · stale</template></span>
+            <div class="acts">
+              <button class="edit-pill" @click="toggleEdit(a)" title="edit" :aria-label="'edit '+a.account"
+                      :aria-expanded="String(!!(editState&&editState.account===a.account))">
+                <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M8.3 1.7l2 2L4.5 9.5l-2.7.7.7-2.7L8.3 1.7z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>edit</button>
+              <!-- critique §9: disabled while a refresh POST is in flight — the old btn.disabled=true/false double-click guard, now reactive -->
+              <button @click="doRefresh(a)" :disabled="!!refreshing[a.account]" title="refresh" :aria-label="'refresh '+a.account">↻</button>
+              <button @click="doToggle(a)" :title="a.disabled?'enable':'disable'" :aria-label="(a.disabled?'enable ':'disable ')+a.account" :aria-pressed="String(!!a.disabled)">{{ a.disabled?'▶':'⏸' }}</button>
+              <button @click="doDelete(a)" class="del" title="delete" :aria-label="'delete '+a.account">✕</button>
+            </div>
+          </div>
+        </article>
+      </TransitionGroup>
+    </section>
+
+    <!-- 03 · activity -->
+    <section>
+      <div class="sec-head"><span class="sec-num">03</span><h2>Activity</h2>
+        <span class="sec-note">{{ feedNote }}</span></div>
+
+      <div class="act-grid">
+        <div>
+          <div class="toolbar">
+            <button class="btn sm" @click="togglePause" :class="{accent:paused}" :aria-pressed="String(paused)">{{ paused?'▶ resume':'⏸ pause' }}</button>
+            <span class="lbl">filter</span>
+            <span>
+              <button v-for="a in acctChips" :key="'a-'+a" class="fchip" :class="{on:fAccounts[a]}" :aria-pressed="String(!!fAccounts[a])" @click="toggleChip('a',a)">{{ a }}</button>
+              <button v-for="h in hostChips" :key="'h-'+h" class="fchip" :class="{on:fHosts[h]}" :aria-pressed="String(!!fHosts[h])" @click="toggleChip('h',h)">host · {{ h }}</button>
+              <button v-if="anyFilter" class="fchip" @click="clearChips">✕ clear</button>
+            </span>
+          </div>
+          <div class="scrollx feedmax">
+            <TransitionGroup name="feed" tag="div" class="feed" role="log" aria-live="off" aria-label="activity feed">
+              <div class="frow head" key="head"><span>age</span><span>account</span><span>host</span><span>model</span><span class="tk">tokens</span><span>prompt</span></div>
+              <!-- :key="r.key" — a monotonic id minted once in rowFrom(), NOT r.ts (1s sqlite granularity collides) or array index (unstable under unshift) — critique §2 -->
+              <div v-for="r in feedRows" :key="r.key" class="frow" :class="{fail:r.fail}">
+                <span class="t">{{ fmtAge((now-r.ts)/1000) }}</span>
+                <span>{{ r.account||'—' }}</span>
+                <span class="h">{{ r.host }}</span>
+                <span class="m">{{ r.model }}</span>
+                <!-- tokens are always 0 — see CLAUDE.md; rowFrom() already stored '—' for this cell, never animate it -->
+                <span class="tk num">{{ r.tokens }}</span>
+                <span class="snip">{{ r.text }}</span>
+              </div>
+              <div v-if="!feedRows.length" class="frow" key="empty"><span class="t"></span><span class="dim" style="grid-column:2/-1">no activity yet</span></div>
+            </TransitionGroup>
+          </div>
+          <span class="vhidden" aria-live="polite">{{ liveNote }}</span>
+        </div>
+        <div>
+          <h3 class="sub">By host / device</h3>
+          <div class="scrollx"><table>
+            <thead><tr><th>host</th><th class="r">requests</th><th class="r">tokens</th><th class="r">last seen</th><th class="r">tps</th></tr></thead>
+            <tbody>
+              <tr v-if="!hostRows.length"><td colspan="5" class="dim">no traffic yet</td></tr>
+              <tr v-for="h in hostRows" :key="h.host">
+                <td>{{ h.host }}</td><td class="r num">{{ h.requests }}</td><td class="r num">{{ h.tokens }}</td>
+                <td class="r num" :class="h.stale?'warn':'dim'">{{ h.ageText }}</td>
+                <td class="r num">{{ h.tps }}</td>
+              </tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 04 · provider api keys -->
+    <section>
+      <button class="disclosure" @click="toggleKeys" :aria-expanded="String(keysOpen)" aria-controls="keys-panel">
+        <span class="caret">{{ keysOpen?'▾':'▸' }}</span>
+        <span>{{ keysTitle }}</span>
+        <span class="hint">{{ keysOpen?'click to collapse':'click to expand' }}</span>
+      </button>
+      <Transition name="panel">
+        <div class="keys-panel" id="keys-panel" v-show="keysOpen">
+          <div class="scrollx"><div class="keys-wrap"><table>
+            <thead><tr><th>provider</th><th>label</th><th>key</th><th>status</th><th>added</th><th>last used</th><th>verified</th><th></th></tr></thead>
+            <tbody>
+              <tr v-if="!keyRows.length"><td colspan="8" class="dim">no keys yet — add one below</td></tr>
+              <tr v-for="k in keyRows" :key="k.id">
+                <td>{{ k.provider }}</td>
+                <td class="dim">{{ k.label||'—' }}</td>
+                <td class="mono dim">{{ k.key_hint||'—' }}</td>
+                <td :class="k.stCls">{{ k.status||'unknown' }}</td>
+                <td class="dim">{{ k.created }}</td>
+                <td><span v-if="k.used">{{ k.used }}</span><span v-else class="dim">never</span><span v-if="k.stale" class="badge" title="never fetched or idle >90d">stale</span></td>
+                <td class="dim">{{ k.checked }}</td>
+                <td class="kacts">
+                  <button @click="refreshKey(k)" title="re-verify" :aria-label="'re-verify '+k.provider+' '+(k.label||'')">↻</button>
+                  <button @click="delKey(k)" class="del" title="delete" :aria-label="'delete '+k.provider+' '+(k.label||'')">✕</button>
+                </td>
+              </tr>
+            </tbody>
+          </table></div></div>
+          <div class="kmsg" role="status" :style="{color:kmsgColor}">{{ kmsg }}</div>
+          <form class="addform" @submit.prevent="addKey">
+            <input class="p" v-model="kprov" list="provlist" placeholder="provider" aria-label="provider" autocomplete="off">
+            <datalist id="provlist"><option v-for="p in providers" :key="p.id" :value="p.id" :label="p.name"></option></datalist>
+            <input class="l" v-model="klabel" placeholder="label" aria-label="label" autocomplete="off">
+            <input class="k" v-model="kkey" type="password" placeholder="sk-…" aria-label="api key" autocomplete="off">
+            <button class="btn accent sm" type="submit">Add</button>
+            <span class="dim mono" style="font-size:12px">{{ khint }}</span>
+          </form>
+        </div>
+      </Transition>
+    </section>
+
+   </main>
+  </dashboard-body>
+ </template>
+ <template #fallback>
+  <!-- pure-CSS shimmer, no JS — legible during the async gap before any app JS has run (contract §11) -->
+  <div class="skeleton" aria-hidden="true">
+    <div class="sk-row" v-for="n in 3" :key="n"><div class="sk-card"></div><div class="sk-card"></div><div class="sk-card"></div></div>
+  </div>
+ </template>
+</Suspense>
+
+<!-- footer div{} is a COMPOUND CSS selector — the direct <div> child is load-bearing (spec-css.md) -->
+<footer v-if="authed"><div>{{ footText }}</div></footer>
+
 </div>
 
-<main id="app" hidden>
-
-  <!-- 01 · action-required inbox -->
-  <section id="sec-inbox" hidden>
-    <div class="sec-head"><span class="sec-num">01</span><h2>Action required</h2><span class="sec-note" id="inbox-note"></span></div>
-    <div id="inbox"></div>
-  </section>
-
-  <!-- 02 · account cards -->
-  <section>
-    <div class="sec-head"><span class="sec-num">02</span><h2>Accounts — live usage</h2><span class="sec-note">hero = worst window · sorted by severity · cutoff 95</span></div>
-    <div class="grid" id="cards"></div>
-  </section>
-
-  <!-- 03 · activity -->
-  <section>
-    <div class="sec-head"><span class="sec-num">03</span><h2>Activity</h2><span class="sec-note" id="feed-note"></span></div>
-    <div class="act-grid">
-      <div>
-        <div class="toolbar">
-          <button class="btn sm" id="pause" aria-pressed="false">⏸ pause</button>
-          <span class="lbl">filter</span>
-          <span id="fchips"></span>
-        </div>
-        <div class="scrollx feedmax"><div class="feed" id="feed" role="log" aria-live="off" aria-label="activity feed">
-          <div class="frow head"><span>age</span><span>account</span><span>host</span><span>model</span><span class="tk">tokens</span><span>prompt</span></div>
-        </div></div>
-        <span class="vhidden" id="livenote" aria-live="polite"></span>
-      </div>
-      <div>
-        <h3 class="sub">By host / device</h3>
-        <div class="scrollx"><table id="hosts">
-          <thead><tr><th>host</th><th class="r">requests</th><th class="r">tokens</th><th class="r">last seen</th><th class="r">tps</th></tr></thead>
-          <tbody></tbody>
-        </table></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 04 · provider api keys -->
-  <section>
-    <button class="disclosure" id="keys-toggle" aria-expanded="false" aria-controls="keys-panel">
-      <span class="caret" id="keys-caret">▸</span>
-      <span id="keys-title">Provider API keys · 0</span>
-      <span class="hint" id="keys-hint">click to expand</span>
-    </button>
-    <div class="keys-panel" id="keys-panel" hidden>
-      <div class="scrollx"><div class="keys-wrap"><table id="keys">
-        <thead><tr><th>provider</th><th>label</th><th>key</th><th>status</th><th>added</th><th>last used</th><th>verified</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table></div></div>
-      <div class="kmsg" id="kmsg" role="status"></div>
-      <form class="addform" id="addform">
-        <input class="p" id="kprov" list="provlist" placeholder="provider" aria-label="provider" autocomplete="off">
-        <datalist id="provlist"></datalist>
-        <input class="l" id="klabel" placeholder="label" aria-label="label" autocomplete="off">
-        <input class="k" id="kkey" type="password" placeholder="sk-…" aria-label="api key" autocomplete="off">
-        <button class="btn accent sm" type="submit">Add</button>
-        <span class="dim mono" id="khint" style="font-size:12px"></span>
-      </form>
-    </div>
-  </section>
-
-</main>
-
-<footer id="ftr" hidden><div id="foot">aigate · 30-day log retention</div></footer>
-
+<script src="/vue.global.prod.js"></script>
 <script>
 'use strict';
 /* ================================================================
-   aigate dashboard — control-room redesign (phase 1)
-   single self-contained file · vanilla JS · no external libs
+   aigate dashboard — Vue 3 (Options API, in-DOM template, no build step)
    ================================================================ */
 
-/* ---------------- helpers ---------------- */
-const $=s=>document.querySelector(s);
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
-// fmtAge(90)==='1m', fmtAge(3600)==='1h'
+/* ---------------- pure helpers (verbatim from the vanilla build) ---------------- */
 const fmtAge=s=>s<60?Math.max(0,Math.round(s))+'s':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600)+'h':Math.floor(s/86400)+'d';
 // sqlite timestamps are bare UTC ("2026-07-11 18:30:00", no Z) — V8 parses those as LOCAL; stamp them UTC. ISO-Z (live WS rows) passes through.
 const toDate=s=>new Date(/[TZ]/.test(String(s))?s:String(s).replace(' ','T')+'Z');
 const fmtNum=n=>{n=Number(n)||0;return n>=1e6?(n/1e6).toFixed(2)+'M':n.toLocaleString('en-US')};
 const hhmm=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
-// countdown "in 2h 14m" / "in 5d 3h" from a millisecond delta; weekday+time from a Date
 const fmtUntil=ms=>{if(ms<=0)return'now';const s=Math.round(ms/1000);
   if(s<3600)return'in '+Math.max(1,Math.round(s/60))+'m';
   if(s<86400){const h=Math.floor(s/3600),m=Math.round(s%3600/60);return'in '+h+'h'+(m?' '+m+'m':'');}
@@ -320,630 +521,682 @@ const wkhhmm=d=>d.toLocaleDateString([],{weekday:'short'})+' '+hhmm(d);
 const CUTOFF=95;
 const STALE_S=1500;            // >25min without a usage poll → stale
 const worstOf=a=>Math.max(a.five_hour_pct||0,a.seven_day_pct||0);
-const hcls=v=>v>=95?'crit':v>=80?'warn':'ok';      // hero / text threshold color
+const hcls=v=>v>=95?'crit':v>=80?'warn':'ok';              // hero / text threshold color
 const fcls=v=>v>=95?'crit':v>=80?'warn':v>=50?'neu':'ok';  // gauge fill color
 const eligible=a=>!a.disabled&&!a.reauth_needed&&a.has_token&&!a.parked&&worstOf(a)<CUTOFF;
 
-/* ---------------- state ---------------- */
-let TOKEN=localStorage.aigate_token||'';
-let ws=null, statsT=null, clockOn=false;
-let ACCTS=[], KEYS=[], HOSTS=[], PROVIDERS=[], VERSION='';
-let acctsAt=0;                          // ms epoch when ACCTS arrived (ages usage_age_s on tick)
-const rings=new Map();                  // account → [{t,v}] worst-% ring buffer (cap 40)
-const prevWorst=new Map();              // account → previous worst (79→80 runaway transition)
-let FEED=[];                            // newest-first rows {kind,ts,account,host,model,tokens,text,fail}
-let paused=false, queue=[];
-const fAccounts=new Set(), fHosts=new Set();      // active filter chips
-const seenAccounts=new Set(), seenHosts=new Set();
-const dismissed=new Set();              // session-only inbox dismissals
-let editState=null;                     // open edit panel {account,name,label,tok,focus}
-const reauthDrafts=new Map();           // account → in-flight pasted token
-let notifyOn=false, runFlash=false, lastInboxN=0;
-let seeding=false, pendingLive=0, lastLiveNote=0;
+/* ---------------- module-scope, non-reactive state ---------------- */
+let TOKEN=localStorage.aigate_token||'';   // bearer for machine use; the session cookie is the real auth
+let feedSeq=0;                             // monotonic feed row key source — ts collides at sqlite's 1s granularity
+let bootResolve;
+const bootGate=new Promise(r=>{bootResolve=r;});   // resolved as boot()'s last step; gates the Suspense boundary
 
-/* ---------------- api plumbing (proven v1) ---------------- */
+/* ---------------- api plumbing (verbatim from the vanilla build) ---------------- */
 // cookie-first: the session cookie (set by /api/login) auths the browser, so send it
 // with credentials and only add a Bearer header if a raw token was pasted (machine use).
 async function api(path){const r=await fetch(path,{credentials:'same-origin',headers:TOKEN?{authorization:'Bearer '+TOKEN}:{}});if(r.status===401||r.status===429)throw r.status;return r.json();}
-// mutation helper — returns {status,ok,body} so callers can branch on 400/404/409/502
+// mutation helper — returns {status,ok,body} so callers can branch on 400/404/409/502; never throws.
 async function send(method,path,body){
   const headers={'content-type':'application/json'};if(TOKEN)headers.authorization='Bearer '+TOKEN;
   const r=await fetch(path,{method,credentials:'same-origin',headers,body:body===undefined?undefined:JSON.stringify(body)});
   const j=await r.json().catch(()=>({}));
   return {status:r.status,ok:r.ok,body:j};
 }
-function kick(){localStorage.removeItem('aigate_token');location.reload();}
 
-/* ---------------- login / boot ---------------- */
-function loginMsg(m){$('#loginmsg').textContent=m;}
-async function save(ev){
-  if(ev)ev.preventDefault();
-  const t=$('#tok').value;
-  if(!t){loginMsg('enter the master password');return;}
-  loginMsg('signing in…');
-  const r=await send('POST','/api/login',{password:t});
-  if(r.status===200){$('#tok').value='';TOKEN='';localStorage.removeItem('aigate_token');loginMsg('');boot();}
-  else if(r.status===401)loginMsg('wrong password — try again');
-  else if(r.status===429)loginMsg('too many attempts — locked out, try later');
-  else if(r.status===400)loginMsg('password login is not enabled on the server');
-  else loginMsg("can't reach server — try again");
-}
-async function boot(){
-  let s;
-  try{s=await api('/api/stats');}
-  catch(e){
-    if(e===401){TOKEN='';localStorage.removeItem('aigate_token');$('#login').hidden=false;$('#hdr').hidden=true;$('#app').hidden=true;$('#ftr').hidden=true;$('#tok').focus();}
-    else if(e===429){loginMsg('too many auth failures — locked out, try later');}
-    else{loginMsg("can't reach server, retrying…");setTimeout(boot,3000);}
-    return;
-  }
-  // authed — reveal app
-  $('#login').hidden=true;$('#hdr').hidden=false;$('#app').hidden=false;$('#ftr').hidden=false;
-  ingestStats(s);
-  try{await loadProviders();renderKeys(await api('/api/keys'));}catch(e){if(e===401)return kick();}
-  seeding=true;FEED=[];
-  try{await seedFeed();}catch(e){if(e===401)return kick();}
-  seeding=false;renderFeed();buildChips();
-  api('/api/capabilities').then(c=>{VERSION=c.version||'';$('#foot').textContent='aigate'+(VERSION?' v'+esc(VERSION):'')+' · 30-day log retention';}).catch(()=>{});
-  connect();
-  startClock();
-  $('#hdr').focus({preventScroll:true});
-}
+// the ONE async-setup child. Its whole job is to suspend the Suspense boundary until boot()'s
+// first /api/stats lands. Slot content is compiled in the ROOT's scope, so every data/computed/
+// method referenced inside it is the root's — no props, no second store (D1).
+const DashboardBody={ template:'<slot></slot>', async setup(){ await bootGate; } };
 
-/* ---------------- websocket (proven v1 plumbing) ---------------- */
-function setLive(on){
-  $('#live').classList.toggle('off',!on);
-  $('#live-label').textContent=on?'live':'reconnecting';
-}
-function connect(){
-  if(ws&&(ws.readyState===0||ws.readyState===1))return;   // already CONNECTING/OPEN — don't spawn a duplicate socket (double onmessage, reconnect storm)
-  ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',TOKEN?['aigate','bearer.'+TOKEN]:['aigate']);
-  ws.onopen=async()=>{setLive(true);
-    try{const s=await api('/api/stats');ingestStats(s);
-      renderKeys(await api('/api/keys'));
-      seeding=true;FEED=[];await seedFeed();seeding=false;renderFeed();buildChips();
-    }catch(e){seeding=false;if(e===401)kick();}};
-  ws.onclose=()=>{setLive(false);setTimeout(connect,2000)};
-  ws.onmessage=e=>{const m=JSON.parse(e.data);
-    if(m.type==='accounts')ingestAccounts(m.data);
-    else if(m.type==='keys')renderKeys(m.data);
-    else if(m.type==='prompt'){feedEvent(m.data,'prompt');clearTimeout(statsT);statsT=setTimeout(()=>api('/api/stats').then(s=>renderHosts(s.by_host,s.by_host_1h)).catch(()=>{}),1500)}  // debounced hosts refresh
-    else if(m.type==='access')feedEvent(m.data,'access');
-  };
-}
+const app=Vue.createApp({
+  data(){return{
+    /* ---- session + header chrome ---- */
+    authed:false,            // false until /api/stats returns 200 → gates header/main/footer, shows #login
+    loginPw:'',              // v-model on the master-password input
+    loginMsg:'',             // #loginmsg text
+    live:false,              // WS open → .live loses .off
+    liveLabel:'offline',     // 'offline' before first connect, then 'live' / 'reconnecting'
+    now:Date.now(),          // THE single reactive clock — one setInterval writes this, nothing else
+    version:'',              // from /api/capabilities → footer
+    notifyOn:false,          // bell toggle
+    runFlash:false,          // ⚠ in document.title until any pointerdown/keydown
 
-/* ---------------- accounts ingest / derived chrome ---------------- */
-function ingestStats(s){                    // REST /api/stats — seeds rings once, renders everything
-  ACCTS=s.accounts||[];acctsAt=Date.now();
-  const now=Date.now();
-  for(const a of ACCTS)if(!rings.has(a.account))rings.set(a.account,[{t:now,v:worstOf(a)}]);
-  detectTransitions();renderAccounts();renderHosts(s.by_host,s.by_host_1h);renderChrome();
-}
-function ingestAccounts(list){              // WS 'accounts' push — append ring samples
-  ACCTS=list||[];acctsAt=Date.now();
-  const now=Date.now();
-  for(const a of ACCTS){
-    let r=rings.get(a.account);if(!r){r=[];rings.set(a.account,r);}
-    r.push({t:now,v:worstOf(a)});if(r.length>40)r.shift();
-  }
-  detectTransitions();renderAccounts();renderChrome();
-}
-function detectTransitions(){               // 79→80 runaway edge → notify + title badge
-  for(const a of ACCTS){
-    const w=worstOf(a),prev=prevWorst.get(a.account);
-    if(prev!==undefined&&prev<80&&w>=80){
-      runFlash=true;updateTitle();
-      if(notifyOn&&'Notification'in window&&Notification.permission==='granted'){
-        try{new Notification('aigate — runaway account',{body:a.account+' hit '+Math.round(w)+'% of its worst window'});}catch(_){}
+    /* ---- server state ---- */
+    accounts:[],             // /api/stats.accounts  |  WS 'accounts'
+    keys:[],                 // /api/keys            |  WS 'keys'
+    hosts:[],                // /api/stats.by_host
+    hosts1h:[],              // /api/stats.by_host_1h
+    providers:[],            // /api/providers → <datalist>
+    acctsAt:0,                // ms epoch when `accounts` last arrived (ages usage_age_s)
+
+    /* ---- per-account history + card UI ---- */
+    rings:{},                // account -> [{t,v}]  worst-% ring buffer, CAP 40, FIFO
+    heroShown:{},             // account -> integer currently painted in .hero-num (rAF tween writes here)
+    refreshing:{},            // account -> true while POST …/refresh is in flight (disables ↻)
+    cardMsgs:{},               // account -> [data-cmsg] inline error string ('' = hidden)
+    editState:null,            // {account,name,label,tok} | null   (NO `focus` field — see D6)
+    editMsg:'',                // .editpanel [data-emsg] error ('' = hidden)
+    reauthDrafts:{},           // account -> pasted setup-token (v-model target)
+    reauthMsgs:{},             // account -> .reauth [data-rmsg] error ('' = hidden)
+    dismissed:{},               // inbox item id -> true (session only, never persisted)
+    copiedId:null,               // inbox item id whose copy button currently reads 'copied'
+
+    /* ---- activity feed ---- */
+    feed:[],                  // newest-first rows {key,kind,ts,account,host,model,tokens,text,fail}; CAP 200
+    paused:false,
+    queue:[],                  // [{d,kind}] held while paused
+    seenAccounts:{},            // name -> true   (chip source)
+    seenHosts:{},                // name -> true   (chip source)
+    fAccounts:{},                 // name -> true   (ACTIVE account filter)
+    fHosts:{},                     // name -> true   (ACTIVE host filter)
+    seeding:false,                  // true during seedFeed() → suppresses pendingLive
+    pendingLive:0,
+    lastLiveNote:0,
+    liveNote:'',                     // #livenote aria-live text
+
+    /* ---- provider keys ---- */
+    keysOpen:false,
+    kmsg:'', kmsgColor:'',            // #kmsg text + inline color ('var(--ok)' | 'var(--crit)' | 'var(--dim)')
+    kprov:'', klabel:'', kkey:'',      // add-key form fields
+
+    /* ---- private bookkeeping, never rendered ---- */
+    _prevWorst:{},                       // account -> previous worst% (79→80 runaway edge)
+    _heroRaf:{},                          // account -> requestAnimationFrame handle (so a re-trigger cancels the old tween)
+  }},
+  computed:{
+    /* ================= CORE (§2.1) ================= */
+    selectableCount(){ return this.accounts.filter(eligible).length; },
+    parkedCount(){ return this.accounts.filter(a=>a.parked&&!a.disabled).length; },
+    reauthCount(){ return this.accounts.filter(a=>a.reauth_needed).length; },
+    keysWorking(){ return this.keys.filter(k=>k.status==='working').length; },
+    keysDead(){ return this.keys.filter(k=>k.status==='dead').length; },
+    // null when no account has ever reported a poll age; drives polledText and re-ticks off `now` via curAge
+    minAge(){
+      const ages=this.accounts.map(a=>this.curAge(a)).filter(x=>x!=null);
+      return ages.length?Math.min(...ages):null;
+    },
+    rollupText(){
+      const n=this.accounts.length,sel=this.selectableCount,parked=this.parkedCount,reauth=this.reauthCount;
+      let r=n?sel+'/'+n+' selectable · '+parked+' parked · '+reauth+' re-auth':'no accounts yet';
+      if(this.keys.length)r+=' · keys '+this.keysWorking+'✓ '+this.keysDead+'✗';
+      return r;
+    },
+    polledText(){ return this.minAge==null?'':fmtAge(this.minAge)+' ago'; },
+    showBanner(){ return this.accounts.length>0&&this.selectableCount===0; },
+    // 01 · action-required inbox items — order: per-account reauth, per-account stale, then dead keys.
+    // `parts` (not a template string) so the template renders real <b>/<code> nodes — no v-html, no esc().
+    inbox(){
+      const items=[];
+      for(const a of this.accounts){
+        if(a.reauth_needed&&!this.dismissed['reauth:'+a.account]){
+          items.push({id:'reauth:'+a.account,warn:false,copy:true,parts:[
+            {t:'b',s:a.account},
+            {t:'x',s:' needs re-auth — run '},
+            {t:'code',s:'claude setup-token'},
+            {t:'x',s:', then paste the new token on its card'},
+          ]});
+        }
+        const age=this.curAge(a);
+        if(!a.reauth_needed&&age!=null&&age>STALE_S&&!this.dismissed['stale:'+a.account]){
+          items.push({id:'stale:'+a.account,warn:true,copy:false,parts:[
+            {t:'b',s:a.account},
+            {t:'x',s:" hasn't reported usage in "+fmtAge(age)+" — poll may be failing"},
+          ]});
+        }
       }
-    }
-    prevWorst.set(a.account,w);
-  }
-}
-function curAge(a){                          // usage_age_s aged to now
-  if(a.usage_age_s==null)return null;
-  return a.usage_age_s+(Date.now()-acctsAt)/1000;
-}
-function renderChrome(){                     // rollup · banner · inbox · title (from latest accounts+keys)
-  const n=ACCTS.length, sel=ACCTS.filter(eligible).length;
-  const parked=ACCTS.filter(a=>a.parked&&!a.disabled).length;
-  const reauth=ACCTS.filter(a=>a.reauth_needed).length;
-  const kw=KEYS.filter(k=>k.status==='working').length, kd=KEYS.filter(k=>k.status==='dead').length;
-  const ages=ACCTS.map(curAge).filter(x=>x!=null);
-  const minAge=ages.length?Math.min(...ages):null;
-  let r=n?sel+'/'+n+' selectable · '+parked+' parked · '+reauth+' re-auth':'no accounts yet';
-  if(KEYS.length)r+=' · keys '+kw+'✓ '+kd+'✗';
-  $('#rollup').innerHTML=esc(r)+(minAge!=null?' · polled <span data-rage data-base="'+Math.round(minAge)+'" data-at="'+Date.now()+'">'+fmtAge(minAge)+' ago</span>':'');
-  $('#banner').hidden=!(n>0&&sel===0);
-  renderInbox();
-}
+      for(const k of this.keys){
+        if(k.status==='dead'&&!this.dismissed['deadkey:'+k.id]){
+          items.push({id:'deadkey:'+k.id,warn:false,copy:false,parts:[
+            {t:'x',s:'provider key '},
+            {t:'b',s:"'"+k.provider+(k.label?' · '+k.label:'')+"'"},
+            {t:'x',s:' is dead — last check failed'},
+          ]});
+        }
+      }
+      return items;
+    },
+    footText(){ return 'aigate'+(this.version?' v'+this.version:'')+' · 30-day log retention'; },
+    // reads `this.now` (not Date.now()) so the 1s tick repaints it — same trick as curAge
+    clockText(){ return new Date(this.now).toTimeString().slice(0,8); },
+    titleText(){ return (this.runFlash?'⚠ ':'')+(this.inbox.length?'('+this.inbox.length+') ':'')+'aigate'; },
 
-/* ---------------- 01 · action-required inbox ---------------- */
-function renderInbox(){
-  const box=$('#inbox');const items=[];
-  for(const a of ACCTS){
-    if(a.reauth_needed&&!dismissed.has('reauth:'+a.account))
-      items.push({id:'reauth:'+a.account,warn:false,copy:true,
-        html:'<b>'+esc(a.account)+'</b> needs re-auth — run <code>claude setup-token</code>, then paste the new token on its card'});
-    const age=curAge(a);
-    if(!a.reauth_needed&&age!=null&&age>STALE_S&&!dismissed.has('stale:'+a.account))
-      items.push({id:'stale:'+a.account,warn:true,copy:false,
-        html:'<b>'+esc(a.account)+'</b> hasn\'t reported usage in '+fmtAge(age)+' — poll may be failing'});
-  }
-  for(const k of KEYS){
-    if(k.status==='dead'&&!dismissed.has('deadkey:'+k.id))
-      items.push({id:'deadkey:'+k.id,warn:false,copy:false,
-        html:'provider key <b>\''+esc(k.provider)+(k.label?' · '+esc(k.label):'')+'\'</b> is dead — last check failed'});
-  }
-  box.innerHTML=items.map(it=>
-    '<div class="inbox-row'+(it.warn?' warn-row':'')+'" data-iid="'+esc(it.id)+'"><p>'+it.html+'</p>'+
-    (it.copy?'<button class="btn sm" data-copy="claude setup-token">copy cmd</button>':'')+
-    '<button class="x" data-dismiss aria-label="dismiss">✕</button></div>').join('');
-  $('#sec-inbox').hidden=items.length===0;
-  $('#inbox-note').textContent=items.length?items.length+' open':'';
-  lastInboxN=items.length;updateTitle();
-}
-function updateTitle(){
-  document.title=(runFlash?'⚠ ':'')+(lastInboxN?'('+lastInboxN+') ':'')+'aigate';
-}
+    /* ================= CARDS (§2.2) ================= */
+    // re-sort every time accounts/curAge change; severity first, worst% breaks ties within a rank
+    sortedAccounts(){
+      return [...this.accounts].sort((x,y)=>this.sevRank(x)-this.sevRank(y)||this.worstOf(y)-this.worstOf(x));
+    },
+    // the single eligible account with the lowest worst% — who the selector will hand out next
+    nextPickName(){
+      const pick=this.sortedAccounts.filter(this.eligible).sort((x,y)=>this.worstOf(x)-this.worstOf(y))[0];
+      return pick?pick.account:null;
+    },
 
-/* ---------------- 02 · account cards ---------------- */
-function sevRank(a){                         // re-auth → runaway → no-token → stale → ready → parked → disabled
-  const w=worstOf(a),age=curAge(a);
-  if(a.reauth_needed)return 0;
-  if(w>=80)return 1;
-  if(!a.has_token)return 2;
-  if(age!=null&&age>STALE_S)return 3;
-  if(!a.disabled&&!a.parked)return 4;
-  if(a.parked&&!a.disabled)return 5;
-  return 6;
-}
-function chipOf(a){
-  const w=worstOf(a);
-  if(a.disabled)return{t:'DISABLED',c:'dim'};
-  if(a.reauth_needed)return{t:'RE-AUTH',c:'crit'};
-  if(a.parked)return{t:'PARKED'+(a.parked_until?' →'+hhmm(toDate(a.parked_until)):''),c:'dim'};
-  if(!a.has_token)return{t:'NO TOKEN',c:'warn'};
-  if(w>=80)return{t:'RUNAWAY',c:'warn'};
-  return{t:'READY',c:'ok'};
-}
-const gauge=(label,v,reset)=>{
-  v=Math.round(v||0);
-  let rline='';
-  if(reset){const t=reset*1000,d=new Date(t);
-    rline='<div class="greset">resets '+esc(wkhhmm(d))+' · <span data-until="'+t+'">'+esc(fmtUntil(t-Date.now()))+'</span></div>';}
-  return '<div>'+
-   '<div class="g-top"><span>'+label+'</span><b class="num '+hcls(v)+'">'+v+'%</b></div>'+
-   '<div class="track" role="img" aria-label="'+label+' '+v+' percent">'+
-    '<div class="fill '+fcls(v)+'" style="width:'+Math.min(100,v)+'%"></div>'+
-    '<i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%" title="selection cutoff"></i>'+
-   '</div>'+
-   '<div class="ticklabels"><span style="left:50%">50</span><span style="left:80%">80</span><span class="l95" style="left:95%">95</span></div>'+
-   rline+
-  '</div>';
-};
-function sparkHtml(name,stale){
-  const s=rings.get(name)||[];
-  let pts;
-  if(s.length===0)pts='';
-  else if(s.length===1){const y=30-Math.min(100,Math.max(0,s[0].v))/100*30;pts='0,'+y+' 110,'+y;}
-  else pts=s.map((p,i)=>{const x=(i/(s.length-1)*110).toFixed(1),y=(30-Math.min(100,Math.max(0,p.v))/100*30).toFixed(1);return x+','+y;}).join(' ');
-  const col=s.length?hcls(s[s.length-1].v):'dim';
-  const stroke=col==='dim'?'var(--dim)':col==='ok'?'var(--ok)':col==='warn'?'var(--warn)':'var(--crit)';
-  return '<div class="spark" aria-hidden="true"><svg viewBox="0 0 110 30" preserveAspectRatio="none">'+
-   (pts?'<polyline points="'+pts+'" fill="none" stroke="'+stroke+'" stroke-width="1.5"'+(stale?' stroke-dasharray="3 3"':'')+'/>':'')+
-  '</svg></div>';
-}
-function burnLine(a){
-  if(a.disabled)return['disabled · excluded from selection','dim'];
-  if(a.reauth_needed)return['— polling paused · re-auth required','dim'];
-  if(a.parked)return['parked'+(a.parked_until?' until '+hhmm(toDate(a.parked_until)):'')+' · requests routed to next account','dim'];
-  const s=rings.get(a.account)||[];
-  if(s.length<2)return['— collecting samples','dim'];
-  const first=s[0],last=s[s.length-1],dtH=(last.t-first.t)/3600000;
-  if(dtH<30/3600)return['— steady','dim'];          // window too small to rate honestly
-  const rate=(last.v-first.v)/dtH;
-  if(rate>0.5){
-    const g5=a.five_hour_pct||0;
-    if(g5>=100)return['↑'+rate.toFixed(1)+'%/h · 5h window exhausted','crit'];
-    const left=(100-g5)/rate;
-    return['↑'+rate.toFixed(1)+'%/h · 5h window exhausts in ~'+(left>=1?Math.round(left)+'h':Math.max(1,Math.round(left*60))+'m'),g5>=80?'warn':'dim'];
-  }
-  if(rate<-0.5)return['↓ recovering','ok'];
-  return['— steady','dim'];
-}
-function updatedHtml(a){
-  if(a.usage_age_s===undefined)return '<span class="updated">updated '+esc(a.usage_updated||'never')+'</span>'; // old server without usage_age_s
-  if(a.usage_age_s===null)return '<span class="updated">never polled</span>';
-  const stale=a.usage_age_s>STALE_S;
-  return '<span class="updated">updated <span data-rage data-base="'+a.usage_age_s+'" data-at="'+acctsAt+'" data-warn="'+STALE_S+'" class="'+(stale?'warn':'')+'">'+fmtAge(a.usage_age_s)+' ago</span>'+(stale?' · stale':'')+'</span>';
-}
-function renderAccounts(){
-  const el=$('#cards');
-  if(!ACCTS.length){
-    el.innerHTML='<div class="card" style="color:var(--dim)">no accounts yet — run <span class="mono acc">claude setup-token</span>, then add the <span class="mono acc">sk-ant-oat01…</span> line via the add-account skill or <span class="mono acc">POST /api/accounts</span> (paste the token there, never here)</div>';
-    return;
-  }
-  const sorted=[...ACCTS].sort((x,y)=>sevRank(x)-sevRank(y)||worstOf(y)-worstOf(x));
-  const nextPick=sorted.filter(eligible).sort((x,y)=>worstOf(x)-worstOf(y))[0];
-  el.innerHTML=sorted.map((a,i)=>{
-    const w=worstOf(a),chip=chipOf(a),age=curAge(a),stale=age!=null&&age>STALE_S;
-    const[burnTxt,burnCls]=burnLine(a);
-    const editing=editState&&editState.account===a.account;
-    const rd=reauthDrafts.get(a.account)||'';
-    return '<article class="card'+(a.parked&&!a.disabled?' is-parked':'')+(a.disabled?' is-disabled':'')+'" data-acct="'+esc(a.account)+'">'+
-     '<div class="card-head">'+
-      '<span class="acct">'+esc(a.account)+'</span>'+
-      (a.label?'<span class="alabel">'+esc(a.label)+'</span>':'')+
-      (nextPick&&nextPick.account===a.account?'<span class="badge">next to be picked</span>':'')+
-      '<span class="chip c-'+chip.c+'">'+chip.t+'</span>'+
-     '</div>'+
-     '<div class="hero-row">'+
-      '<div><span class="hero-num '+hcls(w)+(w>=80&&!a.disabled?' pulse':'')+'">'+Math.round(w)+'<small>%</small></span>'+
-       '<span class="hero-label">worst window</span></div>'+
-      sparkHtml(a.account,stale)+
-     '</div>'+
-     '<div class="gauges">'+gauge('5-hour',a.five_hour_pct,a.five_hour_reset)+gauge('weekly',a.seven_day_pct,a.seven_day_reset)+'</div>'+
-     '<p class="burn '+burnCls+'">'+burnTxt+'</p>'+
-     (a.reauth_needed?
-       '<div class="reauth">'+
-        '<label for="rt-'+i+'">re-auth required</label>'+
-        '<div class="row"><input id="rt-'+i+'" type="password" placeholder="paste new setup-token…" autocomplete="off" value="'+esc(rd)+'"><button class="btn accent sm" data-rsave>save</button></div>'+
-        '<div class="pmsg" data-rmsg hidden></div>'+
-        '<small>aigate verifies the token, then resumes polling automatically.</small>'+
-       '</div>':'')+
-     (editing?
-       '<div class="editpanel" id="ep-'+i+'">'+
-        '<label for="en-'+i+'">display name</label>'+
-        '<input id="en-'+i+'" data-f="name" type="text" value="'+esc(editState.name)+'" autocomplete="off">'+
-        '<label for="el-'+i+'">label (optional)</label>'+
-        '<input id="el-'+i+'" data-f="label" type="text" value="'+esc(editState.label)+'" placeholder="e.g. shared ci account" autocomplete="off">'+
-        '<label for="et-'+i+'">replace setup-token (optional)</label>'+
-        '<input id="et-'+i+'" data-f="tok" type="password" value="'+esc(editState.tok)+'" placeholder="sk-ant-oat01… — leave blank to keep current" autocomplete="off">'+
-        '<div class="row"><button class="btn accent sm" data-esave>save</button><button class="btn sm" data-ecancel>cancel</button></div>'+
-        '<div class="pmsg" data-emsg hidden></div>'+
-       '</div>':'')+
-     '<div class="cardmsg" data-cmsg hidden></div>'+
-     '<div class="card-foot">'+
-      updatedHtml(a)+
-      '<div class="acts">'+
-       '<button class="edit-pill" data-act="edit" title="edit" aria-label="edit '+esc(a.account)+'" aria-expanded="'+(editing?'true':'false')+'"'+(editing?' aria-controls="ep-'+i+'"':'')+'><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M8.3 1.7l2 2L4.5 9.5l-2.7.7.7-2.7L8.3 1.7z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>edit</button>'+
-       '<button data-act="refresh" title="refresh" aria-label="refresh '+esc(a.account)+'">↻</button>'+
-       '<button data-act="toggle" title="'+(a.disabled?'enable':'disable')+'" aria-label="'+(a.disabled?'enable':'disable')+' '+esc(a.account)+'" aria-pressed="'+(a.disabled?'true':'false')+'">'+(a.disabled?'▶':'⏸')+'</button>'+
-       '<button data-act="del" class="del" title="delete" aria-label="delete '+esc(a.account)+'">✕</button>'+
-      '</div>'+
-     '</div>'+
-    '</article>';
-  }).join('');
-  if(editState){                              // restore focus into the reopened panel
-    const p=[...el.querySelectorAll('.editpanel')][0];
-    if(p){const f=p.querySelector('[data-f="'+(editState.focus||'name')+'"]')||p.querySelector('input');if(f){f.focus();f.setSelectionRange(f.value.length,f.value.length);}}
-  }
-}
+    /* ================= FEED (§2.3) ================= */
+    feedRows(){
+      // filters AND together; an empty filter object (no keys) passes everything for that dimension
+      return this.feed.filter(r =>
+        (!this.anyAcctFilter || this.fAccounts[r.account]) &&
+        (!this.anyHostFilter || this.fHosts[r.host]));
+    },
+    anyAcctFilter(){ return Object.keys(this.fAccounts).length>0; },
+    anyHostFilter(){ return Object.keys(this.fHosts).length>0; },
+    anyFilter(){ return this.anyAcctFilter || this.anyHostFilter; },
+    feedFails(){ return this.feedRows.filter(r=>r.fail).length; },
+    feedNote(){
+      // section-note text: blank when empty, fail-count takes priority over the plain row count
+      const rows = this.feedRows, fails = this.feedFails;
+      if(!rows.length) return '';
+      return fails ? fails+' failed in view' : rows.length+' rows';
+    },
+    acctChips(){ return Object.keys(this.seenAccounts).sort(); },
+    hostChips(){ return Object.keys(this.seenHosts).sort(); },
+    hostRows(){
+      return this.hosts.map(h=>{
+        const ts = h.last ? +toDate(h.last) : null;
+        const age = ts ? (this.now-ts)/1000 : null;   // this.now, not Date.now() — re-ticks every second off startClock's interval
+        // tps join quirk preserved VERBATIM from the original: by_host_1h is keyed by the SHORT
+        // hostname (first dot-segment) even when by_host itself carries an FQDN. Not a bug — do not "fix" it.
+        const r1h = this.hosts1h.find(x=>x.host===(h.host||'').split('.')[0]);
+        return {
+          host: h.host||'—',
+          requests: fmtNum(h.requests),
+          // jury r1 (2 votes): tokens are 0 for EVERY row by construction — the upstream reporter is a
+          // prompt-submit hook that fires before the response exists, so no count is ever recorded.
+          // Render the absence honestly instead of a confident 0, matching the feed's tk cell.
+          tokens: h.tokens ? fmtNum(h.tokens) : '—',
+          age,
+          stale: age!=null && age>STALE_S,
+          ageText: ts ? fmtAge(age)+' ago' : '—',
+          tps: r1h ? r1h.tps : '—',
+        };
+      });
+    },
 
-/* ---------------- card actions ---------------- */
-function cardMsg(card,msg){const m=card.querySelector('[data-cmsg]');if(!m)return;if(!msg){m.hidden=true;m.textContent='';}else{m.hidden=false;m.textContent=msg;}}
-function pmsg(card,sel,msg){const m=card.querySelector(sel);if(!m)return;if(!msg){m.hidden=true;m.textContent='';}else{m.hidden=false;m.textContent=msg;}}
-async function doRefresh(card,a,btn){
-  btn.disabled=true;cardMsg(card,'polling '+a.account+'…');
-  try{
-    const r=await send('POST','/api/accounts/'+encodeURIComponent(a.account)+'/refresh');
-    if(r.status===401)return kick();
-    if(r.status===502)cardMsg(card,'poll failed — '+(r.body.error||'upstream error'));   // poll failure: inline, no alarm
-    else if(!r.ok)cardMsg(card,r.body.error||('HTTP '+r.status));
-    else cardMsg(card,'');                       // success → server broadcasts fresh accounts
-  }catch(_){cardMsg(card,'network error — try again');}
-  btn.disabled=false;
-}
-async function doToggle(card,a){
-  try{
-    const r=await send('POST','/api/accounts/'+encodeURIComponent(a.account)+'/disabled',{disabled:!a.disabled});
-    if(r.status===401)return kick();
-    if(!r.ok)cardMsg(card,r.body.error||('HTTP '+r.status));
-  }catch(_){cardMsg(card,'network error — try again');}
-}
-async function doDelete(card,a){
-  if(!confirm('Delete account "'+a.account+'"? This cannot be undone.'))return;
-  try{
-    const r=await send('DELETE','/api/accounts/'+encodeURIComponent(a.account));
-    if(r.status===401)return kick();
-    if(!r.ok)cardMsg(card,r.body.error||('HTTP '+r.status));
-    if(editState&&editState.account===a.account)editState=null;
-  }catch(_){cardMsg(card,'network error — try again');}
-}
-function toggleEdit(a){
-  if(editState&&editState.account===a.account){editState=null;}
-  else editState={account:a.account,name:a.account,label:a.label||'',tok:'',focus:'name'};
-  renderAccounts();
-}
-async function saveEdit(card,a){
-  const g=f=>{const i=card.querySelector('[data-f="'+f+'"]');return i?i.value.trim():'';};
-  const name=g('name'),label=g('label'),tok=g('tok');
-  const err=m=>pmsg(card,'[data-emsg]',m);
-  err('');
-  if(!name)return err('name is required');
-  if(/[/\s]/.test(name))return err('name cannot contain spaces or slashes');
-  const renamed=name!==a.account,relabeled=label!==(a.label||'');
-  if(!renamed&&!relabeled&&!tok){editState=null;renderAccounts();return;}
-  try{
-    if(renamed||relabeled){
-      const body={};if(renamed)body.account=name;if(relabeled)body.label=label;
-      const r=await send('PATCH','/api/accounts/'+encodeURIComponent(a.account),body);
-      if(r.status===401)return kick();
-      if(r.status===404&&(r.body.error==='not found'||!r.body.error))return err('rename requires server update'); // pre-PATCH server
-      if(!r.ok)return err(r.body.error||('HTTP '+r.status));      // 404 unknown account · 400 bad name · 409 conflict
-      a.account=name;if(relabeled)a.label=label;                  // apply locally; broadcast may follow
-    }
-    if(tok){
-      const r=await send('POST','/api/accounts',{account:name,setup_token:tok,label:label});
-      if(r.status===401)return kick();
-      if(!r.ok)return err(r.body.error||('HTTP '+r.status));
-    }
-    editState=null;renderAccounts();renderChrome();
-  }catch(_){err('network error — try again');}
-}
-async function saveReauth(card,a){
-  const inp=card.querySelector('.reauth input');
-  const tok=inp?inp.value.trim():'';
-  const err=m=>pmsg(card,'[data-rmsg]',m);
-  err('');
-  if(!tok)return err('paste the setup-token first');
-  try{
-    const r=await send('POST','/api/accounts',{account:a.account,setup_token:tok,label:a.label||''});
-    if(r.status===401)return kick();
-    if(!r.ok)return err(r.body.error||('HTTP '+r.status));   // surfaces the 400 code#state explanation
-    reauthDrafts.delete(a.account);
-  }catch(_){err('network error — try again');}
-}
+    /* ================= KEYS (§2.4) ================= */
+    keysTitle(){ return 'Provider API keys · '+this.keys.length; },
+    khint(){
+      const p=this.providers.find(x=>x.id===this.kprov.trim());
+      return p?(p.prefix?'↳ '+p.name+' — keys usually start "'+p.prefix+'"':'↳ '+p.name):(this.kprov.trim()?'↳ custom provider':'');
+    },
+    // must depend on this.now (via relTime) so the table re-ticks every second
+    keyRows(){
+      return this.keys.map(k=>({...k,
+        stCls:k.status==='working'?'st-ok':k.status==='dead'?'st-dead':'dim',
+        created:this.relTime(k.created_at,'—'),
+        used:k.last_used?this.relTime(k.last_used,'—'):null,
+        checked:this.relTime(k.last_checked,'—'),
+      }));
+    },
+  },
+  watch:{
+    titleText:{ immediate:true, handler(v){ document.title=v; } },
+  },
+  methods:{
+    /* ================= CORE (§2.1) ================= */
+    // re-exported module helpers so markup can call fmtAge(...)/worstOf(...)/etc without a `this.` prefix —
+    // Vue resolves bare template identifiers against the instance, and a shorthand method IS an instance method.
+    fmtAge, fmtNum, fmtUntil, hhmm, wkhhmm, worstOf, hcls, fcls, eligible, toDate,
 
-/* ---------------- 03 · activity feed ---------------- */
-function rowFrom(d,kind){
-  const ts=d.ts?+toDate(d.ts):Date.now();
-  if(kind==='access'){
-    const fail=!!(d.result&&d.result!=='ok');
-    return{kind,ts,account:d.account||'',host:d.host||'',model:'—',tokens:'—',
-      text:'▸ '+(d.action||'')+(d.result?' — '+d.result:''),fail};
-  }
-  return{kind,ts,account:d.account||'?',host:d.host||'',model:d.model||'—',
-    tokens:d.tokens!=null?fmtNum(d.tokens):'—',text:d.prompt||'',fail:false};
-}
-function feedEvent(d,kind){
-  if(paused){queue.push({d,kind});return;}
-  addRows([rowFrom(d,kind)]);
-}
-function addRows(rows){
-  let newVals=false;
-  for(const r of rows){
-    FEED.unshift(r);if(FEED.length>200)FEED.length=200;
-    if(r.account&&!seenAccounts.has(r.account)){seenAccounts.add(r.account);newVals=true;}
-    if(r.host&&!seenHosts.has(r.host)){seenHosts.add(r.host);newVals=true;}
-    if(!seeding)pendingLive++;
-  }
-  if(newVals)buildChips();
-  renderFeed();
-}
-// seed the feed from BOTH prompt logs and access events; an old server that 404s /api/access yields no access rows
-async function seedFeed(){
-  const logs=await api('/api/logs?limit=50');   // 401 here propagates → logout; access is best-effort
-  const acc=await api('/api/access?limit=50').then(r=>Array.isArray(r)?r:[]).catch(()=>[]);
-  const rows=[...logs.map(d=>rowFrom(d,'prompt')),...acc.map(d=>rowFrom(d,'access'))]
-    .sort((a,b)=>a.ts-b.ts);
-  addRows(rows);
-}
-function feedFiltered(){
-  return FEED.filter(r=>
-    (!fAccounts.size||fAccounts.has(r.account))&&(!fHosts.size||fHosts.has(r.host)));
-}
-function renderFeed(){
-  const f=$('#feed');
-  const head='<div class="frow head"><span>age</span><span>account</span><span>host</span><span>model</span><span class="tk">tokens</span><span>prompt</span></div>';
-  const rows=feedFiltered();
-  const fails=rows.filter(r=>r.fail).length;
-  $('#feed-note').textContent=rows.length?(fails?fails+' failed in view':rows.length+' rows'):'';
-  f.innerHTML=head+(rows.length?rows.map(r=>
-    '<div class="frow'+(r.fail?' fail':'')+'">'+
-     '<span class="t" data-rts="'+r.ts+'">'+fmtAge((Date.now()-r.ts)/1000)+'</span>'+
-     '<span>'+esc(r.account||'—')+'</span>'+
-     '<span class="h">'+esc(r.host||'')+'</span>'+
-     '<span class="m">'+esc(r.model)+'</span>'+
-     '<span class="tk num">'+esc(r.tokens)+'</span>'+
-     '<span class="snip">'+esc(r.text)+'</span>'+
-    '</div>').join(''):'<div class="frow"><span class="t"></span><span class="dim" style="grid-column:2/-1">no activity yet</span></div>');
-}
-function buildChips(){
-  const c=$('#fchips');let html='';
-  for(const a of[...seenAccounts].sort())html+='<button class="fchip'+(fAccounts.has(a)?' on':'')+'" data-kind="a" data-v="'+esc(a)+'" aria-pressed="'+fAccounts.has(a)+'">'+esc(a)+'</button>';
-  for(const h of[...seenHosts].sort())html+='<button class="fchip'+(fHosts.has(h)?' on':'')+'" data-kind="h" data-v="'+esc(h)+'" aria-pressed="'+fHosts.has(h)+'">host · '+esc(h)+'</button>';
-  if(fAccounts.size||fHosts.size)html+='<button class="fchip" data-clear>✕ clear</button>';
-  c.innerHTML=html;
-}
-function renderHosts(rows,rows1h){
-  HOSTS=rows||[];
-  const tps1h=new Map((rows1h||[]).map(r=>[r.host,r]));
-  const tb=$('#hosts tbody');
-  if(!HOSTS.length){tb.innerHTML='<tr><td colspan="5" class="dim">no traffic yet</td></tr>';return;}
-  tb.innerHTML=HOSTS.map(h=>{
-    const ts=h.last?+toDate(h.last):null;
-    const age=ts?(Date.now()-ts)/1000:null;
-    const r1h=tps1h.get((h.host||'').split('.')[0]);
-    return '<tr><td>'+esc(h.host||'—')+'</td><td class="r num">'+fmtNum(h.requests)+'</td><td class="r num">'+fmtNum(h.tokens)+'</td>'+
-     '<td class="r num '+(age!=null&&age>STALE_S?'warn':'dim')+'"'+(ts?' data-rts="'+ts+'" data-warn="'+STALE_S+'"':'')+'>'+(ts?fmtAge(age)+' ago':'—')+'</td>'+
-     '<td class="r num">'+(r1h?r1h.tps:'—')+'</td></tr>';
-  }).join('');
-}
+    kick(){ localStorage.removeItem('aigate_token'); location.reload(); },
 
-/* ---------------- 04 · provider keys ---------------- */
-async function loadProviders(){
-  PROVIDERS=await api('/api/providers');
-  const dl=$('#provlist');dl.innerHTML='';
-  for(const p of PROVIDERS){const o=document.createElement('option');o.value=p.id;o.label=p.name;dl.appendChild(o);}
-}
-function providerHint(){
-  const id=$('#kprov').value.trim(),p=PROVIDERS.find(x=>x.id===id);
-  $('#khint').textContent=p?(p.prefix?'↳ '+p.name+' — keys usually start "'+p.prefix+'"':'↳ '+p.name):(id?'↳ custom provider':'');
-}
-function renderKeys(rows){
-  KEYS=rows||[];
-  $('#keys-title').textContent='Provider API keys · '+KEYS.length;
-  const tb=$('#keys tbody');
-  if(!KEYS.length){tb.innerHTML='<tr><td colspan="8" class="dim">no keys yet — add one below</td></tr>';renderChrome();return;}
-  tb.innerHTML=KEYS.map(k=>{
-    const stCls=k.status==='working'?'st-ok':k.status==='dead'?'st-dead':'dim';
-    const rel=(v,empty)=>{if(!v)return empty||'—';const ts=+toDate(v);return '<span data-rts="'+ts+'">'+fmtAge((Date.now()-ts)/1000)+'</span> ago';};
-    return '<tr data-kid="'+k.id+'">'+
-     '<td>'+esc(k.provider)+'</td>'+
-     '<td class="dim">'+esc(k.label||'—')+'</td>'+
-     '<td class="mono dim">'+esc(k.key_hint||'—')+'</td>'+
-     '<td class="'+stCls+'">'+esc(k.status||'unknown')+'</td>'+
-     '<td class="dim">'+rel(k.created_at)+'</td>'+
-     '<td>'+(k.last_used?rel(k.last_used):'<span class="dim">never</span>')+(k.stale?' <span class="badge" title="never fetched or idle >90d">stale</span>':'')+'</td>'+
-     '<td class="dim">'+rel(k.last_checked,'—')+'</td>'+
-     '<td class="kacts"><button data-krefresh title="re-verify" aria-label="re-verify '+esc(k.provider)+' '+(k.label||'')+'">↻</button>'+
-      '<button data-kdel class="del" title="delete" aria-label="delete '+esc(k.provider)+' '+(k.label||'')+'">✕</button></td>'+
-    '</tr>';
-  }).join('');
-  renderChrome();
-}
-async function addKey(e){
-  e.preventDefault();
-  const provider=$('#kprov').value.trim(),key=$('#kkey').value.trim(),label=$('#klabel').value.trim(),msg=$('#kmsg');
-  if(!provider||!key){msg.style.color='var(--crit)';msg.textContent='provider + key required';return;}
-  msg.style.color='var(--dim)';msg.textContent='adding…';
-  try{
-    const r=await send('POST','/api/keys',{provider,key,label});
-    if(r.status===401)return kick();
-    if(r.ok){msg.style.color='var(--ok)';msg.textContent='✓ added '+provider;$('#kkey').value='';$('#klabel').value='';}  // no refetch — server broadcasts 'keys'
-    else{msg.style.color='var(--crit)';msg.textContent='✗ '+(r.body.error||('HTTP '+r.status));}
-  }catch(err){msg.style.color='var(--crit)';msg.textContent='✗ '+err;}
-}
-async function delKey(k){
-  if(!confirm('Delete key '+k.provider+(k.label?' · '+k.label:'')+' ('+(k.key_hint||'')+')?'))return;
-  const msg=$('#kmsg');
-  const r=await send('DELETE','/api/keys/'+k.id).catch(err=>({error:String(err)}));
-  if(r.status===401)return kick();
-  if(r.ok){msg.style.color='var(--dim)';msg.textContent='deleted';}  // no refetch — broadcast updates the table
-  else{msg.style.color='var(--crit)';msg.textContent='✗ '+((r.body&&r.body.error)||r.error||('HTTP '+r.status));}
-}
-async function refreshKey(k){
-  const msg=$('#kmsg');msg.style.color='var(--dim)';msg.textContent='checking '+k.provider+'…';
-  const r=await send('POST','/api/keys/'+k.id+'/refresh').catch(err=>({error:String(err)}));
-  if(r.status===401)return kick();
-  if(r.status===502){msg.style.color='var(--crit)';msg.textContent='✗ check failed — '+((r.body&&r.body.error)||'upstream error');return;}
-  if(r.ok){
-    msg.style.color='var(--ok)';
-    msg.textContent=r.body&&r.body.checked===false?'↳ no liveness probe for this provider':('✓ '+k.provider+' — '+(r.body&&r.body.alive?'working':'dead'));
-  }else{msg.style.color='var(--crit)';msg.textContent='✗ '+((r.body&&r.body.error)||r.error||('HTTP '+r.status));}
-}
+    async doLogin(){
+      if(!this.loginPw){ this.loginMsg='enter the master password'; return; }
+      this.loginMsg='signing in…';
+      const r=await send('POST','/api/login',{password:this.loginPw});
+      if(r.status===200){ this.loginPw=''; TOKEN=''; localStorage.removeItem('aigate_token'); this.loginMsg=''; this.boot(); }
+      else if(r.status===401) this.loginMsg='wrong password — try again';
+      else if(r.status===429) this.loginMsg='too many attempts — locked out, try later';
+      else if(r.status===400) this.loginMsg='password login is not enabled on the server';
+      else this.loginMsg="can't reach server — try again";
+    },
 
-/* ---------------- clock / relative-time re-tick ---------------- */
-function startClock(){
-  if(clockOn)return;clockOn=true;
-  const tick=()=>{
-    const now=Date.now();
-    $('#clock').textContent=new Date().toTimeString().slice(0,8);
-    document.querySelectorAll('[data-rts]').forEach(el=>{
-      const age=(now-+el.dataset.rts)/1000;
-      const hostCell=el.tagName==='TD';
-      el.textContent=fmtAge(age)+(hostCell?' ago':'');
-      if(el.dataset.warn)el.classList.toggle('warn',age>+el.dataset.warn);
-    });
-    document.querySelectorAll('[data-rage]').forEach(el=>{
-      const age=+el.dataset.base+(now-+el.dataset.at)/1000;
-      el.textContent=fmtAge(age)+' ago';
-      if(el.dataset.warn)el.classList.toggle('warn',age>+el.dataset.warn);
-    });
-    document.querySelectorAll('[data-until]').forEach(el=>{el.textContent=fmtUntil(+el.dataset.until-now);});
-    if(pendingLive>0&&now-lastLiveNote>=5000){   // polite feed summary, at most every 5s
-      $('#livenote').textContent=pendingLive+' new event'+(pendingLive===1?'':'s');
-      pendingLive=0;lastLiveNote=now;
-    }
-  };
-  tick();setInterval(tick,1000);
-}
+    async doLogout(){
+      try{ await send('POST','/api/logout'); }catch(_){}
+      localStorage.removeItem('aigate_token'); TOKEN=''; location.reload();
+    },
 
-/* ---------------- static UI wiring ---------------- */
-// login
-$('#loginform').addEventListener('submit',save);
-// logout
-$('#logout').onclick=async()=>{try{await send('POST','/api/logout');}catch(_){}localStorage.removeItem('aigate_token');TOKEN='';location.reload();};
-// notification bell
-$('#bell').onclick=async()=>{
-  const b=$('#bell');
-  if(!('Notification'in window)){b.title='notifications unsupported in this browser';return;}
-  if(notifyOn){notifyOn=false;}
-  else if(Notification.permission==='granted'){notifyOn=true;}
-  else if(Notification.permission==='denied'){b.title='notifications blocked — allow them in browser settings';return;}
-  else{try{notifyOn=(await Notification.requestPermission())==='granted';}catch(_){notifyOn=false;}}
-  b.setAttribute('aria-pressed',String(notifyOn));
-  b.setAttribute('aria-label',notifyOn?'disable browser notifications':'enable browser notifications');
-  b.title=notifyOn?'notifications on':'browser notifications';
-};
-// clear the runaway title flash on any interaction
-['pointerdown','keydown'].forEach(ev=>window.addEventListener(ev,()=>{if(runFlash){runFlash=false;updateTitle();}},{passive:true}));
-// inbox: dismiss + copy (session-only dismissals)
-$('#inbox').addEventListener('click',e=>{
-  const cp=e.target.closest('[data-copy]');
-  if(cp){try{navigator.clipboard&&navigator.clipboard.writeText(cp.dataset.copy);}catch(_){}
-    cp.textContent='copied';setTimeout(()=>cp.textContent='copy cmd',1200);return;}
-  const d=e.target.closest('[data-dismiss]');
-  if(d){const row=d.closest('.inbox-row');if(row)dismissed.add(row.dataset.iid);renderInbox();}
+    async boot(){
+      let s;
+      try{ s=await api('/api/stats'); }
+      catch(e){
+        if(e===401){
+          TOKEN=''; localStorage.removeItem('aigate_token'); this.authed=false;
+          this.$nextTick(()=>this.$refs.tok&&this.$refs.tok.focus());
+          return;
+        }
+        if(e===429){ this.loginMsg='too many auth failures — locked out, try later'; return; }
+        this.loginMsg="can't reach server, retrying…";
+        setTimeout(this.boot,3000);
+        return;
+      }
+      this.ingestStats(s);
+      this.authed=true;
+      try{ await this.loadProviders(); this.keys=await api('/api/keys'); }
+      catch(e){ if(e===401) return this.kick(); }
+      this.seeding=true; this.feed=[];
+      try{ await this.seedFeed(); }
+      catch(e){ if(e===401) return this.kick(); }
+      this.seeding=false;
+      api('/api/capabilities').then(c=>{ this.version=c.version||''; }).catch(()=>{});   // fire-and-forget, never blocks boot
+      this.connect();
+      this.startClock();
+      bootResolve();   // releases the Suspense boundary — DashboardBody's setup() was awaiting this
+      this.$nextTick(()=>this.$refs.hdr&&this.$refs.hdr.focus({preventScroll:true}));
+    },
+
+    connect(){
+      if(this._ws&&(this._ws.readyState===0||this._ws.readyState===1))return;   // already CONNECTING/OPEN — no duplicate socket
+      this._ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',TOKEN?['aigate','bearer.'+TOKEN]:['aigate']);
+      this._ws.onopen=async()=>{
+        this.live=true; this.liveLabel='live';
+        try{
+          const s=await api('/api/stats'); this.ingestStats(s);
+          this.keys=await api('/api/keys');
+          this.seeding=true; this.feed=[]; await this.seedFeed(); this.seeding=false;
+        }catch(e){ this.seeding=false; if(e===401)this.kick(); }
+      };
+      this._ws.onclose=()=>{ this.live=false; this.liveLabel='reconnecting'; setTimeout(this.connect,2000); };
+      this._ws.onmessage=e=>{
+        let m; try{ m=JSON.parse(e.data); }catch{ return; }   // malformed frame — drop it, don't kill the handler (D9)
+        if(m.type==='accounts') this.ingestAccounts(m.data);
+        else if(m.type==='keys') this.keys=m.data||[];
+        else if(m.type==='prompt'){
+          this.feedEvent(m.data,'prompt');
+          clearTimeout(this._statsT);
+          this._statsT=setTimeout(()=>api('/api/stats').then(s=>{ this.hosts=s.by_host||[]; this.hosts1h=s.by_host_1h||[]; }).catch(()=>{}),1500);
+        }
+        else if(m.type==='access') this.feedEvent(m.data,'access');
+        // anything else — ignored
+      };
+    },
+
+    ingestStats(s){
+      this.accounts=s.accounts||[]; this.acctsAt=Date.now(); this.hosts=s.by_host||[]; this.hosts1h=s.by_host_1h||[];
+      for(const a of this.accounts) if(!this.rings[a.account]) this.rings[a.account]=[{t:this.now,v:worstOf(a)}];   // seed once, never on later calls
+      this.detectTransitions();
+      this.syncHero();
+    },
+
+    ingestAccounts(list){
+      this.accounts=list||[]; this.acctsAt=Date.now();
+      for(const a of this.accounts){
+        const r=this.rings[a.account]||(this.rings[a.account]=[]);
+        r.push({t:this.now,v:worstOf(a)}); if(r.length>40)r.shift();   // 40-point FIFO ring
+      }
+      this.detectTransitions();
+      this.syncHero();
+    },
+
+    // 79→80 runaway edge → title flash + (gated) Notification
+    detectTransitions(){
+      for(const a of this.accounts){
+        const w=worstOf(a),prev=this._prevWorst[a.account];
+        if(prev!==undefined&&prev<80&&w>=80){
+          this.runFlash=true;
+          if(this.notifyOn&&'Notification'in window&&Notification.permission==='granted'){
+            try{ new Notification('aigate — runaway account',{body:a.account+' hit '+Math.round(w)+'% of its worst window'}); }catch(_){}
+          }
+        }
+        this._prevWorst[a.account]=w;
+      }
+    },
+
+    // drives the reactive hero number: unchanged accounts snap in place, changed ones hand off to tweenHero
+    syncHero(){
+      const seen={};
+      for(const a of this.accounts){
+        seen[a.account]=true;
+        const w=Math.round(worstOf(a)),from=this.heroShown[a.account];
+        if(from===undefined) this.heroShown[a.account]=w;
+        else if(from!==w) this.tweenHero(a.account,from,w);
+      }
+      for(const name of Object.keys(this.heroShown)){   // prune accounts that dropped out (deleted/renamed)
+        if(!seen[name]){ cancelAnimationFrame(this._heroRaf[name]); delete this._heroRaf[name]; delete this.heroShown[name]; }
+      }
+    },
+
+    // the ONLY requestAnimationFrame in the file — re-checks reducedMotion() on every call (D10), not once at boot
+    tweenHero(name,from,to,ms=550){
+      cancelAnimationFrame(this._heroRaf[name]);
+      if(this.reducedMotion()||from==null||to==null){ this.heroShown[name]=to; return; }
+      const start=performance.now(),ease=t=>1-Math.pow(1-t,3);
+      const step=now=>{
+        const t=Math.min(1,(now-start)/ms);
+        this.heroShown[name]=Math.round(from+(to-from)*ease(t));
+        if(t<1) this._heroRaf[name]=requestAnimationFrame(step);
+      };
+      this._heroRaf[name]=requestAnimationFrame(step);
+    },
+
+    // deliberately a method, not a computed — matchMedia can flip mid-session and every tween trigger must see it fresh
+    reducedMotion(){ return matchMedia('(prefers-reduced-motion: reduce)').matches; },
+
+    // usage_age_s is relative to when the server captured it; age it forward using the reactive clock (`this.now`,
+    // not Date.now()) so every consumer (cards, inbox, rollup) re-computes on the 1s tick without its own interval
+    curAge(a){ return a.usage_age_s==null?null:a.usage_age_s+(this.now-this.acctsAt)/1000; },
+
+    // the ONE setInterval in the file — writes `this.now` and throttles the "N new events" live-region note to 5s
+    startClock(){
+      if(this._tick)return;
+      this._tick=setInterval(()=>{
+        this.now=Date.now();
+        if(this.pendingLive>0&&this.now-this.lastLiveNote>=5000){
+          this.liveNote=this.pendingLive+' new event'+(this.pendingLive===1?'':'s');
+          this.pendingLive=0; this.lastLiveNote=this.now;
+        }
+      },1000);
+    },
+
+    async toggleBell(){
+      if(!('Notification'in window))return;   // unsupported — template's static :title already covers it, nothing to flip
+      if(this.notifyOn){ this.notifyOn=false; return; }
+      if(Notification.permission==='granted'){ this.notifyOn=true; return; }
+      if(Notification.permission==='denied')return;   // blocked — stays off
+      try{ this.notifyOn=(await Notification.requestPermission())==='granted'; }catch(_){ this.notifyOn=false; }
+    },
+
+    clearFlash(){ if(this.runFlash)this.runFlash=false; },
+
+    dismiss(id){ this.dismissed[id]=true; },
+
+    copyCmd(id){
+      try{ navigator.clipboard&&navigator.clipboard.writeText('claude setup-token'); }catch(_){}
+      this.copiedId=id;
+      clearTimeout(this._copyT);
+      this._copyT=setTimeout(()=>{ if(this.copiedId===id)this.copiedId=null; },1200);   // per-row, not a shared flag (critique §1)
+    },
+
+    /* ================= CARDS (§2.2) ================= */
+    // severity ladder: re-auth first (polling is dead), runaway next (burning budget right now),
+    // then everything else roughly in "needs attention" order. Lower number sorts first.
+    sevRank(a){
+      const w=this.worstOf(a),age=this.curAge(a);
+      if(a.reauth_needed)return 0;
+      if(w>=80)return 1;
+      if(!a.has_token)return 2;
+      if(age!=null&&age>STALE_S)return 3;
+      if(!a.disabled&&!a.parked)return 4;
+      if(a.parked&&!a.disabled)return 5;
+      return 6;
+    },
+    chipOf(a){
+      const w=this.worstOf(a);
+      if(a.disabled)return{t:'DISABLED',c:'dim'};
+      if(a.reauth_needed)return{t:'RE-AUTH',c:'crit'};
+      if(a.parked)return{t:'PARKED'+(a.parked_until?' →'+this.hhmm(this.toDate(a.parked_until)):''),c:'dim'};
+      if(!a.has_token)return{t:'NO TOKEN',c:'warn'};
+      if(w>=80)return{t:'RUNAWAY',c:'warn'};
+      return{t:'READY',c:'ok'};
+    },
+    // null hides the whole .greset line; `this.now` in the `until` calc is what makes the
+    // countdown re-tick every second without a data-until/DOM-walk hack (D4)
+    gaugeReset(sec){
+      if(!sec)return null;
+      return{when:this.wkhhmm(new Date(sec*1000)),until:this.fmtUntil(sec*1000-this.now)};
+    },
+    // SVG polyline points for the worst-% ring buffer. '' (no polyline), a flat 2-point line for
+    // a single sample, or the full normalized path — x spans 0..110, y spans 30..0 (100%→y=0).
+    sparkPoints(name){
+      const s=this.rings[name]||[];
+      if(s.length===0)return'';
+      if(s.length===1){const y=30-Math.min(100,Math.max(0,s[0].v))/100*30;return'0,'+y+' 110,'+y;}
+      return s.map((p,i)=>{
+        const x=(i/(s.length-1)*110).toFixed(1),y=(30-Math.min(100,Math.max(0,p.v))/100*30).toFixed(1);
+        return x+','+y;
+      }).join(' ');
+    },
+    sparkStroke(name){
+      const s=this.rings[name]||[];
+      if(!s.length)return'var(--dim)';
+      const col=this.hcls(s[s.length-1].v);
+      return col==='dim'?'var(--dim)':col==='ok'?'var(--ok)':col==='warn'?'var(--warn)':'var(--crit)';
+    },
+    // exhaustion-rate projection off the ring buffer. Returns [text, cssClass].
+    burnLine(a){
+      if(a.disabled)return['disabled · excluded from selection','dim'];
+      if(a.reauth_needed)return['— polling paused · re-auth required','dim'];
+      if(a.parked)return['parked'+(a.parked_until?' until '+this.hhmm(this.toDate(a.parked_until)):'')+' · requests routed to next account','dim'];
+      const s=this.rings[a.account]||[];
+      if(s.length<2)return['— collecting samples','dim'];
+      const first=s[0],last=s[s.length-1],dtH=(last.t-first.t)/3600000;
+      if(dtH<30/3600)return['— steady','dim'];   // window too small to rate honestly — the 30s guard
+      const rate=(last.v-first.v)/dtH;
+      if(rate>0.5){
+        const g5=a.five_hour_pct||0;
+        if(g5>=100)return['↑'+rate.toFixed(1)+'%/h · 5h window exhausted','crit'];
+        const left=(100-g5)/rate;
+        return['↑'+rate.toFixed(1)+'%/h · 5h window exhausts in ~'+(left>=1?Math.round(left)+'h':Math.max(1,Math.round(left*60))+'m'),g5>=80?'warn':'dim'];
+      }
+      if(rate<-0.5)return['↓ recovering','ok'];
+      return['— steady','dim'];
+    },
+    // `this.now`-driven so it re-ticks every second; `stale` follows the live age, not the
+    // server-stamped usage_age_s snapshot
+    updatedInfo(a){
+      if(a.usage_age_s===undefined)return{mode:'old',text:'updated '+(a.usage_updated||'never'),stale:false};
+      if(a.usage_age_s===null)return{mode:'never',text:'never polled',stale:false};
+      const age=this.curAge(a);
+      return{mode:'live',text:'updated '+this.fmtAge(age)+' ago',stale:age>STALE_S};
+    },
+    isStale(a){
+      const g=this.curAge(a);
+      return g!=null&&g>STALE_S;
+    },
+    cardMsg(name,msg){
+      if(msg)this.cardMsgs[name]=msg;else delete this.cardMsgs[name];
+    },
+    toggleEdit(a){
+      if(this.editState&&this.editState.account===a.account){this.editState=null;}
+      else{this.editState={account:a.account,name:a.account,label:a.label||'',tok:''};this.editMsg='';}
+    },
+    cancelEdit(){this.editState=null;this.editMsg='';},
+    // reads from editState (the v-model targets), not the DOM — no querySelector-and-trim dance
+    async saveEdit(a){
+      const name=(this.editState.name||'').trim(),label=(this.editState.label||'').trim(),tok=(this.editState.tok||'').trim();
+      this.editMsg='';
+      if(!name){this.editMsg='name is required';return;}
+      if(/[/\s]/.test(name)){this.editMsg='name cannot contain spaces or slashes';return;}
+      const renamed=name!==a.account,relabeled=label!==(a.label||'');
+      if(!renamed&&!relabeled&&!tok){this.editState=null;return;}
+      try{
+        if(renamed||relabeled){
+          const body={};if(renamed)body.account=name;if(relabeled)body.label=label;
+          const r=await send('PATCH','/api/accounts/'+encodeURIComponent(a.account),body);
+          if(r.status===401)return this.kick();
+          if(r.status===404&&(r.body.error==='not found'||!r.body.error)){this.editMsg='rename requires server update';return;} // pre-PATCH server
+          if(!r.ok){this.editMsg=r.body.error||('HTTP '+r.status);return;}
+          a.account=name;if(relabeled)a.label=label;   // apply locally; broadcast may follow
+        }
+        if(tok){
+          const r=await send('POST','/api/accounts',{account:name,setup_token:tok,label:label});
+          if(r.status===401)return this.kick();
+          if(!r.ok){this.editMsg=r.body.error||('HTTP '+r.status);return;}
+        }
+        this.editState=null;
+      }catch(_){this.editMsg='network error — try again';}
+    },
+    async saveReauth(a){
+      const tok=(this.reauthDrafts[a.account]||'').trim();
+      this.reauthMsgs[a.account]='';
+      if(!tok){this.reauthMsgs[a.account]='paste the setup-token first';return;}
+      try{
+        const r=await send('POST','/api/accounts',{account:a.account,setup_token:tok,label:a.label||''});
+        if(r.status===401)return this.kick();
+        if(!r.ok){this.reauthMsgs[a.account]=r.body.error||('HTTP '+r.status);return;}  // surfaces the 400 code#state explanation
+        delete this.reauthDrafts[a.account];
+      }catch(_){this.reauthMsgs[a.account]='network error — try again';}
+    },
+    async doRefresh(a){
+      this.refreshing[a.account]=true;
+      this.cardMsg(a.account,'polling '+a.account+'…');
+      try{
+        const r=await send('POST','/api/accounts/'+encodeURIComponent(a.account)+'/refresh');
+        if(r.status===401)return this.kick();
+        if(r.status===502)this.cardMsg(a.account,'poll failed — '+(r.body.error||'upstream error'));  // poll failure: inline, no alarm
+        else if(!r.ok)this.cardMsg(a.account,r.body.error||('HTTP '+r.status));
+        else this.cardMsg(a.account,'');   // success → server broadcasts fresh accounts
+      }catch(_){this.cardMsg(a.account,'network error — try again');}
+      finally{delete this.refreshing[a.account];}
+    },
+    async doToggle(a){
+      try{
+        const r=await send('POST','/api/accounts/'+encodeURIComponent(a.account)+'/disabled',{disabled:!a.disabled});
+        if(r.status===401)return this.kick();
+        if(!r.ok)this.cardMsg(a.account,r.body.error||('HTTP '+r.status));
+      }catch(_){this.cardMsg(a.account,'network error — try again');}
+    },
+    async doDelete(a){
+      if(!confirm('Delete account "'+a.account+'"? This cannot be undone.'))return;
+      try{
+        const r=await send('DELETE','/api/accounts/'+encodeURIComponent(a.account));
+        if(r.status===401)return this.kick();
+        if(!r.ok)this.cardMsg(a.account,r.body.error||('HTTP '+r.status));
+        if(this.editState&&this.editState.account===a.account)this.editState=null;
+      }catch(_){this.cardMsg(a.account,'network error — try again');}
+    },
+
+    /* ================= FEED (§2.3) ================= */
+    rowFrom(d,kind){
+      // feedSeq is a monotonic module-level counter — the `key` it produces is the ONLY thing in
+      // this object guaranteed unique. `ts` collides at sqlite's 1s granularity when several rows
+      // land in the same second, and a plain array index is unstable once addRows() unshift()s new
+      // rows in front of old ones — either would make :key flicker/reuse DOM nodes.
+      const key = kind+'-'+(feedSeq++);
+      const ts = d.ts!=null ? +toDate(d.ts) : Date.now();   // toDate() fixes the bare-UTC sqlite quirk; ISO-Z WS rows pass through
+      if(kind==='access') return {
+        key, kind, ts,
+        account: d.account||'',    // empty-string fallback (NOT '?') — access rows with no account never become a filter chip, see addRows()
+        host: d.host||'',
+        model:'—', tokens:'—',
+        text:'▸ '+(d.action||'')+(d.result?' — '+d.result:''),
+        fail: !!(d.result && d.result!=='ok'),
+      };
+      // kind === 'prompt'
+      return {
+        key, kind, ts,
+        account: d.account||'?',   // '?' fallback here, deliberately different from the access-row '' above
+        host: d.host||'',
+        model: d.model||'—',
+        // tokens are always 0/null in this system — see CLAUDE.md; the reporting hook fires on
+        // UserPromptSubmit, before the model has responded, so the real count never exists at write
+        // time. Render an em-dash and never animate it. Remove this check if the hook is ever fixed.
+        tokens: d.tokens!=null ? fmtNum(d.tokens) : '—',
+        text: d.prompt||'',
+        fail: false,
+      };
+    },
+    feedEvent(d,kind){
+      // paused rows queue as raw {d,kind} — NOT pre-converted via rowFrom() — so the eventual key/ts
+      // reflect when the row actually lands in the feed (on resume), not when it arrived off the wire.
+      if(this.paused){ this.queue.push({d,kind}); return; }
+      this.addRows([this.rowFrom(d,kind)]);
+    },
+    addRows(rows){
+      for(const r of rows){
+        this.feed.unshift(r);
+        if(this.feed.length>200) this.feed.length=200;   // hard cap — WS+poll could otherwise grow this unbounded across a long session
+        // seenAccounts/seenHosts are plain {name:true} objects, not Sets (build contract §1 ruling) —
+        // acctChips/hostChips read them via Object.keys().sort(), no [...set] spread needed
+        if(r.account && !this.seenAccounts[r.account]) this.seenAccounts[r.account]=true;
+        if(r.host && !this.seenHosts[r.host]) this.seenHosts[r.host]=true;
+        // seeding=true only while seedFeed() is in flight (set by boot()/connect()) — suppresses the
+        // "50 new events" flood on boot/reconnect. The throttled aria-live counter (startClock's tick,
+        // owned by CORE) only speaks for rows that arrived while seeding was false.
+        if(!this.seeding) this.pendingLive++;
+      }
+      // no buildChips()/renderFeed() call needed — acctChips/hostChips/feedRows/feedNote are all
+      // computed properties, they recompute themselves the instant `feed`/`seenAccounts`/`seenHosts` change
+    },
+    async seedFeed(){
+      const logs = await api('/api/logs?limit=50');            // 401 here propagates up to boot()/connect()'s catch — do not swallow it
+      const acc = await api('/api/access?limit=50')
+        .then(r=>Array.isArray(r)?r:[])
+        .catch(()=>[]);                                          // older servers 404 here; best-effort, never fatal to boot
+      const rows = [...logs.map(d=>this.rowFrom(d,'prompt')), ...acc.map(d=>this.rowFrom(d,'access'))]
+        .sort((a,b)=>a.ts-b.ts);                                   // ascending (oldest first) so addRows' unshift() lands them newest-first
+      this.addRows(rows);
+    },
+    togglePause(){
+      this.paused = !this.paused;
+      if(!this.paused && this.queue.length){
+        // drain the WHOLE queue through one addRows() call — one pass of the seen-set/pendingLive
+        // bookkeeping instead of N, and the feed updates in a single reactive patch instead of N re-renders
+        const rows = this.queue.map(q=>this.rowFrom(q.d,q.kind));
+        this.queue = [];
+        this.addRows(rows);
+      }
+    },
+    toggleChip(kind,v){
+      // fAccounts/fHosts are plain objects (build contract §1) — toggling a brand-new key via
+      // delete/assignment is one Vue-tracked mutation, no Vue.set ceremony needed in Vue 3.
+      const set = kind==='a' ? this.fAccounts : this.fHosts;
+      set[v] ? delete set[v] : set[v] = true;
+    },
+    clearChips(){
+      this.fAccounts = {};
+      this.fHosts = {};
+    },
+
+    /* ================= KEYS (§2.4) ================= */
+    relTime(v,empty){ return !v?(empty||'—'):fmtAge((this.now-(+toDate(v)))/1000)+' ago'; },
+    async loadProviders(){ this.providers=await api('/api/providers'); },
+    toggleKeys(){ this.keysOpen=!this.keysOpen; },
+    async addKey(){
+      const provider=this.kprov.trim(),key=this.kkey.trim(),label=this.klabel.trim();
+      if(!provider||!key){ this.kmsgColor='var(--crit)'; this.kmsg='provider + key required'; return; }
+      this.kmsgColor='var(--dim)'; this.kmsg='adding…';
+      try{
+        const r=await send('POST','/api/keys',{provider,key,label});
+        if(r.status===401)return this.kick();
+        if(r.ok){ this.kmsgColor='var(--ok)'; this.kmsg='✓ added '+provider; this.kkey=''; this.klabel=''; }
+        else{ this.kmsgColor='var(--crit)'; this.kmsg='✗ '+(r.body.error||('HTTP '+r.status)); }
+      }catch(err){ this.kmsgColor='var(--crit)'; this.kmsg='✗ '+err; }
+    },
+    async delKey(k){
+      if(!confirm('Delete key '+k.provider+(k.label?' · '+k.label:'')+' ('+(k.key_hint||'')+')?'))return;
+      const r=await send('DELETE','/api/keys/'+k.id).catch(err=>({error:String(err)}));
+      if(r.status===401)return this.kick();
+      if(r.ok){ this.kmsgColor='var(--dim)'; this.kmsg='deleted'; }
+      else{ this.kmsgColor='var(--crit)'; this.kmsg='✗ '+((r.body&&r.body.error)||r.error||('HTTP '+r.status)); }
+    },
+    async refreshKey(k){
+      this.kmsgColor='var(--dim)'; this.kmsg='checking '+k.provider+'…';
+      const r=await send('POST','/api/keys/'+k.id+'/refresh').catch(err=>({error:String(err)}));
+      if(r.status===401)return this.kick();
+      if(r.status===502){ this.kmsgColor='var(--crit)'; this.kmsg='✗ check failed — '+((r.body&&r.body.error)||'upstream error'); return; }
+      if(r.ok){
+        this.kmsgColor='var(--ok)';
+        this.kmsg=r.body&&r.body.checked===false?'↳ no liveness probe for this provider':('✓ '+k.provider+' — '+(r.body&&r.body.alive?'working':'dead'));
+      }else{ this.kmsgColor='var(--crit)'; this.kmsg='✗ '+((r.body&&r.body.error)||r.error||('HTTP '+r.status)); }
+    },
+  },
+  directives:{
+    // one-shot autofocus on the edit panel's name input when it mounts (D6 — replaces the
+    // innerHTML-rebuild focus-restore hack; Vue patches in place so this only fires on genuine
+    // panel open, never on a re-render that leaves the panel present). Cursor lands at end of
+    // the existing value, matching the original setSelectionRange behavior.
+    focus:{
+      mounted(el){
+        el.focus();
+        el.setSelectionRange(el.value.length,el.value.length);
+      }
+    },
+  },
+  mounted(){
+    this.boot();
+    window.addEventListener('pointerdown',this.clearFlash,{passive:true});
+    window.addEventListener('keydown',this.clearFlash,{passive:true});
+  },
+  unmounted(){
+    clearInterval(this._tick);
+    clearTimeout(this._statsT);
+    clearTimeout(this._copyT);
+    window.removeEventListener('pointerdown',this.clearFlash);
+    window.removeEventListener('keydown',this.clearFlash);
+  },
 });
-// cards: one delegated handler survives re-renders
-$('#cards').addEventListener('click',e=>{
-  const b=e.target.closest('button');if(!b)return;
-  const card=b.closest('.card');if(!card)return;
-  const a=ACCTS.find(x=>x.account===card.dataset.acct);if(!a)return;
-  if(b.dataset.act==='edit')toggleEdit(a);
-  else if(b.dataset.act==='refresh')doRefresh(card,a,b);
-  else if(b.dataset.act==='toggle')doToggle(card,a);
-  else if(b.dataset.act==='del')doDelete(card,a);
-  else if(b.hasAttribute('data-esave'))saveEdit(card,a);
-  else if(b.hasAttribute('data-ecancel')){editState=null;renderAccounts();}
-  else if(b.hasAttribute('data-rsave'))saveReauth(card,a);
-});
-$('#cards').addEventListener('input',e=>{
-  const card=e.target.closest('.card');if(!card)return;
-  const name=card.dataset.acct;
-  if(editState&&editState.account===name&&e.target.dataset.f)editState[e.target.dataset.f]=e.target.value;
-  if(e.target.closest('.reauth'))reauthDrafts.set(name,e.target.value);
-});
-$('#cards').addEventListener('focusin',e=>{
-  if(editState&&e.target.dataset.f)editState.focus=e.target.dataset.f;
-});
-// feed: pause/resume (queue silently while paused) + filter chips
-$('#pause').onclick=e=>{
-  const b=e.currentTarget;paused=!paused;
-  b.textContent=paused?'▶ resume':'⏸ pause';
-  b.classList.toggle('accent',paused);b.setAttribute('aria-pressed',String(paused));
-  if(!paused&&queue.length){const rows=queue.map(q=>rowFrom(q.d,q.kind));queue=[];addRows(rows);}
-};
-$('#fchips').addEventListener('click',e=>{
-  const c=e.target.closest('.fchip');if(!c)return;
-  if(c.hasAttribute('data-clear')){fAccounts.clear();fHosts.clear();}
-  else{const set=c.dataset.kind==='a'?fAccounts:fHosts;
-    set.has(c.dataset.v)?set.delete(c.dataset.v):set.add(c.dataset.v);}
-  buildChips();renderFeed();
-});
-// keys disclosure + table actions + add form
-$('#keys-toggle').onclick=()=>{
-  const p=$('#keys-panel'),open=p.hidden;
-  p.hidden=!open;
-  $('#keys-toggle').setAttribute('aria-expanded',String(open));
-  $('#keys-caret').textContent=open?'▾':'▸';
-  $('#keys-hint').textContent=open?'click to collapse':'click to expand';
-};
-$('#keys').addEventListener('click',e=>{
-  const b=e.target.closest('button');if(!b)return;
-  const tr=b.closest('tr');if(!tr)return;
-  const k=KEYS.find(x=>String(x.id)===tr.dataset.kid);if(!k)return;
-  if(b.hasAttribute('data-krefresh'))refreshKey(k);
-  else if(b.hasAttribute('data-kdel'))delKey(k);
-});
-$('#addform').onsubmit=addKey;
-$('#kprov').oninput=providerHint;
-
-/* ---------------- go ---------------- */
-boot();
+app.component('dashboard-body',DashboardBody);
+app.mount('#app');
 </script>
 </body>
 </html>

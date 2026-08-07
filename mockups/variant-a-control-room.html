@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIGATE — Control Room (mockup)</title>
+<style>
+:root{
+  --bg:#101211; --panel:#171916; --inset:#0c0e0c; --line:#262a24;
+  --fg:#e8e6df; --dim:#8f9089; --accent:#e8b34b;
+  --ok:#5fae7a; --warn:#d99a3d; --crit:#e05d44;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+.num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.dim{color:var(--dim)} .ok{color:var(--ok)} .warn{color:var(--warn)} .crit{color:var(--crit)} .acc{color:var(--accent)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+::selection{background:rgba(232,179,75,.25)}
+
+/* ---------- header ---------- */
+header{position:sticky;top:0;z-index:20;background:rgba(16,18,17,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.hwrap{max-width:1240px;margin:0 auto;padding:0 24px;min-height:62px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.logo{font-weight:700;font-size:15px;letter-spacing:.18em;white-space:nowrap}
+.logo span{margin-right:8px}
+.live{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:13px;color:var(--ok)}
+.live i{width:8px;height:8px;border-radius:50%;background:var(--ok);animation:pulse 2.2s ease-in-out infinite}
+.rollup{font-family:var(--mono);font-size:13px;color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.clock{font-size:14px;color:var(--fg)}
+.demo{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:12px;color:var(--dim)}
+.demo b{padding:4px 9px;border:1px solid var(--line);border-radius:3px;font-weight:500;color:var(--dim)}
+.demo b.on{border-color:var(--accent);color:var(--accent)}
+.btn{padding:6px 13px;border:1px solid var(--line);border-radius:4px;font-size:14px;color:var(--dim);transition:.15s}
+.btn:hover{color:var(--fg);border-color:var(--dim);background:var(--panel)}
+.btn.accent{border-color:rgba(232,179,75,.5);color:var(--accent)}
+.btn.accent:hover{background:rgba(232,179,75,.08);border-color:var(--accent)}
+.btn.sm{padding:4px 10px;font-size:12.5px;font-family:var(--mono)}
+
+/* ---------- critical banner ---------- */
+.banner{background:var(--crit);color:#17110e;font-weight:600;font-size:15px}
+.banner div{max-width:1240px;margin:0 auto;padding:11px 24px;display:flex;gap:10px;align-items:baseline}
+.banner b{font-family:var(--mono);font-size:12.5px;letter-spacing:.14em}
+
+/* ---------- layout / sections ---------- */
+main{max-width:1240px;margin:0 auto;padding:0 24px}
+section{padding:38px 0 42px;border-top:1px solid var(--line)}
+section:first-child{border-top:0}
+.sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:22px}
+.sec-num{font-family:var(--mono);font-size:13px;color:var(--accent)}
+.sec-head h2{font-size:14px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+.sec-note{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--dim)}
+
+/* ---------- inbox ---------- */
+.inbox-row{display:flex;align-items:center;gap:12px;padding:13px 16px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--crit);border-radius:4px;margin-bottom:9px;transition:.15s}
+.inbox-row.warn-row{border-left-color:var(--warn)}
+.inbox-row:hover{border-color:#333830;border-left-color:var(--crit)}
+.inbox-row.warn-row:hover{border-left-color:var(--warn)}
+.inbox-row p{font-size:15px;flex:1}
+.inbox-row code{font-family:var(--mono);font-size:13.5px;background:var(--inset);border:1px solid var(--line);border-radius:3px;padding:2px 7px;color:var(--accent)}
+.x{color:var(--dim);padding:5px 9px;border-radius:3px;font-family:var(--mono)}
+.x:hover{color:var(--crit);background:var(--inset)}
+
+/* ---------- account cards ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:22px 22px 17px;display:flex;flex-direction:column;gap:15px;transition:border-color .15s}
+.card:hover{border-color:#333830}
+.card.is-parked{opacity:.85}.card.is-disabled{opacity:.62}
+.card-head{display:flex;align-items:center;gap:10px}
+.acct{font-family:var(--mono);font-size:17px;font-weight:600}
+.badge{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid rgba(232,179,75,.55);border-radius:3px;padding:3px 7px;font-family:var(--mono)}
+.chip{margin-left:auto;font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;padding:4px 9px;border:1px solid;border-radius:3px;background:transparent}
+.chip.c-ok{color:var(--ok);border-color:rgba(95,174,122,.55)}
+.chip.c-warn{color:var(--warn);border-color:rgba(217,154,61,.55)}
+.chip.c-crit{color:var(--crit);border-color:rgba(224,93,68,.6)}
+.chip.c-dim{color:var(--dim);border-color:var(--line)}
+.hero-row{display:flex;align-items:flex-end;justify-content:space-between;gap:14px}
+.hero-num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:42px;font-weight:600;line-height:1;letter-spacing:-.01em}
+.hero-num small{font-size:21px;font-weight:400;opacity:.75;margin-left:2px}
+.hero-num.pulse{animation:pulse 2.6s ease-in-out infinite}
+.hero-label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-top:7px}
+.spark{width:128px;height:38px;background:var(--inset);border:1px solid var(--line);border-radius:3px;padding:4px}
+.spark svg{display:block;width:100%;height:100%}
+.gauges{display:flex;flex-direction:column;gap:13px}
+.g-top{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+.g-top b{font-weight:500;text-transform:none;letter-spacing:0}
+.track{position:relative;height:7px;background:var(--inset);border:1px solid var(--line);border-radius:3px}
+.fill{position:absolute;top:0;left:0;bottom:0;border-radius:2px}
+.fill.ok{background:var(--ok)}.fill.warn{background:var(--warn)}.fill.crit{background:var(--crit)}.fill.neu{background:#b9b7ab}
+.tick{position:absolute;top:-3px;width:1px;height:13px;background:var(--dim);opacity:.55}
+.tick.t95{width:2px;background:var(--accent);opacity:1}
+.ticklabels{position:relative;height:14px;margin-top:4px;font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+.ticklabels span{position:absolute;transform:translateX(-50%)}
+.ticklabels .l95{color:var(--accent)}
+.burn{font-family:var(--mono);font-size:13px}
+.reauth{background:var(--inset);border:1px solid rgba(224,93,68,.35);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.reauth label{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--crit)}
+.reauth .row{display:flex;gap:8px}
+.reauth input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:3px;color:var(--fg);font-family:var(--mono);font-size:13.5px;padding:8px 10px}
+.reauth input::placeholder{color:var(--dim)}
+.reauth small{font-size:12.5px;color:var(--dim)}
+.editpanel{background:var(--inset);border:1px solid var(--line);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:7px}
+.editpanel[hidden]{display:none}
+.editpanel label{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.editpanel label:not(:first-child){margin-top:4px}
+.editpanel input{background:var(--panel);border:1px solid var(--line);border-radius:3px;color:var(--fg);font-family:var(--mono);font-size:13.5px;padding:8px 10px}
+.editpanel input::placeholder{color:var(--dim)}
+.editpanel .row{display:flex;gap:8px;margin-top:4px}
+.card-foot{display:flex;align-items:center;margin-top:auto;padding-top:13px;border-top:1px solid var(--line)}
+.updated{font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+.acts{margin-left:auto;display:flex;align-items:center;gap:4px}
+.acts button{font-family:var(--mono);font-size:14.5px;color:var(--dim);padding:5px 9px;border:1px solid transparent;border-radius:3px;transition:.15s}
+.acts button:hover{color:var(--fg);border-color:var(--line);background:var(--inset)}
+.acts button[aria-pressed="true"]{color:var(--accent);border-color:rgba(232,179,75,.45)}
+.acts .del:hover{color:var(--crit);border-color:rgba(224,93,68,.4)}
+.acts .edit-pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;letter-spacing:.05em;color:var(--dim);border:1px solid var(--line);border-radius:20px;padding:4px 12px;margin-right:4px}
+.acts .edit-pill svg{flex:none}
+.acts .edit-pill:hover{color:var(--accent);border-color:rgba(232,179,75,.55);background:rgba(232,179,75,.06)}
+.acts .edit-pill[aria-expanded="true"]{color:var(--accent);border-color:rgba(232,179,75,.55);background:rgba(232,179,75,.06)}
+
+/* ---------- activity ---------- */
+.act-grid{display:grid;grid-template-columns:1.7fr 1fr;gap:26px}
+.toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:14px}
+.toolbar .lbl{font-family:var(--mono);font-size:11.5px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase}
+.fchip{font-family:var(--mono);font-size:12.5px;color:var(--dim);border:1px solid var(--line);border-radius:20px;padding:4px 13px;transition:.15s}
+.fchip:hover{color:var(--fg);border-color:var(--dim)}
+.fchip.on{color:var(--accent);border-color:rgba(232,179,75,.55);background:rgba(232,179,75,.06)}
+.scrollx{overflow-x:auto}
+.feed{min-width:620px}
+.frow{display:grid;grid-template-columns:46px 104px 82px 62px 66px 1fr;gap:11px;align-items:baseline;padding:9px 9px;border-radius:3px;font-size:13.5px;transition:background .12s}
+.frow:hover{background:#1b1e1a}
+.frow.head{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);border-radius:0;padding-bottom:9px}
+.frow.head:hover{background:none}
+.frow>span{font-family:var(--mono);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow .t{color:var(--dim)} .frow .h{color:var(--dim)} .frow .m{color:var(--dim)} .frow .tk{text-align:right;color:var(--dim)}
+.frow .snip{color:var(--fg);opacity:.85;font-family:var(--sans);font-size:13.5px}
+.frow.fail .snip,.frow.fail .tk,.frow.fail .m{color:var(--crit)}
+.frow.fail{box-shadow:inset 2px 0 0 var(--crit);background:rgba(224,93,68,.05)}
+.frow.fail:hover{background:rgba(224,93,68,.09)}
+h3.sub{font-family:var(--mono);font-size:12.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:13px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:left;padding:0 9px 9px;border-bottom:1px solid var(--line);font-weight:500}
+td{padding:11px 9px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:13px}
+tbody tr{transition:background .12s}tbody tr:hover{background:#1b1e1a}
+td.r,th.r{text-align:right}
+
+/* ---------- provider keys ---------- */
+.disclosure{width:100%;display:flex;align-items:center;gap:10px;padding:15px 18px;background:var(--panel);border:1px solid var(--line);border-radius:5px;font-size:15px;transition:.15s;text-align:left}
+.disclosure:hover{border-color:var(--dim)}
+.disclosure .caret{font-family:var(--mono);color:var(--accent);font-size:13px}
+.disclosure .hint{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+.keys-panel{margin-top:12px}
+.keys-wrap{min-width:720px}
+.st-ok{color:var(--ok)}.st-dead{color:var(--crit)}
+.kacts{white-space:nowrap;text-align:right}
+.kacts button{font-family:var(--mono);color:var(--dim);padding:3px 8px;border-radius:3px}
+.kacts button:hover{color:var(--fg);background:var(--inset)}
+.kacts .del:hover{color:var(--crit)}
+.addform{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px;padding-top:15px;border-top:1px solid var(--line)}
+.addform input{background:var(--inset);border:1px solid var(--line);border-radius:4px;color:var(--fg);font-family:var(--mono);font-size:13.5px;padding:9px 11px}
+.addform input::placeholder{color:var(--dim)}
+.addform .p{width:140px}.addform .l{width:160px}.addform .k{flex:1;min-width:200px}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--line)}
+footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var(--mono);font-size:12.5px;color:var(--dim)}
+
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:980px){.act-grid{grid-template-columns:1fr}}
+@media (max-width:760px){.rollup{display:none}.hwrap{gap:12px;padding-top:8px;padding-bottom:8px}}
+@media (max-width:420px){main{padding:0 14px}.hwrap{padding:0 14px}.hero-num{font-size:34px}.spark{width:100px}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hwrap">
+    <div class="logo"><span>🛡</span>AIGATE</div>
+    <div class="live"><i></i><span id="live-label">live</span></div>
+    <div class="rollup" id="rollup">4/6 selectable · 1 parked · 1 re-auth · keys 3✓ 1✗ · polled 3m ago</div>
+    <div class="clock num" id="clock">14:32:07</div>
+    <div class="demo">demo
+      <b id="tg-normal" class="on" role="button" tabindex="0">normal</b>
+      <b id="tg-critical" role="button" tabindex="0">critical</b>
+    </div>
+    <button class="btn">log out</button>
+  </div>
+</header>
+
+<div class="banner" id="banner" hidden>
+  <div><b>CRITICAL</b><span>0 accounts selectable — every account is parked, disabled, or needs re-auth. Requests are failing.</span></div>
+</div>
+
+<main>
+
+<section>
+  <div class="sec-head"><span class="sec-num">01</span><h2>Action required</h2><span class="sec-note">3 open</span></div>
+  <div class="inbox-row">
+    <p><b>team-alpha</b> needs re-auth — run <code>claude setup-token</code>, then paste the new token on its card</p>
+    <button class="btn sm" id="copy-cmd">copy cmd</button>
+    <button class="x" aria-label="dismiss">✕</button>
+  </div>
+  <div class="inbox-row">
+    <p>provider key <b>'openai · prod'</b> is dead — last check failed</p>
+    <button class="x" aria-label="dismiss">✕</button>
+  </div>
+  <div class="inbox-row warn-row">
+    <p><b>backup</b> hasn't reported usage in 25m — poll may be failing</p>
+    <button class="x" aria-label="dismiss">✕</button>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">02</span><h2>Accounts — live usage</h2><span class="sec-note">hero = worst window · sorted by severity · cutoff 95</span></div>
+  <div class="grid" id="cards"></div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-num">03</span><h2>Activity</h2><span class="sec-note">2 failed in view</span></div>
+  <div class="act-grid">
+    <div>
+      <div class="toolbar">
+        <button class="btn sm" id="pause">⏸ pause</button>
+        <span class="lbl">filter</span>
+        <button class="fchip" aria-pressed="false">work</button>
+        <button class="fchip" aria-pressed="false">team-alpha</button>
+        <button class="fchip" aria-pressed="false">personal</button>
+        <button class="fchip" aria-pressed="false">host · mbp</button>
+      </div>
+      <div class="scrollx"><div class="feed" id="feed">
+        <div class="frow head"><span>age</span><span>account</span><span>host</span><span>model</span><span class="tk">tokens</span><span>prompt</span></div>
+      </div></div>
+    </div>
+    <div>
+      <h3 class="sub">By host / device</h3>
+      <div class="scrollx"><table id="hosts">
+        <thead><tr><th>host</th><th class="r">requests</th><th class="r">tokens</th><th class="r">last seen</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <button class="disclosure" id="keys-toggle" aria-expanded="false" aria-controls="keys-panel">
+    <span class="caret" id="keys-caret">▸</span>
+    <span>Provider API keys · 4</span>
+    <span class="hint" id="keys-hint">click to expand</span>
+  </button>
+  <div class="keys-panel" id="keys-panel" hidden>
+    <div class="scrollx"><div class="keys-wrap"><table id="keys">
+      <thead><tr><th>provider</th><th>label</th><th>key</th><th>status</th><th>verified</th><th>added</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div></div>
+    <form class="addform" id="addform">
+      <input class="p" placeholder="provider" aria-label="provider">
+      <input class="l" placeholder="label" aria-label="label">
+      <input class="k" placeholder="sk-…" aria-label="api key">
+      <button class="btn accent" type="submit">Add</button>
+    </form>
+  </div>
+</section>
+
+</main>
+
+<footer><div>aigate v0.1.0 · uptime 6d 4h · last backup 3h ago · 30-day log retention</div></footer>
+
+<script>
+/* ---------------- sample data ---------------- */
+const ACCOUNTS=[
+ {n:'team-alpha',label:'ci shared',s:'RE-AUTH',c:'crit',hero:34,g5:34,gw:21,burn:'— polling paused · re-auth required',bc:'dim',upd:'updated 47s ago',reauth:1,
+  sp:'0,21 10,20 20,20 30,19 40,19 50,18 60,18 70,17 80,17 90,17 100,17 110,17',sc:'var(--dim)'},
+ {n:'work',label:'',s:'RUNAWAY',c:'warn',hero:84,g5:84,gw:61,burn:'↑9%/h · 5h window exhausts in ~45m',bc:'warn',upd:'updated 2s ago',pulse:1,
+  sp:'0,26 10,24 20,22 30,21 40,19 50,18 60,16 70,14 80,12 90,10 100,8 110,6',sc:'var(--warn)'},
+ {n:'personal',label:'',s:'READY',c:'ok',hero:41,g5:41,gw:22,burn:'↑4%/h · 5h window exhausts in ~9h',bc:'dim',upd:'updated 3s ago',badge:1,
+  sp:'0,22 10,21 20,22 30,20 40,21 50,19 60,20 70,18 80,19 90,17 100,18 110,17',sc:'var(--ok)'},
+ {n:'backup',label:'nas only',s:'READY',c:'ok',hero:12,g5:12,gw:7,burn:'– no live data · last report 25m ago',bc:'warn',upd:'updated 25m ago',updc:'var(--warn)',
+  sp:'0,24 10,24 20,23 30,24 40,23 50,24 60,24 70,23 80,24 90,24 100,24 110,24',sc:'var(--dim)',dash:1},
+ {n:'client-x',label:'',s:'PARKED →21:14',c:'dim',hero:96,g5:44,gw:96,burn:'parked until 21:14 · requests routed to next account',bc:'dim',upd:'updated 1m ago',parked:1,
+  sp:'0,10 10,9 20,9 30,8 40,8 50,7 60,7 70,6 80,6 90,5 100,5 110,4',sc:'var(--dim)'},
+ {n:'old-laptop',label:'',s:'DISABLED',c:'dim',hero:12,g5:12,gw:5,burn:'disabled · excluded from selection',bc:'dim',upd:'updated 6d ago',disabled:1,
+  sp:'0,27 10,27 20,28 30,27 40,28 50,27 60,28 70,28 80,27 90,28 100,28 110,28',sc:'var(--dim)'}
+];
+const FEED=[
+ ['2s','work','mbp','opus','12,438','refactor quota watcher loop to batch…'],
+ ['5s','personal','mbp','sonnet','3,204','add unit tests for vault decrypt…'],
+ ['9s','work','mbp','opus','9,871','continue: migrate poller to async…'],
+ ['14s','team-alpha','ci-runner','—','—','select — none-available',1],
+ ['22s','personal','imac','haiku','1,112','summarize overnight error logs…'],
+ ['31s','work','mbp','opus','14,002','optimise sparkline rendering path…'],
+ ['38s','backup','nas','sonnet','2,340','nightly config diff review…'],
+ ['47s','team-alpha','ci-runner','—','—','decrypt-fail',1],
+ ['1m','personal','mbp','sonnet','5,512','draft v0.1.0 release notes…'],
+ ['2m','work','mbp','opus','11,090','profile account selection loop…']
+];
+const HOSTS=[
+ ['mbp','1,204','4.21M','2s ago'],['ci-runner','311','890K','14s ago'],['nas','87','201K','25m ago',1]
+];
+const KEYS=[
+ ['anthropic','default','sk-ant-…9c1e','working','2h ago','2025-11-02'],
+ ['openai','prod','sk-…3f2a','dead','2h ago','2025-09-14'],
+ ['openai','staging','sk-…77b0','working','2h ago','2025-10-01'],
+ ['google','vertex','AIza…k4Lz','working','3h ago','2025-08-22']
+];
+
+/* ---------------- helpers ---------------- */
+const $=s=>document.querySelector(s);
+const hcls=v=>v>=95?'crit':v>=80?'warn':'ok';
+const fcls=v=>v>=95?'crit':v>=80?'warn':v>=50?'neu':'ok';
+const gauge=(label,v)=>`
+ <div>
+  <div class="g-top"><span>${label}</span><b class="num ${hcls(v)}">${v}%</b></div>
+  <div class="track" role="img" aria-label="${label} ${v} percent">
+   <div class="fill ${fcls(v)}" style="width:${v}%"></div>
+   <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%" title="selection cutoff"></i>
+  </div>
+  <div class="ticklabels"><span style="left:50%">50</span><span style="left:80%">80</span><span class="l95" style="left:95%">95</span></div>
+ </div>`;
+
+/* ---------------- render: cards ---------------- */
+$('#cards').innerHTML=ACCOUNTS.map((a,i)=>`
+<article class="card ${a.parked?'is-parked':''} ${a.disabled?'is-disabled':''}" data-idx="${i}">
+ <div class="card-head">
+  <span class="acct">${a.n}</span>
+  ${a.badge?'<span class="badge">next to be picked</span>':''}
+  <span class="chip c-${a.c}">${a.s}</span>
+ </div>
+ <div class="hero-row">
+  <div><span class="hero-num ${hcls(a.hero)} ${a.pulse?'pulse':''}">${a.hero}<small>%</small></span>
+   <span class="hero-label">worst window</span></div>
+  <div class="spark" aria-hidden="true"><svg viewBox="0 0 110 30" preserveAspectRatio="none">
+   <polyline points="${a.sp}" fill="none" stroke="${a.sc}" stroke-width="1.5" ${a.dash?'stroke-dasharray="3 3"':''}/>
+  </svg></div>
+ </div>
+ <div class="gauges">${gauge('5-hour',a.g5)}${gauge('weekly',a.gw)}</div>
+ <p class="burn ${a.bc}">${a.burn}</p>
+ ${a.reauth?`<div class="reauth">
+   <label for="tok">re-auth required</label>
+   <div class="row"><input id="tok" placeholder="paste new setup-token…"><button class="btn accent sm" data-save>save</button></div>
+   <small>aigate verifies the token, then resumes polling automatically.</small>
+  </div>`:''}
+ <div class="editpanel" id="ep-${i}" hidden>
+  <label for="en-${i}">display name</label>
+  <input id="en-${i}" class="en-name" type="text" value="${a.n}" autocomplete="off">
+  <label for="el-${i}">label (optional)</label>
+  <input id="el-${i}" class="en-label" type="text" value="${a.label||''}" placeholder="e.g. shared ci account" autocomplete="off">
+  <label for="et-${i}">replace setup-token (optional)</label>
+  <input id="et-${i}" class="en-tok" type="password" placeholder="sk-ant-oat01… — leave blank to keep current" autocomplete="off">
+  <div class="row"><button class="btn accent sm" data-esave>save</button><button class="btn sm" data-ecancel>cancel</button></div>
+ </div>
+ <div class="card-foot">
+  <span class="updated" ${a.updc?`style="color:${a.updc}"`:''}>${a.upd}</span>
+  <div class="acts">
+   <button class="edit-pill" data-act="edit" title="edit" aria-label="edit ${a.n}" aria-expanded="false" aria-controls="ep-${i}"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M8.3 1.7l2 2L4.5 9.5l-2.7.7.7-2.7L8.3 1.7z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>edit</button>
+   <button data-act="refresh" title="refresh" aria-label="refresh ${a.n}">↻</button>
+   <button data-act="park or resume" title="park / resume" aria-label="park or resume ${a.n}" aria-pressed="${a.parked||a.disabled?'true':'false'}">⏸</button>
+   <button data-act="delete" class="del" title="delete" aria-label="delete ${a.n}">✕</button>
+  </div>
+ </div>
+</article>`).join('');
+
+/* ---------------- render: feed / hosts / keys ---------------- */
+$('#feed').insertAdjacentHTML('beforeend',FEED.map(r=>`
+ <div class="frow ${r[6]?'fail':''}"><span class="t">${r[0]}</span><span>${r[1]}</span><span class="h">${r[2]}</span><span class="m">${r[3]}</span><span class="tk">${r[4]}</span><span class="snip">${r[5]}</span></div>`).join(''));
+
+$('#hosts tbody').innerHTML=HOSTS.map(r=>`
+ <tr><td>${r[0]}</td><td class="r num">${r[1]}</td><td class="r num">${r[2]}</td><td class="r num ${r[4]?'warn':'dim'}">${r[3]}</td></tr>`).join('');
+
+$('#keys tbody').innerHTML=KEYS.map(r=>`
+ <tr><td>${r[0]}</td><td class="dim">${r[1]}</td><td class="dim">${r[2]}</td>
+ <td class="${r[3]==='working'?'st-ok':'st-dead'}">${r[3]}</td>
+ <td class="dim">${r[4]} ago</td><td class="dim">${r[5]}</td>
+ <td class="kacts"><button title="re-verify" aria-label="re-verify ${r[0]} ${r[1]}">↻</button><button class="del" title="delete" aria-label="delete ${r[0]} ${r[1]}">✕</button></td></tr>`).join('');
+
+/* ---------------- cosmetic interactivity ---------------- */
+// clock
+const clock=$('#clock');
+const tick=()=>{clock.textContent=new Date().toTimeString().slice(0,8)};
+tick();setInterval(tick,1000);
+
+// demo normal/critical toggle
+const banner=$('#banner'),tgN=$('#tg-normal'),tgC=$('#tg-critical');
+function setState(crit){
+ banner.hidden=!crit;
+ tgN.classList.toggle('on',!crit);tgC.classList.toggle('on',crit);
+ $('#live-label').textContent=crit?'live · 0 selectable':'live';
+}
+tgN.onclick=()=>setState(false);tgC.onclick=()=>setState(true);
+
+// inbox dismiss
+document.querySelectorAll('.inbox-row .x').forEach(b=>b.onclick=()=>{
+ const row=b.closest('.inbox-row');row.remove();
+ const n=document.querySelectorAll('.inbox-row').length;
+ const note=document.querySelector('.sec-head .sec-note');if(note)note.textContent=n+' open';
+});
+
+// copy command affordance
+$('#copy-cmd').onclick=e=>{
+ const b=e.currentTarget;
+ try{navigator.clipboard&&navigator.clipboard.writeText('claude setup-token')}catch(_){}
+ b.textContent='copied';setTimeout(()=>b.textContent='copy cmd',1200);
+};
+
+// keys disclosure
+$('#keys-toggle').onclick=()=>{
+ const p=$('#keys-panel'),open=p.hidden;
+ p.hidden=!open;
+ $('#keys-toggle').setAttribute('aria-expanded',open);
+ $('#keys-caret').textContent=open?'▾':'▸';
+ $('#keys-hint').textContent=open?'click to collapse':'click to expand';
+};
+
+// activity pause/resume
+$('#pause').onclick=e=>{
+ const b=e.currentTarget,paused=b.dataset.p==='1';
+ b.dataset.p=paused?'0':'1';
+ b.textContent=paused?'⏸ pause':'▶ resume';
+ b.classList.toggle('accent',!paused);
+};
+
+// filter chips (visual state only)
+document.querySelectorAll('.fchip').forEach(c=>c.onclick=()=>{
+ const on=c.classList.toggle('on');c.setAttribute('aria-pressed',on);
+});
+
+// park toggle on cards (visual state only)
+document.querySelectorAll('.acts button[aria-pressed]').forEach(b=>b.onclick=()=>{
+ b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');
+});
+
+// edit pill: inline edit panel (one open at a time)
+document.querySelectorAll('.card').forEach(card=>{
+ const pill=card.querySelector('.edit-pill'),panel=card.querySelector('.editpanel');
+ const close=()=>{panel.hidden=true;pill.setAttribute('aria-expanded','false')};
+ pill.onclick=()=>{
+  const open=panel.hidden;
+  document.querySelectorAll('.editpanel').forEach(p=>p.hidden=true);
+  document.querySelectorAll('.edit-pill').forEach(p=>p.setAttribute('aria-expanded','false'));
+  panel.hidden=!open;
+  pill.setAttribute('aria-expanded',open?'true':'false');
+  if(open){const f=panel.querySelector('.en-name');f.focus();f.select()}
+ };
+ panel.querySelector('[data-ecancel]').onclick=close;
+ panel.querySelector('[data-esave]').onclick=()=>{
+  const i=+card.dataset.idx;
+  const name=panel.querySelector('.en-name').value.trim();
+  const label=panel.querySelector('.en-label').value.trim();
+  const tok=panel.querySelector('.en-tok').value.trim();
+  if(name){
+   ACCOUNTS[i].n=name;
+   card.querySelector('.acct').textContent=name;
+   card.querySelectorAll('[data-act]').forEach(b=>b.setAttribute('aria-label',b.dataset.act+' '+name));
+  }
+  ACCOUNTS[i].label=label;
+  if(tok)ACCOUNTS[i].tokReplaced=true; // cosmetic only: mockup never persists tokens
+  close();
+ };
+});
+
+// save setup-token (visual confirm only)
+document.querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>{
+ b.textContent='verifying…';setTimeout(()=>b.textContent='✓ queued',900);
+});
+
+// add-key form: no-op
+$('#addform').onsubmit=e=>e.preventDefault();
+</script>
+</body>
+</html>

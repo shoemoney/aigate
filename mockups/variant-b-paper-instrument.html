@@ -1,0 +1,1013 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aigate — Paper Instrument (Variant B)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡</text></svg>">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+/* ============ Paper Instrument design tokens ============ */
+:root{
+  --paper:#f5f2ec;
+  --panel:#ffffff;
+  --panel-2:#faf8f2;
+  --ink:#1c1a17;
+  --ink-2:#5c564c;
+  --ink-3:#8a8378;
+  --hair:#e0dcd2;
+  --hair-2:#cec8b9;
+  --accent:#b25b21;
+  --accent-tint:#f3e7d9;
+  --ok:#2e7d52;
+  --ok-tint:#e9f1ea;
+  --warn:#a8672a;
+  --warn-tint:#f6ecdd;
+  --crit:#b3372c;
+  --crit-tint:#f7e8e4;
+  --serif:'Spectral',Georgia,'Times New Roman',serif;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
+  --r:6px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font:14px/1.5 var(--sans);
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+}
+::selection{background:var(--accent-tint)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+button{font-family:inherit}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{
+  outline:2px solid var(--accent);outline-offset:1px;
+}
+
+/* ============ Buttons ============ */
+.btn{
+  font:500 11.5px/1 var(--sans);
+  border:1px solid var(--hair-2);
+  background:var(--panel);
+  color:var(--ink-2);
+  border-radius:5px;
+  padding:6px 11px;
+  cursor:pointer;
+  transition:background .15s,border-color .15s,color .15s;
+  white-space:nowrap;
+}
+.btn:hover{border-color:var(--ink-3);color:var(--ink);background:var(--panel-2)}
+.btn:active{transform:translateY(1px)}
+.btn.icon{padding:5px 8px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn.primary:hover{background:#9c4d1b;border-color:#9c4d1b;color:#fff}
+
+/* ============ Sticky header ============ */
+.top{
+  position:sticky;top:0;z-index:50;
+  background:rgba(251,249,244,.94);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--hair);
+  box-shadow:0 1px 0 rgba(28,26,23,.03);
+}
+.top-inner{
+  max-width:1240px;margin:0 auto;
+  padding:9px 20px;
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+}
+.brand{font:700 17px var(--serif);letter-spacing:.03em;display:flex;align-items:center;gap:8px;color:var(--ink)}
+.brand .mark{font-size:18px}
+.conn{
+  display:inline-flex;align-items:center;gap:7px;
+  font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.1em;
+  color:var(--ok);border:1px solid var(--ok);border-radius:99px;
+  padding:4px 11px;background:var(--ok-tint);
+}
+.conn .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+.rollup{
+  font:11.5px var(--mono);font-variant-numeric:tabular-nums;
+  color:var(--ink-2);
+  padding:3px 0;
+}
+.spacer{flex:1}
+.demo{
+  display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+  font:500 10.5px var(--mono);color:var(--ink-3);text-transform:uppercase;letter-spacing:.08em;
+}
+.demo input{accent-color:var(--accent);width:13px;height:13px;cursor:pointer}
+.demo-pill{
+  border:1px solid var(--hair-2);border-radius:99px;padding:3px 9px;
+  color:var(--ink-2);background:var(--panel);min-width:58px;text-align:center;
+}
+.demo input:checked ~ .demo-pill{color:var(--crit);border-color:var(--crit);background:var(--crit-tint);font-weight:600}
+.clock{font:600 13px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);padding-left:4px}
+
+/* ============ Critical banner ============ */
+.banner{
+  background:var(--crit);color:#fff;
+  padding:11px 20px;text-align:center;
+  font-size:13px;letter-spacing:.01em;
+}
+.banner strong{font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-right:2px}
+
+/* ============ Layout & section headers ============ */
+.wrap{max-width:1240px;margin:0 auto;padding:8px 20px 0;width:100%;flex:1}
+.sec-head{
+  display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+  margin:26px 0 12px;padding-bottom:9px;
+  border-bottom:1px solid var(--hair-2);
+}
+.sec-idx{font:600 11px var(--mono);color:var(--accent);letter-spacing:.06em}
+.sec-head h2{
+  font:600 16px var(--serif);letter-spacing:.02em;color:var(--ink);
+}
+.sec-head h2 .sub{
+  font:italic 400 12.5px var(--serif);color:var(--ink-3);letter-spacing:0;margin-left:6px;
+}
+.sec-note{margin-left:auto;font:11px var(--sans);color:var(--ink-3)}
+.sec-note b{color:var(--accent);font-weight:600;font-family:var(--mono)}
+
+/* ============ Action-required inbox ============ */
+.inbox{display:flex;flex-direction:column;gap:8px}
+.note{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  background:var(--panel);
+  border:1px solid var(--hair);
+  border-left:3px solid var(--warn);
+  border-radius:var(--r);
+  padding:10px 14px;
+  box-shadow:0 1px 2px rgba(28,26,23,.03);
+}
+.note.crit{border-left-color:var(--crit)}
+.note .tag{
+  font:600 9.5px var(--mono);text-transform:uppercase;letter-spacing:.09em;
+  padding:3px 8px;border-radius:4px;border:1px solid currentColor;flex:none;
+}
+.note.crit .tag{color:var(--crit)}
+.note.warn .tag{color:var(--warn)}
+.note p{flex:1;min-width:220px;font-size:13px;color:var(--ink-2)}
+.note p strong{color:var(--ink);font-weight:600}
+.note code{
+  font:12px var(--mono);background:var(--panel-2);
+  border:1px solid var(--hair);border-radius:4px;padding:1.5px 7px;color:var(--ink);
+}
+.note .btn{flex:none}
+
+/* ============ Account cards ============ */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(315px,1fr));gap:14px}
+.card{
+  background:var(--panel);
+  border:1px solid var(--hair);
+  border-left:3px solid var(--ok);
+  border-radius:var(--r);
+  padding:15px 16px 12px;
+  display:flex;flex-direction:column;gap:11px;
+  box-shadow:0 1px 2px rgba(28,26,23,.04);
+  transition:box-shadow .15s;
+}
+.card:hover{box-shadow:0 2px 8px rgba(28,26,23,.07)}
+.card.sev-crit{border-left-color:var(--crit)}
+.card.sev-warn{border-left-color:var(--warn)}
+.card.sev-ok{border-left-color:var(--ok)}
+.card.sev-muted{border-left-color:var(--hair-2)}
+
+.card-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.card-name{font:600 16.5px var(--serif);letter-spacing:.01em}
+.chip{
+  margin-left:auto;
+  font:600 9.5px var(--mono);letter-spacing:.1em;
+  padding:3.5px 8px;border-radius:4px;
+  border:1px solid currentColor;background:transparent;
+  white-space:nowrap;font-variant-numeric:tabular-nums;
+}
+.chip.ready{color:var(--ok)}
+.chip.runaway{color:var(--crit)}
+.chip.reauth{color:var(--warn)}
+.chip.parked{color:var(--ink-2)}
+.chip.disabled{color:var(--ink-3);border-style:dashed}
+.badge{
+  font:600 9px var(--mono);letter-spacing:.1em;
+  background:var(--accent);color:#fff;
+  padding:3.5px 8px;border-radius:4px;white-space:nowrap;
+}
+
+.hero-row{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.hero{font:600 32px/1 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.hero .pct{font-size:.55em;margin-left:1px}
+.hero-cap{
+  font:500 9.5px var(--mono);text-transform:uppercase;letter-spacing:.11em;
+  color:var(--ink-3);margin-top:5px;
+}
+.t-ok{color:var(--ok)} .t-warn{color:var(--warn)} .t-crit{color:var(--crit)} .t-muted{color:var(--ink-3)}
+.spark{width:112px;height:32px;flex:none}
+.spark polyline{fill:none;stroke:var(--ink-2);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.spark.crit polyline{stroke:var(--crit)}
+.spark.warn polyline{stroke:var(--warn)}
+
+/* gauges */
+.gauges{display:flex;flex-direction:column;gap:9px}
+.gauge-label{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font:500 10px var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);
+  margin-bottom:3px;
+}
+.gauge-val{font:600 11.5px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);text-transform:none;letter-spacing:0}
+.gauge-track{
+  position:relative;height:6px;border-radius:3px;
+  background:#ede9de;border:1px solid var(--hair);
+}
+.gauge-fill{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.gauge-fill.f-ok{background:var(--ok)}
+.gauge-fill.f-warn{background:var(--warn)}
+.gauge-fill.f-crit{background:var(--crit)}
+.gauge-fill.f-muted{background:var(--ink-3)}
+.tick{
+  position:absolute;top:-2.5px;width:1px;height:11px;
+  background:var(--hair-2);
+}
+.tick.t95{top:-3.5px;width:2px;height:13px;background:var(--accent);margin-left:-.5px}
+.gauge-scale{position:relative;height:12px;margin-top:2px}
+.gauge-scale span{
+  position:absolute;transform:translateX(-50%);
+  font:500 8.5px var(--mono);color:var(--ink-3);font-variant-numeric:tabular-nums;
+}
+.gauge-scale .s95{color:var(--accent);font-weight:600;font-size:9px}
+
+/* burn + meta */
+.burn{font:11.5px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.burn .up{color:var(--crit);font-weight:600}
+.burn .down{color:var(--ok);font-weight:600}
+.meta{font:10.5px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-3)}
+.meta.stale{color:var(--warn);font-weight:600}
+
+/* re-auth recovery box */
+.reauth-box{
+  background:var(--warn-tint);
+  border:1px solid #e4d2b6;
+  border-radius:5px;padding:10px 11px;
+  display:flex;flex-direction:column;gap:8px;
+}
+.reauth-box label{
+  font:600 9.5px var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--warn);
+}
+.reauth-row{display:flex;gap:6px}
+.reauth-row input{
+  flex:1;min-width:0;font:12px var(--mono);
+  padding:6px 9px;border:1px solid var(--hair-2);border-radius:4px;
+  background:#fff;color:var(--ink);
+}
+.reauth-row input::placeholder{color:var(--ink-3)}
+.micro{font-size:11px;line-height:1.45;color:var(--ink-2)}
+
+.actions{
+  margin-top:auto;display:flex;gap:6px;justify-content:flex-end;
+  border-top:1px solid var(--hair);padding-top:10px;
+}
+.actions .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}
+
+/* ============ Activity ============ */
+.activity{display:grid;grid-template-columns:1.65fr 1fr;gap:14px;align-items:start}
+.panel{
+  background:var(--panel);border:1px solid var(--hair);border-radius:var(--r);
+  box-shadow:0 1px 2px rgba(28,26,23,.04);overflow:hidden;
+}
+.panel-head{
+  display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+  padding:9px 12px;border-bottom:1px solid var(--hair);
+  background:var(--panel-2);
+}
+.panel-title{
+  font:600 10.5px var(--sans);text-transform:uppercase;letter-spacing:.13em;
+  color:var(--ink);margin-right:4px;
+}
+.chip-sep{width:1px;height:16px;background:var(--hair-2);margin:0 3px}
+.fchip{
+  font:500 10.5px var(--mono);font-variant-numeric:tabular-nums;
+  border:1px solid var(--hair-2);background:transparent;color:var(--ink-2);
+  border-radius:99px;padding:3.5px 10px;cursor:pointer;
+  transition:all .15s;
+}
+.fchip:hover{border-color:var(--ink-3);color:var(--ink)}
+.fchip.active{border-color:var(--accent);color:var(--accent);background:var(--accent-tint);font-weight:600}
+.pause-note{font-size:10.5px;color:var(--warn);margin-left:auto}
+
+.feed{list-style:none}
+.feed-row{
+  display:grid;
+  grid-template-columns:46px 88px 52px 64px 66px 1fr;
+  gap:4px 10px;align-items:baseline;
+  padding:7px 12px;border-bottom:1px solid var(--hair);
+  font:12px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-2);
+  transition:background .12s;
+}
+.feed-row:last-child{border-bottom:0}
+.feed-row:hover{background:var(--panel-2)}
+.feed.paused .feed-row{opacity:.5}
+.f-time{color:var(--ink-3);text-align:right}
+.f-acct{color:var(--ink);font-weight:600}
+.f-host{color:var(--ink-3)}
+.f-model{color:var(--ink-2)}
+.f-tokens{text-align:right;color:var(--ink)}
+.f-prompt{
+  font-family:var(--sans);font-size:12px;color:var(--ink-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;
+}
+.feed-row.fail{background:var(--crit-tint)}
+.feed-row.fail:hover{background:#f4e2dd}
+.feed-row.fail .f-prompt{color:var(--crit);font-weight:600}
+.fail-tag{
+  font:600 8.5px var(--mono);text-transform:uppercase;letter-spacing:.07em;
+  color:var(--crit);border:1px solid var(--crit);border-radius:3px;
+  padding:1px 5px;margin-right:7px;vertical-align:1px;
+}
+
+/* ============ Tables ============ */
+.table-scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:300px}
+th{
+  font:600 9.5px var(--sans);text-transform:uppercase;letter-spacing:.11em;
+  color:var(--ink-3);text-align:left;
+  padding:8px 12px;border-bottom:1px solid var(--hair-2);
+  background:var(--panel);
+}
+td{
+  padding:8px 12px;border-bottom:1px solid var(--hair);
+  font:12px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-2);
+  white-space:nowrap;
+}
+td.l,th.l{font-family:var(--sans);color:var(--ink);font-weight:500;letter-spacing:0;text-transform:none;font-size:12.5px}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--panel-2)}
+.num{text-align:right}
+.st-ok{color:var(--ok);font-weight:600}
+.st-warn{color:var(--warn);font-weight:600}
+.st-crit{color:var(--crit);font-weight:600}
+.row-actions{display:flex;gap:5px;justify-content:flex-end}
+
+/* ============ Keys disclosure ============ */
+.disclosure{
+  background:var(--panel);border:1px solid var(--hair);border-radius:var(--r);
+  box-shadow:0 1px 2px rgba(28,26,23,.04);overflow:hidden;
+}
+.disc-btn{
+  width:100%;display:flex;align-items:center;gap:9px;
+  padding:12px 14px;background:none;border:0;cursor:pointer;
+  font:600 11.5px var(--sans);text-transform:uppercase;letter-spacing:.11em;color:var(--ink);
+  text-align:left;
+}
+.disc-btn:hover{background:var(--panel-2)}
+.caret{display:inline-block;transition:transform .15s;color:var(--accent);font-size:12px}
+.disc-btn.open .caret{transform:rotate(90deg)}
+.disc-hint{font:400 11px var(--sans);text-transform:none;letter-spacing:0;color:var(--ink-3);margin-left:auto}
+.disc-body{border-top:1px solid var(--hair)}
+.add-row{
+  display:flex;gap:8px;padding:11px 12px;flex-wrap:wrap;align-items:center;
+  background:var(--panel-2);border-top:1px solid var(--hair);
+}
+.add-row select,.add-row input{
+  font:12px var(--mono);padding:6px 9px;
+  border:1px solid var(--hair-2);border-radius:4px;background:#fff;color:var(--ink);
+}
+.add-row select{font-family:var(--sans)}
+.add-row input::placeholder{color:var(--ink-3)}
+.add-row .grow{flex:1;min-width:140px}
+
+/* ============ Footer ============ */
+.foot{
+  max-width:1240px;width:100%;margin:30px auto 0;
+  padding:15px 20px 22px;
+  border-top:1px solid var(--hair);
+  font:11px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-3);
+  display:flex;gap:6px;flex-wrap:wrap;align-items:center;
+}
+.foot .sep{color:var(--hair-2)}
+
+/* ============ Motion ============ */
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.42}}
+.pulse{animation:pulse 2.6s ease-in-out infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.refresh.spin{animation:spin .6s linear}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+
+/* ============ Responsive ============ */
+@media (max-width:960px){
+  .activity{grid-template-columns:1fr}
+}
+@media (max-width:720px){
+  .rollup{flex-basis:100%;order:9}
+  .cards{grid-template-columns:1fr}
+  .feed-row{
+    display:flex;flex-wrap:wrap;gap:3px 10px;
+  }
+  .f-time{text-align:left;flex:none}
+  .f-prompt{flex-basis:100%;order:9;white-space:normal}
+  .f-tokens{margin-left:auto}
+  .sec-note{flex-basis:100%;margin-left:0}
+}
+@media (max-width:400px){
+  .top-inner{padding:8px 12px;gap:9px}
+  .wrap{padding:8px 12px 0}
+  .hero{font-size:28px}
+  .spark{width:88px}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= HEADER ================= -->
+<header class="top">
+  <div class="top-inner">
+    <div class="brand"><span class="mark">🛡</span><span>AIGATE</span></div>
+    <span class="conn"><span class="dot"></span>live</span>
+    <span class="rollup">4/6 selectable · 1 parked · 1 re-auth · keys 3✓ 1✗ · polled 3m ago</span>
+    <span class="spacer"></span>
+    <label class="demo" title="demo: show the zero-selectable critical state">
+      <span>demo</span>
+      <input type="checkbox" id="demoToggle">
+      <span class="demo-pill" id="demoState">normal</span>
+    </label>
+    <span class="clock">14:32</span>
+    <button class="btn">log out</button>
+  </div>
+</header>
+
+<!-- ================= CRITICAL BANNER (hidden by default) ================= -->
+<div class="banner" id="critBanner" hidden role="alert">
+  <strong>0 accounts selectable</strong> — every account is parked, disabled, or needs re-auth. Requests are failing.
+</div>
+
+<main class="wrap">
+
+  <!-- ================= 01 · ACTION-REQUIRED INBOX ================= -->
+  <section aria-label="Action required">
+    <div class="sec-head">
+      <span class="sec-idx">01</span>
+      <h2>Action required</h2>
+      <span class="sec-note">3 open items</span>
+    </div>
+    <div class="inbox">
+      <div class="note crit">
+        <span class="tag">re-auth</span>
+        <p><strong>team-alpha</strong> needs re-auth — run <code>claude setup-token</code>, then paste the new token on its card</p>
+        <button class="btn icon" id="copyCmd" title="copy command">⧉ copy</button>
+        <button class="btn icon dismiss" title="dismiss">✕</button>
+      </div>
+      <div class="note crit">
+        <span class="tag">key dead</span>
+        <p>provider key <strong>‘openai · prod’</strong> is dead — last check failed</p>
+        <button class="btn icon dismiss" title="dismiss">✕</button>
+      </div>
+      <div class="note warn">
+        <span class="tag">stale</span>
+        <p><strong>backup</strong> hasn’t reported usage in <span class="mono">25m</span> — poll may be failing</p>
+        <button class="btn icon dismiss" title="dismiss">✕</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 02 · ACCOUNTS ================= -->
+  <section aria-label="Accounts — live usage">
+    <div class="sec-head">
+      <span class="sec-idx">02</span>
+      <h2>Accounts <span class="sub">— live usage</span></h2>
+      <span class="sec-note">sorted by severity · gauges marked 50 / 80 / <b>95</b> — 95 is the selection cutoff</span>
+    </div>
+
+    <div class="cards">
+
+      <!-- team-alpha · RE-AUTH -->
+      <article class="card sev-warn">
+        <div class="card-head">
+          <span class="card-name">team-alpha</span>
+          <span class="chip reauth">RE-AUTH</span>
+        </div>
+        <div class="hero-row">
+          <div>
+            <div class="hero t-ok">34<span class="pct">%</span></div>
+            <div class="hero-cap">worst window · 5h</div>
+          </div>
+          <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+            <polyline points="0,18 9,17 18,18 27,16 36,17 45,15 54,16 63,15 72,17 81,16 90,16 99,16"/>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="gauge-label"><span>5-hour</span><span class="gauge-val">34%</span></div>
+            <div class="gauge-track">
+              <div class="gauge-fill f-ok" style="width:34%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="gauge-scale"><span style="left:50%">50</span><span style="left:80%">80</span><span class="s95" style="left:95%">95</span></div>
+          </div>
+          <div class="gauge">
+            <div class="gauge-label"><span>weekly</span><span class="gauge-val">12%</span></div>
+            <div class="gauge-track">
+              <div class="gauge-fill f-ok" style="width:12%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="gauge-scale"><span style="left:50%">50</span><span style="left:80%">80</span><span class="s95" style="left:95%">95</span></div>
+          </div>
+        </div>
+        <div class="burn">— token expired · no burn data</div>
+        <div class="reauth-box">
+          <label for="tok-alpha">paste new setup-token</label>
+          <div class="reauth-row">
+            <input id="tok-alpha" type="password" placeholder="sk-ant-oat01-…" autocomplete="off">
+            <button class="btn primary">save</button>
+          </div>
+          <div class="micro">Token is encrypted straight into the vault and never written to logs. The card returns to READY on the next successful poll.</div>
+        </div>
+        <div class="meta">updated 3m ago</div>
+        <div class="actions">
+          <button class="btn icon refresh" title="refresh usage">↻</button>
+          <button class="btn icon park" aria-pressed="false" title="park account">⏸</button>
+          <button class="btn icon" title="delete account">✕</button>
+        </div>
+      </article>
+
+      <!-- work · RUNAWAY -->
+      <article class="card sev-crit">
+        <div class="card-head">
+          <span class="card-name">work</span>
+          <span class="chip runaway">RUNAWAY</span>
+        </div>
+        <div class="hero-row">
+          <div>
+            <div class="hero t-warn pulse">84<span class="pct">%</span></div>
+            <div class="hero-cap">worst window · 5h</div>
+          </div>
+          <svg class="spark crit" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+            <polyline points="0,24 9,22 18,21 27,20 36,18 45,17 54,15 63,13 72,11 81,9 90,7 99,5"/>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="gauge-label"><span>5-hour</span><span class="gauge-val">84%</span></div>
+            <div class="gauge-track">
+              <div class="gauge-fill f-warn" style="width:84%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="gauge-scale"><span style="left:50%">50</span><span style="left:80%">80</span><span class="s95" style="left:95%">95</span></div>
+          </div>
+          <div class="gauge">
+            <div class="gauge-label"><span>weekly</span><span class="gauge-val">61%</span></div>
+            <div class="gauge-track">
+              <div class="gauge-fill f-ok" style="width:61%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="gauge-scale"><span style="left:50%">50</span><span style="left:80%">80</span><span class="s95" style="left:95%">95</span></div>
+          </div>
+        </div>
+        <div class="burn"><span class="up">↑9%/h</span> · ~45m left in 5h window</div>
+        <div class="meta">updated 12s ago</div>
+        <div class="actions">
+          <button class="btn icon refresh" title="refresh usage">↻</button>
+          <button class="btn icon park" aria-pressed="false" title="park account">⏸</button>
+          <button class="btn icon" title="delete account">✕</button>
+        </div>
+      </article>
+
+      <!-- personal · READY · next pick -->
+      <article class="card sev-ok">
+        <div class="card-head">
+          <span class="card-name">personal</span>
+          <span class="badge">NEXT TO BE PICKED</span>
+          <span class="chip ready">READY</span>
+        </div>
+        <div class="hero-row">
+          <div>
+            <div class="hero t-ok">41<span class="pct">%</span></div>
+            <div class="hero-cap">worst window · 5h</div>
+          </div>
+          <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+            <polyline points="0,16 9,15 18,16 27,14 36,15 45,16 54,15 63,16 72,15 81,16 90,15 99,16"/>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="gauge-label"><span>5-hour</span><span class="gauge-val">41%</span></div>
+            <div class="gauge-track">
+              <div class="gauge-fill f-ok" style="width:41%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="gauge-scale"><span style="left:50%">50</span><span style="left:80%">80</span><span class="s95" style="left:95%">95</span></div>
+          </div>
+          <div class="gauge">
+            <div class="gauge-label"><span>weekly</span><span class="gauge-val">22%</span></div>
+            <div class="gauge-track">
+              <div class="gauge-fill f-ok" style="width:22%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="gauge-scale"><span style="left:50%">50</span><span style="left:80%">80</span><span class="s95" style="left:95%">95</span></div>
+          </div>
+        </div>
+        <div class="burn">→ 4%/h · ~11h headroom at current burn</div>
+        <div class="meta">updated 8s ago</div>
+        <div class="actions">
+          <button class="btn icon refresh" title="refresh usage">↻</button>
+          <button class="btn icon park" aria-pressed="false" title="park account">⏸</button>
+          <button class="btn icon" title="delete account">✕</button>
+        </div>
+      </article>
+
+      <!-- backup · READY but stale -->
+      <article class="card sev-ok">
+        <div class="card-head">
+          <span class="card-name">backup</span>
+          <span class="chip ready">READY</span>
+        </div>
+        <div class="hero-row">
+          <div>
+            <div class="hero t-ok">52<span class="pct">%</span></div>
+            <div class="hero-cap">worst window · 5h</div>
+          </div>
+          <svg class="spark warn" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+            <polyline stroke-dasharray="3 2.5" points="0,14 9,14 18,13 27,14 36,14 45,14 54,14 63,14 72,14 81,14 90,14 99,14"/>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="gauge-label"><span>5-hour</span><span class="gauge-val">52%</span></div>
+            <div class="gauge-track">
+              <div class="gauge-fill f-ok" style="width:52%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="gauge-scale"><span style="left:50%">50</span><span style="left:80%">80</span><span class="s95" style="left:95%">95</span></div>
+          </div>
+          <div class="gauge">
+            <div class="gauge-label"><span>weekly</span><span class="gauge-val">31%</span></div>
+            <div class="gauge-track">
+              <div class="gauge-fill f-ok" style="width:31%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="gauge-scale"><span style="left:50%">50</span><span style="left:80%">80</span><span class="s95" style="left:95%">95</span></div>
+          </div>
+        </div>
+        <div class="burn">— poll silent · burn unknown</div>
+        <div class="meta stale">updated 25m ago — stale</div>
+        <div class="actions">
+          <button class="btn icon refresh" title="refresh usage">↻</button>
+          <button class="btn icon park" aria-pressed="false" title="park account">⏸</button>
+          <button class="btn icon" title="delete account">✕</button>
+        </div>
+      </article>
+
+      <!-- client-x · PARKED -->
+      <article class="card sev-muted">
+        <div class="card-head">
+          <span class="card-name">client-x</span>
+          <span class="chip parked">PARKED →21:14</span>
+        </div>
+        <div class="hero-row">
+          <div>
+            <div class="hero t-crit">96<span class="pct">%</span></div>
+            <div class="hero-cap">worst window · weekly</div>
+          </div>
+          <svg class="spark crit" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+            <polyline points="0,10 9,8 18,7 27,6 36,5 45,4 54,4 63,3 72,3 81,3 90,3 99,2"/>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="gauge-label"><span>5-hour</span><span class="gauge-val">38%</span></div>
+            <div class="gauge-track">
+              <div class="gauge-fill f-ok" style="width:38%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="gauge-scale"><span style="left:50%">50</span><span style="left:80%">80</span><span class="s95" style="left:95%">95</span></div>
+          </div>
+          <div class="gauge">
+            <div class="gauge-label"><span>weekly</span><span class="gauge-val">96%</span></div>
+            <div class="gauge-track">
+              <div class="gauge-fill f-crit" style="width:96%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="gauge-scale"><span style="left:50%">50</span><span style="left:80%">80</span><span class="s95" style="left:95%">95</span></div>
+          </div>
+        </div>
+        <div class="burn">parked until <span class="mono">21:14</span> · auto-resumes when weekly resets</div>
+        <div class="meta">updated 1m ago</div>
+        <div class="actions">
+          <button class="btn icon refresh" title="refresh usage">↻</button>
+          <button class="btn icon park" aria-pressed="true" title="resume account">▶</button>
+          <button class="btn icon" title="delete account">✕</button>
+        </div>
+      </article>
+
+      <!-- old-laptop · DISABLED -->
+      <article class="card sev-muted">
+        <div class="card-head">
+          <span class="card-name">old-laptop</span>
+          <span class="chip disabled">DISABLED</span>
+        </div>
+        <div class="hero-row">
+          <div>
+            <div class="hero t-muted">12<span class="pct">%</span></div>
+            <div class="hero-cap">worst window · 5h</div>
+          </div>
+          <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true" style="opacity:.55">
+            <polyline points="0,25 9,25 18,26 27,25 36,26 45,26 54,26 63,26 72,26 81,26 90,26 99,26"/>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="gauge-label"><span>5-hour</span><span class="gauge-val">12%</span></div>
+            <div class="gauge-track">
+              <div class="gauge-fill f-muted" style="width:12%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="gauge-scale"><span style="left:50%">50</span><span style="left:80%">80</span><span class="s95" style="left:95%">95</span></div>
+          </div>
+          <div class="gauge">
+            <div class="gauge-label"><span>weekly</span><span class="gauge-val">9%</span></div>
+            <div class="gauge-track">
+              <div class="gauge-fill f-muted" style="width:9%"></div>
+              <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%"></i>
+            </div>
+            <div class="gauge-scale"><span style="left:50%">50</span><span style="left:80%">80</span><span class="s95" style="left:95%">95</span></div>
+          </div>
+        </div>
+        <div class="burn">disabled · excluded from selection</div>
+        <div class="meta">updated 2d ago</div>
+        <div class="actions">
+          <button class="btn icon refresh" title="refresh usage">↻</button>
+          <button class="btn icon park" aria-pressed="true" title="enable account">▶</button>
+          <button class="btn icon" title="delete account">✕</button>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ================= 03 · ACTIVITY ================= -->
+  <section aria-label="Activity">
+    <div class="sec-head">
+      <span class="sec-idx">03</span>
+      <h2>Activity</h2>
+      <span class="sec-note">live feed · newest first</span>
+    </div>
+
+    <div class="activity">
+
+      <!-- LEFT: live feed -->
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Live activity</span>
+          <button class="btn" id="pauseBtn" aria-pressed="false">⏸ pause</button>
+          <span class="chip-sep"></span>
+          <button class="fchip active" data-group="account" data-value="all">all</button>
+          <button class="fchip" data-group="account" data-value="work">work</button>
+          <button class="fchip" data-group="account" data-value="team-alpha">team-alpha</button>
+          <button class="fchip" data-group="account" data-value="personal">personal</button>
+          <span class="chip-sep"></span>
+          <button class="fchip active" data-group="host" data-value="all">any host</button>
+          <button class="fchip" data-group="host" data-value="mbp">mbp</button>
+          <span class="pause-note mono" id="pauseNote" hidden>feed paused — events held</span>
+        </div>
+        <ul class="feed" id="feed">
+          <li class="feed-row" data-account="work" data-host="mbp">
+            <span class="f-time">2s</span><span class="f-acct">work</span><span class="f-host">mbp</span><span class="f-model">opus</span><span class="f-tokens">12,408</span>
+            <span class="f-prompt">refactor the quota poller into a cron-aware scheduler with backoff…</span>
+          </li>
+          <li class="feed-row" data-account="personal" data-host="mbp">
+            <span class="f-time">9s</span><span class="f-acct">personal</span><span class="f-host">mbp</span><span class="f-model">sonnet</span><span class="f-tokens">3,211</span>
+            <span class="f-prompt">add unit tests for the vault decrypt path before the release…</span>
+          </li>
+          <li class="feed-row" data-account="work" data-host="mbp">
+            <span class="f-time">21s</span><span class="f-acct">work</span><span class="f-host">mbp</span><span class="f-model">opus</span><span class="f-tokens">8,764</span>
+            <span class="f-prompt">explain this EBADF stack trace from the relay process…</span>
+          </li>
+          <li class="feed-row fail" data-account="team-alpha" data-host="ci-01">
+            <span class="f-time">31s</span><span class="f-acct">team-alpha</span><span class="f-host">ci-01</span><span class="f-model">—</span><span class="f-tokens">—</span>
+            <span class="f-prompt"><span class="fail-tag">failed</span>select — none-available</span>
+          </li>
+          <li class="feed-row" data-account="personal" data-host="mbp">
+            <span class="f-time">48s</span><span class="f-acct">personal</span><span class="f-host">mbp</span><span class="f-model">haiku</span><span class="f-tokens">1,024</span>
+            <span class="f-prompt">summarize today’s quota log into a three-line digest…</span>
+          </li>
+          <li class="feed-row" data-account="work" data-host="mbp">
+            <span class="f-time">1m</span><span class="f-acct">work</span><span class="f-host">mbp</span><span class="f-model">opus</span><span class="f-tokens">15,932</span>
+            <span class="f-prompt">migrate the settings panel to the new card grid layout…</span>
+          </li>
+          <li class="feed-row" data-account="personal" data-host="mbp">
+            <span class="f-time">2m</span><span class="f-acct">personal</span><span class="f-host">mbp</span><span class="f-model">sonnet</span><span class="f-tokens">5,120</span>
+            <span class="f-prompt">write the park / unpark state machine documentation…</span>
+          </li>
+          <li class="feed-row fail" data-account="team-alpha" data-host="mbp">
+            <span class="f-time">3m</span><span class="f-acct">team-alpha</span><span class="f-host">mbp</span><span class="f-model">—</span><span class="f-tokens">—</span>
+            <span class="f-prompt"><span class="fail-tag">failed</span>decrypt-fail</span>
+          </li>
+          <li class="feed-row" data-account="work" data-host="mbp">
+            <span class="f-time">4m</span><span class="f-acct">work</span><span class="f-host">mbp</span><span class="f-model">sonnet</span><span class="f-tokens">6,342</span>
+            <span class="f-prompt">tighten the retry backoff on 429 responses from the API…</span>
+          </li>
+          <li class="feed-row" data-account="personal" data-host="mbp">
+            <span class="f-time">5m</span><span class="f-acct">personal</span><span class="f-host">mbp</span><span class="f-model">opus</span><span class="f-tokens">9,318</span>
+            <span class="f-prompt">draft the README section on multi-account rotation…</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- RIGHT: by host / device -->
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">By host / device</span></div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th class="l">host</th><th class="num">requests</th><th class="num">tokens</th><th class="num">last seen</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="l">mbp</td><td class="num">1,284</td><td class="num">4.2M</td><td class="num">2s ago</td></tr>
+              <tr><td class="l">ci-01</td><td class="num">312</td><td class="num">890k</td><td class="num">31s ago</td></tr>
+              <tr><td class="l">nas</td><td class="num">48</td><td class="num">121k</td><td class="num st-warn">25m ago</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ================= 04 · PROVIDER API KEYS ================= -->
+  <section aria-label="Provider API keys">
+    <div class="sec-head">
+      <span class="sec-idx">04</span>
+      <h2>Vault</h2>
+      <span class="sec-note">keys are encrypted at rest · never shown in full</span>
+    </div>
+
+    <div class="disclosure">
+      <button class="disc-btn" id="keysToggle" aria-expanded="false" aria-controls="keysBody">
+        <span class="caret">▸</span>
+        Provider API keys · 4
+        <span class="disc-hint">— click to expand</span>
+      </button>
+      <div class="disc-body" id="keysBody" hidden>
+        <div class="table-scroll">
+          <table style="min-width:640px">
+            <thead>
+              <tr>
+                <th class="l">provider</th><th class="l">label</th><th>key</th>
+                <th class="l">status</th><th>verified</th><th>added</th><th class="num">actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="l">anthropic</td><td class="l">main</td><td>sk-ant-…9d1c</td>
+                <td class="l"><span class="st-ok">working</span></td><td>2h ago</td><td>12 Mar</td>
+                <td><div class="row-actions">
+                  <button class="btn icon refresh" title="re-verify">↻</button>
+                  <button class="btn icon" title="delete key">✕</button>
+                </div></td>
+              </tr>
+              <tr>
+                <td class="l">openai</td><td class="l">prod</td><td>sk-…3f2a</td>
+                <td class="l"><span class="st-crit">dead</span></td><td class="st-crit">last check failed</td><td>28 Feb</td>
+                <td><div class="row-actions">
+                  <button class="btn icon refresh" title="re-verify">↻</button>
+                  <button class="btn icon" title="delete key">✕</button>
+                </div></td>
+              </tr>
+              <tr>
+                <td class="l">openai</td><td class="l">staging</td><td>sk-…77b0</td>
+                <td class="l"><span class="st-ok">working</span></td><td>2h ago</td><td>15 Jan</td>
+                <td><div class="row-actions">
+                  <button class="btn icon refresh" title="re-verify">↻</button>
+                  <button class="btn icon" title="delete key">✕</button>
+                </div></td>
+              </tr>
+              <tr>
+                <td class="l">google</td><td class="l">gemini</td><td>AI…91zx</td>
+                <td class="l"><span class="st-ok">working</span></td><td>5h ago</td><td>03 Feb</td>
+                <td><div class="row-actions">
+                  <button class="btn icon refresh" title="re-verify">↻</button>
+                  <button class="btn icon" title="delete key">✕</button>
+                </div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <form class="add-row" onsubmit="return false">
+          <select aria-label="provider">
+            <option>anthropic</option><option>openai</option><option>google</option><option>other</option>
+          </select>
+          <input type="text" placeholder="label (e.g. staging)" aria-label="label">
+          <input type="password" class="grow" placeholder="paste key — sk-…" aria-label="key" autocomplete="off">
+          <button class="btn primary" type="submit">Add</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ================= FOOTER ================= -->
+<footer class="foot">
+  <span>aigate v0.1.0</span><span class="sep">·</span>
+  <span>uptime 6d 4h</span><span class="sep">·</span>
+  <span>last backup 3h ago</span><span class="sep">·</span>
+  <span>30-day log retention</span>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+  const $  = (s,c)=> (c||document).querySelector(s);
+  const $$ = (s,c)=> Array.prototype.slice.call((c||document).querySelectorAll(s));
+
+  /* --- demo: normal / critical toggle --- */
+  const demo = $('#demoToggle'), banner = $('#critBanner'), demoState = $('#demoState');
+  demo.addEventListener('change', function(){
+    banner.hidden = !demo.checked;
+    demoState.textContent = demo.checked ? 'critical' : 'normal';
+  });
+
+  /* --- inbox dismiss --- */
+  $$('.dismiss').forEach(function(b){
+    b.addEventListener('click', function(){
+      const n = b.closest('.note');
+      if (n) n.style.display = 'none';
+    });
+  });
+
+  /* --- copy setup-token command --- */
+  const copyBtn = $('#copyCmd');
+  if (copyBtn) copyBtn.addEventListener('click', function(){
+    try { if (navigator.clipboard) navigator.clipboard.writeText('claude setup-token'); } catch(e){}
+    const t = copyBtn.textContent;
+    copyBtn.textContent = 'copied ✓';
+    setTimeout(function(){ copyBtn.textContent = t; }, 1500);
+  });
+
+  /* --- feed pause / resume --- */
+  const pauseBtn = $('#pauseBtn'), feed = $('#feed'), pauseNote = $('#pauseNote');
+  let paused = false;
+  pauseBtn.addEventListener('click', function(){
+    paused = !paused;
+    pauseBtn.textContent = paused ? '▶ resume' : '⏸ pause';
+    pauseBtn.setAttribute('aria-pressed', String(paused));
+    feed.classList.toggle('paused', paused);
+    pauseNote.hidden = !paused;
+  });
+
+  /* --- park / resume toggles (cosmetic) --- */
+  $$('.park').forEach(function(b){
+    b.addEventListener('click', function(){
+      const on = b.getAttribute('aria-pressed') === 'true';
+      b.setAttribute('aria-pressed', String(!on));
+      b.textContent = on ? '⏸' : '▶';
+      b.title = on ? 'park account' : 'resume account';
+    });
+  });
+
+  /* --- refresh spin (cosmetic) --- */
+  $$('.refresh').forEach(function(b){
+    b.addEventListener('click', function(){
+      b.classList.remove('spin');
+      void b.offsetWidth; /* restart animation */
+      b.classList.add('spin');
+    });
+  });
+
+  /* --- provider keys disclosure --- */
+  const keysToggle = $('#keysToggle'), keysBody = $('#keysBody');
+  keysToggle.addEventListener('click', function(){
+    const open = keysBody.hidden;
+    keysBody.hidden = !open;
+    keysToggle.setAttribute('aria-expanded', String(open));
+    keysToggle.classList.toggle('open', open);
+    $('.disc-hint', keysToggle).textContent = open ? '— click to collapse' : '— click to expand';
+  });
+
+  /* --- feed filter chips (account + host, AND-combined) --- */
+  const state = { account:'all', host:'all' };
+  const rows = $$('#feed .feed-row');
+  function applyFilter(){
+    rows.forEach(function(r){
+      const okA = state.account === 'all' || r.dataset.account === state.account;
+      const okH = state.host    === 'all' || r.dataset.host    === state.host;
+      r.style.display = (okA && okH) ? '' : 'none';
+    });
+  }
+  $$('.fchip').forEach(function(c){
+    c.addEventListener('click', function(){
+      const g = c.dataset.group;
+      $$('.fchip[data-group="' + g + '"]').forEach(function(x){ x.classList.remove('active'); });
+      c.classList.add('active');
+      state[g] = c.dataset.value;
+      applyFilter();
+    });
+  });
+})();
+</script>
+</body>
+</html>
