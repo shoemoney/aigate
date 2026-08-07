@@ -73,6 +73,9 @@ try:
 
     # best-effort dedup: skip if we already reported this exact assistant message
     # for this session (e.g. a re-fired Stop with no new turn appended).
+    # ponytail: one dotfile per session, never cleaned up — a real install
+    # accumulates them forever. Add a reap-on-startup sweep (mtime-based) if
+    # ~/.claude/aigate/ litter ever becomes a problem worth solving.
     cache = os.path.expanduser(f"~/.claude/aigate/.tokens-last-{session_id}") if session_id else ""
     if cache and last_id:
         try:
