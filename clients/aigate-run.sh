@@ -19,9 +19,12 @@ select_acct(){ curl -s -m8 -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL
 report_prompt(){ curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
     -d "$(python3 -c 'import json,sys;print(json.dumps({"account":sys.argv[1],"host":sys.argv[2],"prompt":sys.argv[3][:400]}))' "$1" "$HOST" "$2")" \
     "$AIGATE_URL/api/events/prompt" >/dev/null 2>&1 || true; }
-report_limit(){ local m=""; [ -n "${2:-}" ] && m=",\"minutes\":$2"   # optional short park (server accepts minutes)
-  curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
-    -d "{\"account\":\"$1\",\"host\":\"$HOST\"$m}" "$AIGATE_URL/api/events/limit" >/dev/null 2>&1 || true; }
+report_limit(){ curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
+    -d "$(python3 -c 'import json,sys
+d={"account":sys.argv[1],"host":sys.argv[2]}
+if len(sys.argv)>3 and sys.argv[3]!="":d["minutes"]=int(sys.argv[3])
+print(json.dumps(d))' "$1" "$HOST" "${2:-}")" \
+    "$AIGATE_URL/api/events/limit" >/dev/null 2>&1 || true; }
 # A select response with NO setup_token is NOT always "capacity": empty body = server
 # unreachable, 'unauthorized' = rejected token, only a reasoned 503 is real no-headroom.
 no_token_diag(){
