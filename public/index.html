@@ -297,7 +297,11 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
         <span class="sec-note">hero = worst window · sorted by severity · cutoff 95</span></div>
 
       <TransitionGroup name="card" tag="div" class="grid">
-        <div v-if="!accounts.length" key="empty" class="card" style="color:var(--dim)">no accounts yet — run <span class="mono acc">claude setup-token</span>, then add the <span class="mono acc">sk-ant-oat01…</span> line via the add-account skill or <span class="mono acc">POST /api/accounts</span> (paste the token there, never here)</div>
+        <!-- jury r1 (5/5 models, unanimous): .card is display:flex;flex-direction:column;gap:15px, so bare
+             text nodes + inline <span> chips each became a separate flex item and the sentence shattered
+             across 7 gap-separated lines. Pre-existing bug inherited from the vanilla original. One <p>
+             wrapper makes the whole sentence a single flex item so the chips flow inline again. -->
+        <div v-if="!accounts.length" key="empty" class="card" style="color:var(--dim)"><p>no accounts yet — run <span class="mono acc">claude setup-token</span>, then add the <span class="mono acc">sk-ant-oat01…</span> line via the add-account skill or <span class="mono acc">POST /api/accounts</span> (paste the token there, never here)</p></div>
 
         <article v-for="a in sortedAccounts" :key="a.account" class="card"
                  :class="{'is-parked':a.parked&&!a.disabled,'is-disabled':a.disabled}">
@@ -696,7 +700,10 @@ const app=Vue.createApp({
         return {
           host: h.host||'—',
           requests: fmtNum(h.requests),
-          tokens: fmtNum(h.tokens),
+          // jury r1 (2 votes): tokens are 0 for EVERY row by construction — the upstream reporter is a
+          // prompt-submit hook that fires before the response exists, so no count is ever recorded.
+          // Render the absence honestly instead of a confident 0, matching the feed's tk cell.
+          tokens: h.tokens ? fmtNum(h.tokens) : '—',
           age,
           stale: age!=null && age>STALE_S,
           ageText: ts ? fmtAge(age)+' ago' : '—',
