@@ -718,14 +718,15 @@ createApp({
     async followup(c){
       const txt=(this.followText[c.id]||'').trim(); if(!txt||this.sending[c.id])return;
       this.sending[c.id]=true;
-      try{ await api('/api/board/'+c.id+'/followup',{method:'POST',body:JSON.stringify({prompt:txt})}); this.followText[c.id]=''; }
+      try{ const r=await api('/api/board/'+c.id+'/followup',{method:'POST',body:JSON.stringify({prompt:txt})}); if(r.ok)this.followText[c.id]=''; else this.announce='Follow-up failed'; }
       catch(e){} finally{ this.sending[c.id]=false; }
     },
-    async retry(c){ await api('/api/board/'+c.id+'/retry',{method:'POST'}).catch(()=>{}); },
+    async retry(c){ try{ const r=await api('/api/board/'+c.id+'/retry',{method:'POST'}); if(!r.ok)this.announce='Retry failed'; }catch(e){} },
     del(c){
       if(this.confirmDel!==c.id){ this.confirmDel=c.id; setTimeout(()=>{ if(this.confirmDel===c.id)this.confirmDel=null; },3000); return; }
       this.confirmDel=null;
-      api('/api/board/'+c.id,{method:'DELETE'}).catch(()=>{}); if(this.opened===c.id)this.opened=null;
+      api('/api/board/'+c.id,{method:'DELETE'}).then(r=>{ if(!r.ok)this.announce='Delete failed'; }).catch(()=>{});
+      if(this.opened===c.id)this.opened=null;
     },
     clone(c){
       this._prevFocus=document.activeElement; this.loadHosts();
