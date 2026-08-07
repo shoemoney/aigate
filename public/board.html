@@ -7,7 +7,7 @@
 <style>
   :root{
     --bg:#0a0e14; --bg2:#0f1520; --panel:#131b28; --panel2:#182234;
-    --line:#223044; --ink:#e6edf6; --dim:#8ea1ba; --faint:#5f728c;
+    --line:#223044; --ink:#e6edf6; --dim:#8ea1ba; --faint:#7d8fa8;
     --todo:#6b7cff; --run:#f5a524; --done:#22c98a; --err:#ff5d6c;
     --cyan:#35d6e5; --violet:#a26bff;
     --accent:#6b7cff; --glow:0 0 0 1px var(--line), 0 8px 30px rgba(0,0,0,.45);
@@ -86,7 +86,7 @@
   .breathe{position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(760px 520px at 50% 42%,rgba(107,124,255,.06),transparent 62%);animation:breathe 8s ease-in-out infinite}
   /* queue-drained hero */
   .allclear{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;z-index:12}
-  .ac-seal{font-family:var(--mono);font-weight:800;letter-spacing:.3em;text-transform:uppercase;color:var(--done);font-size:22px;text-shadow:0 0 24px rgba(34,201,138,.75)}
+  .ac-seal{font-family:var(--mono);font-weight:800;letter-spacing:.3em;text-transform:uppercase;color:var(--done);font-size:22px;text-shadow:0 0 24px rgba(34,201,138,.75);background:rgba(10,14,20,.72);padding:10px 20px;border-radius:14px}
   .ac-rings{position:absolute;width:8px;height:8px}
   .ac-rings i{position:absolute;top:50%;left:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border:2px solid var(--done);border-radius:50%;opacity:0;animation:acring 3.4s ease-out infinite}
   .ac-rings i:nth-child(2){animation-delay:1.13s} .ac-rings i:nth-child(3){animation-delay:2.26s}
@@ -130,7 +130,7 @@
   /* dark ink on the light-luminance running/done gradients — white failed WCAG AA (~1.7:1) */
   .status.running{background:linear-gradient(135deg,#f5a524,#ff8f3a);color:#3a1e00} .status.running::before{clip-path:polygon(0 0,100% 50%,0 100%);background:rgba(0,0,0,.6)}
   .status.done{background:linear-gradient(135deg,#22c98a,#2fd6b0);color:#04241a} .status.done::before{clip-path:polygon(50% 0,100% 100%,0 100%);background:rgba(0,0,0,.55)}
-  .status.error{background:linear-gradient(135deg,#ff5d6c,#ff7a54)}
+  .status.error{background:linear-gradient(135deg,#ff5d6c,#ff7a54);color:#4a0008}
   .card .timer{font-family:var(--mono);font-size:11px;color:var(--dim);flex:none;transition:color .4s}
   /* staleness heat ramp: the longer a card waits in Todo, the warmer its age reads */
   .card .timer.stale-warm{color:#f5a524}
@@ -329,7 +329,7 @@
              :draggable="col.key==='todo'"
              @dragstart="col.key==='todo'&&dragStart(c,$event)" @dragend="dragEnd"
              @dragover="col.key==='todo'&&dragOver(c,$event)" @drop="col.key==='todo'&&drop(c)"
-             @click="expand(c)" @keydown.enter.prevent="expand(c)" @keydown.space.prevent="expand(c)"
+             @click="expand(c)" @keydown.enter.self.prevent="expand(c)" @keydown.space.self.prevent="expand(c)"
              @keydown.alt.up.prevent="col.key==='todo'&&moveCard(c,-1)" @keydown.alt.down.prevent="col.key==='todo'&&moveCard(c,1)">
           <span v-if="flashing[c.id]" class="sheen" aria-hidden="true"></span>
           <span v-if="col.key==='todo'&&idx===0&&dragId==null&&!filter" class="nexthalo" aria-hidden="true" title="next to be claimed"></span>
@@ -497,7 +497,7 @@ createApp({
   }},
   computed:{
     hasError(){ return this.all.some(c=>c.status==='error'); },
-    allClear(){ return this.all.length>0 && !this.all.some(c=>c.status==='todo'||c.status==='running'); },  // queue drained → hero
+    allClear(){ return this.all.length>0 && !this.all.some(c=>c.status==='todo'||c.status==='running') && !this.hasError; },  // queue drained → hero
     workerGroups(){                                            // group the live worker roster by box
       const g={};
       for(const w of this.workers){
@@ -534,7 +534,7 @@ createApp({
     untitled(c){return (c.prompt||'').slice(0,40)+((c.prompt||'').length>40?'…':'')},
     statusLabel(s){return {todo:'queued',running:'running',done:'done',error:'error'}[s]||s},
     lines(s){return String(s||'').split('\n')},
-    parseTurns(c){try{return JSON.parse(c.turns||'[]')}catch{return[]}},
+    parseTurns(c){if(Array.isArray(c.turns))return c.turns;try{return JSON.parse(c.turns||'[]')}catch{return[]}},
     lastSummary(c){const t=this.parseTurns(c);return t.length?t[t.length-1].summary:''},
     tms(s){return s?Date.parse(s.replace(' ','T')+'Z'):0},
     fmtDur(ms){if(ms<0)ms=0;const s=Math.floor(ms/1000);if(s<60)return s+'s';const m=Math.floor(s/60);if(m<60)return m+'m '+String(s%60).padStart(2,'0')+'s';const h=Math.floor(m/60);return h+'h '+String(m%60).padStart(2,'0')+'m'},
@@ -621,7 +621,7 @@ createApp({
       this.$nextTick(()=>{
         const el=document.querySelector('.col.done .card[data-id="'+id+'"]'); if(!el)return;
         const r=el.getBoundingClientRect(), cx=r.left+r.width/2, cy=r.top+16;
-        const n=streak>=5?28:streak>=3?18:11, hue=streak>=5?'var(--amber)':streak>=3?'var(--cyan)':'var(--done)';
+        const n=streak>=5?28:streak>=3?18:11, hue=streak>=5?'var(--run)':streak>=3?'var(--cyan)':'var(--done)';
         const layer=document.createElement('div'); layer.className='sparklayer';
         for(let i=0;i<n;i++){ const s=document.createElement('span'); s.className='spark';
           const a=Math.random()*6.283, d=42+Math.random()*70;
@@ -669,7 +669,16 @@ createApp({
     hostLoadLabel(h){ const g=this.hostLoad[h]; if(!g) return ' — offline'; return g.busy>=g.total?` — ${g.busy}/${g.total} full`:g.busy?` — ${g.busy}/${g.total} busy`:' — idle'; },
     ago(ms){ const s=Math.round(ms/1000); return s<60?s+'s':Math.round(s/60)+'m'; },
     openNew(){ this._prevFocus=document.activeElement; this.loadHosts(); this.showNew=true; this.formMsg=''; this.$nextTick(()=>this.$refs.firstField&&this.$refs.firstField.focus()); },
-    async copy(text,what,id){ try{ await navigator.clipboard.writeText(text); this.announce=`Copied ${what}`; this.copied=id+':'+what; clearTimeout(this._cpT); this._cpT=setTimeout(()=>{this.copied='';},1000); }catch{} },
+    async copy(text,what,id){
+      try{
+        if(navigator.clipboard){ await navigator.clipboard.writeText(text); }
+        else{
+          const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+          document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); ta.remove();
+        }
+        this.announce=`Copied ${what}`; this.copied=id+':'+what; clearTimeout(this._cpT); this._cpT=setTimeout(()=>{this.copied='';},1000);
+      }catch{ this.announce=`Copy failed`; }
+    },
     alarm(id){ this.alarming[id]=true; setTimeout(()=>{delete this.alarming[id];},1000); },
     medianDone(){                                              // rolling median completion time from the Done cohort
       const ds=this.all.filter(c=>c.status==='done'&&c.claimed_at).map(c=>{const t=this.parseTurns(c);const end=t.length?Date.parse(t[t.length-1].ts):this.tms(c.updated_at);return end-this.tms(c.claimed_at);}).filter(x=>x>0).sort((a,b)=>a-b);
@@ -682,7 +691,7 @@ createApp({
       return el>4*med?'stale-hot':el>2*med?'stale-warm':'';
     },
     trapTab(e){                                                // keep Tab focus inside the modal (a11y)
-      const f=[...this.$el.querySelectorAll('.modal input,.modal textarea,.modal select,.modal button')].filter(x=>!x.disabled&&x.offsetParent!==null);
+      const f=[...e.currentTarget.querySelectorAll('.modal input,.modal textarea,.modal select,.modal button')].filter(x=>!x.disabled&&x.offsetParent!==null);
       if(!f.length)return; const first=f[0], last=f[f.length-1];
       if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); last.focus(); }
       else if(!e.shiftKey&&document.activeElement===last){ e.preventDefault(); first.focus(); }
