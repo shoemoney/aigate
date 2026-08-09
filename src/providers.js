@@ -56,6 +56,9 @@ export const PROVIDERS = [
   { id: 'modal',        name: 'Modal',                cat: 'cloud',   prefix: '',          base: '',                                     docs: 'https://modal.com/docs' },
   { id: 'aws',          name: 'AWS (IAM)',            cat: 'cloud',   prefix: 'AKIA',      base: 'https://sts.amazonaws.com',            docs: 'https://docs.aws.amazon.com/IAM' },
 
+  // --- auth / identity ---
+  { id: 'workos',       name: 'WorkOS',               cat: 'auth',    prefix: 'sk_',       base: 'https://api.workos.com',               docs: 'https://workos.com/docs' },
+
   // --- dev / infra ---
   { id: 'github',       name: 'GitHub',               cat: 'dev',     prefix: 'ghp_',      base: 'https://api.github.com',               docs: 'https://docs.github.com/rest' },
 
