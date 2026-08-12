@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI GREEN — 11 Effects</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--green:hsl(142 76% 50%);--green-dim:hsla(142 76% 50% / 0.18);--green-mid:hsla(142 76% 50% / 0.5);--green-glow:hsla(142 76% 50% / 0.12)}
+html,body{background:#000;color:#fff;font-family:'SF Mono','Fira Code','Cascadia Code',ui-monospace,monospace}
+body{min-height:100vh;display:flex;flex-direction:column}
+a{color:inherit;text-decoration:none}
+/* header */
+.hdr{padding:48px 32px 32px;border-bottom:1px solid var(--green-dim);position:relative;overflow:hidden}
+.hdr::before{content:'';position:absolute;inset:0;background:radial-gradient(600px 300px at 30% 0%, var(--green-glow), transparent 70%);pointer-events:none}
+.hdr h1{font-size:clamp(42px,8vw,96px);font-weight:900;letter-spacing:-0.06em;line-height:0.85;position:relative}
+.hdr h1 span{color:var(--green)}
+.hdr .sub{margin-top:12px;font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:var(--green);opacity:0.9}
+.hdr .meta{margin-top:8px;font-size:11px;color:#666;letter-spacing:0.06em}
+.hdr .badges{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-size:10px;letter-spacing:0.12em;text-transform:uppercase;padding:5px 10px;border:1px solid var(--green-dim);color:var(--green);background:hsla(142 76% 50% / 0.06)}
+/* grid */
+.wrap{flex:1;padding:28px;max-width:1280px;width:100%;margin:0 auto}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(1,1fr)}
+@media(min-width:640px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:1024px){.grid{grid-template-columns:repeat(3,1fr)}}
+/* card */
+.card{position:relative;background:#0a0a0a;border:1px solid hsla(142 76% 50% / 0.18);overflow:hidden;display:flex;flex-direction:column;transition:border-color .22s, transform .22s, box-shadow .22s}
+.card:hover{border-color:hsla(142 76% 50% / 0.5);transform:translateY(-3px);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.15), 0 16px 40px hsla(142 76% 50% / 0.12)}
+.thumb{aspect-ratio:16/10;background:#000;position:relative;overflow:hidden;border-bottom:1px solid hsla(142 76% 50% / 0.1);display:flex;align-items:center;justify-content:center}
+.thumb svg{width:100%;height:100%}
+.card-body{padding:14px 14px 12px;flex:1;display:flex;flex-direction:column;gap:6px}
+.num{font-size:10px;letter-spacing:0.18em;color:var(--green);opacity:0.7}
+.card-body h3{font-size:14px;font-weight:700;letter-spacing:-0.02em;line-height:1}
+.card-body p{font-size:11px;color:#888;line-height:1.5}
+.tags{margin-top:auto;padding-top:10px;display:flex;gap:6px;flex-wrap:wrap}
+.tag{font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:3px 6px;background:hsla(142 76% 50% / 0.08);color:var(--green);border:1px solid hsla(142 76% 50% / 0.14)}
+.arrow{position:absolute;top:10px;right:10px;width:28px;height:28px;border-radius:999px;background:var(--green);color:#000;display:flex;align-items:center;justify-content:center;font-size:13px;opacity:0;transform:translateY(4px);transition:.2s}
+.card:hover .arrow{opacity:1;transform:none}
+/* footer */
+.ftr{padding:18px 28px;border-top:1px solid hsla(142 76% 50% / 0.12);display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;font-size:11px;color:#555;letter-spacing:0.04em}
+.ftr strong{color:var(--green);font-weight:600}
+</style>
+</head>
+<body>
+<header class="hdr">
+  <h1>AI<span>GREEN</span></h1>
+  <div class="sub">11 effects · green at 50% lightness on black · click to enter</div>
+  <div class="meta">hsl(142 76% 50%) — every glow, every line, every particle. background is always #000000.</div>
+  <div class="badges">
+    <span class="badge">worktree feat/ai-green-bg</span>
+    <span class="badge">pure canvas · no libs</span>
+    <span class="badge">60 fps · resize-safe · DPR aware</span>
+  </div>
+</header>
+
+<div class="wrap">
+<div class="grid">
+
+<!-- 01 neural -->
+<a class="card" href="./neural-network.html">
+  <div class="thumb">
+    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="320" height="200" fill="#000"/>
+      <circle cx="60" cy="80" r="7" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.6" opacity="0.9"/><circle cx="60" cy="80" r="12" fill="hsl(142 76% 50%)" opacity="0.08"/>
+      <circle cx="160" cy="40" r="7" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.6" opacity="0.9"/><circle cx="160" cy="40" r="12" fill="hsl(142 76% 50%)" opacity="0.08"/>
+      <circle cx="260" cy="70" r="7" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.6" opacity="0.9"/>
+      <circle cx="100" cy="140" r="7" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.6" opacity="0.9"/>
+      <circle cx="220" cy="150" r="7" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.6" opacity="0.9"/>
+      <circle cx="160" cy="100" r="9" fill="hsl(142 76% 50%)" opacity="0.9"/><circle cx="160" cy="100" r="18" fill="hsl(142 76% 50%)" opacity="0.12"/>
+      <path d="M67 80 C100 70 130 50 153 42" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.35" fill="none"/>
+      <path d="M167 42 C190 50 235 60 253 70" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.25" fill="none"/>
+      <path d="M67 85 C95 110 85 125 98 135" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.25" fill="none"/>
+      <path d="M106 140 C130 125 140 110 152 102" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.35" fill="none"/>
+      <path d="M168 102 C190 115 210 135 216 144" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.25" fill="none"/>
+      <path d="M155 92 C175 85 235 80 253 74" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.2" fill="none"/>
+      <circle cx="115" cy="68" r="2.5" fill="hsl(142 76% 50%)" opacity="0.9"/>
+      <circle cx="190" cy="118" r="2.5" fill="hsl(142 76% 50%)" opacity="0.9"/>
+    </svg>
+    <span class="arrow">↗</span>
+  </div>
+  <div class="card-body"><div class="num">01 — NEURAL-NETWORK.HTML</div><h3>Neural Network</h3><p>Nodes &amp; synapses firing across a black void</p><div class="tags"><span class="tag">nodes</span><span class="tag">packets</span><span class="tag">propagation</span></div></div>
+</a>
+
+<!-- 02 matrix -->
+<a class="card" href="./matrix-rain.html">
+  <div class="thumb">
+    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="320" height="200" fill="#000"/>
+      <g font-family="ui-monospace,monospace" font-size="13" fill="hsl(142 76% 50%)" text-anchor="middle">
+        <text x="48" y="20" opacity="0.95">◆</text><text x="48" y="40" opacity="0.5">1</text><text x="48" y="60" opacity="0.25">⊐</text><text x="48" y="80" opacity="0.12">0</text>
+        <text x="96" y="36" opacity="0.12">⊏</text><text x="96" y="56" opacity="0.35">0</text><text x="96" y="76" opacity="0.7">1</text><text x="96" y="96" opacity="0.95">◇</text><text x="96" y="116" opacity="0.3">⟨</text>
+        <text x="144" y="18" opacity="0.3">1</text><text x="144" y="38" opacity="0.6">◆</text><text x="144" y="58" opacity="0.95">0</text><text x="144" y="78" opacity="0.4">⟩</text><text x="144" y="98" opacity="0.15">1</text>
+        <text x="192" y="28" opacity="0.15">0</text><text x="192" y="48" opacity="0.5">◇</text><text x="192" y="68" opacity="0.95">1</text><text x="192" y="88" opacity="0.3">⊐</text>
+        <text x="240" y="22" opacity="0.55">⟨</text><text x="240" y="42" opacity="0.95">1</text><text x="240" y="62" opacity="0.4">0</text><text x="240" y="82" opacity="0.18">◆</text><text x="240" y="102" opacity="0.08">1</text>
+      </g>
+    </svg>
+    <span class="arrow">↗</span>
+  </div>
+  <div class="card-body"><div class="num">02 — MATRIX-RAIN.HTML</div><h3>Matrix Rain</h3><p>Falling glyphs in 50% green light</p><div class="tags"><span class="tag">glyphs</span><span class="tag">stagger</span><span class="tag">trail</span></div></div>
+</a>
+
+<!-- 03 particle -->
+<a class="card" href="./particle-field.html">
+  <div class="thumb">
+    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="320" height="200" fill="#000"/>
+      <line x1="60" y1="60" x2="140" y2="80" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.2"/>
+      <line x1="140" y1="80" x2="220" y2="55" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.18"/>
+      <line x1="90" y1="140" x2="140" y2="80" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.14"/>
+      <line x1="220" y1="55" x2="260" y2="120" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.15"/>
+      <line x1="90" y1="140" x2="170" y2="150" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.12"/>
+      <line x1="170" y1="150" x2="260" y2="120" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.12"/>
+      <circle cx="60" cy="60" r="5" fill="hsl(142 76% 50%)" opacity="0.9"/><circle cx="60" cy="60" r="11" fill="hsl(142 76% 50%)" opacity="0.09"/>
+      <circle cx="140" cy="80" r="5" fill="hsl(142 76% 50%)" opacity="0.9"/><circle cx="140" cy="80" r="11" fill="hsl(142 76% 50%)" opacity="0.09"/>
+      <circle cx="220" cy="55" r="4" fill="hsl(142 76% 50%)" opacity="0.75"/><circle cx="220" cy="55" r="9" fill="hsl(142 76% 50%)" opacity="0.07"/>
+      <circle cx="90" cy="140" r="4" fill="hsl(142 76% 50%)" opacity="0.75"/>
+      <circle cx="170" cy="150" r="4" fill="hsl(142 76% 50%)" opacity="0.7"/>
+      <circle cx="260" cy="120" r="5" fill="hsl(142 76% 50%)" opacity="0.85"/><circle cx="260" cy="120" r="11" fill="hsl(142 76% 50%)" opacity="0.08"/>
+    </svg>
+    <span class="arrow">↗</span>
+  </div>
+  <div class="card-body"><div class="num">03 — PARTICLE-FIELD.HTML</div><h3>Particle Field</h3><p>Drifting orbs with proximity links</p><div class="tags"><span class="tag">wander</span><span class="tag">links</span><span class="tag">attract</span></div></div>
+</a>
+
+<!-- 04 grid -->
+<a class="card" href="./grid-wave.html">
+  <div class="thumb">
+    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="320" height="200" fill="#000"/>
+      <g stroke="hsl(142 76% 50%)" fill="none">
+        <path d="M0 140 H320" stroke-width="1" opacity="0.14"/><path d="M0 155 H320" stroke-width="1" opacity="0.18"/><path d="M0 172 H320" stroke-width="1" opacity="0.28"/><path d="M0 188 H320" stroke-width="1.1" opacity="0.4"/>
+        <path d="M40 110 L20 200" stroke-width="1" opacity="0.13"/><path d="M95 105 L85 200" stroke-width="1" opacity="0.15"/><path d="M150 100 L150 200" stroke-width="1" opacity="0.2"/><path d="M205 105 L215 200" stroke-width="1" opacity="0.15"/><path d="M260 110 L280 200" stroke-width="1" opacity="0.13"/>
+        <ellipse cx="160" cy="108" rx="90" ry="6" fill="hsl(142 76% 50%)" opacity="0.08" stroke="none"/>
+      </g>
+      <path d="M0 138 Q80 125 160 138 T320 138" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.35" fill="none"/>
+    </svg>
+    <span class="arrow">↗</span>
+  </div>
+  <div class="card-body"><div class="num">04 — GRID-WAVE.HTML</div><h3>Grid Wave</h3><p>Perspective grid warping through space</p><div class="tags"><span class="tag">perspective</span><span class="tag">warp</span><span class="tag">horizon</span></div></div>
+</a>
+
+<!-- 05 circuit -->
+<a class="card" href="./circuit-traces.html">
+  <div class="thumb">
+    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="320" height="200" fill="#000"/>
+      <g stroke="hsl(142 76% 50%)" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M30 50 H110 V90 H170" opacity="0.35"/><path d="M30 100 H90 V150 H200" opacity="0.25"/><path d="M180 30 V80 H260 V130" opacity="0.3"/><path d="M50 160 H140 V120 H220" opacity="0.22"/>
+      </g>
+      <g fill="hsl(142 76% 50%)">
+        <circle cx="30" cy="50" r="4" opacity="0.9"/><circle cx="30" cy="50" r="8" opacity="0.1"/>
+        <circle cx="170" cy="90" r="4" opacity="0.85"/><circle cx="30" cy="100" r="4" opacity="0.8"/>
+        <circle cx="200" cy="150" r="4" opacity="0.8"/><circle cx="180" cy="30" r="4" opacity="0.85"/><circle cx="260" cy="130" r="4" opacity="0.8"/>
+        <circle cx="75" cy="70" r="2.2" opacity="0.9"/><circle cx="145" cy="90" r="2.2" opacity="0.85"/>
+      </g>
+      <rect x="108" y="48" width="10" height="6" rx="1.5" fill="hsl(142 76% 50%)" opacity="0.9"/>
+    </svg>
+    <span class="arrow">↗</span>
+  </div>
+  <div class="card-body"><div class="num">05 — CIRCUIT-TRACES.HTML</div><h3>Circuit Traces</h3><p>PCB traces lighting up at random</p><div class="tags"><span class="tag">traces</span><span class="tag">pads</span><span class="tag">pulses</span></div></div>
+</a>
+
+<!-- 06 data -->
+<a class="card" href="./data-stream.html">
+  <div class="thumb">
+    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="320" height="200" fill="#000"/>
+      <line x1="0" y1="55" x2="320" y2="55" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.12"/>
+      <line x1="0" y1="85" x2="320" y2="85" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.12"/>
+      <line x1="0" y1="115" x2="320" y2="115" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.12"/>
+      <line x1="0" y1="145" x2="320" y2="145" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.12"/>
+      <rect x="20" y="48" width="54" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.85"/><rect x="20" y="48" width="54" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.18"/>
+      <rect x="110" y="48" width="32" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.4"/>
+      <rect x="30" y="78" width="80" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.5"/>
+      <rect x="160" y="78" width="44" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.8"/>
+      <rect x="15" y="108" width="38" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.35"/>
+      <rect x="90" y="108" width="68" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.9"/>
+      <rect x="220" y="108" width="36" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.35"/>
+      <rect x="40" y="138" width="90" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.6"/>
+    </svg>
+    <span class="arrow">↗</span>
+  </div>
+  <div class="card-body"><div class="num">06 — DATA-STREAM.HTML</div><h3>Data Stream</h3><p>Horizontal data bars flowing to infinity</p><div class="tags"><span class="tag">lanes</span><span class="tag">packets</span><span class="tag">throughput</span></div></div>
+</a>
+
+<!-- 07 hex -->
+<a class="card" href="./hex-mesh.html">
+  <div class="thumb">
+    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="320" height="200" fill="#000"/>
+      <g stroke="hsl(142 76% 50%)" fill="none" stroke-width="1">
+        <polygon points="60,50 75,42 90,50 90,68 75,76 60,68" opacity="0.28"/><polygon points="90,50 105,42 120,50 120,68 105,76 90,68" opacity="0.28"/>
+        <polygon points="120,50 135,42 150,50 150,68 135,76 120,68" opacity="0.28"/><polygon points="150,50 165,42 180,50 180,68 165,76 150,68" opacity="0.35"/>
+        <polygon points="180,50 195,42 210,50 210,68 195,76 180,68" opacity="0.28"/><polygon points="75,76 90,68 105,76 105,94 90,102 75,94" opacity="0.28"/>
+        <polygon points="105,76 120,68 135,76 135,94 120,102 105,94" opacity="0.5" fill="hsl(142 76% 50%)" fill-opacity="0.12"/><polygon points="135,76 150,68 165,76 165,94 150,102 135,94" opacity="0.28"/>
+        <polygon points="165,76 180,68 195,76 195,94 180,102 165,94" opacity="0.28"/><polygon points="90,102 105,94 120,102 120,120 105,128 90,120" opacity="0.28"/>
+        <polygon points="120,102 135,94 150,102 150,120 135,128 120,120" opacity="0.28"/><polygon points="150,102 165,94 180,102 180,120 165,128 150,120" opacity="0.45" fill="hsl(142 76% 50%)" fill-opacity="0.1"/>
+      </g>
+    </svg>
+    <span class="arrow">↗</span>
+  </div>
+  <div class="card-body"><div class="num">07 — HEX-MESH.HTML</div><h3>Hex Mesh</h3><p>Honeycomb tessellation breathing slowly</p><div class="tags"><span class="tag">honeycomb</span><span class="tag">breathe</span><span class="tag">tessellate</span></div></div>
+</a>
+
+<!-- 08 synapse -->
+<a class="card" href="./synapse-pulse.html">
+  <div class="thumb">
+    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="320" height="200" fill="#000"/>
+      <circle cx="160" cy="100" r="6" fill="hsl(142 76% 50%)" opacity="0.95"/><circle cx="160" cy="100" r="14" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1" opacity="0.18"/>
+      <circle cx="160" cy="100" r="30" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.5"/>
+      <circle cx="160" cy="100" r="52" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1" opacity="0.28"/>
+      <circle cx="160" cy="100" r="74" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.14"/>
+      <circle cx="160" cy="100" r="92" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.07"/>
+      <circle cx="85" cy="55" r="4" fill="hsl(142 76% 50%)" opacity="0.7"/><circle cx="85" cy="55" r="18" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.2"/>
+      <circle cx="240" cy="145" r="4" fill="hsl(142 76% 50%)" opacity="0.7"/><circle cx="240" cy="145" r="22" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.18"/>
+      <line x1="85" y1="55" x2="155" y2="97" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.1"/>
+    </svg>
+    <span class="arrow">↗</span>
+  </div>
+  <div class="card-body"><div class="num">08 — SYNAPSE-PULSE.HTML</div><h3>Synapse Pulse</h3><p>Radial pulses from firing neurons</p><div class="tags"><span class="tag">radial</span><span class="tag">intersect</span><span class="tag">flash</span></div></div>
+</a>
+
+<!-- 09 binary -->
+<a class="card" href="./binary-rain.html">
+  <div class="thumb">
+    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="320" height="200" fill="#000"/>
+      <g font-family="ui-monospace,monospace" fill="hsl(142 76% 50%)" text-anchor="middle">
+        <text x="50" y="40" font-size="22" opacity="0.8">0</text><text x="110" y="70" font-size="16" opacity="0.45">1</text><text x="180" y="35" font-size="18" opacity="0.55">1</text>
+        <text x="240" y="60" font-size="20" opacity="0.7">0</text><text x="80" y="110" font-size="14" opacity="0.35">1</text><text x="140" y="125" font-size="20" opacity="0.65">0</text>
+        <text x="200" y="115" font-size="13" opacity="0.3">1</text><text x="270" y="130" font-size="15" opacity="0.4">1</text>
+        <text x="60" y="165" font-size="15" opacity="0.3">1</text><text x="160" y="175" font-size="18" opacity="0.5">0</text><text x="230" y="170" font-size="14" opacity="0.32">0</text>
+      </g>
+      <g fill="hsl(142 76% 50%)" opacity="0.08"><circle cx="50" cy="40" r="16"/><circle cx="240" cy="60" r="14"/><circle cx="140" cy="125" r="14"/></g>
+    </svg>
+    <span class="arrow">↗</span>
+  </div>
+  <div class="card-body"><div class="num">09 — BINARY-RAIN.HTML</div><h3>Binary Rain</h3><p>0s and 1s drifting like snow</p><div class="tags"><span class="tag">snow</span><span class="tag">sway</span><span class="tag">glow</span></div></div>
+</a>
+
+<!-- 10 waveform -->
+<a class="card" href="./waveform.html">
+  <div class="thumb">
+    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="320" height="200" fill="#000"/>
+      <g stroke="hsl(142 76% 50% / 0.08)" stroke-width="0.6"><line x1="0" y1="50" x2="320" y2="50"/><line x1="0" y1="90" x2="320" y2="90"/><line x1="0" y1="130" x2="320" y2="130"/><line x1="0" y1="170" x2="320" y2="170"/></g>
+      <path d="M0 52 Q30 20 60 52 T120 52 Q135 80 150 52 T210 52 Q240 15 270 52 T320 52" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.6" opacity="0.9"/>
+      <path d="M0 92 Q40 70 80 92 T160 92 Q180 110 200 92 T280 92 T320 92" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.3" opacity="0.5"/>
+      <path d="M0 132 Q25 100 50 132 T110 132 Q130 150 150 132 T220 132 T320 132" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.1" opacity="0.32"/>
+      <line x1="155" y1="16" x2="155" y2="184" stroke="hsl(142 76% 50%)" stroke-width="1" opacity="0.2"/>
+      <circle cx="155" cy="52" r="3" fill="hsl(142 76% 50%)" opacity="0.95"/>
+    </svg>
+    <span class="arrow">↗</span>
+  </div>
+  <div class="card-body"><div class="num">10 — WAVEFORM.HTML</div><h3>Waveform</h3><p>Oscilloscope lines scanning endlessly</p><div class="tags"><span class="tag">oscilloscope</span><span class="tag">scan</span><span class="tag">EEG</span></div></div>
+</a>
+
+<!-- 11 constellation -->
+<a class="card" href="./constellation.html">
+  <div class="thumb">
+    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="320" height="200" fill="#000"/>
+      <line x1="50" y1="50" x2="110" y2="70" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.22"/>
+      <line x1="110" y1="70" x2="180" y2="45" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.18"/>
+      <line x1="110" y1="70" x2="130" y2="130" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.16"/>
+      <line x1="130" y1="130" x2="200" y2="145" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.18"/>
+      <line x1="200" y1="145" x2="250" y2="90" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.16"/>
+      <line x1="180" y1="45" x2="250" y2="90" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.14"/>
+      <line x1="180" y1="45" x2="160" y2="20" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.1"/>
+      <circle cx="50" cy="50" r="2.5" fill="hsl(142 76% 50%)" opacity="0.9"/><circle cx="50" cy="50" r="6" fill="hsl(142 76% 50%)" opacity="0.08"/>
+      <circle cx="110" cy="70" r="2.5" fill="hsl(142 76% 50%)" opacity="0.9"/>
+      <circle cx="180" cy="45" r="3" fill="hsl(142 76% 50%)" opacity="0.95"/><circle cx="180" cy="45" r="8" fill="hsl(142 76% 50%)" opacity="0.1"/>
+      <circle cx="130" cy="130" r="2.5" fill="hsl(142 76% 50%)" opacity="0.85"/>
+      <circle cx="200" cy="145" r="2.5" fill="hsl(142 76% 50%)" opacity="0.85"/>
+      <circle cx="250" cy="90" r="2.5" fill="hsl(142 76% 50%)" opacity="0.85"/>
+      <circle cx="160" cy="20" r="1.8" fill="hsl(142 76% 50%)" opacity="0.5"/>
+      <circle cx="165" cy="105" r="4" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.18"/>
+    </svg>
+    <span class="arrow">↗</span>
+  </div>
+  <div class="card-body"><div class="num">11 — CONSTELLATION.HTML</div><h3>Constellation</h3><p>Stars that connect as you move</p><div class="tags"><span class="tag">stars</span><span class="tag">interactive</span><span class="tag">burst</span></div></div>
+</a>
+
+</div>
+</div>
+
+<footer class="ftr">
+  <span>built in worktree <strong>feat/ai-green-bg</strong> · black is <strong>#000</strong> · green is <strong>hsl(142 76% 50%)</strong> at 50% lightness / 50% alpha glows</span>
+  <span>open any card → full-screen canvas · ← Gallery to return · no deps · 60fps</span>
+</footer>
+</body>
+</html>

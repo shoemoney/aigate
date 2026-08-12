@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Grid Wave — AI GREEN</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000}
+canvas{display:block;width:100%;height:100%}
+.badge{position:fixed;top:14px;left:14px;z-index:2;display:flex;align-items:center;gap:12px;padding:10px 14px;background:hsla(0 0% 0% / 0.62);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid hsla(142 76% 50% / 0.22);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.badge b{font-size:11px;letter-spacing:0.14em;color:hsl(142 76% 50%);font-weight:700;white-space:nowrap}
+.badge p{font-size:11px;color:#888;letter-spacing:0.01em;white-space:nowrap}
+@media(max-width:560px){.badge p{display:none}}
+.nav{position:fixed;top:14px;right:14px;z-index:2;padding:7px 12px;background:hsla(142 76% 50% / 0.12);border:1px solid hsla(142 76% 50% / 0.28);color:hsl(142 76% 50%);font-family:ui-monospace,monospace;font-size:11px;letter-spacing:0.08em;text-decoration:none;transition:background .15s}
+.nav:hover{background:hsla(142 76% 50% / 0.22)}
+.foot{position:fixed;bottom:10px;right:14px;z-index:2;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
+.vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(130% 130% at 50% 50%, transparent 55%, #000 88%)}
+.hud{position:fixed;bottom:10px;left:14px;z-index:2;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.1em;color:hsla(142 76% 50% / 0.42)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="vignette"></div>
+<div class="badge"><b>GRID WAVE</b><p>Perspective grid warping through space</p></div>
+<a class="nav" href="./index.html">← Gallery</a>
+<div class="foot">04 / 11 · grid-wave · hsl(142 76% 50%) on #000</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, DPR, horizonY, eyeDist, camH;
+
+// world config
+const X_RANGE = 14;
+const Z_RANGE = 22;
+const MIN_DZ = 0.55;
+const H_LINES = 20;
+const V_LINES = 24;
+const Z_STEP = Z_RANGE / H_LINES;
+const X_STEP = (X_RANGE * 2) / (V_LINES - 1);
+
+// wave + motion
+let camZ = 0;
+const SPEED = 1.35; // world units / sec
+const WAVE_A = 0.55;
+const WAVE_B = 0.28;
+
+function wave(wx, wz, t) {
+  return Math.sin(wx * 0.52 + wz * 0.38 + t * 1.15) * WAVE_A
+       + Math.cos(wz * 0.68 - t * 0.85) * WAVE_B
+       + Math.sin(wx * 0.22 - wz * 0.18 + t * 0.55) * 0.18;
+}
+
+function resize() {
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth;
+  H = innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  horizonY = H * 0.40;
+  // eyeDist tuned so floor fills viewport: sy = horizonY + camH*scale
+  // at nearest dz, scale = eyeDist/MIN_DZ → need sy ≈ H
+  // choose camH then derive eyeDist
+  camH = 3.6;
+  eyeDist = (H - horizonY) * MIN_DZ / camH;
+  // clamp eyeDist to reasonable range so ultrawide doesn't blow out
+  eyeDist = Math.max(42, Math.min(110, eyeDist));
+  camH = (H - horizonY) * MIN_DZ / eyeDist;
+}
+addEventListener('resize', resize);
+resize();
+
+// project world (wx, worldWz) -> screen
+// dz = distance ahead of camera, always in [MIN_DZ, Z_RANGE]
+function project(wx, worldWz, t) {
+  const dz = worldWz - camZ; // already offset to be in range, but compute directly
+  // dz is expected positive; guard
+  const d = Math.max(0.12, dz);
+  const scale = eyeDist / d;
+  const wy = wave(wx, worldWz, t);
+  const sx = W * 0.5 + wx * scale;
+  const sy = horizonY + (camH - wy) * scale;
+  // fog factor: 0 at camera, 1 at horizon
+  const fog = Math.pow(d / Z_RANGE, 1.05);
+  return { x: sx, y: sy, fog, scale, d };
+}
+
+function fogAlpha(fogBase, fog) {
+  // near opaque, far transparent
+  return fogBase * Math.pow(1 - fog, 1.35);
+}
+
+// horizon glow drawn each frame behind grid
+function drawHorizonGlow(t) {
+  const gh = Math.min(120, H * 0.14);
+  const y0 = horizonY - gh * 0.55;
+  // soft horizontal bloom
+  const grad = ctx.createLinearGradient(0, y0, 0, horizonY + gh * 0.45);
+  grad.addColorStop(0, 'hsla(142 76% 50% / 0)');
+  grad.addColorStop(0.42, 'hsla(142 76% 50% / 0.09)');
+  grad.addColorStop(0.5, 'hsla(142 76% 50% / 0.24)');
+  grad.addColorStop(0.58, 'hsla(142 76% 50% / 0.10)');
+  grad.addColorStop(1, 'hsla(142 76% 50% / 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, y0, W, gh);
+
+  // crisp horizon line
+  ctx.beginPath();
+  ctx.moveTo(0, horizonY);
+  ctx.lineTo(W, horizonY);
+  ctx.strokeStyle = 'hsla(142 76% 50% / 0.55)';
+  ctx.lineWidth = 1;
+  // subtle shimmer
+  ctx.shadowColor = 'hsl(142 76% 50%)';
+  ctx.shadowBlur = 10;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // second fainter line just below for bloom thickness
+  ctx.beginPath();
+  ctx.moveTo(0, horizonY + 1.5);
+  ctx.lineTo(W, horizonY + 1.5);
+  ctx.strokeStyle = 'hsla(142 76% 50% / 0.18)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // faint vertical fade toward horizon (depth cue in sky)
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
+  skyGrad.addColorStop(0, 'hsla(142 76% 50% / 0)');
+  skyGrad.addColorStop(0.75, 'hsla(142 76% 50% / 0)');
+  skyGrad.addColorStop(1, 'hsla(142 76% 50% / 0.045)');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, horizonY);
+}
+
+let lastT = performance.now() * 0.001;
+
+function frame(nowMs) {
+  const now = nowMs * 0.001;
+  const dt = Math.min(0.05, now - lastT);
+  lastT = now;
+  camZ += SPEED * dt;
+
+  // keep camZ bounded to avoid float drift (modulo Z_RANGE)
+  if (camZ > 1e4) camZ %= Z_RANGE;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  drawHorizonGlow(now);
+
+  // --- horizontal lines (constant worldWz, sweep wx) ---
+  const xSamples = 42;
+  for (let i = 0; i < H_LINES; i++) {
+    // dz for this line, wrapping as camera advances
+    let dz = (i * Z_STEP - (camZ % Z_STEP));
+    // shift to (0, Z_RANGE]
+    dz = ((dz % Z_RANGE) + Z_RANGE) % Z_RANGE;
+    if (dz < 0.01) dz += Z_RANGE;
+    dz += MIN_DZ;
+    if (dz > Z_RANGE + MIN_DZ - 0.02) continue;
+    const worldWz = camZ + dz;
+
+    // skip lines that project above horizon (entirely behind/above)
+    // quick test at center
+    const test = project(0, worldWz, now);
+    if (test.y < horizonY - 6) continue;
+
+    const alphaBase = 0.52;
+    // build polyline
+    let started = false;
+    ctx.beginPath();
+    // outer glow pass (wider, fainter)
+    let glowPath = null;
+
+    const pts = [];
+    for (let s = 0; s < xSamples; s++) {
+      const wx = -X_RANGE + (s / (xSamples - 1)) * (X_RANGE * 2);
+      const p = project(wx, worldWz, now);
+      pts.push(p);
+    }
+
+    // fog for this row (use center depth)
+    const rowFog = Math.pow(dz / Z_RANGE, 1.08);
+    const a = fogAlpha(alphaBase, rowFog);
+    if (a < 0.012) continue;
+    const lw = Math.max(0.55, 1.35 * (1 - rowFog * 0.78));
+
+    // glow
+    ctx.beginPath();
+    for (let k = 0; k < pts.length; k++) {
+      const p = pts[k];
+      if (k === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.strokeStyle = `hsla(142 76% 50% / ${a * 0.28})`;
+    ctx.lineWidth = lw + 2.2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // core line
+    ctx.beginPath();
+    for (let k = 0; k < pts.length; k++) {
+      const p = pts[k];
+      // clip below horizon slightly to avoid drawing sky
+      if (k === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.strokeStyle = `hsla(142 76% 50% / ${a})`;
+    ctx.lineWidth = lw;
+    ctx.stroke();
+  }
+
+  // --- vertical lines (constant wx, sweep dz) ---
+  const zSamples = 44;
+  for (let vi = 0; vi < V_LINES; vi++) {
+    const wx = -X_RANGE + vi * X_STEP;
+
+    const pts = [];
+    for (let s = 0; s < zSamples; s++) {
+      const t = s / (zSamples - 1);
+      // dz spans MIN_DZ..Z_RANGE uniformly in screen depth
+      const dz = MIN_DZ + t * (Z_RANGE - MIN_DZ);
+      const worldWz = camZ + dz;
+      const p = project(wx, worldWz, now);
+      pts.push(p);
+    }
+
+    // draw as segmented line so fog varies along length (gradient alpha)
+    // we draw in chunks; simplest: stroke whole line with varying alpha via gradient
+    // Instead draw segment by segment with per-segment alpha for proper fog
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let s = 0; s < pts.length - 1; s++) {
+      const a = pts[s];
+      const b = pts[s + 1];
+      // skip if both above horizon
+      if (a.y < horizonY - 2 && b.y < horizonY - 2) continue;
+      // clamp to horizon
+      const ay = Math.max(a.y, horizonY + 0.5);
+      const by = Math.max(b.y, horizonY + 0.5);
+      // mid fog
+      const midFog = (a.fog + b.fog) * 0.5;
+      const segA = fogAlpha(0.42, midFog);
+      if (segA < 0.008) continue;
+      const segW = Math.max(0.45, 1.05 * (1 - midFog * 0.72));
+
+      // glow segment
+      ctx.beginPath();
+      ctx.moveTo(a.x, ay);
+      ctx.lineTo(b.x, by);
+      ctx.strokeStyle = `hsla(142 76% 50% / ${segA * 0.22})`;
+      ctx.lineWidth = segW + 1.8;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(a.x, ay);
+      ctx.lineTo(b.x, by);
+      ctx.strokeStyle = `hsla(142 76% 50% / ${segA})`;
+      ctx.lineWidth = segW;
+      ctx.stroke();
+    }
+  }
+
+  // subtle depth fog overlay near horizon (green haze)
+  const fogGrad = ctx.createLinearGradient(0, horizonY, 0, horizonY + (H - horizonY) * 0.42);
+  fogGrad.addColorStop(0, 'hsla(142 76% 50% / 0.085)');
+  fogGrad.addColorStop(0.5, 'hsla(142 76% 50% / 0.02)');
+  fogGrad.addColorStop(1, 'hsla(142 76% 50% / 0)');
+  ctx.fillStyle = fogGrad;
+  ctx.fillRect(0, horizonY, W, (H - horizonY) * 0.5);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// pause when tab hidden to save battery
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) lastT = performance.now() * 0.001;
+});
+</script>
+</body>
+</html>

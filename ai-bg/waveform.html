@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Waveform — AI GREEN</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000}
+canvas{display:block;width:100%;height:100%}
+.badge{position:fixed;top:14px;left:14px;z-index:2;display:flex;flex-direction:column;gap:2px;padding:9px 12px;background:hsla(0 0% 0% / 0.6);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid hsla(142 76% 50% / 0.25);font-family:ui-monospace,monospace;max-width:min(88vw,380px)}
+.badge b{font-size:11px;letter-spacing:0.14em;color:hsl(142 76% 50%);font-weight:700;line-height:1}
+.badge span{font-size:11px;color:hsla(142 76% 50% / 0.72);line-height:1.3}
+.nav{position:fixed;top:14px;right:14px;z-index:2;padding:7px 12px;background:hsla(142 76% 50% / 0.12);border:1px solid hsla(142 76% 50% / 0.28);color:hsl(142 76% 50%);font-family:ui-monospace,monospace;font-size:11px;letter-spacing:0.08em;text-decoration:none}
+.nav:hover{background:hsla(142 76% 50% / 0.22)}
+.foot{position:fixed;bottom:10px;right:14px;z-index:2;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
+.vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(120% 120% at 50% 50%, transparent 55%, #000 88%)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="vignette"></div>
+<div class="badge"><b>Waveform</b><span>Oscilloscope lines scanning endlessly</span></div>
+<a class="nav" href="./index.html">← Gallery</a>
+<div class="foot">10 / 11 · waveform · hsl(142 76% 50%) on #000</div>
+<script>
+(() => {
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d',{alpha:false});
+let W,H,DPR;
+function resize(){
+  DPR=Math.min(devicePixelRatio||1,2);
+  W=innerWidth;H=innerHeight;
+  canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+addEventListener('resize',resize,{passive:true});resize();
+
+// 5 channels — distinct freq/amp/noise characters
+const CH=[
+  {freq:0.019,amp:42,speed:0.88,harm:0.38,noise:0.55,phase:0.0,  y:0.19},
+  {freq:0.032,amp:26,speed:1.38,harm:0.82,noise:0.92,phase:1.9,  y:0.33},
+  {freq:0.012,amp:50,speed:0.62,harm:0.26,noise:0.34,phase:0.7,  y:0.50},
+  {freq:0.025,amp:33,speed:1.10,harm:0.58,noise:0.70,phase:3.1,  y:0.67},
+  {freq:0.041,amp:20,speed:1.74,harm:0.98,noise:1.05,phase:2.4,  y:0.81},
+];
+
+function n1(x,t,seed){
+  return Math.sin(x*0.013+t*0.002+seed)
+       +0.5*Math.sin(x*0.028+t*0.004+seed*1.7)
+       +0.25*Math.sin(x*0.062+t*0.007+seed*2.3);
+}
+function waveY(ch,x,t){
+  const scroll=t*0.15*ch.speed;
+  const ph=t*0.001*ch.speed*2.2+ch.phase;
+  const k=ch.freq;
+  let y=Math.sin((x+scroll)*k+ph)*ch.amp;
+  y+=Math.sin((x+scroll)*k*ch.harm*2.1+ph*1.6)*ch.amp*0.28;
+  y+=Math.sin((x+scroll)*k*3.1+ph*0.7)*ch.amp*0.11;
+  // ECG spikes on channels 0 and 2
+  if(ch===CH[0]||ch===CH[2]){
+    const s=((x+scroll)*0.008+ph)%(Math.PI*2);
+    const spike=Math.exp(-Math.pow((s-2.1)*2.2,2));
+    y+=spike*ch.amp*0.85;
+    const r=Math.exp(-Math.pow((s-2.35)*7,2));
+    y-=r*ch.amp*1.08;
+  }
+  y+=n1(x,t*ch.speed,ch.phase*9)*ch.noise*4.2;
+  y+=Math.sin(x*0.21+t*0.018+ch.phase)*ch.noise*1.1;
+  return y;
+}
+
+function drawGrid(t){
+  // faint grid behind — only green alphas
+  ctx.save();
+  // vertical
+  ctx.strokeStyle='hsla(142 76% 50% / 0.055)';
+  ctx.lineWidth=1;
+  const stepX=Math.max(68,Math.round(W/14));
+  for(let x=0;x<W;x+=stepX){ctx.beginPath();ctx.moveTo(x+0.5,0);ctx.lineTo(x+0.5,H);ctx.stroke();}
+  // horizontal lane dividers
+  for(let i=0;i<CH.length;i++){
+    const cy=Math.round(H*CH[i].y)+0.5;
+    const rowH=H/6;
+    ctx.strokeStyle='hsla(142 76% 50% / 0.075)';
+    ctx.beginPath();ctx.moveTo(0,cy-rowH*0.46);ctx.lineTo(W,cy-rowH*0.46);ctx.stroke();
+    ctx.strokeStyle='hsla(142 76% 50% / 0.045)';
+    ctx.beginPath();ctx.moveTo(0,cy+rowH*0.46);ctx.lineTo(W,cy+rowH*0.46);ctx.stroke();
+  }
+  // ultra-faint scanlines
+  ctx.strokeStyle='hsla(142 76% 50% / 0.022)';
+  for(let y=0;y<H;y+=4){ctx.beginPath();ctx.moveTo(0,y+0.5);ctx.lineTo(W,y+0.5);ctx.stroke();}
+  ctx.restore();
+}
+
+let raf=0;
+function frame(now){
+  // pure black base — no gradient
+  ctx.fillStyle='#000000';
+  ctx.fillRect(0,0,W,H);
+  drawGrid(now);
+
+  const scanSpeed=0.19; // px per ms
+  const scanX=(now*scanSpeed)%(W+80)-40;
+  const pad=16;
+  const left=pad, right=W-pad;
+
+  const step=W>1600?2:W>900?1.6:1.4;
+
+  for(let ci=0;ci<CH.length;ci++){
+    const ch=CH[ci];
+    const cy=H*ch.y;
+
+    // dim future trace (ahead of scan head)
+    ctx.save();
+    ctx.beginPath();
+    let first=true;
+    for(let x=left;x<=right;x+=step){
+      const y=cy+waveY(ch,x-left,now);
+      if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle='hsla(142 76% 50% / 0.14)';
+    ctx.lineWidth=1;
+    ctx.lineJoin='round';ctx.lineCap='round';
+    ctx.stroke();
+    ctx.restore();
+
+    // bright swept portion up to scan head
+    const head=Math.max(left,Math.min(right,scanX));
+    if(head>left){
+      // glow
+      ctx.save();
+      ctx.beginPath();
+      first=true;
+      for(let x=left;x<=head;x+=step){
+        const y=cy+waveY(ch,x-left,now);
+        if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
+      }
+      ctx.shadowColor='hsl(142 76% 50%)';
+      ctx.shadowBlur=14;
+      ctx.strokeStyle='hsla(142 76% 50% / 0.92)';
+      ctx.lineWidth=2;
+      ctx.lineJoin='round';ctx.lineCap='round';
+      ctx.stroke();
+      ctx.shadowBlur=0;
+      // core
+      ctx.beginPath();
+      first=true;
+      for(let x=left;x<=head;x+=step){
+        const y=cy+waveY(ch,x-left,now);
+        if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
+      }
+      ctx.strokeStyle='hsl(142 76% 50%)';
+      ctx.lineWidth=1.2;
+      ctx.stroke();
+      ctx.restore();
+
+      // scan dot at intersection
+      const hy=cy+waveY(ch,head-left,now);
+      ctx.save();
+      ctx.shadowColor='hsl(142 76% 50%)';
+      ctx.shadowBlur=16;
+      ctx.fillStyle='hsl(142 76% 50%)';
+      ctx.beginPath();ctx.arc(head,hy,3.1,0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.fillStyle='hsla(142 76% 50% / 0.95)';
+      ctx.beginPath();ctx.arc(head,hy,1.1,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='hsla(142 76% 50% / 0.45)';
+      ctx.fillRect(head-0.5,hy-7,1,14);
+      ctx.restore();
+    }
+
+    // channel label
+    ctx.save();
+    ctx.fillStyle='hsla(142 76% 50% / 0.35)';
+    ctx.font='10px ui-monospace,monospace';
+    ctx.fillText('CH0'+(ci+1), left+6, cy - ch.amp - 9);
+    ctx.restore();
+  }
+
+  // vertical scan head
+  ctx.save();
+  if(scanX>-20 && scanX<W+20){
+    ctx.shadowColor='hsl(142 76% 50%)';
+    ctx.shadowBlur=18;
+    ctx.strokeStyle='hsla(142 76% 50% / 0.95)';
+    ctx.lineWidth=1.4;
+    ctx.beginPath();ctx.moveTo(scanX,0);ctx.lineTo(scanX,H);ctx.stroke();
+    ctx.shadowBlur=0;
+    ctx.strokeStyle='hsla(142 76% 50% / 1)';
+    ctx.lineWidth=0.9;
+    ctx.beginPath();ctx.moveTo(scanX,0);ctx.lineTo(scanX,H);ctx.stroke();
+    // leading bloom
+    const g=ctx.createLinearGradient(scanX,0,scanX+44,0);
+    g.addColorStop(0,'hsla(142 76% 50% / 0.16)');
+    g.addColorStop(1,'hsla(142 76% 50% / 0)');
+    ctx.fillStyle=g;ctx.fillRect(scanX,0,44,H);
+    // trailing veil
+    const t2=ctx.createLinearGradient(scanX-50,0,scanX,0);
+    t2.addColorStop(0,'hsla(142 76% 50% / 0)');
+    t2.addColorStop(1,'hsla(142 76% 50% / 0.06)');
+    ctx.fillStyle=t2;ctx.fillRect(scanX-50,0,50,H);
+  }
+  ctx.restore();
+
+  // occasional phosphor micro-flicker
+  if((now*0.013)%1<0.05){
+    ctx.fillStyle='hsla(142 76% 50% / 0.012)';
+    ctx.fillRect(0,0,W,H);
+  }
+
+  raf=requestAnimationFrame(frame);
+}
+raf=requestAnimationFrame(frame);
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden) cancelAnimationFrame(raf);
+  else raf=requestAnimationFrame(frame);
+});
+})();
+</script>
+</body>
+</html>
