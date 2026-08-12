@@ -33,9 +33,9 @@ a{color:inherit;text-decoration:none}
 /* card */
 .card{position:relative;background:#0a0a0a;border:1px solid hsla(142 76% 50% / 0.18);overflow:hidden;display:flex;flex-direction:column;transition:border-color .22s, transform .22s, box-shadow .22s;box-shadow:0 4px 14px hsla(142 76% 50% / 0.06);animation:cardIn 420ms ease both}
 .card:hover{border-color:hsla(142 76% 50% / 0.5);transform:translateY(-3px);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.15), 0 16px 40px hsla(142 76% 50% / 0.12)}
-.card:focus-visible{outline:none;border-color:hsla(142 76% 50% / 0.5);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.35), 0 0 18px hsla(142 76% 50% / 0.25)}
-.card:focus-within{outline:none;border-color:hsla(142 76% 50% / 0.5);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.35), 0 0 18px hsla(142 76% 50% / 0.25)}
-.badge a:focus-visible,.nav:focus-visible{outline:none;border-color:hsla(142 76% 50% / 0.5);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.35), 0 0 18px hsla(142 76% 50% / 0.25)}
+.card:focus-visible{outline:none;border-color:hsla(142 76% 50% / 0.55);box-shadow:0 0 0 2px #000, 0 0 0 4px hsla(142 76% 50% / 0.32), 0 0 18px hsla(142 76% 50% / 0.22)}
+.card:focus-within{outline:none;border-color:hsla(142 76% 50% / 0.55);box-shadow:0 0 0 2px #000, 0 0 0 4px hsla(142 76% 50% / 0.32), 0 0 18px hsla(142 76% 50% / 0.22)}
+.badge a:focus-visible,.nav:focus-visible{outline:none;border-color:hsla(142 76% 50% / 0.55);box-shadow:0 0 0 2px #000, 0 0 0 4px hsla(142 76% 50% / 0.32), 0 0 18px hsla(142 76% 50% / 0.22)}
 .thumb{aspect-ratio:16/10;background:#000;position:relative;overflow:hidden;border-bottom:1px solid hsla(142 76% 50% / 0.1);display:flex;align-items:center;justify-content:center}
 .thumb svg{width:100%;height:100%}
 .card-body{padding:14px 14px 12px;flex:1;display:flex;flex-direction:column;gap:6px}
@@ -61,6 +61,12 @@ a{color:inherit;text-decoration:none}
 .card:nth-child(9){animation-delay:320ms}
 .card:nth-child(10){animation-delay:360ms}
 .card:nth-child(11){animation-delay:400ms}
+@media(max-width:480px){.ftr{flex-direction:column;gap:8px;align-items:flex-start}}
+@media(max-width:360px){
+  .thumb{padding:4px;min-height:118px}
+  .thumb svg *{vector-effect:non-scaling-stroke}
+  .card{border-radius:10px}
+}
 @media(prefers-reduced-motion:reduce){.card{transition:none;animation:none}}
 </style>
 </head>
