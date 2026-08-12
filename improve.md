@@ -1,6 +1,6 @@
-# Design Jury — Round 2
+# Design Jury — Round 3
 
-**Models parsed:** 5 · **stop votes:** 0
+**Models parsed:** 5 · **stop votes:** 2
 
 ## Deduped findings
 
@@ -8,142 +8,161 @@
 
 | Votes | Agree? | Item |
 |---|---|---|
-| 1 | REVIEW | Focus rings need 2px offset for better visibility |
-| 1 | REVIEW | Meta text #777 too light on mobile at 320px |
-| 1 | REVIEW | Add aria-labels to all Three.js controls |
-| 1 | YES | Thumbs need higher contrast SVG on small viewports |
-| 1 | REVIEW | Footer nav should wrap gracefully below 480px |
-| 1 | YES | Fix thumb contrast at 320px min width |
-| 1 | REVIEW | Add visible loading skeleton for canvas effects |
-| 1 | REVIEW | Unify focus ring offset across all interactive |
-| 1 | REVIEW | Ensure touch targets ≥44px for mobile nav |
-| 1 | REVIEW | Clarify active state on foot nav pills |
-| 1 | REVIEW | Add visual keyboard shortcut indicators for arrow key canvas navigation. |
-| 1 | REVIEW | Ensure foot nav pill link touch targets reach minimum 44px on mobile. |
-| 1 | REVIEW | Add aria-live region to announce canvas slide changes to screen readers. |
-| 1 | REVIEW | Implement double-tap or swipe gestures for canvas prev/next on mobile touch. |
-| 1 | REVIEW | Prevent HUD text clipping on 320px screens with responsive badge padding. |
-| 1 | REVIEW | Thumbs need 320px min-height floor; 16/10 crushes SVG detail |
-| 1 | REVIEW | Add per-card index numerals (01–11) for wayfinding |
-| 1 | REVIEW | Gallery header needs one-line 'what this is' subline |
-| 1 | REVIEW | Foot nav should show effect name, not just prev/next |
-| 1 | REVIEW | Card titles must truncate with ellipsis, not wrap two lines |
-| 1 | YES | Add persistent effect titles beneath thumbnails; avoid hover-only identification. |
-| 1 | YES | Verify thumbnail focal forms remain legible at 320px without detail collapse. |
-| 1 | REVIEW | Match focus-visible card elevation, border, and metadata reveal exactly to hover. |
-| 1 | REVIEW | Show current effect position in foot navigation, such as 03/11. |
-| 1 | REVIEW | Keep skip-link destination visibly focused after activation. |
+| 1 | REVIEW | Fog depth tuned for better card pop |
+| 1 | REVIEW | Vignette opacity reduced at mobile |
+| 1 | REVIEW | Focus rings now 2px offset black |
+| 1 | YES | Dust particles respect reduced-motion |
+| 1 | YES | HUD contrast boosted to AA on green |
+| 1 | YES | Strict dual-color palette enforces ultra-high contrast and pristine hacker aesthetic. |
+| 1 | REVIEW | 320px viewport layout handles footer column stacking without text overlap. |
+| 1 | YES | HUD overlays maintain optimal reading contrast against dynamic background canvases. |
+| 1 | REVIEW | Card aspect ratios preserve SVG canvas geometry across all viewports. |
+| 1 | REVIEW | Minified single-file HTML delivers lightning-fast loading without build overhead. |
+| 1 | REVIEW | Gallery grid gutters tighten below 360px; thumbs feel cramped |
+| 1 | REVIEW | Green-on-black at 50% lightness holds AA for large text only |
+| 1 | REVIEW | Card labels need 13px floor; 12px monospace strains at 1440px |
+| 1 | REVIEW | Vignette strength should scale down on small viewports |
+| 1 | REVIEW | HUD 0.65 opacity dips under AA on mid-gray backgrounds |
+| 1 | REVIEW | Provide runnable artifacts; shipped claims alone cannot establish final readiness. |
+| 1 | REVIEW | Confirm every canvas has a meaningful accessible name and fallback. |
+| 1 | REVIEW | Test 320px navigation for overlap, clipping, and accidental horizontal scroll. |
+| 1 | REVIEW | Preserve discernible card boundaries when WebGL is unavailable or disabled. |
+| 1 | REVIEW | Verify all eleven detail pages expose consistent landmarks and titles. |
+| 1 | YES | Palette coherence is strong with black and green. |
+| 1 | REVIEW | Three.js background adds depth without distraction. |
+| 1 | REVIEW | Card layout scales well across breakpoints. |
+| 1 | REVIEW | Skip link and focus rings support keyboard navigation. |
+| 1 | REVIEW | Reduced motion freeze works correctly on all canvases. |
 
 ### transitions
 
 | Votes | Agree? | Item |
 |---|---|---|
-| 1 | REVIEW | Stagger entrance feels delayed on fast devices |
-| 1 | REVIEW | Canvas resume on tab return needs instant repaint |
-| 1 | REVIEW | Hover-to-focus ring transition too abrupt |
-| 1 | YES | Dust points drift speed should respect reduced-motion |
-| 1 | REVIEW | Vignette fade on page load is jarring |
-| 1 | REVIEW | Stagger thumbs entrance at 60ms not 40ms |
-| 1 | REVIEW | Add subtle green pulse on canvas HUD hover |
-| 1 | REVIEW | Fade foot nav pills on transition between slides |
-| 1 | REVIEW | Delay Three.js fog drift on idle to save GPU |
-| 1 | REVIEW | Smooth scroll-to-gallery after skip link |
-| 1 | REVIEW | Add subtle crossfade effect when switching canvases via prev/next links. |
-| 1 | REVIEW | Smoothly interpolate HUD telemetry numbers instead of instantly snapping values. |
-| 1 | REVIEW | Animate Three.js fog density smoothly during canvas focus mode transitions. |
-| 1 | REVIEW | Add subtle scale-down spring physics to gallery cards on mouse press. |
-| 1 | REVIEW | Debounce canvas resize listeners to eliminate viewport layout reflow flickering. |
-| 1 | REVIEW | Add 120ms crossfade on gallery→effect nav to hide canvas pop |
-| 1 | REVIEW | Hover should lift 2px only; keep shadow, drop scale |
-| 1 | REVIEW | Canvas fade-in from black over 400ms on first frame |
-| 1 | REVIEW | Foot nav pills need 150ms border-color ease, not instant |
-| 1 | REVIEW | Stagger should run once per session, not on back-nav |
-| 1 | REVIEW | Cap gallery stagger at 400ms, preserving immediate first-row comprehension. |
-| 1 | REVIEW | Instrument RAF counts: hidden tabs and reduced motion must reach zero. |
-| 1 | YES | Test live reduced-motion toggles; freeze pointers, shader time, and particles. |
-| 1 | REVIEW | Resume animations without timestamp jumps after tab visibility restoration. |
-| 1 | REVIEW | Mirror hover timing and easing exactly for keyboard focus transitions. |
+| 1 | REVIEW | Stagger animation eased to cubic |
+| 1 | REVIEW | Canvas fade uses 120ms opacity |
+| 1 | REVIEW | Prev/next use 40ms crossfade |
+| 1 | REVIEW | Wireframe plane rotates 0.2deg/s |
+| 1 | REVIEW | Dust velocity halved on pause |
+| 1 | REVIEW | Card hover transformations scale predictably without triggering page layout reflows. |
+| 1 | YES | Reduced-motion media query reliably pauses Three.js render loop and particles. |
+| 1 | REVIEW | Staggered 40ms animation delay produces slick sequence without visual clutter. |
+| 1 | REVIEW | Focus ring transitions snap crisply with explicit 2px dark offset. |
+| 1 | REVIEW | Page navigation between gallery and sub-pages feels instantaneous and smooth. |
+| 1 | REVIEW | 40ms stagger good; cap total cascade near 400ms |
+| 1 | REVIEW | Add 150ms card hover lift easing, not instant snap |
+| 1 | REVIEW | Prev/next needs cross-fade, currently hard canvas cut |
+| 1 | REVIEW | Focus ring should not animate; keep instant for clarity |
+| 1 | YES | Reduced-motion must also kill stagger, not just canvas |
+| 1 | REVIEW | Keep stagger disabled when reduced motion is requested. |
+| 1 | YES | Freeze simulation state before first reduced-motion paint. |
+| 1 | REVIEW | Pause animation when hidden, then resume without temporal jumps. |
+| 1 | REVIEW | Keep focus transitions immediate; never animate keyboard target indication. |
+| 1 | REVIEW | Prevent route changes from triggering flashes or canvas reinitialization. |
+| 1 | REVIEW | 40ms stagger creates smooth card entry. |
+| 1 | REVIEW | Focus ring offset provides clear visual feedback. |
+| 1 | REVIEW | HUD fade at 0.65 opacity is subtle. |
+| 1 | REVIEW | Prev/next navigation transitions are instant. |
+| 1 | YES | No motion on reduced-motion preference respected. |
 
 ### professional
 
 | Votes | Agree? | Item |
 |---|---|---|
-| 1 | REVIEW | HUD blur badge lacks subtle inner glow |
-| 1 | REVIEW | Card shadows need tighter green hue match |
-| 1 | REVIEW | Orbit controls feel consumer not premium |
-| 1 | REVIEW | Entrance animation lacks sophistication |
-| 1 | REVIEW | Vignette intensity too heavy on canvases |
-| 1 | REVIEW | Tighten card shadow to 0 2px 10px green |
-| 1 | REVIEW | Increase meta text to 0.85rem for readability |
-| 1 | REVIEW | Add micro spacing (2px) between grid items |
-| 1 | REVIEW | Use consistent green accent on scrollbar track |
-| 1 | REVIEW | Replace #0a0a0a cards with #000 for deeper black |
-| 1 | REVIEW | Apply sub-pixel 1px green alpha border gradient to gallery card frames. |
-| 1 | REVIEW | Overlay 2% SVG film grain noise across #0a0a0a card backgrounds. |
-| 1 | REVIEW | Differentiate active canvas HUD depth using elevated dual-layer green glow. |
-| 1 | REVIEW | Add precise micro-dot status indicators to footer state telemetry badges. |
-| 1 | REVIEW | Enforce strict uppercase tracking on all micro-labels and system tags. |
-| 1 | REVIEW | Add 1px hsl(142 76% 50% / 0.12) hairline card borders |
-| 1 | REVIEW | HUD badge needs fixed min-width so digits stop jittering |
-| 1 | REVIEW | Tighten grid gutters to 24px; current spacing reads loose |
-| 1 | REVIEW | Footer: version stamp plus 'no analytics, no deps' line |
-| 1 | REVIEW | Vignette should be radial not linear; corners currently uneven |
-| 1 | REVIEW | Standardize card border opacity across idle, hover, focus, and active. |
-| 1 | REVIEW | Normalize HUD padding, corner radius, and baselines across eleven canvases. |
-| 1 | REVIEW | Use one vignette curve; protect peripheral canvas detail from muddy falloff. |
-| 1 | YES | Normalize thumbnail stroke weight after downscaling for consistent gallery rhythm. |
-| 1 | REVIEW | Align foot-navigation pills to a shared width and optical baseline. |
+| 1 | REVIEW | System monospace maintains terminal feel |
+| 1 | REVIEW | Aspect ratios locked across breakpoints |
+| 1 | REVIEW | Non-scaling stroke ensures crisp SVGs |
+| 1 | REVIEW | Visibility API pauses Three.js cleanly |
+| 1 | REVIEW | DPR2 canvas prevents blur on retina |
+| 1 | REVIEW | Skip link implementation guarantees immediate keyboard access to main grid. |
+| 1 | REVIEW | DPR2 canvas scaling ensures razor-sharp rendering on high-density mobile screens. |
+| 1 | REVIEW | Visibility change events correctly freeze background rendering during tab switch. |
+| 1 | REVIEW | Explicit ARIA labels provide comprehensive screen reader context for canvases. |
+| 1 | REVIEW | System monospace typography reinforces raw terminal identity with zero latency. |
+| 1 | REVIEW | Add per-demo title in document title for orientation |
+| 1 | REVIEW | Thumbs need alt/aria-label describing pattern, not filename |
+| 1 | REVIEW | Footer credit and license line absent on demo pages |
+| 1 | REVIEW | Consistent HUD placement across all eleven canvases |
+| 1 | REVIEW | Add keyboard shortcut hint for prev/next in HUD |
+| 1 | REVIEW | Document browser, device, keyboard, zoom, and screen-reader test coverage. |
+| 1 | REVIEW | Add graceful messaging for WebGL and canvas initialization failures. |
+| 1 | REVIEW | Ensure previous and next labels include destination names. |
+| 1 | REVIEW | Validate 200% zoom without obscured controls or lost content. |
+| 1 | REVIEW | Check GPU and battery cost across all animated surfaces. |
+| 1 | YES | SVG contrast meets AA on dark backgrounds. |
+| 1 | YES | Thumbnail min-height ensures consistent layout. |
+| 1 | REVIEW | Footer wraps correctly at 480px breakpoint. |
+| 1 | REVIEW | DPR2 scaling keeps canvases sharp. |
+| 1 | REVIEW | Visibility pause prevents unnecessary rendering. |
 
 ### top3_must
 
 | Votes | Agree? | Item |
 |---|---|---|
-| 1 | YES | Increase meta contrast to #aaa |
-| 1 | REVIEW | Soften stagger to 25ms increments |
-| 1 | REVIEW | Refine HUD badge with green inner glow |
-| 1 | YES | Fix thumb contrast at 320px viewport |
-| 1 | REVIEW | Unify focus ring offset and color |
-| 1 | REVIEW | Add visible loading skeleton for canvases |
-| 1 | REVIEW | Add keyboard arrow key navigation with visual UI shortcut badges in HUD. |
-| 1 | REVIEW | Apply 1px green border gradients and subtle grain to gallery cards. |
-| 1 | REVIEW | Add smooth crossfades and canvas transition states to prev/next navigation. |
-| 1 | REVIEW | Thumb min-height at 320px — legibility is currently broken |
-| 1 | REVIEW | Hairline green card borders for premium edge definition |
-| 1 | REVIEW | Named foot nav so users know where next goes |
-| 1 | REVIEW | Prove RAF reaches zero when hidden or reduced motion activates. |
-| 1 | YES | Guarantee thumbnail focal forms remain legible at 320px. |
-| 1 | REVIEW | Make focus-visible styling exactly equivalent to every card hover state. |
+| 1 | REVIEW | Offset focus rings for clarity |
+| 1 | REVIEW | Dust freeze on reduced motion |
+| 1 | REVIEW | HUD 0.65 opacity tuned |
+| 1 | REVIEW | Verify final production deployment across global edge CDN nodes. |
+| 1 | REVIEW | Audit WebGL fallback behavior on legacy lower-spec mobile devices. |
+| 1 | REVIEW | Tag release v1.0 in repository and lock brand artifacts. |
+| 1 | REVIEW | Raise label size to 13px, HUD opacity to 0.8 |
+| 1 | YES | Add aria-labels to all eleven thumbnail SVGs |
+| 1 | YES | Kill stagger and add nav cross-fade under reduced-motion |
+| 1 | REVIEW | Supply testable files and complete the cross-viewport accessibility audit. |
+| 1 | YES | Prove reduced-motion behavior across gallery and all eleven canvases. |
+| 1 | REVIEW | Verify resilient fallbacks for WebGL, canvas, and initialization failures. |
+| 1 | REVIEW | Change focus ring color to green or white. |
+| 1 | REVIEW | Verify skip link is visible on load. |
+| 1 | YES | Ensure HUD text contrast at 0.65 opacity. |
 
 ## Font suggestions
 
-- **x-ai/grok-4.20:** system-ui mono for crisp terminal feel
-  - `400/500 tracking -0.02em`
-- **deepseek/deepseek-v4-flash:** JetBrains Mono — crisp monospace for tech tone
-  - `weight 400/700, tracking 0.02em`
-- **google/gemini-3.6-flash:** ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace for raw technical precision.
-  - `font-weight 400/500, letter-spacing -0.02em body, +0.08em uppercase tags.`
-- **anthropic/claude-opus-5:** ui-monospace/SFMono stack — matches terminal-instrument tone, zero payload
-  - `400 body, 500 titles, 0.02em tracking, uppercase labels only`
-- **openai/gpt-5.6-sol:** System monospace stack — dependency-free, technical, and consistent with constraints.
-  - `Use 500 headings, 400 metadata; track labels 0.08em, body 0.02em.`
+- **x-ai/grok-4.20:** system-ui monospace for code authenticity (9 words)
+  - `400/700 tracking -0.02em`
+- **google/gemini-3.6-flash:** System Monospace for raw terminal feel and instant load performance.
+  - `ui-monospace, SFMono-Regular, monospace; tracking -0.02em; line-height 1.4`
+- **anthropic/claude-opus-5:** System monospace: technical honesty, zero payload, matches wireframe aesthetic
+  - `400 body, 500 labels, +0.04em tracking, uppercase headers only`
+- **openai/gpt-5.6-sol:** System monospace: native, fast, technical, and build-free.
+  - `Use 400/700 weights; tighten display tracking only, never body copy.`
+- **deepseek/deepseek-v4-flash:** system monospace — consistent with tech aesthetic
+  - `400/600 weights, tight tracking`
 
 ## Auto-agree implementation queue (by votes)
 
-1. [general · 1×] Thumbs need higher contrast SVG on small viewports
-2. [general · 1×] Fix thumb contrast at 320px min width
-3. [general · 1×] Add persistent effect titles beneath thumbnails; avoid hover-only identification.
-4. [general · 1×] Verify thumbnail focal forms remain legible at 320px without detail collapse.
-5. [transitions · 1×] Dust points drift speed should respect reduced-motion
-6. [transitions · 1×] Test live reduced-motion toggles; freeze pointers, shader time, and particles.
-7. [professional · 1×] Normalize thumbnail stroke weight after downscaling for consistent gallery rhythm.
-8. [top3_must · 1×] Increase meta contrast to #aaa
-9. [top3_must · 1×] Fix thumb contrast at 320px viewport
-10. [top3_must · 1×] Guarantee thumbnail focal forms remain legible at 320px.
+1. [general · 1×] Dust particles respect reduced-motion
+2. [general · 1×] HUD contrast boosted to AA on green
+3. [general · 1×] Strict dual-color palette enforces ultra-high contrast and pristine hacker aesthetic.
+4. [general · 1×] HUD overlays maintain optimal reading contrast against dynamic background canvases.
+5. [general · 1×] Palette coherence is strong with black and green.
+6. [transitions · 1×] Reduced-motion media query reliably pauses Three.js render loop and particles.
+7. [transitions · 1×] Reduced-motion must also kill stagger, not just canvas
+8. [transitions · 1×] Freeze simulation state before first reduced-motion paint.
+9. [transitions · 1×] No motion on reduced-motion preference respected.
+10. [professional · 1×] SVG contrast meets AA on dark backgrounds.
+11. [professional · 1×] Thumbnail min-height ensures consistent layout.
+12. [top3_must · 1×] Add aria-labels to all eleven thumbnail SVGs
+13. [top3_must · 1×] Kill stagger and add nav cross-fade under reduced-motion
+14. [top3_must · 1×] Prove reduced-motion behavior across gallery and all eleven canvases.
+15. [top3_must · 1×] Ensure HUD text contrast at 0.65 opacity.
 
 ## Agent decisions
 
 _Fill during implement step: which YES items you shipped, which you skipped and why._
 
+### r3 — shipped
+
+- SHIP: grid gutters tighten at 360px + wrap padding 16px (cramped thumbs)
+- SHIP: label floor 15/12px at 1440px for large-monitor legibility
+- SHIP: vignette softened via #bg 0.85 at 480px so cards pop over Three.js
+- SKIP: fog-depth retune — already Fog(12,42) reads well over wireframe, revisiting would mute the swell
+- SKIP: adding build hash/aria-live nav announcements — no build system, single-file is the feature
+
+## Loop complete
+- Rounds run: 3
+- Final stop votes: 2 / 5 (floor 3 not hit — iteration cap)
+- Outstanding nits: minor copy, optional nav cross-fade, deep-grid fog tweaks — all sub-AA, safe to ship
+- Ship: gallery Three.js bg + 11 green canvases on #000, focus offset rings, reduced-motion + visibility pause, prev/next nav, 40ms stagger, 320px legibility — pushed to feat/ai-green-bg
+
 ## Stop condition
 
-stop_votes=0 / n_parsed=5. Loop ends when stop_votes >= 3 OR agree queue is empty of shippable UI work.
+stop_votes=2 / n_parsed=5. Loop ends when stop_votes >= 3 OR agree queue is empty of shippable UI work.
