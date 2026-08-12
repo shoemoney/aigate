@@ -62,11 +62,17 @@ a{color:inherit;text-decoration:none}
 .card:nth-child(10){animation-delay:360ms}
 .card:nth-child(11){animation-delay:400ms}
 @media(max-width:480px){.ftr{flex-direction:column;gap:8px;align-items:flex-start}}
+@media(max-width:480px){ #bg{opacity:0.85} }
+@media(min-width:1440px){ .card-body h3{font-size:15px} .card-body p{font-size:12px} }
 @media(max-width:360px){
+  .grid{gap:12px}
+  .wrap{padding:16px}
   .thumb{padding:4px;min-height:118px}
   .thumb svg *{vector-effect:non-scaling-stroke}
   .card{border-radius:10px}
 }
+@media(min-width:1440px){ .card-body h3{font-size:15px} .card-body p{font-size:12px} }
+@media(max-width:480px){ #bg{opacity:0.85} }
 @media(prefers-reduced-motion:reduce){.card{transition:none;animation:none}}
 </style>
 </head>
@@ -376,7 +382,8 @@ addEventListener('resize', onResize); onResize();
 let t=0, raf=0, paused=document.hidden;
 document.addEventListener('visibilitychange', ()=> paused=document.hidden );
 if(reduce){
-// freeze on first frame, respect motion preference
+  // reduced-motion: dust frozen when reduce
+  // freeze on first frame, respect motion preference
   const pa = geom.attributes.position;
   for(let i=0;i<pa.count;i++){
     const x=pa.getX(i), y=pa.getY(i);
