@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AI GREEN — 11 Effects</title>
+<title>AI GREEN — WINNER: Binary Rain 0–10</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--green:hsl(142 76% 50%);--green-dim:hsla(142 76% 50% / 0.18);--green-mid:hsla(142 76% 50% / 0.5);--green-glow:hsla(142 76% 50% / 0.12)}
@@ -14,320 +14,111 @@ body{min-height:100vh;display:flex;flex-direction:column}
 a{color:inherit;text-decoration:none}
 /* skip link */
 .skip{position:absolute;left:-9999px;top:12px;background:var(--green);color:#000;padding:8px 14px;font-size:12px;letter-spacing:0.08em;font-weight:700;z-index:100;border:1px solid var(--green);text-transform:uppercase}
-.skip:focus{left:12px;outline:none;border-color:hsla(142 76% 50% / 0.5);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.35), 0 0 18px hsla(142 76% 50% / 0.25)}
-.skip:focus-visible{left:12px;outline:none;border-color:hsla(142 76% 50% / 0.5);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.35), 0 0 18px hsla(142 76% 50% / 0.25)}
+.skip:focus,.skip:focus-visible{left:12px;outline:none;border-color:hsla(142 76% 50% / 0.5);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.35), 0 0 18px hsla(142 76% 50% / 0.25)}
 /* header */
-.hdr{padding:48px 32px 32px;border-bottom:1px solid var(--green-dim);position:relative;overflow:hidden}
-.hdr::before{content:'';position:absolute;inset:0;background:radial-gradient(600px 300px at 30% 0%, var(--green-glow), transparent 70%);pointer-events:none}
-.hdr h1{font-size:clamp(42px,8vw,96px);font-weight:900;letter-spacing:-0.06em;line-height:0.85;position:relative}
+.hdr{padding:52px 32px 34px;border-bottom:1px solid var(--green-dim);position:relative;overflow:hidden}
+.hdr::before{content:'';position:absolute;inset:0;background:radial-gradient(700px 340px at 30% 0%, var(--green-glow), transparent 70%);pointer-events:none}
+.hdr h1{font-size:clamp(44px,8vw,96px);font-weight:900;letter-spacing:-0.06em;line-height:0.85;position:relative}
 .hdr h1 span{color:var(--green)}
-.hdr .sub{margin-top:12px;font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:var(--green);opacity:0.9}
+.hdr .sub{margin-top:14px;font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:var(--green);opacity:0.95}
 .hdr .meta{margin-top:8px;font-size:11px;color:#777;letter-spacing:0.06em}
 .hdr .badges{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
 .badge{font-size:10px;letter-spacing:0.12em;text-transform:uppercase;padding:5px 10px;border:1px solid var(--green-dim);color:var(--green);background:hsla(142 76% 50% / 0.06)}
-/* grid */
-.wrap{flex:1;padding:28px;max-width:1280px;width:100%;margin:0 auto}
-.grid{display:grid;gap:16px;grid-template-columns:repeat(1,1fr)}
-@media(min-width:640px){.grid{grid-template-columns:repeat(2,1fr)}}
-@media(min-width:1024px){.grid{grid-template-columns:repeat(3,1fr)}}
-/* card */
-.card{position:relative;background:#0a0a0a;border:1px solid hsla(142 76% 50% / 0.18);overflow:hidden;display:flex;flex-direction:column;transition:border-color .22s, transform .22s, box-shadow .22s;box-shadow:0 4px 14px hsla(142 76% 50% / 0.06);animation:cardIn 420ms ease both}
-.card:hover{border-color:hsla(142 76% 50% / 0.5);transform:translateY(-3px);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.15), 0 16px 40px hsla(142 76% 50% / 0.12)}
-.card:focus-visible{outline:none;border-color:hsla(142 76% 50% / 0.55);box-shadow:0 0 0 2px #000, 0 0 0 4px hsla(142 76% 50% / 0.32), 0 0 18px hsla(142 76% 50% / 0.22)}
-.card:focus-within{outline:none;border-color:hsla(142 76% 50% / 0.55);box-shadow:0 0 0 2px #000, 0 0 0 4px hsla(142 76% 50% / 0.32), 0 0 18px hsla(142 76% 50% / 0.22)}
-.badge a:focus-visible,.nav:focus-visible{outline:none;border-color:hsla(142 76% 50% / 0.55);box-shadow:0 0 0 2px #000, 0 0 0 4px hsla(142 76% 50% / 0.32), 0 0 18px hsla(142 76% 50% / 0.22)}
-.thumb{aspect-ratio:16/10;background:#000;position:relative;overflow:hidden;border-bottom:1px solid hsla(142 76% 50% / 0.1);display:flex;align-items:center;justify-content:center}
+.badge.winner{background:var(--green);color:#000;border-color:var(--green);font-weight:800}
+/* wrap */
+.wrap{flex:1;padding:36px 28px 32px;max-width:860px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+.winner-label{display:flex;align-items:center;gap:10px;justify-content:center}
+.winner-pill{font-size:11px;letter-spacing:0.16em;text-transform:uppercase;padding:7px 14px;background:var(--green);color:#000;font-weight:900;border:1px solid var(--green)}
+.winner-sub{font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--green);opacity:0.8}
+/* winner card */
+.winner-card{position:relative;background:#0a0a0a;border:1.5px solid hsla(142 76% 50% / 0.42);overflow:hidden;display:flex;flex-direction:column;box-shadow:0 0 0 1px hsla(142 76% 50% / 0.18), 0 20px 60px hsla(142 76% 50% / 0.18);animation:cardIn 520ms ease both}
+.winner-card:hover{border-color:hsla(142 76% 50% / 0.62);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.22), 0 24px 70px hsla(142 76% 50% / 0.22)}
+.winner-card:focus-visible{outline:none;border-color:hsla(142 76% 50% / 0.62);box-shadow:0 0 0 2px #000, 0 0 0 4px hsla(142 76% 50% / 0.32), 0 24px 70px hsla(142 76% 50% / 0.22)}
+.thumb{aspect-ratio:16/9;background:#000;position:relative;overflow:hidden;border-bottom:1px solid hsla(142 76% 50% / 0.14);display:flex;align-items:center;justify-content:center}
 .thumb svg{width:100%;height:100%}
-.card-body{padding:14px 14px 12px;flex:1;display:flex;flex-direction:column;gap:6px}
+.crown{position:absolute;top:14px;left:14px;padding:6px 10px;background:var(--green);color:#000;font-size:10px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;border:1px solid var(--green)}
+.arrow{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:999px;background:var(--green);color:#000;display:flex;align-items:center;justify-content:center;font-size:15px;transition:.2s}
+.winner-card:hover .arrow{transform:translate(2px,-2px)}
+.card-body{padding:18px 18px 16px;display:flex;flex-direction:column;gap:8px}
 .num{font-size:10px;letter-spacing:0.18em;color:var(--green);opacity:0.7}
-.card-body h3{font-size:14px;font-weight:700;letter-spacing:-0.02em;line-height:1}
-.card-body p{font-size:11px;color:#888;line-height:1.5}
-.tags{margin-top:auto;padding-top:10px;display:flex;gap:6px;flex-wrap:wrap}
-.tag{font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:3px 6px;background:hsla(142 76% 50% / 0.08);color:var(--green);border:1px solid hsla(142 76% 50% / 0.14)}
-.arrow{position:absolute;top:10px;right:10px;width:28px;height:28px;border-radius:999px;background:var(--green);color:#000;display:flex;align-items:center;justify-content:center;font-size:13px;opacity:0;transform:translateY(4px);transition:.2s}
-.card:hover .arrow{opacity:1;transform:none}
+.card-body h3{font-size:20px;font-weight:800;letter-spacing:-0.03em;line-height:1}
+.card-body p{font-size:12px;color:#aaa;line-height:1.6}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.tag{font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:4px 8px;background:hsla(142 76% 50% / 0.08);color:var(--green);border:1px solid hsla(142 76% 50% / 0.14)}
+.cta{margin-top:12px;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;background:var(--green);color:#000;font-size:11px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;border:1px solid var(--green)}
+.cta:hover{background:hsla(142 76% 50% / 0.92)}
+.note{font-size:11px;color:#666;letter-spacing:0.04em;line-height:1.6;border:1px dashed hsla(142 76% 50% / 0.16);padding:14px 16px;background:hsla(142 76% 50% / 0.04)}
 /* footer */
 .ftr{padding:18px 28px;border-top:1px solid hsla(142 76% 50% / 0.12);display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;font-size:11px;color:#555;letter-spacing:0.04em}
 .ftr strong{color:var(--green);font-weight:600}
-@keyframes cardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-.card:nth-child(1){animation-delay:0ms}
-.card:nth-child(2){animation-delay:40ms}
-.card:nth-child(3){animation-delay:80ms}
-.card:nth-child(4){animation-delay:120ms}
-.card:nth-child(5){animation-delay:160ms}
-.card:nth-child(6){animation-delay:200ms}
-.card:nth-child(7){animation-delay:240ms}
-.card:nth-child(8){animation-delay:280ms}
-.card:nth-child(9){animation-delay:320ms}
-.card:nth-child(10){animation-delay:360ms}
-.card:nth-child(11){animation-delay:400ms}
-@media(max-width:480px){.ftr{flex-direction:column;gap:8px;align-items:flex-start}}
-@media(max-width:480px){ #bg{opacity:0.85} }
-@media(min-width:1440px){ .card-body h3{font-size:15px} .card-body p{font-size:12px} }
-@media(max-width:360px){
-  .grid{gap:12px}
-  .wrap{padding:16px}
-  .thumb{padding:4px;min-height:118px}
-  .thumb svg *{vector-effect:non-scaling-stroke}
-  .card{border-radius:10px}
-}
-@media(prefers-reduced-motion:reduce){.card{transition:none;animation:none}}
+@keyframes cardIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media(max-width:480px){.ftr{flex-direction:column;gap:8px;align-items:flex-start} #bg{opacity:0.85}}
+@media(min-width:1440px){ .card-body h3{font-size:21px} .card-body p{font-size:13px} }
+@media(prefers-reduced-motion:reduce){.winner-card{animation:none}}
 </style>
 </head>
 <body>
-<a href="#gallery" class="skip">Skip to gallery</a>
+<a href="#winner" class="skip">Skip to winner</a>
 <header class="hdr">
   <h1>AI<span>GREEN</span></h1>
-  <div class="sub">11 effects · green at 50% lightness on black · click to enter</div>
-  <div class="meta">hsl(142 76% 50%) — every glow, every line, every particle. background is always #000000.</div>
+  <div class="sub">WINNER — Binary Rain 0–10 · green at 50% lightness on black</div>
+  <div class="meta">hsl(142 76% 50%) — single champion, pure #000000. numbers 0–10 only. Three.js plane behind.</div>
   <div class="badges">
-    <span class="badge">worktree feat/ai-green-bg</span>
-    <span class="badge">pure canvas · no libs</span>
-    <span class="badge">60 fps · resize-safe · DPR aware</span>
+    <span class="badge winner">🏆 WINNER</span>
+    <span class="badge">binary-rain.html</span>
+    <span class="badge">0 1 2 3 4 5 6 7 8 9 10</span>
+    <span class="badge">three.js · 60fps · DPR aware</span>
   </div>
 </header>
 
-<div class="wrap">
-<div class="grid" id="gallery">
-
-<!-- 01 neural -->
-<a class="card" href="./neural-network.html">
-  <div class="thumb">
-    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-      <rect width="320" height="200" fill="#000"/>
-      <circle cx="60" cy="80" r="7" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.6" opacity="0.9"/><circle cx="60" cy="80" r="12" fill="hsl(142 76% 50%)" opacity="0.08"/>
-      <circle cx="160" cy="40" r="7" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.6" opacity="0.9"/><circle cx="160" cy="40" r="12" fill="hsl(142 76% 50%)" opacity="0.08"/>
-      <circle cx="260" cy="70" r="7" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.6" opacity="0.9"/>
-      <circle cx="100" cy="140" r="7" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.6" opacity="0.9"/>
-      <circle cx="220" cy="150" r="7" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.6" opacity="0.9"/>
-      <circle cx="160" cy="100" r="9" fill="hsl(142 76% 50%)" opacity="0.9"/><circle cx="160" cy="100" r="18" fill="hsl(142 76% 50%)" opacity="0.12"/>
-      <path d="M67 80 C100 70 130 50 153 42" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.35" fill="none"/>
-      <path d="M167 42 C190 50 235 60 253 70" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.25" fill="none"/>
-      <path d="M67 85 C95 110 85 125 98 135" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.25" fill="none"/>
-      <path d="M106 140 C130 125 140 110 152 102" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.35" fill="none"/>
-      <path d="M168 102 C190 115 210 135 216 144" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.25" fill="none"/>
-      <path d="M155 92 C175 85 235 80 253 74" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.2" fill="none"/>
-      <circle cx="115" cy="68" r="2.5" fill="hsl(142 76% 50%)" opacity="0.9"/>
-      <circle cx="190" cy="118" r="2.5" fill="hsl(142 76% 50%)" opacity="0.9"/>
-    </svg>
-    <span class="arrow">↗</span>
+<div class="wrap" id="winner">
+  <div class="winner-label">
+    <span class="winner-pill">🏆 Jury Winner</span>
+    <span class="winner-sub">selected from 11 · now solo</span>
   </div>
-  <div class="card-body"><div class="num">01 — NEURAL-NETWORK.HTML</div><h3>Neural Network</h3><p>Nodes &amp; synapses firing across a black void</p><div class="tags"><span class="tag">nodes</span><span class="tag">packets</span><span class="tag">propagation</span></div></div>
-</a>
 
-<!-- 02 matrix -->
-<a class="card" href="./matrix-rain.html">
-  <div class="thumb">
-    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-      <rect width="320" height="200" fill="#000"/>
-      <g font-family="ui-monospace,monospace" font-size="13" fill="hsl(142 76% 50%)" text-anchor="middle">
-        <text x="48" y="20" opacity="0.95">◆</text><text x="48" y="40" opacity="0.5">1</text><text x="48" y="60" opacity="0.25">⊐</text><text x="48" y="80" opacity="0.12">0</text>
-        <text x="96" y="36" opacity="0.12">⊏</text><text x="96" y="56" opacity="0.35">0</text><text x="96" y="76" opacity="0.7">1</text><text x="96" y="96" opacity="0.95">◇</text><text x="96" y="116" opacity="0.3">⟨</text>
-        <text x="144" y="18" opacity="0.3">1</text><text x="144" y="38" opacity="0.6">◆</text><text x="144" y="58" opacity="0.95">0</text><text x="144" y="78" opacity="0.4">⟩</text><text x="144" y="98" opacity="0.15">1</text>
-        <text x="192" y="28" opacity="0.15">0</text><text x="192" y="48" opacity="0.5">◇</text><text x="192" y="68" opacity="0.95">1</text><text x="192" y="88" opacity="0.3">⊐</text>
-        <text x="240" y="22" opacity="0.55">⟨</text><text x="240" y="42" opacity="0.95">1</text><text x="240" y="62" opacity="0.4">0</text><text x="240" y="82" opacity="0.18">◆</text><text x="240" y="102" opacity="0.08">1</text>
-      </g>
-    </svg>
-    <span class="arrow">↗</span>
+  <a class="winner-card" href="./binary-rain.html" aria-label="Open Binary Rain 0–10 winner">
+    <div class="thumb">
+      <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="0–10 digits drifting">
+        <rect width="640" height="360" fill="#000"/>
+        <g font-family="ui-monospace,monospace" fill="hsl(142 76% 50%)" text-anchor="middle" font-weight="700">
+          <text x="72" y="62" font-size="28" opacity="0.92">0</text><text x="148" y="48" font-size="22" opacity="0.62">4</text><text x="214" y="72" font-size="24" opacity="0.55">10</text><text x="298" y="54" font-size="20" opacity="0.42">7</text><text x="378" y="66" font-size="26" opacity="0.88">2</text><text x="452" y="42" font-size="18" opacity="0.38">9</text><text x="528" y="58" font-size="22" opacity="0.52">5</text><text x="588" y="38" font-size="16" opacity="0.32">3</text>
+          <text x="88" y="138" font-size="18" opacity="0.38">6</text><text x="162" y="126" font-size="26" opacity="0.72">1</text><text x="242" y="142" font-size="20" opacity="0.48">8</text><text x="318" y="118" font-size="16" opacity="0.32">3</text><text x="392" y="132" font-size="22" opacity="0.58">10</text><text x="468" y="118" font-size="18" opacity="0.42">0</text><text x="542" y="132" font-size="20" opacity="0.5">4</text>
+          <text x="62" y="214" font-size="16" opacity="0.30">9</text><text x="132" y="202" font-size="22" opacity="0.52">5</text><text x="208" y="218" font-size="18" opacity="0.40">2</text><text x="284" y="198" font-size="24" opacity="0.62">6</text><text x="362" y="212" font-size="20" opacity="0.48">1</text><text x="438" y="198" font-size="16" opacity="0.34">8</text><text x="514" y="214" font-size="22" opacity="0.55">10</text><text x="582" y="202" font-size="18" opacity="0.38">7</text>
+          <text x="96" y="288" font-size="20" opacity="0.46">10</text><text x="176" y="302" font-size="16" opacity="0.30">2</text><text x="252" y="286" font-size="22" opacity="0.54">0</text><text x="334" y="298" font-size="18" opacity="0.36">4</text><text x="412" y="286" font-size="24" opacity="0.64">9</text><text x="486" y="302" font-size="16" opacity="0.28">1</text><text x="562" y="288" font-size="20" opacity="0.44">3</text>
+        </g>
+        <g fill="hsl(142 76% 50%)" opacity="0.09"><circle cx="72" cy="62" r="18"/><circle cx="378" cy="66" r="20"/><circle cx="284" cy="198" r="18"/><circle cx="252" cy="286" r="18"/><circle cx="412" cy="286" r="18"/></g>
+        <!-- subtle 0-10 legend -->
+        <g font-family="ui-monospace,monospace" fill="hsla(142 76% 50% / 0.38)" text-anchor="middle" font-size="9" letter-spacing="1">
+          <text x="320" y="344">0  1  2  3  4  5  6  7  8  9  10  —  11 values  ·  snow drift  ·  flip on 0.5–1s</text>
+        </g>
+      </svg>
+      <span class="crown">🏆 WINNER</span>
+      <span class="arrow">↗</span>
+    </div>
+    <div class="card-body">
+      <div class="num">WINNER · BINARY-RAIN.HTML — 0 1 2 3 4 5 6 7 8 9 10</div>
+      <h3>Binary Rain 0–10 — Snow Drift Champion</h3>
+      <p>78 glyphs drifting like snow, each a random digit 0–10. Sway via <code style="color:var(--green)">sin(time*sway + phase)</code>, flip to a new 0–10 value every ~0.8s with green flash + halo. Size 11–22px, alpha 0.22–0.84, speed 0.45–1.8. That's the whole palette — nothing else survived the cut.</p>
+      <div class="tags"><span class="tag">0–10</span><span class="tag">snow</span><span class="tag">sway</span><span class="tag">flip</span><span class="tag">winner</span></div>
+      <span class="cta">Enter 0–10 →</span>
+    </div>
+  </a>
+
+  <div class="note">
+    <strong style="color:var(--green)">What changed:</strong> numbers 0–1 → <strong style="color:var(--green)">0–10</strong> (11 values, "10" as two-char glyph) via <code>DIGITS = ['0'…'10']</code> + <code>randDigit()</code>; gallery stripped from 11 cards to this single winner hero. Other 10 effect files remain on disk but are no longer linked — winner takes the grid. Three.js undulating plane stays behind as the stage.
   </div>
-  <div class="card-body"><div class="num">02 — MATRIX-RAIN.HTML</div><h3>Matrix Rain</h3><p>Falling glyphs in 50% green light</p><div class="tags"><span class="tag">glyphs</span><span class="tag">stagger</span><span class="tag">trail</span></div></div>
-</a>
-
-<!-- 03 particle -->
-<a class="card" href="./particle-field.html">
-  <div class="thumb">
-    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-      <rect width="320" height="200" fill="#000"/>
-      <line x1="60" y1="60" x2="140" y2="80" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.2"/>
-      <line x1="140" y1="80" x2="220" y2="55" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.22"/>
-      <line x1="90" y1="140" x2="140" y2="80" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.22"/>
-      <line x1="220" y1="55" x2="260" y2="120" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.15"/>
-      <line x1="90" y1="140" x2="170" y2="150" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.20"/>
-      <line x1="170" y1="150" x2="260" y2="120" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.20"/>
-      <circle cx="60" cy="60" r="5" fill="hsl(142 76% 50%)" opacity="0.9"/><circle cx="60" cy="60" r="11" fill="hsl(142 76% 50%)" opacity="0.09"/>
-      <circle cx="140" cy="80" r="5" fill="hsl(142 76% 50%)" opacity="0.9"/><circle cx="140" cy="80" r="11" fill="hsl(142 76% 50%)" opacity="0.09"/>
-      <circle cx="220" cy="55" r="4" fill="hsl(142 76% 50%)" opacity="0.75"/><circle cx="220" cy="55" r="9" fill="hsl(142 76% 50%)" opacity="0.07"/>
-      <circle cx="90" cy="140" r="4" fill="hsl(142 76% 50%)" opacity="0.75"/>
-      <circle cx="170" cy="150" r="4" fill="hsl(142 76% 50%)" opacity="0.7"/>
-      <circle cx="260" cy="120" r="5" fill="hsl(142 76% 50%)" opacity="0.85"/><circle cx="260" cy="120" r="11" fill="hsl(142 76% 50%)" opacity="0.08"/>
-    </svg>
-    <span class="arrow">↗</span>
-  </div>
-  <div class="card-body"><div class="num">03 — PARTICLE-FIELD.HTML</div><h3>Particle Field</h3><p>Drifting orbs with proximity links</p><div class="tags"><span class="tag">wander</span><span class="tag">links</span><span class="tag">attract</span></div></div>
-</a>
-
-<!-- 04 grid -->
-<a class="card" href="./grid-wave.html">
-  <div class="thumb">
-    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-      <rect width="320" height="200" fill="#000"/>
-      <g stroke="hsl(142 76% 50%)" fill="none">
-        <path d="M0 140 H320" stroke-width="1" opacity="0.22"/><path d="M0 155 H320" stroke-width="1" opacity="0.18"/><path d="M0 172 H320" stroke-width="1" opacity="0.28"/><path d="M0 188 H320" stroke-width="1.1" opacity="0.4"/>
-        <path d="M40 110 L20 200" stroke-width="1" opacity="0.22"/><path d="M95 105 L85 200" stroke-width="1" opacity="0.15"/><path d="M150 100 L150 200" stroke-width="1" opacity="0.2"/><path d="M205 105 L215 200" stroke-width="1" opacity="0.15"/><path d="M260 110 L280 200" stroke-width="1" opacity="0.22"/>
-        <ellipse cx="160" cy="108" rx="90" ry="6" fill="hsl(142 76% 50%)" opacity="0.08" stroke="none"/>
-      </g>
-      <path d="M0 138 Q80 125 160 138 T320 138" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.35" fill="none"/>
-    </svg>
-    <span class="arrow">↗</span>
-  </div>
-  <div class="card-body"><div class="num">04 — GRID-WAVE.HTML</div><h3>Grid Wave</h3><p>Perspective grid warping through space</p><div class="tags"><span class="tag">perspective</span><span class="tag">warp</span><span class="tag">horizon</span></div></div>
-</a>
-
-<!-- 05 circuit -->
-<a class="card" href="./circuit-traces.html">
-  <div class="thumb">
-    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-      <rect width="320" height="200" fill="#000"/>
-      <g stroke="hsl(142 76% 50%)" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M30 50 H110 V90 H170" opacity="0.35"/><path d="M30 100 H90 V150 H200" opacity="0.25"/><path d="M180 30 V80 H260 V130" opacity="0.3"/><path d="M50 160 H140 V120 H220" opacity="0.22"/>
-      </g>
-      <g fill="hsl(142 76% 50%)">
-        <circle cx="30" cy="50" r="4" opacity="0.9"/><circle cx="30" cy="50" r="8" opacity="0.1"/>
-        <circle cx="170" cy="90" r="4" opacity="0.85"/><circle cx="30" cy="100" r="4" opacity="0.8"/>
-        <circle cx="200" cy="150" r="4" opacity="0.8"/><circle cx="180" cy="30" r="4" opacity="0.85"/><circle cx="260" cy="130" r="4" opacity="0.8"/>
-        <circle cx="75" cy="70" r="2.2" opacity="0.9"/><circle cx="145" cy="90" r="2.2" opacity="0.85"/>
-      </g>
-      <rect x="108" y="48" width="10" height="6" rx="1.5" fill="hsl(142 76% 50%)" opacity="0.9"/>
-    </svg>
-    <span class="arrow">↗</span>
-  </div>
-  <div class="card-body"><div class="num">05 — CIRCUIT-TRACES.HTML</div><h3>Circuit Traces</h3><p>PCB traces lighting up at random</p><div class="tags"><span class="tag">traces</span><span class="tag">pads</span><span class="tag">pulses</span></div></div>
-</a>
-
-<!-- 06 data -->
-<a class="card" href="./data-stream.html">
-  <div class="thumb">
-    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-      <rect width="320" height="200" fill="#000"/>
-      <line x1="0" y1="55" x2="320" y2="55" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.20"/>
-      <line x1="0" y1="85" x2="320" y2="85" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.20"/>
-      <line x1="0" y1="115" x2="320" y2="115" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.20"/>
-      <line x1="0" y1="145" x2="320" y2="145" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.20"/>
-      <rect x="20" y="48" width="54" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.85"/><rect x="20" y="48" width="54" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.18"/>
-      <rect x="110" y="48" width="32" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.4"/>
-      <rect x="30" y="78" width="80" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.5"/>
-      <rect x="160" y="78" width="44" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.8"/>
-      <rect x="15" y="108" width="38" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.35"/>
-      <rect x="90" y="108" width="68" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.9"/>
-      <rect x="220" y="108" width="36" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.35"/>
-      <rect x="40" y="138" width="90" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.6"/>
-    </svg>
-    <span class="arrow">↗</span>
-  </div>
-  <div class="card-body"><div class="num">06 — DATA-STREAM.HTML</div><h3>Data Stream</h3><p>Horizontal data bars flowing to infinity</p><div class="tags"><span class="tag">lanes</span><span class="tag">packets</span><span class="tag">throughput</span></div></div>
-</a>
-
-<!-- 07 hex -->
-<a class="card" href="./hex-mesh.html">
-  <div class="thumb">
-    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-      <rect width="320" height="200" fill="#000"/>
-      <g stroke="hsl(142 76% 50%)" fill="none" stroke-width="1">
-        <polygon points="60,50 75,42 90,50 90,68 75,76 60,68" opacity="0.28"/><polygon points="90,50 105,42 120,50 120,68 105,76 90,68" opacity="0.28"/>
-        <polygon points="120,50 135,42 150,50 150,68 135,76 120,68" opacity="0.28"/><polygon points="150,50 165,42 180,50 180,68 165,76 150,68" opacity="0.35"/>
-        <polygon points="180,50 195,42 210,50 210,68 195,76 180,68" opacity="0.28"/><polygon points="75,76 90,68 105,76 105,94 90,102 75,94" opacity="0.28"/>
-        <polygon points="105,76 120,68 135,76 135,94 120,102 105,94" opacity="0.5" fill="hsl(142 76% 50%)" fill-opacity="0.12"/><polygon points="135,76 150,68 165,76 165,94 150,102 135,94" opacity="0.28"/>
-        <polygon points="165,76 180,68 195,76 195,94 180,102 165,94" opacity="0.28"/><polygon points="90,102 105,94 120,102 120,120 105,128 90,120" opacity="0.28"/>
-        <polygon points="120,102 135,94 150,102 150,120 135,128 120,120" opacity="0.28"/><polygon points="150,102 165,94 180,102 180,120 165,128 150,120" opacity="0.45" fill="hsl(142 76% 50%)" fill-opacity="0.1"/>
-      </g>
-    </svg>
-    <span class="arrow">↗</span>
-  </div>
-  <div class="card-body"><div class="num">07 — HEX-MESH.HTML</div><h3>Hex Mesh</h3><p>Honeycomb tessellation breathing slowly</p><div class="tags"><span class="tag">honeycomb</span><span class="tag">breathe</span><span class="tag">tessellate</span></div></div>
-</a>
-
-<!-- 08 synapse -->
-<a class="card" href="./synapse-pulse.html">
-  <div class="thumb">
-    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-      <rect width="320" height="200" fill="#000"/>
-      <circle cx="160" cy="100" r="6" fill="hsl(142 76% 50%)" opacity="0.95"/><circle cx="160" cy="100" r="14" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1" opacity="0.18"/>
-      <circle cx="160" cy="100" r="30" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.5"/>
-      <circle cx="160" cy="100" r="52" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1" opacity="0.28"/>
-      <circle cx="160" cy="100" r="74" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.22"/>
-      <circle cx="160" cy="100" r="92" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.07"/>
-      <circle cx="85" cy="55" r="4" fill="hsl(142 76% 50%)" opacity="0.7"/><circle cx="85" cy="55" r="18" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.2"/>
-      <circle cx="240" cy="145" r="4" fill="hsl(142 76% 50%)" opacity="0.7"/><circle cx="240" cy="145" r="22" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.18"/>
-      <line x1="85" y1="55" x2="155" y2="97" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.1"/>
-    </svg>
-    <span class="arrow">↗</span>
-  </div>
-  <div class="card-body"><div class="num">08 — SYNAPSE-PULSE.HTML</div><h3>Synapse Pulse</h3><p>Radial pulses from firing neurons</p><div class="tags"><span class="tag">radial</span><span class="tag">intersect</span><span class="tag">flash</span></div></div>
-</a>
-
-<!-- 09 binary -->
-<a class="card" href="./binary-rain.html">
-  <div class="thumb">
-    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-      <rect width="320" height="200" fill="#000"/>
-      <g font-family="ui-monospace,monospace" fill="hsl(142 76% 50%)" text-anchor="middle">
-        <text x="50" y="40" font-size="22" opacity="0.8">0</text><text x="110" y="70" font-size="16" opacity="0.45">1</text><text x="180" y="35" font-size="18" opacity="0.55">1</text>
-        <text x="240" y="60" font-size="20" opacity="0.7">0</text><text x="80" y="110" font-size="14" opacity="0.35">1</text><text x="140" y="125" font-size="20" opacity="0.65">0</text>
-        <text x="200" y="115" font-size="13" opacity="0.3">1</text><text x="270" y="130" font-size="15" opacity="0.4">1</text>
-        <text x="60" y="165" font-size="15" opacity="0.3">1</text><text x="160" y="175" font-size="18" opacity="0.5">0</text><text x="230" y="170" font-size="14" opacity="0.32">0</text>
-      </g>
-      <g fill="hsl(142 76% 50%)" opacity="0.08"><circle cx="50" cy="40" r="16"/><circle cx="240" cy="60" r="14"/><circle cx="140" cy="125" r="14"/></g>
-    </svg>
-    <span class="arrow">↗</span>
-  </div>
-  <div class="card-body"><div class="num">09 — BINARY-RAIN.HTML</div><h3>Binary Rain</h3><p>0s and 1s drifting like snow</p><div class="tags"><span class="tag">snow</span><span class="tag">sway</span><span class="tag">glow</span></div></div>
-</a>
-
-<!-- 10 waveform -->
-<a class="card" href="./waveform.html">
-  <div class="thumb">
-    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-      <rect width="320" height="200" fill="#000"/>
-      <g stroke="hsl(142 76% 50% / 0.08)" stroke-width="0.6"><line x1="0" y1="50" x2="320" y2="50"/><line x1="0" y1="90" x2="320" y2="90"/><line x1="0" y1="130" x2="320" y2="130"/><line x1="0" y1="170" x2="320" y2="170"/></g>
-      <path d="M0 52 Q30 20 60 52 T120 52 Q135 80 150 52 T210 52 Q240 15 270 52 T320 52" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.6" opacity="0.9"/>
-      <path d="M0 92 Q40 70 80 92 T160 92 Q180 110 200 92 T280 92 T320 92" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.3" opacity="0.5"/>
-      <path d="M0 132 Q25 100 50 132 T110 132 Q130 150 150 132 T220 132 T320 132" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.1" opacity="0.32"/>
-      <line x1="155" y1="16" x2="155" y2="184" stroke="hsl(142 76% 50%)" stroke-width="1" opacity="0.2"/>
-      <circle cx="155" cy="52" r="3" fill="hsl(142 76% 50%)" opacity="0.95"/>
-    </svg>
-    <span class="arrow">↗</span>
-  </div>
-  <div class="card-body"><div class="num">10 — WAVEFORM.HTML</div><h3>Waveform</h3><p>Oscilloscope lines scanning endlessly</p><div class="tags"><span class="tag">oscilloscope</span><span class="tag">scan</span><span class="tag">EEG</span></div></div>
-</a>
-
-<!-- 11 constellation -->
-<a class="card" href="./constellation.html">
-  <div class="thumb">
-    <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
-      <rect width="320" height="200" fill="#000"/>
-      <line x1="50" y1="50" x2="110" y2="70" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.22"/>
-      <line x1="110" y1="70" x2="180" y2="45" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.18"/>
-      <line x1="110" y1="70" x2="130" y2="130" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.16"/>
-      <line x1="130" y1="130" x2="200" y2="145" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.18"/>
-      <line x1="200" y1="145" x2="250" y2="90" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.16"/>
-      <line x1="180" y1="45" x2="250" y2="90" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.22"/>
-      <line x1="180" y1="45" x2="160" y2="20" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.1"/>
-      <circle cx="50" cy="50" r="2.5" fill="hsl(142 76% 50%)" opacity="0.9"/><circle cx="50" cy="50" r="6" fill="hsl(142 76% 50%)" opacity="0.08"/>
-      <circle cx="110" cy="70" r="2.5" fill="hsl(142 76% 50%)" opacity="0.9"/>
-      <circle cx="180" cy="45" r="3" fill="hsl(142 76% 50%)" opacity="0.95"/><circle cx="180" cy="45" r="8" fill="hsl(142 76% 50%)" opacity="0.1"/>
-      <circle cx="130" cy="130" r="2.5" fill="hsl(142 76% 50%)" opacity="0.85"/>
-      <circle cx="200" cy="145" r="2.5" fill="hsl(142 76% 50%)" opacity="0.85"/>
-      <circle cx="250" cy="90" r="2.5" fill="hsl(142 76% 50%)" opacity="0.85"/>
-      <circle cx="160" cy="20" r="1.8" fill="hsl(142 76% 50%)" opacity="0.5"/>
-      <circle cx="165" cy="105" r="4" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.18"/>
-    </svg>
-    <span class="arrow">↗</span>
-  </div>
-  <div class="card-body"><div class="num">11 — CONSTELLATION.HTML</div><h3>Constellation</h3><p>Stars that connect as you move</p><div class="tags"><span class="tag">stars</span><span class="tag">interactive</span><span class="tag">burst</span></div></div>
-</a>
-
-</div>
 </div>
 
 <footer class="ftr">
-  <span>built in worktree <strong>feat/ai-green-bg</strong> · black is <strong>#000</strong> · green is <strong>hsl(142 76% 50%)</strong> at 50% lightness / 50% alpha glows · <strong>three.js</strong> bg</span>
-  <span>open any card → full-screen canvas · ← Gallery to return · three.js · 60fps</span>
+  <span>winner <strong>binary-rain 0–10</strong> · black <strong>#000</strong> · green <strong>hsl(142 76% 50%)</strong> · <strong>three.js</strong> bg</span>
+  <span>11 → 1 · <a href="./binary-rain.html" style="color:var(--green);text-decoration:underline">open winner ↗</a></span>
 </footer>
+
 <canvas id="bg" aria-hidden="true"></canvas>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 <script type="module">
 import * as THREE from 'three';
-// honors prefers-reduced-motion + tab hidden
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const canvas = document.getElementById('bg');
 const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
@@ -339,7 +130,6 @@ const camera = new THREE.PerspectiveCamera(52, innerWidth/innerHeight, 0.1, 100)
 camera.position.set(0, 4.2, 14);
 camera.lookAt(0, 0, 0);
 const green = new THREE.Color('hsl(142, 76%, 50%)');
-// — undulating wireframe plane —
 const PLANE_W = 34, PLANE_H = 34, SEG = 48;
 const geom = new THREE.PlaneGeometry(PLANE_W, PLANE_H, SEG, SEG);
 const mat = new THREE.MeshBasicMaterial({ color: green, wireframe:true, transparent:true, opacity:0.13 });
@@ -347,85 +137,41 @@ const plane = new THREE.Mesh(geom, mat);
 plane.rotation.x = -Math.PI/2 + 0.18;
 plane.position.y = -2.8;
 scene.add(plane);
-// — floating dust points —
 const N = 220;
 const pGeo = new THREE.BufferGeometry();
 const pos = new Float32Array(N*3);
 const speeds = new Float32Array(N);
-for(let i=0;i<N;i++){
-  pos[i*3]= (Math.random()-0.5)*26;
-  pos[i*3+1]= Math.random()*10 -1.5;
-  pos[i*3+2]= (Math.random()-0.5)*26;
-  speeds[i]= 0.35+Math.random()*0.9;
-}
+for(let i=0;i<N;i++){ pos[i*3]=(Math.random()-0.5)*26; pos[i*3+1]=Math.random()*10-1.5; pos[i*3+2]=(Math.random()-0.5)*26; speeds[i]=0.35+Math.random()*0.9; }
 pGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
 const pMat = new THREE.PointsMaterial({ color: green, size:0.07, transparent:true, opacity:0.55, sizeAttenuation:true });
 const points = new THREE.Points(pGeo, pMat);
 scene.add(points);
-// — soft horizon glow (tiny additive plane at horizon) —
 const glowGeo = new THREE.PlaneGeometry(40, 6);
 const glowMat = new THREE.MeshBasicMaterial({ color: green, transparent:true, opacity:0.08, side:THREE.DoubleSide });
 const glow = new THREE.Mesh(glowGeo, glowMat);
 glow.position.set(0, -0.15, -8);
-glow.rotation.x = 0;
 scene.add(glow);
-
-function onResize(){
-  const w=innerWidth,h=innerHeight;
-  renderer.setSize(w,h,false);
-  camera.aspect=w/h; camera.updateProjectionMatrix();
-}
+function onResize(){ const w=innerWidth,h=innerHeight; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
 addEventListener('resize', onResize); onResize();
-
 let t=0, raf=0, paused=document.hidden;
 document.addEventListener('visibilitychange', ()=> paused=document.hidden );
 if(reduce){
-  // reduced-motion: dust frozen when reduce
-  // freeze on first frame, respect motion preference
   const pa = geom.attributes.position;
-  for(let i=0;i<pa.count;i++){
-    const x=pa.getX(i), y=pa.getY(i);
-    pa.setZ(i, Math.sin(x*0.5)*0.35 + Math.cos(y*0.42)*0.28);
-  }
-  pa.needsUpdate=true; geom.computeVertexNormals();
-  renderer.render(scene,camera);
+  for(let i=0;i<pa.count;i++){ const x=pa.getX(i), y=pa.getY(i); pa.setZ(i, Math.sin(x*0.5)*0.35 + Math.cos(y*0.42)*0.28); }
+  pa.needsUpdate=true; geom.computeVertexNormals(); renderer.render(scene,camera);
 } else {
   const pa = geom.attributes.position;
-  const origZ = new Float32Array(pa.count);
-  for(let i=0;i<pa.count;i++) origZ[i]=pa.getZ(i);
   function tick(now){
     if(paused) { raf=requestAnimationFrame(tick); return; }
     t = now*0.001;
-    // warp plane vertices
-    for(let i=0;i<pa.count;i++){
-      const x=pa.getX(i), y=pa.getY(i);
-      const z = Math.sin(x*0.52 + y*0.31 + t*0.9)*0.55
-              + Math.cos(y*0.68 - t*0.65)*0.28
-              + Math.sin(x*0.18 - y*0.22 + t*0.42)*0.22;
-      pa.setZ(i, z);
-    }
+    for(let i=0;i<pa.count;i++){ const x=pa.getX(i), y=pa.getY(i); pa.setZ(i, Math.sin(x*0.52 + y*0.31 + t*0.9)*0.55 + Math.cos(y*0.68 - t*0.65)*0.28 + Math.sin(x*0.18 - y*0.22 + t*0.42)*0.22); }
     pa.needsUpdate=true;
-    // gentle camera orbit
-    camera.position.x = Math.sin(t*0.08)*1.4;
-    camera.position.z = 14 + Math.cos(t*0.08)*0.6;
-    camera.lookAt(0, -0.2, -2);
-    // drift points upward slowly and loop
+    camera.position.x = Math.sin(t*0.08)*1.4; camera.position.z = 14 + Math.cos(t*0.08)*0.6; camera.lookAt(0, -0.2, -2);
     const p = pGeo.attributes.position;
-    for(let i=0;i<N;i++){
-      let y=p.getY(i);
-      y += 0.004*speeds[i];
-      if(y>8) y = -2.2;
-      p.setY(i, y);
-      // slight sway
-      p.setX(i, p.getX(i) + Math.sin(t*0.3 + i*0.11)*0.001);
-    }
+    for(let i=0;i<N;i++){ let y=p.getY(i); y+=0.004*speeds[i]; if(y>8) y=-2.2; p.setY(i,y); p.setX(i, p.getX(i)+Math.sin(t*0.3+i*0.11)*0.001); }
     p.needsUpdate=true;
-    // pulse opacities slightly
-    mat.opacity = 0.11 + Math.sin(t*0.7)*0.03;
-    pMat.opacity = 0.48 + Math.sin(t*0.5)*0.10;
-    glow.material.opacity = 0.06 + Math.sin(t*0.6)*0.02;
-    renderer.render(scene,camera);
-    raf=requestAnimationFrame(tick);
+    mat.opacity=0.11+Math.sin(t*0.7)*0.03; pMat.opacity=0.48+Math.sin(t*0.5)*0.10; glow.material.opacity=0.06+Math.sin(t*0.6)*0.02;
+    renderer.render(scene,camera); raf=requestAnimationFrame(tick);
   }
   raf=requestAnimationFrame(tick);
 }
