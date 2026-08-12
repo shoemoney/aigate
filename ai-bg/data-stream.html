@@ -12,7 +12,10 @@ canvas{display:block;width:100%;height:100%}
 .badge span{font-size:11px;color:hsla(142 76% 50% / 0.65)}
 .nav{position:fixed;top:14px;right:14px;z-index:2;padding:7px 12px;background:hsla(142 76% 50% / 0.12);border:1px solid hsla(142 76% 50% / 0.28);color:hsl(142 76% 50%);font-family:ui-monospace,monospace;font-size:11px;letter-spacing:0.08em;text-decoration:none}
 .nav:hover{background:hsla(142 76% 50% / 0.22)}
-.foot{position:fixed;bottom:10px;right:14px;z-index:2;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
+.foot{position:fixed;bottom:10px;right:14px;z-index:2;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
+.foot-nav{display:inline-flex;gap:8px;align-items:center}
+.foot-nav a{color:hsl(142 76% 50%);text-decoration:none;border:1px solid hsla(142 76% 50% / 0.18);padding:2px 8px;border-radius:999px;font-size:10px;letter-spacing:0.08em}
+.foot-nav a:hover{border-color:hsla(142 76% 50% / 0.4);background:hsla(142 76% 50% / 0.08)}
 .vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(120% 120% at 50% 50%, transparent 55%, #000 88%)}
 .scan{position:fixed;inset:0;pointer-events:none;opacity:1;background:repeating-linear-gradient(to bottom, transparent 0px, transparent 2px, hsla(142 76% 50% / 0.035) 2px, hsla(142 76% 50% / 0.035) 3px)}
 </style>
@@ -23,8 +26,10 @@ canvas{display:block;width:100%;height:100%}
 <div class="vignette"></div>
 <div class="badge"><b>DATA STREAM</b><span>Horizontal data bars flowing to infinity</span></div>
 <a class="nav" href="./index.html">← Gallery</a>
-<div class="foot">06 / 11 · data-stream · hsl(142 76% 50%) on #000</div>
+<div class="foot"><span>06 / 11 · data-stream · hsl(142 76% 50%) on #000</span><span class="foot-nav"><a href="./circuit-traces.html">← Prev</a> · <a href="./hex-mesh.html">Next →</a></span></div>
 <script>
+let prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let rafId=null, paused=document.hidden;
 const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
 let W,H,DPR;
 const LANES=8;
@@ -200,7 +205,15 @@ function drawPacket(p){
   }
 }
 
+function drawStaticFrame(){
+  ctx.clearRect(0,0,W,H);
+  drawLaneTracks();
+  for(let i=0;i<packets.length;i++) drawPacket(packets[i]);
+}
+
 function frame(now){
+  if(prefersReducedMotion) return;
+  if(paused) return;
   const dt = Math.min(0.05, (now-lastT)/1000);
   lastT=now;
 
@@ -230,9 +243,22 @@ function frame(now){
   ctx.fillStyle=gradS;
   ctx.fillRect(sweepX-80,0,160,H);
 
-  requestAnimationFrame(frame);
+  rafId=requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+if(prefersReducedMotion){
+  drawStaticFrame();
+} else {
+  rafId=requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ paused=true; if(rafId!=null) cancelAnimationFrame(rafId); }
+  else { if(paused){ paused=false; lastT=performance.now(); rafId=requestAnimationFrame(frame); } }
+});
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',e=>{
+  prefersReducedMotion=e.matches;
+  if(e.matches){ if(rafId!=null) cancelAnimationFrame(rafId); drawStaticFrame(); }
+  else { lastT=performance.now(); rafId=requestAnimationFrame(frame); }
+});
 </script>
 </body>
 </html>

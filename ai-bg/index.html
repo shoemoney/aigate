@@ -9,14 +9,20 @@
 :root{--green:hsl(142 76% 50%);--green-dim:hsla(142 76% 50% / 0.18);--green-mid:hsla(142 76% 50% / 0.5);--green-glow:hsla(142 76% 50% / 0.12)}
 html,body{background:#000;color:#fff;font-family:'SF Mono','Fira Code','Cascadia Code',ui-monospace,monospace}
 body{min-height:100vh;display:flex;flex-direction:column}
+#bg{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0;pointer-events:none;opacity:1}
+.hdr,.wrap,.ftr{position:relative;z-index:1}
 a{color:inherit;text-decoration:none}
+/* skip link */
+.skip{position:absolute;left:-9999px;top:12px;background:var(--green);color:#000;padding:8px 14px;font-size:12px;letter-spacing:0.08em;font-weight:700;z-index:100;border:1px solid var(--green);text-transform:uppercase}
+.skip:focus{left:12px;outline:none;border-color:hsla(142 76% 50% / 0.5);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.35), 0 0 18px hsla(142 76% 50% / 0.25)}
+.skip:focus-visible{left:12px;outline:none;border-color:hsla(142 76% 50% / 0.5);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.35), 0 0 18px hsla(142 76% 50% / 0.25)}
 /* header */
 .hdr{padding:48px 32px 32px;border-bottom:1px solid var(--green-dim);position:relative;overflow:hidden}
 .hdr::before{content:'';position:absolute;inset:0;background:radial-gradient(600px 300px at 30% 0%, var(--green-glow), transparent 70%);pointer-events:none}
 .hdr h1{font-size:clamp(42px,8vw,96px);font-weight:900;letter-spacing:-0.06em;line-height:0.85;position:relative}
 .hdr h1 span{color:var(--green)}
 .hdr .sub{margin-top:12px;font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:var(--green);opacity:0.9}
-.hdr .meta{margin-top:8px;font-size:11px;color:#666;letter-spacing:0.06em}
+.hdr .meta{margin-top:8px;font-size:11px;color:#777;letter-spacing:0.06em}
 .hdr .badges{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
 .badge{font-size:10px;letter-spacing:0.12em;text-transform:uppercase;padding:5px 10px;border:1px solid var(--green-dim);color:var(--green);background:hsla(142 76% 50% / 0.06)}
 /* grid */
@@ -25,8 +31,11 @@ a{color:inherit;text-decoration:none}
 @media(min-width:640px){.grid{grid-template-columns:repeat(2,1fr)}}
 @media(min-width:1024px){.grid{grid-template-columns:repeat(3,1fr)}}
 /* card */
-.card{position:relative;background:#0a0a0a;border:1px solid hsla(142 76% 50% / 0.18);overflow:hidden;display:flex;flex-direction:column;transition:border-color .22s, transform .22s, box-shadow .22s}
+.card{position:relative;background:#0a0a0a;border:1px solid hsla(142 76% 50% / 0.18);overflow:hidden;display:flex;flex-direction:column;transition:border-color .22s, transform .22s, box-shadow .22s;box-shadow:0 4px 14px hsla(142 76% 50% / 0.06);animation:cardIn 420ms ease both}
 .card:hover{border-color:hsla(142 76% 50% / 0.5);transform:translateY(-3px);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.15), 0 16px 40px hsla(142 76% 50% / 0.12)}
+.card:focus-visible{outline:none;border-color:hsla(142 76% 50% / 0.5);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.35), 0 0 18px hsla(142 76% 50% / 0.25)}
+.card:focus-within{outline:none;border-color:hsla(142 76% 50% / 0.5);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.35), 0 0 18px hsla(142 76% 50% / 0.25)}
+.badge a:focus-visible,.nav:focus-visible{outline:none;border-color:hsla(142 76% 50% / 0.5);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.35), 0 0 18px hsla(142 76% 50% / 0.25)}
 .thumb{aspect-ratio:16/10;background:#000;position:relative;overflow:hidden;border-bottom:1px solid hsla(142 76% 50% / 0.1);display:flex;align-items:center;justify-content:center}
 .thumb svg{width:100%;height:100%}
 .card-body{padding:14px 14px 12px;flex:1;display:flex;flex-direction:column;gap:6px}
@@ -40,9 +49,23 @@ a{color:inherit;text-decoration:none}
 /* footer */
 .ftr{padding:18px 28px;border-top:1px solid hsla(142 76% 50% / 0.12);display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;font-size:11px;color:#555;letter-spacing:0.04em}
 .ftr strong{color:var(--green);font-weight:600}
+@keyframes cardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.card:nth-child(1){animation-delay:0ms}
+.card:nth-child(2){animation-delay:40ms}
+.card:nth-child(3){animation-delay:80ms}
+.card:nth-child(4){animation-delay:120ms}
+.card:nth-child(5){animation-delay:160ms}
+.card:nth-child(6){animation-delay:200ms}
+.card:nth-child(7){animation-delay:240ms}
+.card:nth-child(8){animation-delay:280ms}
+.card:nth-child(9){animation-delay:320ms}
+.card:nth-child(10){animation-delay:360ms}
+.card:nth-child(11){animation-delay:400ms}
+@media(prefers-reduced-motion:reduce){.card{transition:none;animation:none}}
 </style>
 </head>
 <body>
+<a href="#gallery" class="skip">Skip to gallery</a>
 <header class="hdr">
   <h1>AI<span>GREEN</span></h1>
   <div class="sub">11 effects · green at 50% lightness on black · click to enter</div>
@@ -55,7 +78,7 @@ a{color:inherit;text-decoration:none}
 </header>
 
 <div class="wrap">
-<div class="grid">
+<div class="grid" id="gallery">
 
 <!-- 01 neural -->
 <a class="card" href="./neural-network.html">
@@ -106,11 +129,11 @@ a{color:inherit;text-decoration:none}
     <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
       <rect width="320" height="200" fill="#000"/>
       <line x1="60" y1="60" x2="140" y2="80" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.2"/>
-      <line x1="140" y1="80" x2="220" y2="55" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.18"/>
-      <line x1="90" y1="140" x2="140" y2="80" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.14"/>
+      <line x1="140" y1="80" x2="220" y2="55" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.22"/>
+      <line x1="90" y1="140" x2="140" y2="80" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.22"/>
       <line x1="220" y1="55" x2="260" y2="120" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.15"/>
-      <line x1="90" y1="140" x2="170" y2="150" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.12"/>
-      <line x1="170" y1="150" x2="260" y2="120" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.12"/>
+      <line x1="90" y1="140" x2="170" y2="150" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.20"/>
+      <line x1="170" y1="150" x2="260" y2="120" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.20"/>
       <circle cx="60" cy="60" r="5" fill="hsl(142 76% 50%)" opacity="0.9"/><circle cx="60" cy="60" r="11" fill="hsl(142 76% 50%)" opacity="0.09"/>
       <circle cx="140" cy="80" r="5" fill="hsl(142 76% 50%)" opacity="0.9"/><circle cx="140" cy="80" r="11" fill="hsl(142 76% 50%)" opacity="0.09"/>
       <circle cx="220" cy="55" r="4" fill="hsl(142 76% 50%)" opacity="0.75"/><circle cx="220" cy="55" r="9" fill="hsl(142 76% 50%)" opacity="0.07"/>
@@ -129,8 +152,8 @@ a{color:inherit;text-decoration:none}
     <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
       <rect width="320" height="200" fill="#000"/>
       <g stroke="hsl(142 76% 50%)" fill="none">
-        <path d="M0 140 H320" stroke-width="1" opacity="0.14"/><path d="M0 155 H320" stroke-width="1" opacity="0.18"/><path d="M0 172 H320" stroke-width="1" opacity="0.28"/><path d="M0 188 H320" stroke-width="1.1" opacity="0.4"/>
-        <path d="M40 110 L20 200" stroke-width="1" opacity="0.13"/><path d="M95 105 L85 200" stroke-width="1" opacity="0.15"/><path d="M150 100 L150 200" stroke-width="1" opacity="0.2"/><path d="M205 105 L215 200" stroke-width="1" opacity="0.15"/><path d="M260 110 L280 200" stroke-width="1" opacity="0.13"/>
+        <path d="M0 140 H320" stroke-width="1" opacity="0.22"/><path d="M0 155 H320" stroke-width="1" opacity="0.18"/><path d="M0 172 H320" stroke-width="1" opacity="0.28"/><path d="M0 188 H320" stroke-width="1.1" opacity="0.4"/>
+        <path d="M40 110 L20 200" stroke-width="1" opacity="0.22"/><path d="M95 105 L85 200" stroke-width="1" opacity="0.15"/><path d="M150 100 L150 200" stroke-width="1" opacity="0.2"/><path d="M205 105 L215 200" stroke-width="1" opacity="0.15"/><path d="M260 110 L280 200" stroke-width="1" opacity="0.22"/>
         <ellipse cx="160" cy="108" rx="90" ry="6" fill="hsl(142 76% 50%)" opacity="0.08" stroke="none"/>
       </g>
       <path d="M0 138 Q80 125 160 138 T320 138" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.35" fill="none"/>
@@ -166,10 +189,10 @@ a{color:inherit;text-decoration:none}
   <div class="thumb">
     <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
       <rect width="320" height="200" fill="#000"/>
-      <line x1="0" y1="55" x2="320" y2="55" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.12"/>
-      <line x1="0" y1="85" x2="320" y2="85" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.12"/>
-      <line x1="0" y1="115" x2="320" y2="115" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.12"/>
-      <line x1="0" y1="145" x2="320" y2="145" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.12"/>
+      <line x1="0" y1="55" x2="320" y2="55" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.20"/>
+      <line x1="0" y1="85" x2="320" y2="85" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.20"/>
+      <line x1="0" y1="115" x2="320" y2="115" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.20"/>
+      <line x1="0" y1="145" x2="320" y2="145" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.20"/>
       <rect x="20" y="48" width="54" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.85"/><rect x="20" y="48" width="54" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.18"/>
       <rect x="110" y="48" width="32" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.4"/>
       <rect x="30" y="78" width="80" height="14" rx="2" fill="hsl(142 76% 50%)" opacity="0.5"/>
@@ -211,7 +234,7 @@ a{color:inherit;text-decoration:none}
       <circle cx="160" cy="100" r="6" fill="hsl(142 76% 50%)" opacity="0.95"/><circle cx="160" cy="100" r="14" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1" opacity="0.18"/>
       <circle cx="160" cy="100" r="30" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1.2" opacity="0.5"/>
       <circle cx="160" cy="100" r="52" fill="none" stroke="hsl(142 76% 50%)" stroke-width="1" opacity="0.28"/>
-      <circle cx="160" cy="100" r="74" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.14"/>
+      <circle cx="160" cy="100" r="74" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.22"/>
       <circle cx="160" cy="100" r="92" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.07"/>
       <circle cx="85" cy="55" r="4" fill="hsl(142 76% 50%)" opacity="0.7"/><circle cx="85" cy="55" r="18" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.2"/>
       <circle cx="240" cy="145" r="4" fill="hsl(142 76% 50%)" opacity="0.7"/><circle cx="240" cy="145" r="22" fill="none" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.18"/>
@@ -267,7 +290,7 @@ a{color:inherit;text-decoration:none}
       <line x1="110" y1="70" x2="130" y2="130" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.16"/>
       <line x1="130" y1="130" x2="200" y2="145" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.18"/>
       <line x1="200" y1="145" x2="250" y2="90" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.16"/>
-      <line x1="180" y1="45" x2="250" y2="90" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.14"/>
+      <line x1="180" y1="45" x2="250" y2="90" stroke="hsl(142 76% 50%)" stroke-width="0.9" opacity="0.22"/>
       <line x1="180" y1="45" x2="160" y2="20" stroke="hsl(142 76% 50%)" stroke-width="0.7" opacity="0.1"/>
       <circle cx="50" cy="50" r="2.5" fill="hsl(142 76% 50%)" opacity="0.9"/><circle cx="50" cy="50" r="6" fill="hsl(142 76% 50%)" opacity="0.08"/>
       <circle cx="110" cy="70" r="2.5" fill="hsl(142 76% 50%)" opacity="0.9"/>
@@ -287,8 +310,114 @@ a{color:inherit;text-decoration:none}
 </div>
 
 <footer class="ftr">
-  <span>built in worktree <strong>feat/ai-green-bg</strong> · black is <strong>#000</strong> · green is <strong>hsl(142 76% 50%)</strong> at 50% lightness / 50% alpha glows</span>
-  <span>open any card → full-screen canvas · ← Gallery to return · no deps · 60fps</span>
+  <span>built in worktree <strong>feat/ai-green-bg</strong> · black is <strong>#000</strong> · green is <strong>hsl(142 76% 50%)</strong> at 50% lightness / 50% alpha glows · <strong>three.js</strong> bg</span>
+  <span>open any card → full-screen canvas · ← Gallery to return · three.js · 60fps</span>
 </footer>
+<canvas id="bg" aria-hidden="true"></canvas>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+// honors prefers-reduced-motion + tab hidden
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const canvas = document.getElementById('bg');
+const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
+renderer.setClearColor(0x000000, 1);
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x000000, 12, 42);
+const camera = new THREE.PerspectiveCamera(52, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 4.2, 14);
+camera.lookAt(0, 0, 0);
+const green = new THREE.Color('hsl(142, 76%, 50%)');
+// — undulating wireframe plane —
+const PLANE_W = 34, PLANE_H = 34, SEG = 48;
+const geom = new THREE.PlaneGeometry(PLANE_W, PLANE_H, SEG, SEG);
+const mat = new THREE.MeshBasicMaterial({ color: green, wireframe:true, transparent:true, opacity:0.13 });
+const plane = new THREE.Mesh(geom, mat);
+plane.rotation.x = -Math.PI/2 + 0.18;
+plane.position.y = -2.8;
+scene.add(plane);
+// — floating dust points —
+const N = 220;
+const pGeo = new THREE.BufferGeometry();
+const pos = new Float32Array(N*3);
+const speeds = new Float32Array(N);
+for(let i=0;i<N;i++){
+  pos[i*3]= (Math.random()-0.5)*26;
+  pos[i*3+1]= Math.random()*10 -1.5;
+  pos[i*3+2]= (Math.random()-0.5)*26;
+  speeds[i]= 0.35+Math.random()*0.9;
+}
+pGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+const pMat = new THREE.PointsMaterial({ color: green, size:0.07, transparent:true, opacity:0.55, sizeAttenuation:true });
+const points = new THREE.Points(pGeo, pMat);
+scene.add(points);
+// — soft horizon glow (tiny additive plane at horizon) —
+const glowGeo = new THREE.PlaneGeometry(40, 6);
+const glowMat = new THREE.MeshBasicMaterial({ color: green, transparent:true, opacity:0.08, side:THREE.DoubleSide });
+const glow = new THREE.Mesh(glowGeo, glowMat);
+glow.position.set(0, -0.15, -8);
+glow.rotation.x = 0;
+scene.add(glow);
+
+function onResize(){
+  const w=innerWidth,h=innerHeight;
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', onResize); onResize();
+
+let t=0, raf=0, paused=document.hidden;
+document.addEventListener('visibilitychange', ()=> paused=document.hidden );
+if(reduce){
+// freeze on first frame, respect motion preference
+  const pa = geom.attributes.position;
+  for(let i=0;i<pa.count;i++){
+    const x=pa.getX(i), y=pa.getY(i);
+    pa.setZ(i, Math.sin(x*0.5)*0.35 + Math.cos(y*0.42)*0.28);
+  }
+  pa.needsUpdate=true; geom.computeVertexNormals();
+  renderer.render(scene,camera);
+} else {
+  const pa = geom.attributes.position;
+  const origZ = new Float32Array(pa.count);
+  for(let i=0;i<pa.count;i++) origZ[i]=pa.getZ(i);
+  function tick(now){
+    if(paused) { raf=requestAnimationFrame(tick); return; }
+    t = now*0.001;
+    // warp plane vertices
+    for(let i=0;i<pa.count;i++){
+      const x=pa.getX(i), y=pa.getY(i);
+      const z = Math.sin(x*0.52 + y*0.31 + t*0.9)*0.55
+              + Math.cos(y*0.68 - t*0.65)*0.28
+              + Math.sin(x*0.18 - y*0.22 + t*0.42)*0.22;
+      pa.setZ(i, z);
+    }
+    pa.needsUpdate=true;
+    // gentle camera orbit
+    camera.position.x = Math.sin(t*0.08)*1.4;
+    camera.position.z = 14 + Math.cos(t*0.08)*0.6;
+    camera.lookAt(0, -0.2, -2);
+    // drift points upward slowly and loop
+    const p = pGeo.attributes.position;
+    for(let i=0;i<N;i++){
+      let y=p.getY(i);
+      y += 0.004*speeds[i];
+      if(y>8) y = -2.2;
+      p.setY(i, y);
+      // slight sway
+      p.setX(i, p.getX(i) + Math.sin(t*0.3 + i*0.11)*0.001);
+    }
+    p.needsUpdate=true;
+    // pulse opacities slightly
+    mat.opacity = 0.11 + Math.sin(t*0.7)*0.03;
+    pMat.opacity = 0.48 + Math.sin(t*0.5)*0.10;
+    glow.material.opacity = 0.06 + Math.sin(t*0.6)*0.02;
+    renderer.render(scene,camera);
+    raf=requestAnimationFrame(tick);
+  }
+  raf=requestAnimationFrame(tick);
+}
+</script>
 </body>
 </html>
