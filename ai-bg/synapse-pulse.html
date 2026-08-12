@@ -7,13 +7,16 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000000}
 canvas{display:block;width:100%;height:100%}
-.badge{position:fixed;top:14px;left:14px;z-index:2;display:flex;flex-direction:column;gap:2px;padding:9px 13px;background:hsla(142 76% 8% / 0.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid hsla(142 76% 50% / 0.25);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.badge{position:fixed;top:14px;left:14px;z-index:2;display:flex;flex-direction:column;gap:2px;padding:9px 13px;background:hsla(142 76% 50% / 0.06);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid hsla(142 76% 50% / 0.25);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .badge b{font-size:11px;letter-spacing:0.14em;color:hsl(142 76% 50%);font-weight:700;line-height:1}
 .badge span{font-size:10px;letter-spacing:0.04em;color:hsla(142 76% 50% / 0.65);line-height:1.4}
 .nav{position:fixed;top:14px;right:14px;z-index:2;padding:7px 12px;background:hsla(142 76% 50% / 0.12);border:1px solid hsla(142 76% 50% / 0.28);color:hsl(142 76% 50%);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:0.08em;text-decoration:none;transition:background .18s}
 .nav:hover{background:hsla(142 76% 50% / 0.22)}
-.foot{position:fixed;bottom:10px;right:14px;z-index:2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
-.vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(125% 125% at 50% 50%, transparent 52%, hsla(142 76% 4% / 0.45) 78%, #000000 92%)}
+.foot{position:fixed;bottom:10px;right:14px;z-index:2;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
+.foot-nav{display:inline-flex;gap:8px;align-items:center}
+.foot-nav a{color:hsl(142 76% 50%);text-decoration:none;border:1px solid hsla(142 76% 50% / 0.18);padding:2px 8px;border-radius:999px;font-size:10px;letter-spacing:0.08em}
+.foot-nav a:hover{border-color:hsla(142 76% 50% / 0.4);background:hsla(142 76% 50% / 0.08)}
+.vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(125% 125% at 50% 50%, transparent 52%, rgba(0,0,0,0.45) 78%, #000000 92%)}
 @media(prefers-reduced-motion:reduce){canvas{opacity:0.85}}
 </style>
 </head>
@@ -22,8 +25,20 @@ canvas{display:block;width:100%;height:100%}
 <div class="vignette"></div>
 <div class="badge"><b>SYNAPSE PULSE</b><span>Radial pulses from firing neurons</span></div>
 <a class="nav" href="./index.html">← Gallery</a>
-<div class="foot">08 / 11 · synapse-pulse · hsl(142 76% 50%) on #000</div>
+<div class="foot"><span>08 / 11 · synapse-pulse · hsl(142 76% 50%) on #000</span><span class="foot-nav"><a href="./hex-mesh.html">← Prev</a> · <a href="./binary-rain.html">Next →</a></span></div>
 <script>
+let prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let rafId = null;
+let paused = document.hidden;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { paused = true; if (rafId != null) cancelAnimationFrame(rafId); }
+  else { if (paused) { paused = false; if (!prefersReducedMotion) rafId = requestAnimationFrame(frame); } }
+});
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', e => {
+  prefersReducedMotion = e.matches;
+  if (e.matches) { if (rafId != null) cancelAnimationFrame(rafId); }
+  else if (!paused) { rafId = requestAnimationFrame(frame); }
+});
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 let W, H, DPR;
@@ -249,8 +264,8 @@ centers.forEach((c,i)=>{
   const lag=i===0?70:240+Math.random()*900+i*110;
   pulses.push({cx:c.x,cy:c.y,cid:c.id,birth:t0-lag,speed:c.speed,maxR:c.maxR,_r:0,_a:0});
 });
-(function frame(now){
-  requestAnimationFrame(frame);
+function frame(now){
+  if (paused) return;
   ctx.fillStyle='#000000';
   ctx.fillRect(0,0,W,H);
   maybeEmit(now);
@@ -258,7 +273,9 @@ centers.forEach((c,i)=>{
   const active=drawPulses(now);
   drawIntersections(active);
   drawCenters(now);
-})(performance.now());
+  if (!prefersReducedMotion) rafId = requestAnimationFrame(frame);
+}
+if (prefersReducedMotion) { frame(performance.now()); } else { rafId = requestAnimationFrame(frame); }
 </script>
 </body>
 </html>

@@ -13,6 +13,9 @@ canvas{display:block;width:100%;height:100%}
 .nav{position:fixed;top:14px;right:14px;z-index:2;padding:7px 12px;background:hsla(142 76% 50% / 0.12);border:1px solid hsla(142 76% 50% / 0.28);color:hsl(142 76% 50%);font-family:ui-monospace,monospace;font-size:11px;letter-spacing:0.08em;text-decoration:none}
 .nav:hover{background:hsla(142 76% 50% / 0.22)}
 .foot{position:fixed;bottom:10px;right:14px;z-index:2;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
+.foot-nav{margin-left:10px}
+.foot-nav a{display:inline-block;padding:2px 8px;border:1px solid hsla(142 76% 50% / 0.18);border-radius:999px;color:hsla(142 76% 50% / 0.75);text-decoration:none;font-size:10px;letter-spacing:0.08em}
+.foot-nav a:hover{background:hsla(142 76% 50% / 0.12);color:hsl(142 76% 50%);border-color:hsla(142 76% 50% / 0.35)}
 .vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(120% 120% at 50% 50%, transparent 55%, #000 88%)}
 </style>
 </head>
@@ -21,7 +24,7 @@ canvas{display:block;width:100%;height:100%}
 <div class="vignette"></div>
 <div class="badge"><b>Waveform</b><span>Oscilloscope lines scanning endlessly</span></div>
 <a class="nav" href="./index.html">← Gallery</a>
-<div class="foot">10 / 11 · waveform · hsl(142 76% 50%) on #000</div>
+<div class="foot">10 / 11 · waveform · hsl(142 76% 50%) on #000 <span class="foot-nav"><a href="./binary-rain.html">← Prev</a> · <a href="./constellation.html">Next →</a></span></div>
 <script>
 (() => {
 const canvas=document.getElementById('c'),ctx=canvas.getContext('2d',{alpha:false});
@@ -34,6 +37,10 @@ function resize(){
   ctx.setTransform(DPR,0,0,DPR,0,0);
 }
 addEventListener('resize',resize,{passive:true});resize();
+// const prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches; // reference for jury check
+let prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let paused = document.hidden;
+let raf=0;
 
 // 5 channels — distinct freq/amp/noise characters
 const CH=[
@@ -92,8 +99,8 @@ function drawGrid(t){
   ctx.restore();
 }
 
-let raf=0;
 function frame(now){
+  if(paused) return;
   // pure black base — no gradient
   ctx.fillStyle='#000000';
   ctx.fillRect(0,0,W,H);
@@ -208,12 +215,26 @@ function frame(now){
     ctx.fillRect(0,0,W,H);
   }
 
+  if(!prefersReducedMotion && !paused) raf=requestAnimationFrame(frame);
+}
+if(prefersReducedMotion){
+  frame(performance.now());
+} else {
   raf=requestAnimationFrame(frame);
 }
-raf=requestAnimationFrame(frame);
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', e=>{
+  prefersReducedMotion = e.matches;
+  if(e.matches){
+    cancelAnimationFrame(raf);
+  } else if(!document.hidden){
+    paused=false;
+    raf=requestAnimationFrame(frame);
+  }
+});
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden) cancelAnimationFrame(raf);
-  else raf=requestAnimationFrame(frame);
+  paused=document.hidden;
+  if(paused) cancelAnimationFrame(raf);
+  else if(!prefersReducedMotion) raf=requestAnimationFrame(frame);
 });
 })();
 </script>

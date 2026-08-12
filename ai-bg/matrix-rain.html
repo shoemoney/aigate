@@ -12,7 +12,10 @@ canvas{display:block;width:100%;height:100%;background:#000000}
 .badge span{font-size:10px;letter-spacing:0.04em;color:hsla(142 76% 50% / 0.7);line-height:1.4}
 .nav{position:fixed;top:14px;right:14px;z-index:2;padding:7px 12px;background:hsla(142 76% 50% / 0.12);border:1px solid hsla(142 76% 50% / 0.28);color:hsl(142 76% 50%);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:0.08em;text-decoration:none;transition:background .15s}
 .nav:hover{background:hsla(142 76% 50% / 0.22)}
-.foot{position:fixed;bottom:10px;right:14px;z-index:2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
+.foot{position:fixed;bottom:10px;right:14px;z-index:2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55);display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.foot-nav{display:inline-flex;gap:6px;align-items:center}
+.foot-nav a{display:inline-block;padding:3px 8px;border:1px solid hsla(142 76% 50% / 0.18);color:hsla(142 76% 50% / 0.75);text-decoration:none;border-radius:999px;font-size:10px;letter-spacing:0.08em;transition:background .15s,border-color .15s,color .15s}
+.foot-nav a:hover{background:hsla(142 76% 50% / 0.12);border-color:hsla(142 76% 50% / 0.35);color:hsl(142 76% 50%)}
 .vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(115% 115% at 50% 50%, transparent 58%, #000000 88%)}
 </style>
 </head>
@@ -21,8 +24,13 @@ canvas{display:block;width:100%;height:100%;background:#000000}
 <div class="vignette"></div>
 <div class="badge"><b>Matrix Rain</b><span>Falling glyphs in 50% green light</span></div>
 <a class="nav" href="./index.html">← Gallery</a>
-<div class="foot">02 / 11 · matrix-rain · hsl(142 76% 50%) on #000</div>
+<div class="foot">02 / 11 · matrix-rain · hsl(142 76% 50%) on #000 <span class="foot-nav"><a href="./neural-network.html">← Prev</a> · <a href="./particle-field.html">Next →</a></span></div>
 <script>
+const prefersReducedMotionQuery = matchMedia('(prefers-reduced-motion: reduce)');
+let prefersReducedMotion = prefersReducedMotionQuery.matches;
+let rafId = null;
+let paused = document.hidden;
+
 const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
 let W,H,DPR;
 const GLYPHS=['0','1','⊏','⊐','⟨','⟩','◆','◇'];
@@ -66,6 +74,7 @@ const LINE_H=18; // vertical spacing between glyphs
 
 let t=0;
 function frame(){
+  if(paused) return;
   t++;
   // pure black clear — trail fade is per-glyph alpha, not canvas ghost
   ctx.clearRect(0,0,W,H);
@@ -150,9 +159,36 @@ function frame(){
       }
     }
   }
-  requestAnimationFrame(frame);
+  if(!prefersReducedMotion && !paused){
+    rafId = requestAnimationFrame(frame);
+  }
 }
-requestAnimationFrame(frame);
+
+if(prefersReducedMotion){
+  frame();
+} else {
+  rafId = requestAnimationFrame(frame);
+}
+
+prefersReducedMotionQuery.addEventListener('change', (e) => {
+  prefersReducedMotion = e.matches;
+  if(prefersReducedMotion){
+    if(rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+  } else if(!paused){
+    if(!rafId) rafId = requestAnimationFrame(frame);
+  }
+});
+
+document.addEventListener('visibilitychange', () => {
+  paused = document.hidden;
+  if(paused){
+    if(rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+  } else if(!prefersReducedMotion){
+    if(!rafId) rafId = requestAnimationFrame(frame);
+  }
+});
 </script>
 </body>
 </html>

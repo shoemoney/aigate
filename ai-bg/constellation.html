@@ -12,6 +12,9 @@ canvas{display:block;width:100%;height:100%}
 .badge span{font-size:10px;color:hsla(142 76% 50% / 0.65);line-height:1.4}
 .nav{position:fixed;top:14px;right:14px;z-index:2;padding:7px 12px;background:hsla(142 76% 50% / 0.12);border:1px solid hsla(142 76% 50% / 0.28);color:hsl(142 76% 50%);font-family:ui-monospace,monospace;font-size:11px;letter-spacing:0.08em;text-decoration:none}
 .foot{position:fixed;bottom:10px;right:14px;z-index:2;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
+.foot-nav{margin-left:10px}
+.foot-nav a{display:inline-block;padding:2px 8px;border:1px solid hsla(142 76% 50% / 0.18);color:hsla(142 76% 50% / 0.75);text-decoration:none;font-size:10px;letter-spacing:0.08em}
+.foot-nav a:hover{border-color:hsla(142 76% 50% / 0.45);color:hsl(142 76% 50%);background:hsla(142 76% 50% / 0.08)}
 .vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(120% 120% at 50% 50%, transparent 55%, #000 88%)}
 </style>
 </head>
@@ -20,7 +23,7 @@ canvas{display:block;width:100%;height:100%}
 <div class="vignette"></div>
 <div class="badge"><b>CONSTELLATION</b><span>Stars that connect as you move · click for burst</span></div>
 <a class="nav" href="./index.html">← Gallery</a>
-<div class="foot">11 / 11 · constellation · hsl(142 76% 50%) on #000</div>
+<div class="foot">11 / 11 · constellation · hsl(142 76% 50%) on #000 <span class="foot-nav"><a href="./waveform.html">← Prev</a> · <a href="./neural-network.html">Next →</a></span></div>
 <script>
 const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
 let W,H,DPR;
@@ -34,6 +37,12 @@ addEventListener('mouseleave',()=>mouse.active=false);
 addEventListener('touchend',()=>mouse.active=false);
 canvas.addEventListener('click',()=>{burst=1});
 canvas.addEventListener('touchstart',()=>{burst=1},{passive:true});
+let mql=matchMedia('(prefers-reduced-motion: reduce)');
+let prefersReducedMotion=mql.matches;
+let rafId=0;
+let paused=document.hidden;
+mql.addEventListener('change',e=>{prefersReducedMotion=e.matches;if(prefersReducedMotion){cancelAnimationFrame(rafId);}else if(!paused){rafId=requestAnimationFrame(frame);}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){paused=true;cancelAnimationFrame(rafId);}else{paused=false;if(!prefersReducedMotion) rafId=requestAnimationFrame(frame);}});
 
 const N=62;
 let stars=[];
@@ -45,6 +54,7 @@ for(let i=0;i<N;i++) stars.push({
   vx:(Math.random()-0.5)*0.18, vy:(Math.random()-0.5)*0.18
 });
 function frame(t){
+  if(paused) return;
   let time=t*0.001;
   ctx.clearRect(0,0,W,H);
   if(burst>0) burst=Math.max(0,burst-0.04);
@@ -102,9 +112,10 @@ function frame(t){
     ctx.beginPath(); ctx.arc(mouse.x,mouse.y, (1-burst)*220, 0, Math.PI*2);
     ctx.strokeStyle=`hsla(142 76% 50% / ${burst*0.22})`; ctx.lineWidth=1.2; ctx.stroke();
   }
-  requestAnimationFrame(frame);
+  if(prefersReducedMotion) return;
+  rafId=requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+if(prefersReducedMotion) frame(0); else rafId=requestAnimationFrame(frame);
 </script>
 </body>
 </html>

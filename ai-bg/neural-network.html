@@ -12,7 +12,10 @@ canvas{display:block;width:100%;height:100%}
 .badge span{font-size:10px;letter-spacing:0.04em;color:hsla(142 76% 50% / 0.65);line-height:1.4}
 .nav{position:fixed;top:14px;right:14px;z-index:2;padding:7px 12px;background:hsla(142 76% 50% / 0.12);border:1px solid hsla(142 76% 50% / 0.28);color:hsl(142 76% 50%);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:0.08em;text-decoration:none;transition:background .18s}
 .nav:hover{background:hsla(142 76% 50% / 0.22)}
-.foot{position:fixed;bottom:10px;right:14px;z-index:2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
+.foot{position:fixed;bottom:10px;right:14px;z-index:2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55);display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.foot-nav{font-size:10px;letter-spacing:0.08em}
+.foot-nav a{display:inline-block;padding:2px 8px;border:1px solid hsla(142 76% 50% / 0.18);border-radius:999px;color:hsla(142 76% 50% / 0.65);text-decoration:none;transition:background .18s,border-color .18s,color .18s}
+.foot-nav a:hover{background:hsla(142 76% 50% / 0.12);border-color:hsla(142 76% 50% / 0.32);color:hsl(142 76% 50%)}
 .vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(125% 125% at 50% 50%, transparent 52%, hsla(142 76% 4% / 0.45) 78%, #000000 92%)}
 @media(prefers-reduced-motion:reduce){canvas{opacity:0.85}}
 </style>
@@ -22,7 +25,7 @@ canvas{display:block;width:100%;height:100%}
 <div class="vignette"></div>
 <div class="badge"><b>NEURAL NETWORK</b><span>Nodes &amp; synapses firing across a black void</span></div>
 <a class="nav" href="./index.html">← Gallery</a>
-<div class="foot">01 / 11 · neural-network · hsl(142 76% 50%) on #000</div>
+<div class="foot">01 / 11 · neural-network · hsl(142 76% 50%) on #000 <span class="foot-nav"><a href="./constellation.html">← Prev</a> · <a href="./matrix-rain.html">Next →</a></span></div>
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -136,24 +139,28 @@ const ambientTimer = setInterval(spawnAmbientPacket, 380);
 
 // --- frame ---
 let t = 0;
-const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const prefersReducedMotionQuery = matchMedia('(prefers-reduced-motion: reduce)');
+let prefersReducedMotion = prefersReducedMotionQuery.matches;
+let paused = document.hidden;
+let rafId = null;
+let hasDrawnOnce = false;
 
 function frame() {
+  if (paused) return;
+  if (prefersReducedMotion && hasDrawnOnce) return;
   t += 0.016;
 
   // fade instead of hard clear — subtle motion trails without smearing the black
   ctx.clearRect(0, 0, W, H);
 
-  // drift
+  // drift — fully frozen under prefers-reduced-motion after first frame
   for (const n of nodes) {
-    if (!reduceMotion) {
+    if (!prefersReducedMotion) {
       n.x += n.vx;
       n.y += n.vy;
       if (n.x < 28 || n.x > W - 28) n.vx *= -1;
       if (n.y < 28 || n.y > H - 28) n.vy *= -1;
       n.pulse += 0.038 + Math.random() * 0.008;
-    } else {
-      n.pulse += 0.015;
     }
     if (n.fire > 0) n.fire = Math.max(0, n.fire - 0.068);
   }
@@ -246,13 +253,36 @@ function frame() {
     }
   }
 
-  requestAnimationFrame(frame);
+  hasDrawnOnce = true;
+  if (prefersReducedMotion) return;
+  rafId = requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+// initial kick — freeze after first frame when reduced motion prefers it
+if (prefersReducedMotion) { frame(); } else { rafId = requestAnimationFrame(frame); }
 
-// cleanup on page hide
-addEventListener('visibilitychange', () => {
-  if (document.hidden) { /* rAF throttles automatically, timers keep cadence */ }
+prefersReducedMotionQuery.addEventListener('change', (e) => {
+  prefersReducedMotion = e.matches;
+  if (prefersReducedMotion) {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    hasDrawnOnce = false;
+    frame();
+  } else {
+    hasDrawnOnce = false;
+    if (!paused && !rafId) rafId = requestAnimationFrame(frame);
+  }
+});
+
+document.addEventListener('visibilitychange', () => {
+  paused = document.hidden;
+  if (paused) {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  } else {
+    if (prefersReducedMotion) {
+      if (!hasDrawnOnce) frame();
+    } else {
+      if (!rafId) rafId = requestAnimationFrame(frame);
+    }
+  }
 });
 </script>
 </body>
