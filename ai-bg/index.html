@@ -35,6 +35,7 @@ a{color:inherit;text-decoration:none}
 .winner-card:hover{border-color:hsla(142 76% 50% / 0.62);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.22), 0 24px 70px hsla(142 76% 50% / 0.22)}
 .winner-card:focus-visible{outline:none;border-color:hsla(142 76% 50% / 0.62);box-shadow:0 0 0 2px #000, 0 0 0 4px hsla(142 76% 50% / 0.32), 0 24px 70px hsla(142 76% 50% / 0.22)}
 .thumb{aspect-ratio:16/9;background:#000;position:relative;overflow:hidden;border-bottom:1px solid hsla(142 76% 50% / 0.14);display:flex;align-items:center;justify-content:center}
+.thumb::after{content:'';position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(to bottom, transparent 0px, transparent 2px, hsla(142 76% 50% / 0.035) 2px, hsla(142 76% 50% / 0.035) 3px);opacity:0.55}
 .thumb svg{width:100%;height:100%}
 .crown{position:absolute;top:14px;left:14px;padding:6px 10px;background:var(--green);color:#000;font-size:10px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;border:1px solid var(--green)}
 .arrow{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:999px;background:var(--green);color:#000;display:flex;align-items:center;justify-content:center;font-size:15px;transition:.2s}
@@ -47,6 +48,7 @@ a{color:inherit;text-decoration:none}
 .tag{font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:4px 8px;background:hsla(142 76% 50% / 0.08);color:var(--green);border:1px solid hsla(142 76% 50% / 0.14)}
 .cta{margin-top:12px;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;background:var(--green);color:#000;font-size:11px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;border:1px solid var(--green)}
 .cta:hover{background:hsla(142 76% 50% / 0.92)}
+.cta:focus-visible{outline:none;box-shadow:0 0 0 2px #000, 0 0 0 4px hsl(142 76% 50%);}
 .note{font-size:11px;color:#666;letter-spacing:0.04em;line-height:1.6;border:1px dashed hsla(142 76% 50% / 0.16);padding:14px 16px;background:hsla(142 76% 50% / 0.04)}
 /* footer */
 .ftr{padding:18px 28px;border-top:1px solid hsla(142 76% 50% / 0.12);display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;font-size:11px;color:#555;letter-spacing:0.04em}
