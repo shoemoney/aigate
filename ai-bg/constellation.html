@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Constellation — AI GREEN</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000}
+canvas{display:block;width:100%;height:100%}
+.badge{position:fixed;top:14px;left:14px;z-index:2;display:flex;flex-direction:column;gap:2px;padding:9px 12px;background:hsla(0 0% 0% / 0.6);backdrop-filter:blur(8px);border:1px solid hsla(142 76% 50% / 0.25);font-family:ui-monospace,monospace;max-width:min(88vw,380px)}
+.badge b{font-size:11px;letter-spacing:0.14em;color:hsl(142 76% 50%);font-weight:700;line-height:1}
+.badge span{font-size:10px;color:hsla(142 76% 50% / 0.65);line-height:1.4}
+.nav{position:fixed;top:14px;right:14px;z-index:2;padding:7px 12px;background:hsla(142 76% 50% / 0.12);border:1px solid hsla(142 76% 50% / 0.28);color:hsl(142 76% 50%);font-family:ui-monospace,monospace;font-size:11px;letter-spacing:0.08em;text-decoration:none}
+.foot{position:fixed;bottom:10px;right:14px;z-index:2;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
+.vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(120% 120% at 50% 50%, transparent 55%, #000 88%)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="vignette"></div>
+<div class="badge"><b>CONSTELLATION</b><span>Stars that connect as you move · click for burst</span></div>
+<a class="nav" href="./index.html">← Gallery</a>
+<div class="foot">11 / 11 · constellation · hsl(142 76% 50%) on #000</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H,DPR;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;canvas.width=W*DPR;canvas.height=H*DPR;canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0)}
+addEventListener('resize',resize);resize();
+let mouse={x:-9999,y:-9999,active:false};
+let burst=0;
+addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY;mouse.active=true});
+addEventListener('touchmove',e=>{if(e.touches[0]){mouse.x=e.touches[0].clientX;mouse.y=e.touches[0].clientY;mouse.active=true}},{passive:true});
+addEventListener('mouseleave',()=>mouse.active=false);
+addEventListener('touchend',()=>mouse.active=false);
+canvas.addEventListener('click',()=>{burst=1});
+canvas.addEventListener('touchstart',()=>{burst=1},{passive:true});
+
+const N=62;
+let stars=[];
+for(let i=0;i<N;i++) stars.push({
+  x:Math.random()*W, y:Math.random()*H,
+  r: 1.1+Math.random()*1.8,
+  tw: Math.random()*Math.PI*2,
+  spd: 0.8+Math.random()*1.8,
+  vx:(Math.random()-0.5)*0.18, vy:(Math.random()-0.5)*0.18
+});
+function frame(t){
+  let time=t*0.001;
+  ctx.clearRect(0,0,W,H);
+  if(burst>0) burst=Math.max(0,burst-0.04);
+  // drift slowly
+  stars.forEach(s=>{
+    s.x+=s.vx; s.y+=s.vy; s.tw+=0.015*s.spd;
+    if(s.x<0||s.x>W) s.vx*=-1;
+    if(s.y<0||s.y>H) s.vy*=-1;
+  });
+  // star-star links
+  for(let i=0;i<N;i++) for(let j=i+1;j<N;j++){
+    let a=stars[i], b=stars[j];
+    let d=Math.hypot(a.x-b.x,a.y-b.y);
+    if(d<160){
+      let aGlow=(1-d/160)*0.22 + burst*0.12;
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+      ctx.strokeStyle=`hsla(142 76% 50% / ${aGlow})`; ctx.lineWidth=0.6; ctx.stroke();
+    }
+  }
+  // mouse links
+  if(mouse.active){
+    stars.forEach(s=>{
+      let d=Math.hypot(s.x-mouse.x, s.y-mouse.y);
+      if(d<180){
+        let a=(1-d/180)*0.46 + burst*0.14;
+        ctx.beginPath(); ctx.moveTo(s.x,s.y); ctx.lineTo(mouse.x,mouse.y);
+        ctx.strokeStyle=`hsla(142 76% 50% / ${a})`; ctx.lineWidth=0.75; ctx.stroke();
+      }
+    });
+    // cursor
+    ctx.beginPath(); ctx.arc(mouse.x,mouse.y, 7+burst*10, 0, Math.PI*2);
+    ctx.fillStyle=`hsla(142 76% 50% / ${0.12+burst*0.18})`; ctx.fill();
+    ctx.beginPath(); ctx.arc(mouse.x,mouse.y, 2.5, 0, Math.PI*2);
+    ctx.fillStyle=`hsla(142 76% 50% / ${0.7+burst*0.3})`; ctx.fill();
+  }
+  // stars
+  stars.forEach(s=>{
+    let tw=0.65+Math.sin(s.tw)*0.35;
+    let extra=0;
+    if(mouse.active){
+      let d=Math.hypot(s.x-mouse.x,s.y-mouse.y);
+      if(d<180) extra=(1-d/180)*0.45;
+    }
+    extra+=burst*0.4;
+    let a=Math.min(1, tw+extra);
+    let r=s.r*(1+extra*0.5);
+    ctx.beginPath(); ctx.arc(s.x,s.y, r*2.9, 0, Math.PI*2);
+    ctx.fillStyle=`hsla(142 76% 50% / ${0.06*a})`; ctx.fill();
+    ctx.beginPath(); ctx.arc(s.x,s.y, r, 0, Math.PI*2);
+    ctx.fillStyle=`hsla(142 76% 50% / ${a})`;
+    ctx.shadowColor='hsl(142 76% 50%)'; ctx.shadowBlur=6; ctx.fill(); ctx.shadowBlur=0;
+  });
+  // burst ring
+  if(burst>0.05){
+    ctx.beginPath(); ctx.arc(mouse.x,mouse.y, (1-burst)*220, 0, Math.PI*2);
+    ctx.strokeStyle=`hsla(142 76% 50% / ${burst*0.22})`; ctx.lineWidth=1.2; ctx.stroke();
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

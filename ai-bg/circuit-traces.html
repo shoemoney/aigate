@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Circuit Traces — AI GREEN</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000}
+canvas{display:block;width:100%;height:100%}
+.badge{position:fixed;top:14px;left:14px;z-index:2;display:flex;align-items:center;gap:10px;padding:8px 12px;background:hsla(0 0% 0% / 0.6);backdrop-filter:blur(8px);border:1px solid hsla(142 76% 50% / 0.25);font-family:ui-monospace,monospace}
+.badge b{font-size:11px;letter-spacing:0.14em;color:hsl(142 76% 50%);font-weight:700}
+.badge span{font-size:11px;color:#888}
+.nav{position:fixed;top:14px;right:14px;z-index:2;padding:7px 12px;background:hsla(142 76% 50% / 0.12);border:1px solid hsla(142 76% 50% / 0.28);color:hsl(142 76% 50%);font-family:ui-monospace,monospace;font-size:11px;letter-spacing:0.08em;text-decoration:none}
+.foot{position:fixed;bottom:10px;right:14px;z-index:2;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
+.vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(120% 120% at 50% 50%, transparent 55%, #000 88%)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="vignette"></div>
+<div class="badge"><b>CIRCUIT TRACES</b><span>PCB energy pulses · traveling light</span></div>
+<a class="nav" href="./index.html">← Gallery</a>
+<div class="foot">05 / 11 · circuit-traces · hsl(142 76% 50%) on #000</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H,DPR;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;canvas.width=W*DPR;canvas.height=H*DPR;canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);build()}
+addEventListener('resize',resize);
+let traces=[];
+function rand(a,b){return a+Math.random()*(b-a)}
+function build(){
+  traces=[];
+  let count=16;
+  for(let i=0;i<count;i++){
+    let x0=rand(W*0.06,W*0.35), y0=rand(H*0.12,H*0.88);
+    let pts=[{x:x0,y:y0}];
+    let segs=2+Math.floor(Math.random()*3);
+    let cx=x0, cy=y0;
+    for(let s=0;s<segs;s++){
+      if(Math.random()<0.5){ cx+=rand(80,260); pts.push({x:cx,y:cy}); cy+= rand(-90,90); cy=Math.max(16,Math.min(H-16,cy)); pts.push({x:cx,y:cy}); }
+      else { cy+=rand(60,160)*(Math.random()<0.5?1:-1); cy=Math.max(16,Math.min(H-16,cy)); pts.push({x:cx,y:cy}); cx+=rand(80,220); pts.push({x:cx,y:cy}); }
+    }
+    // pads at ends and at corners
+    let totalLen=0; for(let k=1;k<pts.length;k++) totalLen+=Math.hypot(pts[k].x-pts[k-1].x, pts[k].y-pts[k-1].y);
+    traces.push({pts,totalLen,phase:Math.random()*Math.PI*2, speed:0.22+Math.random()*0.42, offset:Math.random()});
+  }
+}
+resize();
+function getPointAlong(pts, t){
+  // t 0..1 along polyline
+  let total=0; for(let i=1;i<pts.length;i++) total+=Math.hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y);
+  let target=t*total; let acc=0;
+  for(let i=1;i<pts.length;i++){
+    let seg=Math.hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y);
+    if(acc+seg>=target){
+      let u=(target-acc)/seg;
+      return {x:pts[i-1].x+(pts[i].x-pts[i-1].x)*u, y:pts[i-1].y+(pts[i].y-pts[i-1].y)*u};
+    }
+    acc+=seg;
+  }
+  return pts[pts.length-1];
+}
+function frame(t){
+  let time=t*0.001;
+  ctx.clearRect(0,0,W,H);
+  traces.forEach(tr=>{
+    // base trace faint
+    ctx.beginPath();
+    ctx.moveTo(tr.pts[0].x,tr.pts[0].y);
+    for(let i=1;i<tr.pts.length;i++) ctx.lineTo(tr.pts[i].x,tr.pts[i].y);
+    ctx.strokeStyle='hsla(142 76% 50% / 0.13)'; ctx.lineWidth=1.2; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.stroke();
+    // traveling pulse: a segment of the trace lights up
+    let pulsePos=((time*tr.speed+tr.offset)%1);
+    let pulseLen=0.14;
+    // draw bright segment
+    let steps=36;
+    for(let s=0;s<steps;s++){
+      let tt=pulsePos + (s/steps)*pulseLen*0.6 - pulseLen*0.3;
+      tt=((tt%1)+1)%1;
+      let p=getPointAlong(tr.pts, tt);
+      let centerDist=Math.abs(s/steps-0.5)*2; // 0 center, 1 edge
+      let a=(1-centerDist)*0.85;
+      if(a<=0) continue;
+      ctx.beginPath(); ctx.arc(p.x,p.y, 2.2, 0, Math.PI*2);
+      ctx.fillStyle=`hsla(142 76% 50% / ${a})`; ctx.shadowColor='hsl(142 76% 50%)'; ctx.shadowBlur=6; ctx.fill(); ctx.shadowBlur=0;
+    }
+    // brighter head dot
+    let head=getPointAlong(tr.pts, pulsePos);
+    ctx.beginPath(); ctx.arc(head.x,head.y, 3, 0, Math.PI*2);
+    ctx.fillStyle='hsl(142 76% 50%)'; ctx.shadowColor='hsl(142 76% 50%)'; ctx.shadowBlur=10; ctx.fill(); ctx.shadowBlur=0;
+    ctx.beginPath(); ctx.arc(head.x,head.y, 7, 0, Math.PI*2); ctx.fillStyle='hsla(142 76% 50% / 0.14)'; ctx.fill();
+    // pads
+    tr.pts.forEach((pt,idx)=>{
+      let isEnd=idx===0||idx===tr.pts.length-1;
+      ctx.beginPath(); ctx.arc(pt.x,pt.y, isEnd?4:2, 0, Math.PI*2);
+      ctx.fillStyle=isEnd?'hsl(142 76% 50%)':'hsla(142 76% 50% / 0.55)'; ctx.fill();
+      if(isEnd){ ctx.beginPath(); ctx.arc(pt.x,pt.y, 8, 0, Math.PI*2); ctx.fillStyle='hsla(142 76% 50% / 0.09)'; ctx.fill(); }
+    });
+  });
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
