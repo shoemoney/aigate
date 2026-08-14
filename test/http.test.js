@@ -895,7 +895,7 @@ test('listKeys marks a never-fetched key stale, clears after a fetch (F10)', asy
   assert.equal((await list()).find((k) => k.provider === 'staleco').stale, 0);    // fresh
 });
 
-test('pollProviderKeys flips a revoked oaiCompat key to dead, keeps live, skips non-oaiCompat (F1)', async () => {
+test('pollProviderKeys flips a revoked oaiCompat key to dead, keeps live, skips no-probe providers (F1)', async () => {
   const realFetch = globalThis.fetch;
   globalThis.fetch = (url, opts) => {
     const u = String(url);
@@ -907,12 +907,76 @@ test('pollProviderKeys flips a revoked oaiCompat key to dead, keeps live, skips 
   try {
     await add('groq', 'gsk-live-key-AAAA');
     await add('groq', 'gsk-revoked-key-DEAD');
-    await add('anthropic', 'sk-ant-nonoai-BBBB');   // anthropic is NOT oaiCompat → must be skipped, never flipped
+    await add('cohere', 'cohere-key-BBBB');   // cohere has no probe defined → must be skipped, never flipped
     await pollProviderKeys();
     const keys = await (await realFetch(base + '/api/keys', { headers: H })).json();
     assert.equal(keys.find((k) => /AAAA/.test(k.key_hint)).status, 'working');   // live stays
     assert.equal(keys.find((k) => /DEAD/.test(k.key_hint)).status, 'dead');      // revoked flips
-    assert.equal(keys.find((k) => /BBBB/.test(k.key_hint)).status, 'working');   // non-oaiCompat untouched
+    assert.equal(keys.find((k) => /BBBB/.test(k.key_hint)).status, 'working');   // no-probe provider untouched
+  } finally { globalThis.fetch = realFetch; }
+});
+
+// 2026-08-14 incident: an anthropic key 401'd for real while its registry row stayed
+// 'working' because anthropic has no oaiCompat /models route — checkProviderKey skipped
+// it unconditionally. These lock in the fix: a dedicated /v1/messages probe, dead only
+// on a definitive 401/403, never on a transient error/429/timeout.
+test('pollProviderKeys flips a dead anthropic key via the /v1/messages probe (key-liveness)', async () => {
+  const realFetch = globalThis.fetch;
+  let seen;
+  globalThis.fetch = (url, opts) => {
+    const u = String(url);
+    if (u.startsWith('http://127.0.0.1')) return realFetch(url, opts);
+    seen = { url: u, opts };
+    return Promise.resolve(new Response('{}', { status: 401 }));
+  };
+  const add = (k) => realFetch(base + '/api/keys', { method: 'POST', headers: H, body: JSON.stringify({ provider: 'anthropic', key: k }) });
+  try {
+    await add('sk-ant-dead-EEEE');
+    await pollProviderKeys();
+    const keys = await (await realFetch(base + '/api/keys', { headers: H })).json();
+    assert.equal(keys.find((k) => /EEEE/.test(k.key_hint)).status, 'dead');
+    // probe shape: POST /v1/messages, x-api-key + anthropic-version, 1-token body
+    assert.equal(seen.url, 'https://api.anthropic.com/v1/messages');
+    assert.equal(seen.opts.method, 'POST');
+    assert.equal(seen.opts.headers['x-api-key'], 'sk-ant-dead-EEEE');
+    assert.equal(seen.opts.headers['anthropic-version'], '2023-06-01');
+    assert.equal(JSON.parse(seen.opts.body).max_tokens, 1);
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('pollProviderKeys leaves an anthropic key untouched on 429 or a network timeout (key-liveness)', async () => {
+  const realFetch = globalThis.fetch;
+  const add = (k) => realFetch(base + '/api/keys', { method: 'POST', headers: H, body: JSON.stringify({ provider: 'anthropic', key: k }) });
+  try {
+    await add('sk-ant-ratelimited-FFFF');
+    await add('sk-ant-timeout-GGGG');
+    globalThis.fetch = (url, opts) => String(url).startsWith('http://127.0.0.1')
+      ? realFetch(url, opts) : Promise.resolve(new Response('{}', { status: 429 }));
+    await pollProviderKeys();
+    let keys = await (await realFetch(base + '/api/keys', { headers: H })).json();
+    assert.equal(keys.find((k) => /FFFF/.test(k.key_hint)).status, 'working');   // 429 is transient, not fatal
+
+    globalThis.fetch = (url, opts) => String(url).startsWith('http://127.0.0.1')
+      ? realFetch(url, opts) : Promise.reject(new Error('fetch failed: timeout'));
+    await pollProviderKeys();
+    keys = await (await realFetch(base + '/api/keys', { headers: H })).json();
+    assert.equal(keys.find((k) => /GGGG/.test(k.key_hint)).status, 'working');   // network error ≠ dead key
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('POST /api/keys/:id/refresh flips a dead anthropic key on demand (key-liveness)', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (url, opts) => String(url).startsWith('http://127.0.0.1')
+    ? realFetch(url, opts) : Promise.resolve(new Response('{}', { status: 403 }));
+  try {
+    await realFetch(base + '/api/keys', { method: 'POST', headers: H, body: JSON.stringify({ provider: 'anthropic', key: 'sk-ant-refresh-HHHH' }) });
+    const id = (await (await realFetch(base + '/api/keys', { headers: H })).json()).find((k) => /HHHH/.test(k.key_hint)).id;
+    const r = await realFetch(base + `/api/keys/${id}/refresh`, { method: 'POST', headers: H });
+    const j = await r.json();
+    assert.equal(j.checked, true);
+    assert.equal(j.alive, false);
+    const status = (await (await realFetch(base + '/api/keys', { headers: H })).json()).find((k) => k.id === id).status;
+    assert.equal(status, 'dead');
   } finally { globalThis.fetch = realFetch; }
 });
 

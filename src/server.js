@@ -1047,19 +1047,40 @@ const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
 
 // ---- provider-key liveness ---------------------------------------------
 // Accounts self-heal (poll → reauth flag); provider keys were insert-and-forget,
-// so a revoked/rotated key sat status='working' forever and got served silently.
-// Probe = GET <base>/models with the key as Bearer. Only providers that speak the
-// OpenAI API (oaiCompat) get a generic probe; others have no universal cheap check
-// and are left untouched (skip), never wrongly flipped to dead.
+// so a revoked/rotated key sat status='working' forever and got served silently
+// (the 2026-08-14 incident: an anthropic key 401'd for real while its row stayed
+// 'working' because anthropic has no oaiCompat /models route to probe).
+// Probe = GET <base>/models with the key as Bearer for OpenAI-shaped APIs
+// (oaiCompat), or a 1-token POST /v1/messages for anthropic. Providers with
+// neither have no universal cheap check and are left untouched (skip), never
+// wrongly flipped to dead.
 async function checkProviderKey(meta, key) {
-  if (!meta || !meta.oaiCompat || !meta.base) return { skip: true };
+  if (!meta) return { skip: true };
   try {
+    // anthropic doesn't speak the OpenAI /models shape — probe with the same
+    // cheap 1-token /v1/messages call the account poller uses, but with the
+    // API-key header pair (x-api-key + anthropic-version) instead of an OAuth Bearer.
+    if (meta.id === 'anthropic') {
+      const r = await fetch(meta.base.replace(/\/+$/, '') + '/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+        signal: AbortSignal.timeout(15000), redirect: 'error',
+      });
+      r.body?.cancel().catch(() => {});
+      return { alive: tokenIsAlive(r.status), status: r.status };
+    }
+    if (!meta.oaiCompat || !meta.base) return { skip: true };
     const r = await fetch(meta.base.replace(/\/+$/, '') + '/models', {
       headers: { authorization: 'Bearer ' + key },
       signal: AbortSignal.timeout(15000), redirect: 'error',
     });
     r.body?.cancel().catch(() => {});
-    return { alive: r.status !== 401 && r.status !== 403, status: r.status };
+    return { alive: tokenIsAlive(r.status), status: r.status };
   } catch (e) { return { error: String((e && e.message) || e) }; }
 }
 let keyPolling = false;
