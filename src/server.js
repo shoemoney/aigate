@@ -590,6 +590,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, q.listAccounts.all());
     if (p === '/api/accounts' && req.method === 'POST') {
       const b = await body(req);
+      if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       if (!b.account || !b.setup_token) return json(res, 400, { error: 'account + setup_token required' });
       // a name with '/' or whitespace breaks the /api/accounts/<name>/<verb> path
       // parsing (split('/')[3]) and can't be targeted for disable/refresh/delete.
@@ -657,6 +658,7 @@ const server = http.createServer(async (req, res) => {
     // result so a bad entry doesn't sink the batch. (must be tested before the singular POST)
     if (p === '/api/keys/import' && req.method === 'POST') {
       const b = await body(req);
+      if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       const items = Array.isArray(b) ? b : (Array.isArray(b.keys) ? b.keys : null);
       if (!items) return json(res, 400, { error: 'body must be an array of {provider,key,label} or {keys:[...]}' });
       if (items.length > 200) return json(res, 400, { error: 'too many keys in one import (max 200)' });
@@ -669,7 +671,9 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { imported: added, total: items.length, results });
     }
     if (p === '/api/keys' && req.method === 'POST') {
-      const r = vaultOneKey(await body(req));
+      const _b = await body(req);
+      if (_b && _b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
+      const r = vaultOneKey(_b);
       if (r.error) return json(res, 400, { error: r.error });
       logAccess(r.provider, '', reqIp(req), 'key-add', r.hint);
       broadcast('keys', q.listKeys.all());
@@ -696,6 +700,7 @@ const server = http.createServer(async (req, res) => {
     // survives the rename and the encrypted token is never touched by it.
     if (p.startsWith('/api/accounts/') && req.method === 'PATCH') {
       const name = decodeURIComponent(p.split('/')[3]); const b = await body(req);
+      if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       const row = q.getAccount.get(name);
       if (!row) return json(res, 404, { error: 'unknown account ' + name });
       const newName = b.account === undefined ? name : String(b.account).trim();
@@ -714,6 +719,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (p.startsWith('/api/accounts/') && p.endsWith('/disabled') && req.method === 'POST') {
       const name = decodeURIComponent(p.split('/')[3]); const b = await body(req);
+      if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       // check .changes like the sibling mutation routes — disabling an unknown/typo'd
       // account used to no-op yet still return {ok:true} + broadcast, hiding the miss.
       if (q.setDisabled.run(b.disabled ? 1 : 0, name).changes === 0) return json(res, 404, { error: 'unknown account ' + name });
@@ -776,6 +782,7 @@ const server = http.createServer(async (req, res) => {
     // honest and it auto-recovers when parked_until passes. ?minutes overrides the TTL.
     if (p === '/api/events/limit' && req.method === 'POST') {
       const b = await body(req);
+      if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       if (!b.account) return json(res, 400, { error: 'account required' });
       const mins = Math.min(Math.max(Number(b.minutes) || 15, 1), 360);
       // a mistyped/stale account matches zero rows — {ok:true} there means selection
@@ -805,6 +812,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/events/usage' && req.method === 'POST') {
       const b = await body(req);
+      if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       if (!b.account) return json(res, 400, { error: 'account required' });
       if (q.updUsage.run(Number.isFinite(+b.five_hour_pct) ? +b.five_hour_pct : 0, Number.isFinite(+b.seven_day_pct) ? +b.seven_day_pct : 0, b.account).changes === 0)
         return json(res, 404, { error: 'unknown account ' + b.account });
@@ -879,6 +887,7 @@ const server = http.createServer(async (req, res) => {
     // streamed activity heartbeat from a running worker (tool/thinking) — keeps it "live" + fresh
     if (p === '/api/board/activity' && req.method === 'POST') {
       const b = await body(req);
+      if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       const worker = String(b.worker || reqIp(req)).slice(0, 120);
       const w = workers.get(worker) || {};
       w.host = shortHost(String(b.host || w.host || '').slice(0, 120));
@@ -891,6 +900,7 @@ const server = http.createServer(async (req, res) => {
     // atomic claim of the next todo card for THIS worker's box (204 = nothing for it).
     if (p === '/api/board/claim' && req.method === 'POST') {
       const b = await body(req);
+      if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       const host = shortHost(String(b.host || '').slice(0, 120));
       const worker = String(b.worker || reqIp(req)).slice(0, 120);
       const w = workers.get(worker) || {};
@@ -908,6 +918,7 @@ const server = http.createServer(async (req, res) => {
     // One request, one broadcast (vs N PATCHes) so the board doesn't flicker mid-drag.
     if (p === '/api/board/reorder' && req.method === 'POST') {
       const b = await body(req);
+      if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       if (!Array.isArray(b.ids)) return json(res, 400, { error: 'ids array required' });
       b.ids.forEach((id, i) => q.setCardPos.run(i, Number(id)));
       broadcast('board', q.listCards.all());
