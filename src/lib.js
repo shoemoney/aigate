@@ -97,6 +97,7 @@ export function ipAllowed(ip, cidrs) {
   if (n === null) return false;
   for (const c of cidrs) {
     const [net, b] = c.split('/');
+    if (b === '') continue;
     const bits = b === undefined ? 32 : +b;
     // reject out-of-range/NaN prefixes: JS bit-shifts are mod-32, so an invalid
     // `/33` or `/abc` silently computes a garbage mask that mis-authorizes IPs.
