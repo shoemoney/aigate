@@ -245,7 +245,7 @@ const q = {
   // rename because updateAccount writes it back in the same statement (token_enc untouched).
   getAccount: db.prepare(`SELECT account,label FROM accounts WHERE account=?`),
   updateAccount: db.prepare(`UPDATE accounts SET account=?, label=? WHERE account=?`),
-  updUsage: db.prepare(`UPDATE accounts SET five_hour_pct=?, seven_day_pct=?, usage_updated=datetime('now') WHERE account=?`),
+  updUsage: db.prepare(`UPDATE accounts SET five_hour_pct=COALESCE(?,five_hour_pct), seven_day_pct=COALESCE(?,seven_day_pct), usage_updated=datetime('now') WHERE account=?`),
   // window reset epochs — only the poller has these (the fleet's usage hook doesn't), so
   // it's a separate write; COALESCE keeps the last-known reset when a header is missing.
   updResets: db.prepare(`UPDATE accounts SET five_hour_reset=COALESCE(?,five_hour_reset), seven_day_reset=COALESCE(?,seven_day_reset) WHERE account=?`),
@@ -702,7 +702,7 @@ const server = http.createServer(async (req, res) => {
       // would read as "healthy and empty" exactly when the client must keep-or-switch
       if (r.error) return json(res, 502, { account: name, error: r.error });
       broadcast('accounts', q.listAccounts.all());
-      const worst = Math.max(Number(r.five) || 0, Number(r.seven) || 0);
+      const worst = Math.max(Number(r.five ?? 0), Number(r.seven ?? 0));
       return json(res, 200, { account: name, five: r.five ?? null, seven: r.seven ?? null,
         alive: r.alive !== false, maxed: worst >= CUTOFF ? 1 : 0 });
     }
@@ -775,7 +775,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/events/usage' && req.method === 'POST') {
       const b = await body(req);
       if (!b.account) return json(res, 400, { error: 'account required' });
-      if (q.updUsage.run(Number(b.five_hour_pct) || 0, Number(b.seven_day_pct) || 0, b.account).changes === 0)
+      if (q.updUsage.run(Number.isFinite(+b.five_hour_pct) ? +b.five_hour_pct : 0, Number.isFinite(+b.seven_day_pct) ? +b.seven_day_pct : 0, b.account).changes === 0)
         return json(res, 404, { error: 'unknown account ' + b.account });
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true });
@@ -1005,8 +1005,8 @@ async function pollAccountUsage(account, token) {
       console.warn('[poll] E_HEADER_DRIFT unparseable rate header for', account, JSON.stringify({ u5, u7 }));
       return { account, status: r.status, alive, note: 'unparseable rate header — kept last-known-good' };
     }
-    const five = Math.round((f5 || 0) * 100);
-    const seven = Math.round((f7 || 0) * 100);
+    const five = u5 == null ? null : Math.round(f5 * 100);
+    const seven = u7 == null ? null : Math.round(f7 * 100);
     q.updUsage.run(five, seven, account);
     // window reset times (unix epoch seconds) — for the dashboard's "resets …" line.
     // Absent/garbage → null → COALESCE keeps the last-known value.
