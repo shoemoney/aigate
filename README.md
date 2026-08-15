@@ -354,6 +354,11 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`**
 | `GET` | `/api/metrics` | 📈 **Prometheus** text (bearer-gated) — `aigate_selectable`, `aigate_accounts_*`, `aigate_poll_ok/failed`, `aigate_provider_keys_working/dead`, … |
 | `GET` | `/api/logs?limit=` · `/api/stats` | prompt log · dashboard rollups |
 | `GET` | `/api/access?limit=` | 🧾 **audit trail** — every handout, mutation & key-fetch (account · host · IP · action · result; **no secrets**) for post-incident review; `limit` default 100, capped **1000** |
+| `POST` | `/api/login` · `/api/logout` | 🔒 **dashboard password auth** (requires `AIGATE_DASHBOARD_PASSWORD`) — `login {password}` → signed HttpOnly `__Host-aigate` cookie (`SameSite=Strict`), `logout` clears it; pre-auth but **throttled** (`429` after too many fails; loopback exempt) |
+| `GET` / `POST` | `/api/board` | 🗂️ **kanban board — internal/unstable** — `GET` list cards · `POST {title,prompt,cwd,model,effort,host}` create (prompt required, `effort` low/medium/high/max) |
+| `GET` | `/api/board/hosts` · `/api/board/workers` | 🖥️ **internal/unstable** — live worker hosts for the create-modal picker · full roster `{worker,host,cardId,activity,ageMs,idle}` (prunes >5 min, live <60s) |
+| `POST` | `/api/board/activity` · `/api/board/claim` · `/api/board/reorder` | ⚡ **internal/unstable** — `activity {worker,host,cardId,activity}` heartbeat · `claim {host,worker}` atomically claim next todo (`204` if none) · `reorder {ids:[]}` drag-reorder |
+| `POST` / `PATCH` / `DELETE` | `/api/board/:id/*` | 🔧 **internal/unstable** — `POST /result {ok,result,error,session_id}` (append turn, flip done/error) · `POST /followup {prompt}` re-queue · `POST /retry` · `PATCH {title,position}` rename/reorder (prompt immutable) · `DELETE` remove |
 | `GET` | `/api/capabilities` | 🧭 read-only **registry slice** — per-provider **key counts** + Claude **selectability** (accounts + how many are pickable) + server **version**; a machine-readable "what can I reach?" for agents (**never secrets**) |
 | `WS` | `/ws` | 📡 live event stream — auth via the **`bearer.<token>` WebSocket subprotocol** (token never lands in URL/access logs; a `?token=` query param is **ignored** — header/subprotocol only) |
 
