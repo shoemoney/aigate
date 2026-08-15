@@ -66,6 +66,13 @@ export const PROVIDERS = [
   { id: 'voyage',       name: 'Voyage AI',            cat: 'embed',   prefix: 'pa-',       base: 'https://api.voyageai.com/v1',          docs: 'https://docs.voyageai.com' },
   { id: 'jina',         name: 'Jina AI',              cat: 'embed',   prefix: 'jina_',     base: 'https://api.jina.ai/v1',               docs: 'https://jina.ai' },
 
+  // --- search / retrieval / scraping (hydrate PAIRS) ---
+  { id: "brave",        name: 'Brave Search',         cat: 'search',  prefix: 'BSA',       base: 'https://api.search.brave.com',         docs: 'https://api.search.brave.com/app/documentation' },
+  { id: "tavily",       name: 'Tavily',               cat: 'search',  prefix: 'tvly-',     base: 'https://api.tavily.com',               docs: 'https://docs.tavily.com' },
+  { id: "exa",          name: 'Exa',                  cat: 'search',  prefix: '',          base: 'https://api.exa.ai',                   docs: 'https://docs.exa.ai' },
+  { id: "context7",     name: 'Context7',             cat: 'search',  prefix: '',          base: 'https://context7.com',                 docs: 'https://context7.com/docs' },
+  { id: "firecrawl",    name: 'Firecrawl',            cat: 'search',  prefix: 'fc-',       base: 'https://api.firecrawl.dev',           docs: 'https://docs.firecrawl.dev' },
+
   // --- image / video / audio ---
   { id: 'fal',          name: 'fal.ai',               cat: 'media',   prefix: '',          base: 'https://fal.run',                      docs: 'https://fal.ai/docs' },
   { id: 'replicate',    name: 'Replicate',            cat: 'media',   prefix: 'r8_',       base: 'https://api.replicate.com/v1',         docs: 'https://replicate.com/docs' },
