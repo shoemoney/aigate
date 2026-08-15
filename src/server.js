@@ -24,12 +24,27 @@ import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
+// numeric envs must fatal on non-numeric non-empty (NaN → silent breakage like
+// AIGATE_SESSION_TTL_MS=abc → NaN cookie always fails verifySession). Empty/unset
+// still falls back to the default.
+function envNum(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const t = String(raw).trim();
+  if (t === '') return fallback;
+  const n = Number(t);
+  if (!Number.isFinite(n)) {
+    console.error(`FATAL: ${name} must be a finite number — got ${JSON.stringify(raw)}`);
+    process.exit(1);
+  }
+  return n;
+}
 const __dir = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dir, '..', 'public');
 // AIGATE_VERSION (set by the fleet tar-path deploy) wins so a box stamps its real
 // sha; fall back to package.json semver. Served by /health + /api/capabilities.
 const VERSION = (process.env.AIGATE_VERSION || '').trim() || JSON.parse(readFileSync(join(__dir, '..', 'package.json'), 'utf8')).version;
-const PORT = Number(process.env.PORT || 20200);
+const PORT = envNum('PORT', 20200);
 const HOST = process.env.HOST || '0.0.0.0';
 const TOKEN = process.env.AIGATE_TOKEN || '';
 // Optional human-friendly master password for the dashboard. When set, a browser
@@ -40,9 +55,15 @@ const TOKEN = process.env.AIGATE_TOKEN || '';
 const DASH_PW = process.env.AIGATE_DASHBOARD_PASSWORD || '';
 const SESS_SECRET = TOKEN + '|' + DASH_PW;
 const SESS_COOKIE = 'aigate_sess';
-const SESS_TTL_MS = Number(process.env.AIGATE_SESSION_TTL_MS || 3650 * 24 * 3600 * 1000);   // ~10y ("forever")
+const SESS_TTL_MS = envNum('AIGATE_SESSION_TTL_MS', 3650 * 24 * 3600 * 1000);   // ~10y ("forever")
 const DB_PATH = process.env.AIGATE_DB || join(__dir, '..', 'data', 'aigate.db');
-const CUTOFF = Number(process.env.AIGATE_HEADROOM_CUTOFF || 95);
+const CUTOFF = envNum('AIGATE_HEADROOM_CUTOFF', 95);
+const AUTH_MAX_FAILS = envNum('AIGATE_AUTH_MAX_FAILS', 10);
+const AUTH_WINDOW_MS = envNum('AIGATE_AUTH_WINDOW_MS', 60000);
+const AUTH_LOCK_MS = envNum('AIGATE_AUTH_LOCK_MS', 300000);
+const POLL_MS = envNum('AIGATE_POLL_MS', 600000); // 10 min
+const KEY_POLL_MS = envNum('AIGATE_KEY_POLL_MS', 3600000); // 1h
+const WATCHDOG_MS = envNum('AIGATE_WATCHDOG_MS', 30000);
 // Optional network gate (defense-in-depth under the bearer token). Comma-sep
 // IPv4 CIDRs, e.g. "192.168.1.0/24". Empty = allow all. Loopback always allowed.
 const ALLOW_CIDR = (process.env.AIGATE_ALLOW_CIDR || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -401,9 +422,6 @@ let lastPoll = { ts: null, ok: 0, failed: [] };
 // ---- auth-failure throttle (in-memory) ---------------------------------
 // bounded by distinct attacker IPs seen within the window; a periodic sweep evicts
 // expired entries so a spray of one-shot IPs can't grow the map unbounded.
-const AUTH_MAX_FAILS = Number(process.env.AIGATE_AUTH_MAX_FAILS || 10);
-const AUTH_WINDOW_MS = Number(process.env.AIGATE_AUTH_WINDOW_MS || 60000);
-const AUTH_LOCK_MS = Number(process.env.AIGATE_AUTH_LOCK_MS || 300000);
 const authFails = new Map();   // ip -> { fails, first, until }
 const isLoopback = (ip) => ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1' || ip === '';
 function authLocked(ip) { const e = authFails.get(ip); return !!(e && e.until > Date.now()); }
@@ -1061,7 +1079,6 @@ async function pollUsage() {
     noteSelectable(q.pickRanked.all(CUTOFF).length, { via: 'poll' });
   } finally { polling = false; }
 }
-const POLL_MS = Number(process.env.AIGATE_POLL_MS || 600000); // 10 min
 
 // ---- provider-key liveness ---------------------------------------------
 // Accounts self-heal (poll → reauth flag); provider keys were insert-and-forget,
@@ -1180,7 +1197,6 @@ if (isMain) {
   // ping stays green while every POST 500s. A failed write exits so the
   // supervisor restarts a fresh process. ponytail: db-ping only — widen the
   // check if other subsystems can hang.
-  const WATCHDOG_MS = Number(process.env.AIGATE_WATCHDOG_MS || 30000);
   if (WATCHDOG_MS > 0) setInterval(() => {
     try { db.prepare(`INSERT INTO meta(k,v) VALUES('watchdog',datetime('now')) ON CONFLICT(k) DO UPDATE SET v=excluded.v`).run(); }
     catch (e) { console.error('[watchdog] db write failed — exiting for restart', e); shutdown(1); }
@@ -1201,7 +1217,6 @@ if (isMain) {
 
   // provider-key liveness runs on its own (slower) cadence — keys change far less
   // often than account headroom. Offset from the account poll so they don't burst together.
-  const KEY_POLL_MS = Number(process.env.AIGATE_KEY_POLL_MS || 3600000); // 1h
   const keyPoll = () => pollProviderKeys().catch((e) => console.error('[keypoll] cycle failed', e));
   if (KEY_POLL_MS > 0) { setTimeout(keyPoll, 25000); setInterval(keyPoll, KEY_POLL_MS); }
 
