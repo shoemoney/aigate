@@ -389,7 +389,7 @@ function broadcast(type, data) {
   for (const ws of wss.clients) {
     // backpressure guard: a half-open socket never drains — it would buffer every broadcast forever
     if (ws.bufferedAmount > 4e6) { ws.terminate(); continue; }
-    if (ws.readyState === 1) ws.send(msg);
+    if (ws.readyState === 1) try { ws.send(msg); } catch {}
   }
 }
 // every audited event also hits the live feed — an audit row nobody sees is not accountability
