@@ -19,7 +19,7 @@ import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie } from './lib.js';
-import { PROVIDERS, PROVIDER_BY_ID } from './providers.js';
+import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -436,7 +436,7 @@ const body = (req) => new Promise((resolve) => {
 });
 const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
 // prefix-shaped secrets only (sk-…, ghp…, xoxb…) — no generic long-hex rule, git SHAs must survive
-const scrub = (s) => String(s || '').replace(/\b(sk-[A-Za-z0-9_-]{12,}|(?:ghp|gho|xox[bp]|tvly|pplx|fc|AIza)[A-Za-z0-9_-]{12,})\b/g, (m) => m.slice(0, 8) + '…[redacted]');
+const scrub = (s) => String(s || '').replace(/\b((?:sk-ant-|sk-or-|sk_car_|nvapi-|esecret_|gsk_|xai-|csk-|fw_|jina_|r8_|hf_|ghp_|gho_|luma-|key_|pa-|AKIA|sk_|AIza|sk-|ghp|gho|xox[bp]|tvly|pplx|fc)[A-Za-z0-9_-]{12,})\b/g, (m) => m.slice(0, 8) + '…[redacted]');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 
 // Sanitize + vault ONE provider key. Shared by POST /api/keys and the bulk import so
@@ -446,6 +446,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 function vaultOneKey(raw) {
   const provider = String(raw.provider || '').trim().toLowerCase();
   if (!provider) return { error: 'provider required' };
+  if (/[/\s]/.test(provider)) return { error: 'provider cannot contain spaces or slashes' };
+  if (!/^[a-z0-9._-]+$/.test(provider)) return { error: 'provider must match [a-z0-9._-]+' };
   let key = String(raw.key || '').trim();
   const qm = /^(['"])([\s\S]*)\1$/.exec(key); if (qm) key = qm[2];   // strip one layer of matching quotes
   if (!key || /\s/.test(key) || /^(export\s|\w+=)/.test(key))
@@ -455,7 +457,7 @@ function vaultOneKey(raw) {
   q.addKey.run(provider, raw.label || '', encrypt(key), hint, status);
   const meta = PROVIDER_BY_ID.get(provider);
   let warning;
-  if (!meta) warning = `unknown provider ${provider} — not in the catalog`;
+  if (!isKnownProvider(provider)) warning = `unknown provider ${provider} — not in the catalog`;
   else if (meta.prefix && !key.startsWith(meta.prefix))
     warning = `key doesn't start with the expected ${provider} prefix "${meta.prefix}" — did you paste the right key into the right slot?`;
   return { ok: true, provider, hint, warning };
