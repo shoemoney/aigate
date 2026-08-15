@@ -436,7 +436,7 @@ const body = (req) => new Promise((resolve) => {
 });
 const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
 // prefix-shaped secrets only (sk-…, ghp…, xoxb…) — no generic long-hex rule, git SHAs must survive
-const scrub = (s) => String(s || '').replace(/\b(sk-[A-Za-z0-9_-]{12,}|(?:ghp|gho|xox[bp]|tvly|pplx|fc|AIza)[A-Za-z0-9_-]{12,})\b/g, (m) => m.slice(0, 8) + '…[redacted]');
+const scrub = (s) => String(s || '').replace(/\b((?:sk-ant-|sk-or-|sk_car_|nvapi-|esecret_|gsk_|xai-|csk-|fw_|jina_|r8_|hf_|ghp_|gho_|luma-|key_|pa-|AKIA|sk_|AIza|sk-|ghp|gho|xox[bp]|tvly|pplx|fc)[A-Za-z0-9_-]{12,})\b/g, (m) => m.slice(0, 8) + '…[redacted]');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 
 // Sanitize + vault ONE provider key. Shared by POST /api/keys and the bulk import so
