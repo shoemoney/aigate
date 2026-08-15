@@ -373,6 +373,25 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`**
 | `AIGATE_ALLOW_CIDR` | *(empty = all)* | 🌐 network gate — CIDRs + single IPs. Loopback always OK. |
 | `AIGATE_TRUST_PROXY` | `0` | trust `X-Forwarded-For` for client IP — set `1` **only** behind a proxy you control (else the gate/audit see the proxy IP) |
 
+<details>
+<summary>🔧 Advanced env vars (tuning, auth, alerts)</summary>
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `AIGATE_DASHBOARD_PASSWORD` | *(empty = disabled)* | human-friendly dashboard login — `POST /api/login` → signed HttpOnly cookie so browsers use a password, not the raw bearer. Empty = bearer only. Cookie signed by `TOKEN|PASSWORD`. |
+| `AIGATE_SESSION_TTL_MS` | `315360000000` (~10y) | session cookie TTL — how long a dashboard password login stays valid. |
+| `AIGATE_TRUSTED_PROXIES` | *(empty = any peer)* | comma-separated proxy IPs allowed to set `X-Forwarded-For`. Defense-in-depth over `TRUST_PROXY`; empty = honor XFF from any peer. |
+| `AIGATE_KEY_POLL_MS` | `3600000` (1h) | provider-key liveness probe interval (ms); `GET <base>/models` or anthropic probe, flips `working`→`dead`. `0` disables. |
+| `AIGATE_ALERT_WEBHOOK` | *(empty = disabled)* | outbound webhook URL (Slack/Discord/generic `{text}` JSON) — fires on 0 selectable, key went dead, backup failure. Fire-and-forget. |
+| `AIGATE_AUTH_MAX_FAILS` | `10` | bad bearer attempts from one IP within window before 429 lock. Loopback exempt. |
+| `AIGATE_AUTH_WINDOW_MS` | `60000` (60s) | window for counting `AUTH_MAX_FAILS`. |
+| `AIGATE_AUTH_LOCK_MS` | `300000` (5m) | lock duration after `AUTH_MAX_FAILS` exceeded. |
+| `AIGATE_VERSION` | *(empty = package.json)* | override served version string (`/health` + `/api/capabilities`); fleet tar-path deploy stamps the sha. |
+
+See `.env.example` for the fully-commented list.
+
+</details>
+
 ---
 
 ## 🗺️ Roadmap
