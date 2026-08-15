@@ -510,7 +510,54 @@ test('WS ?token= query auth is dead — socket destroyed', async () => {
     ws.on('close', resolve);
   });
 });
-// ponytail: no 403 net-gate test — ALLOW_CIDR is read at import and this harness deletes it; the 401 JSON assertion above covers the error-shape contract
+test('network gate: disallowed XFF IP → 403 forbidden (network), allowed IP passes (HTTP)', async () => {
+  const prevCidr = process.env.AIGATE_ALLOW_CIDR;
+  const prevTrust = process.env.AIGATE_TRUST_PROXY;
+  process.env.AIGATE_ALLOW_CIDR = '10.0.0.0/24';
+  process.env.AIGATE_TRUST_PROXY = '1';
+  try {
+    // disallowed external IP via trusted XFF → 403 with exact JSON shape (gate fires before auth)
+    let r = await fetch(base + '/health', { headers: { 'x-forwarded-for': '203.0.113.5' } });
+    assert.equal(r.status, 403);
+    assert.deepEqual(await r.json(), { error: 'forbidden (network)' });
+    // also on an authed route — gate still wins over 401
+    r = await fetch(base + '/api/accounts', { headers: { 'x-forwarded-for': '203.0.113.5' } });
+    assert.equal(r.status, 403);
+    assert.deepEqual(await r.json(), { error: 'forbidden (network)' });
+    // allowed IP in the CIDR → passes through (200 on /health)
+    r = await fetch(base + '/health', { headers: { 'x-forwarded-for': '10.0.0.5' } });
+    assert.equal(r.status, 200);
+    // loopback with no XFF → still allowed (loopback is always allowed)
+    r = await fetch(base + '/health');
+    assert.equal(r.status, 200);
+  } finally {
+    if (prevCidr === undefined) delete process.env.AIGATE_ALLOW_CIDR; else process.env.AIGATE_ALLOW_CIDR = prevCidr;
+    if (prevTrust === undefined) delete process.env.AIGATE_TRUST_PROXY; else process.env.AIGATE_TRUST_PROXY = prevTrust;
+  }
+});
+
+test('network gate: WS with disallowed XFF IP is destroyed before any message (403 gate)', async () => {
+  const prevCidr = process.env.AIGATE_ALLOW_CIDR;
+  const prevTrust = process.env.AIGATE_TRUST_PROXY;
+  process.env.AIGATE_ALLOW_CIDR = '10.0.0.0/24';
+  process.env.AIGATE_TRUST_PROXY = '1';
+  try {
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket(base.replace('http', 'ws') + '/ws', ['aigate', 'bearer.' + TOKEN], { headers: { 'x-forwarded-for': '203.0.113.5' } });
+      ws.on('message', () => reject(new Error('disallowed WS got data (gate did not fire)')));
+      ws.on('error', resolve);
+      ws.on('close', resolve);
+      setTimeout(() => reject(new Error('WS disallowed timeout — gate did not destroy socket')), 1500);
+    });
+    // allowed IP still gets through
+    const m = await wsFirstMsg('/ws', ['aigate', 'bearer.' + TOKEN]);
+    // need XFF allowed header for this connection too — but remote loopback without XFF is already allowed, so default works
+    assert.equal(m.type, 'accounts');
+  } finally {
+    if (prevCidr === undefined) delete process.env.AIGATE_ALLOW_CIDR; else process.env.AIGATE_ALLOW_CIDR = prevCidr;
+    if (prevTrust === undefined) delete process.env.AIGATE_TRUST_PROXY; else process.env.AIGATE_TRUST_PROXY = prevTrust;
+  }
+});
 
 test('malformed WS upgrade target ("//") is destroyed pre-auth — daemon survives', async () => {
   // ws-the-library validates URLs client-side, so hand-roll the frame: '//' parses

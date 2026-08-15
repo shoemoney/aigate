@@ -44,16 +44,12 @@ const DB_PATH = process.env.AIGATE_DB || join(__dir, '..', 'data', 'aigate.db');
 const CUTOFF = Number(process.env.AIGATE_HEADROOM_CUTOFF || 95);
 // Optional network gate (defense-in-depth under the bearer token). Comma-sep
 // IPv4 CIDRs, e.g. "192.168.1.0/24". Empty = allow all. Loopback always allowed.
-const ALLOW_CIDR = (process.env.AIGATE_ALLOW_CIDR || '').split(',').map(s => s.trim()).filter(Boolean);
+// Lazy getters so tests can set env without a process restart; removing the gate
+// must make a test fail.
+const allowCidr = () => (process.env.AIGATE_ALLOW_CIDR || '').split(',').map(s => s.trim()).filter(Boolean);
+const trustProxy = () => process.env.AIGATE_TRUST_PROXY === '1';
+const trustedProxies = () => (process.env.AIGATE_TRUSTED_PROXIES || '').split(',').map((s) => s.trim()).filter(Boolean);
 const ENC_KEY = (process.env.AIGATE_ENCRYPTION_KEY || '').trim();
-// Only trust X-Forwarded-For when aigate sits behind a reverse proxy we control
-// (e.g. NPM). Off by default so a direct client can't spoof its source IP past
-// the CIDR gate. Set AIGATE_TRUST_PROXY=1 when deployed behind a trusted proxy.
-const TRUST_PROXY = process.env.AIGATE_TRUST_PROXY === '1';
-// Optional: the IP(s) of the proxy peers we trust to set X-Forwarded-For. When
-// set, XFF is only honored if the socket peer is one of these — defense-in-depth
-// so a direct LAN client can't present a forged XFF even under TRUST_PROXY.
-const TRUSTED_PROXIES = (process.env.AIGATE_TRUSTED_PROXIES || '').split(',').map((s) => s.trim()).filter(Boolean);
 // Optional outbound alert webhook (Slack/Discord/generic {text} JSON). Fires on the
 // events an operator wants to hear about at 2am: selection outage, a provider key
 // going dead, a failed backup. Empty = disabled. Fire-and-forget, never blocks a request.
@@ -414,7 +410,7 @@ const authed = (req) => {
   // browser: a signed session cookie from a password login (only when configured)
   return !!DASH_PW && verifySession(SESS_SECRET, parseCookie(req.headers.cookie, SESS_COOKIE));
 };
-const reqIp = (req) => clientIp(req.headers, req.socket.remoteAddress, { trustProxy: TRUST_PROXY, proxies: TRUSTED_PROXIES });
+const reqIp = (req) => clientIp(req.headers, req.socket.remoteAddress, { trustProxy: trustProxy(), proxies: trustedProxies() });
 // FQDN → short hostname: everything before the first '.' (empty/undefined-safe). One
 // box may report 'mbp.shoemoney.ai' one call and 'mbp' the next — normalize so they
 // collapse to the same row instead of splitting stats/routing across both spellings.
@@ -471,7 +467,7 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
 
   // network gate (defense-in-depth, before anything else)
-  if (!ipAllowed(reqIp(req), ALLOW_CIDR)) {
+  if (!ipAllowed(reqIp(req), allowCidr())) {
     console.warn('[net] denied', reqIp(req), req.method, p);   // stderr only — unauth clients must not write DB rows
     return json(res, 403, { error: 'forbidden (network)' });
   }
@@ -955,7 +951,7 @@ server.on('upgrade', (req, socket, head) => {
   const wsAuthed = String(req.headers['sec-websocket-protocol'] || '').split(',')
     .some((p) => p.trim().startsWith('bearer.') && tokenMatches(p.trim().slice(7), TOKEN))
     || (!!DASH_PW && verifySession(SESS_SECRET, parseCookie(req.headers.cookie, SESS_COOKIE)));
-  if (path !== '/ws' || !wsAuthed || !ipAllowed(reqIp(req), ALLOW_CIDR)) { console.warn('[ws] denied', reqIp(req)); socket.destroy(); return; }
+  if (path !== '/ws' || !wsAuthed || !ipAllowed(reqIp(req), allowCidr())) { console.warn('[ws] denied', reqIp(req)); socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => {
     // a mid-send ECONNRESET (sleeping laptop tab) otherwise emits an unlistened
     // 'error' → uncaughtException → the whole vault daemon restarts
