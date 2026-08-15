@@ -201,15 +201,49 @@ sequenceDiagram
 | 🔐 | **Encrypted vault** | AES-256-GCM at rest — Claude OAuth tokens **and** provider API keys; the **list** endpoints never return secrets (only `has_token` / `key_hint`), while the selector/fetch routes hand the decrypted value to an authenticated, audited caller |
 | ⚖️ | **Headroom-aware selection** | hands out the account with the **most headroom** (lowest of `max(5h%,7d%)`), skips anything ≥ cutoff |
 | 📈 | **Server-side usage poller** | reads each account's **real** rate-limit headroom straight from Anthropic every 10 min → auto-skip maxed, **auto-recover after reset**, zero manual seeding |
-| 🔑 | **Provider-key registry** | encrypted store + `/api/keys` for a **60-provider catalog** (OpenAI / OpenRouter / Gemini / Groq / Together / fal / ElevenLabs / …); **sanitized intake** (trims + un-quotes pastes, **400s** `export`/`NAME=` blobs, provider lowercased) + collision-proof **`first8…last4`** hints; `GET /api/providers` feeds a dashboard **add-key form** with per-provider key-format hints |
+| 🔑 | **Provider-key registry** | encrypted store + `/api/keys` for a **60-provider catalog** (OpenAI / OpenRouter / Gemini / Groq / Together / fal / ElevenLabs / …); **sanitized intake** (trims + un-quotes pastes, **400s** `export`/`NAME=` blobs, provider lowercased) + collision-proof **`first8…last4#hash8`** hints; `GET /api/providers` feeds a dashboard **add-key form** with per-provider key-format hints |
 | 🔁 | **Over-limit detect + retry** | headless `cc -p` classifies claude's failure — a **real per-account usage limit** → **TTL-parks** that account (`/api/events/limit` — **15m** default, real usage untouched) and **retries the next-best** via `/api/select?exclude=` (up to 3); a **transient 529/overload** → **waits 10s and retries the SAME account** (no park — 529 is global load-shedding; parking/hopping just drains the pool) |
 | 🩺 | **Self-healing daemon** | unauthenticated **`/health`** (DB-backed; `selectable` uses the **exact selection query**, so parked accounts don't mask an outage) + internal **watchdog** (exits→restart on a wedged DB) + Docker `HEALTHCHECK` wired to **autoheal** — three recovery layers |
 | 🐤 | **Boot canary + daily backups** | wrong `AIGATE_ENCRYPTION_KEY` = **loud FATAL at boot** (not a decrypt blow-up mid-request); daily `VACUUM INTO` snapshot → `data/backups/` w/ **14-day retention** (ciphertext only — `.env` never copied) |
 | 🧾 | **Full audit trail** | every **handout, key-fetch, and mutation** (account add/overwrite/delete/disable/enable · key add/delete · limit-park) logged with **timestamp + IP + host**; every prompt is **secret-scrubbed** (`sk-`/`ghp`/`AIza`-shaped tokens redacted) **before** storage then capped at **400 chars**; all readable at **`/api/access`**; auto-pruned after **30 days** (daily, piggybacked on the backup pass) |
 | 📊 | **Live dashboard** | account cards w/ usage bars (🚨 runaway, 🔑 re-auth), **provider-key manager**, streaming activity feed, per-host/device stats — WS auth rides a **`bearer.<token>` subprotocol**, never the URL |
+| 🗂️ | **Kanban board — internal/unstable** | **TODO / RUNNING / DONE / ERROR** columns, drag-reorder, atomic `claim`, heartbeat `activity`, `result`/`followup`/`retry` turns — WS live; see [screenshots](#️-board--kanban-for-agents) |
 | 🎯 | **No-proxy Claude mode** | official binary + `cc` wrapper — won't flag accounts |
-| 🧪 | **Tested** | unit + HTTP tests (`node --test`, boots the real server on a throwaway DB) and a **fleet switching test** on a real Pi — see [docs/TESTING.md](docs/TESTING.md) |
+| 🧪 | **Tested — 142 tests** | unit + HTTP (`node --test` on a throwaway DB, now 142 with 403 gate + limit clamp guards) + a **fleet switching test** on a real Pi — see [docs/TESTING.md](docs/TESTING.md) |
 | 🐳 | **1 runtime dep** | `ws`. SQLite is Node's built-in `node:sqlite`. Buildless. Docker-ready. |
+
+---
+
+## 🗂️ Board — kanban for agents
+
+> Agents don't read logs — they read a board. `TODO → RUNNING → DONE / ERROR` with live workers, atomic claims, and audited turns.
+
+```mermaid
+flowchart LR
+  T["📋 TODO<br/>queued · drag-reorder"] -->|claim atomically| R["🏃 RUNNING<br/>worker heartbeat"]
+  R -->|result ok| D["✅ DONE<br/>audited turns"]
+  R -->|error| E["❌ ERROR<br/>retry / followup"]
+  E -->|retry| T
+  R -->|followup| T
+  W["👷 workers<br/>liveHosts heartbeat"] -.-> R
+  B["📡 WS broadcast"] --- T & R & D & E
+```
+
+**How it works:** any box `POST /api/board {title,prompt,cwd,model,effort,host}` → appears in `TODO`. A worker `POST /api/board/claim {worker,host}` atomically grabs the next card → `RUNNING` (heartbeat via `/activity`). `POST /api/board/:id/result {ok,result,session_id}` flips to `DONE`/`ERROR` with an audited turn; `followup` re-queues. The dashboard polls `/api/board/workers` every 2s + WS push — see the live 5-min sweep that now bounds the `workers` Map.
+
+<details>
+<summary>📸 Fresh screenshots — dashboard + board (2026-08-15, throwaway DB on :3033)</summary>
+
+| Dashboard — live usage + activity | Board — kanban |
+|---|---|
+| ![dashboard](docs/screenshots/dashboard.png) | ![board](docs/screenshots/board.png) |
+| `demo_max` at 0% · `NEXT TO BE PICKED` · weekly/5h bars · `Provider API keys · 1` collapsed | `TODO 2 · RUNNING 0 · DONE 0 · ERROR 0` · 2 demo cards queued · `+ New task` · filter bar |
+
+> Seeded with `demo_max` (0%) + one `openai` key (`sk-proj-…AAAA#hash8`) + 2 demo cards so you see the real empty vs live states — not lorem.
+
+</details>
+
+**API:** `GET /api/board` · `POST /api/board` · `GET /api/board/hosts|workers` · `POST /api/board/claim|activity|reorder` · `POST/PATCH/DELETE /api/board/:id/*` — all **internal/unstable** (shape may shift), bearer-gated, audited. See [📡 API reference](#-api-reference) for the full table.
 
 ---
 
