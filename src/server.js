@@ -462,7 +462,7 @@ const body = (req) => new Promise((resolve) => {
   req.on('end', () => { try { done(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch { done({}); } });
   // a client abort / socket error must still settle the promise, else the awaiting
   // handler hangs forever holding the request open (slow-loris-style pre-handler leak).
-  req.on('aborted', () => done({}));
+  req.on('close', () => done({}));
   req.on('error', () => done({}));
 });
 const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
