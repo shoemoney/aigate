@@ -465,7 +465,7 @@ const body = (req) => new Promise((resolve) => {
   req.on('aborted', () => done({}));
   req.on('error', () => done({}));
 });
-const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
+const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(obj)); };
 // prefix-shaped secrets only (sk-…, ghp…, xoxb…) — no generic long-hex rule, git SHAs must survive
 const scrub = (s) => String(s || '').replace(/\b((?:sk-ant-|sk-or-|sk_car_|nvapi-|esecret_|gsk_|xai-|csk-|fw_|jina_|r8_|hf_|ghp_|gho_|luma-|key_|pa-|AKIA|sk_|AIza|sk-|ghp|gho|xox[bp]|tvly|pplx|fc)[A-Za-z0-9_-]{12,})\b/g, (m) => m.slice(0, 8) + '…[redacted]');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
@@ -546,7 +546,14 @@ const server = http.createServer(async (req, res) => {
     try {
       if (fp && existsSync(fp) && statSync(fp).isFile()) {
         const data = await readFile(fp);
-        res.writeHead(200, { 'content-type': MIME[extname(fp)] || 'application/octet-stream' });
+        const ext = extname(fp);
+        const headers = { 'content-type': MIME[ext] || 'application/octet-stream' };
+        if (ext === '.html') {
+          headers['X-Frame-Options'] = 'DENY';
+          headers['Content-Security-Policy'] = "default-src 'self'; frame-ancestors 'none'";
+          headers['X-Content-Type-Options'] = 'nosniff';
+        }
+        res.writeHead(200, headers);
         return res.end(data);
       }
     } catch { /* file vanished between existsSync and read (deploy swapping public/) → 404, not a hung pre-auth socket */ }
@@ -565,7 +572,7 @@ const server = http.createServer(async (req, res) => {
   if (p === '/api/login' && req.method === 'POST') {
     if (!DASH_PW) return json(res, 400, { error: 'password login not configured (set AIGATE_DASHBOARD_PASSWORD)' });
     const b = await body(req);
-    if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
+    if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
     if (!tokenMatches(String((b && b.password) || ''), DASH_PW)) {
       authFail(clientAddr); console.error('[auth] bad dashboard password', clientAddr);
       return json(res, 401, { error: 'wrong password' });
@@ -573,11 +580,11 @@ const server = http.createServer(async (req, res) => {
     authOk(clientAddr);
     const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
     const cookie = `${SESS_COOKIE}=${signSession(SESS_SECRET, Date.now() + SESS_TTL_MS)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESS_TTL_MS / 1000)}${secure}`;
-    res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': cookie });
+    res.writeHead(200, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'set-cookie': cookie });
     return res.end(JSON.stringify({ ok: true }));
   }
   if (p === '/api/logout' && req.method === 'POST') {
-    res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': `${SESS_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` });
+    res.writeHead(200, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'set-cookie': `${SESS_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` });
     return res.end(JSON.stringify({ ok: true }));
   }
 
@@ -795,7 +802,7 @@ const server = http.createServer(async (req, res) => {
       // writing a hollow row of empty defaults under a 200 the client reads as "logged".
       // Connection:close — we paused mid-body, so the socket has unread bytes that would
       // poison a keep-alive reuse (ECONNRESET on the NEXT request); close it cleanly.
-      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'payload too large' })); }
+      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', connection: 'close' }); return res.end(JSON.stringify({ error: 'payload too large' })); }
       // store scrubbed + truncated: every read already substr's to 400 — never retain full prompts
       const prompt = scrub(b.prompt).slice(0, 400);
       q.insReq.run(b.account || '', shortHost(b.host), reqIp(req), b.cwd || '', b.model || '', prompt, b.tokens ?? null);
@@ -857,7 +864,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, q.listCards.all());
     if (p === '/api/board' && req.method === 'POST') {
       const b = await body(req);
-      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
+      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       const prompt = String(b.prompt || '').trim();
       if (!prompt) return json(res, 400, { error: 'prompt required' });
       const effort = ['low', 'medium', 'high', 'max'].includes(b.effort) ? b.effort : 'medium';
@@ -919,7 +926,7 @@ const server = http.createServer(async (req, res) => {
       const cur = q.getCard.get(id);
       if (!cur) return json(res, 404, { error: 'unknown card ' + id });
       const b = await body(req);
-      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
+      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       const ok = b.ok !== false && !b.error;
       let turns; try { turns = JSON.parse(cur.turns || '[]'); } catch { turns = []; }
       turns.push({ prompt: cur.prompt, summary: b.result != null ? String(b.result) : '', ok, ts: new Date().toISOString() });
@@ -932,7 +939,7 @@ const server = http.createServer(async (req, res) => {
     // inline follow-up: add another prompt to a settled card → re-queue (kept session_id → --resume)
     if (p.startsWith('/api/board/') && p.endsWith('/followup') && req.method === 'POST') {
       const b = await body(req);
-      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
+      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       const prompt = String(b.prompt || '').trim();
       if (!prompt) return json(res, 400, { error: 'prompt required' });
       const card = q.followupCard.get(prompt, Number(p.split('/')[3]));
@@ -951,7 +958,7 @@ const server = http.createServer(async (req, res) => {
       const cur = q.getCard.get(Number(p.split('/')[3]));
       if (!cur) return json(res, 404, { error: 'unknown card' });
       const b = await body(req);
-      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
+      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       const card = q.patchCard.get(b.title !== undefined ? String(b.title).slice(0, 200) : cur.title,
         b.position !== undefined ? Number(b.position) || 0 : cur.position, cur.id);
       broadcast('board', q.listCards.all());
