@@ -427,7 +427,7 @@ const body = (req) => new Promise((resolve) => {
   const done = (v) => { if (!settled) { settled = true; resolve(v); } };
   // stop buffering past 1MB but DON'T destroy the socket — the handler still needs
   // a live connection to send its 413 back; pause so we ignore the rest of the body.
-  req.on('data', (c) => { n += c.length; if (n > 1e6) { req.pause(); return done({ __oversized: true }); } chunks.push(c); });
+  req.on('data', (c) => { n += c.length; if (n > 1e6) { req.pause(); return done({ __oversized: true }); } chunks.push(c); }); // sentinel — 413 paths below send connection: close
   req.on('end', () => { try { done(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch { done({}); } });
   // a client abort / socket error must still settle the promise, else the awaiting
   // handler hangs forever holding the request open (slow-loris-style pre-handler leak).
@@ -534,7 +534,7 @@ const server = http.createServer(async (req, res) => {
   if (p === '/api/login' && req.method === 'POST') {
     if (!DASH_PW) return json(res, 400, { error: 'password login not configured (set AIGATE_DASHBOARD_PASSWORD)' });
     const b = await body(req);
-    if (b && b.__oversized) return json(res, 413, { error: 'body too large' });
+    if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
     if (!tokenMatches(String((b && b.password) || ''), DASH_PW)) {
       authFail(clientAddr); console.error('[auth] bad dashboard password', clientAddr);
       return json(res, 401, { error: 'wrong password' });
@@ -826,7 +826,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, q.listCards.all());
     if (p === '/api/board' && req.method === 'POST') {
       const b = await body(req);
-      if (b.__oversized) return json(res, 413, { error: 'body too large' });
+      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       const prompt = String(b.prompt || '').trim();
       if (!prompt) return json(res, 400, { error: 'prompt required' });
       const effort = ['low', 'medium', 'high', 'max'].includes(b.effort) ? b.effort : 'medium';
@@ -888,7 +888,7 @@ const server = http.createServer(async (req, res) => {
       const cur = q.getCard.get(id);
       if (!cur) return json(res, 404, { error: 'unknown card ' + id });
       const b = await body(req);
-      if (b.__oversized) return json(res, 413, { error: 'body too large' });
+      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       const ok = b.ok !== false && !b.error;
       let turns; try { turns = JSON.parse(cur.turns || '[]'); } catch { turns = []; }
       turns.push({ prompt: cur.prompt, summary: b.result != null ? String(b.result) : '', ok, ts: new Date().toISOString() });
@@ -901,7 +901,7 @@ const server = http.createServer(async (req, res) => {
     // inline follow-up: add another prompt to a settled card → re-queue (kept session_id → --resume)
     if (p.startsWith('/api/board/') && p.endsWith('/followup') && req.method === 'POST') {
       const b = await body(req);
-      if (b.__oversized) return json(res, 413, { error: 'body too large' });
+      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       const prompt = String(b.prompt || '').trim();
       if (!prompt) return json(res, 400, { error: 'prompt required' });
       const card = q.followupCard.get(prompt, Number(p.split('/')[3]));
@@ -920,7 +920,7 @@ const server = http.createServer(async (req, res) => {
       const cur = q.getCard.get(Number(p.split('/')[3]));
       if (!cur) return json(res, 404, { error: 'unknown card' });
       const b = await body(req);
-      if (b.__oversized) return json(res, 413, { error: 'body too large' });
+      if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       const card = q.patchCard.get(b.title !== undefined ? String(b.title).slice(0, 200) : cur.title,
         b.position !== undefined ? Number(b.position) || 0 : cur.position, cur.id);
       broadcast('board', q.listCards.all());
