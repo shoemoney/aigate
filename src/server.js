@@ -174,6 +174,7 @@ function openDb(path = DB_PATH) {
         CREATE INDEX IF NOT EXISTS idx_board_status ON board_cards(status, position, id);
         CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
         CREATE INDEX IF NOT EXISTS idx_req_host ON request_log(host);
+        CREATE INDEX IF NOT EXISTS idx_req_ts ON request_log(ts);
         DROP INDEX IF EXISTS idx_req_acct;
       `);
       return d;
