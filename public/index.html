@@ -408,7 +408,7 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
             </span>
           </div>
           <div class="scrollx feedmax">
-            <TransitionGroup name="feed" tag="div" class="feed" role="log" aria-live="off" aria-label="activity feed">
+            <TransitionGroup name="feed" tag="div" class="feed" role="log" aria-live="polite" aria-label="activity feed">
               <div class="frow head" key="head"><span>age</span><span>account</span><span>host</span><span>model</span><span class="tk">tokens</span><span>prompt</span></div>
               <!-- :key="r.key" — a monotonic id minted once in rowFrom(), NOT r.ts (1s sqlite granularity collides) or array index (unstable under unshift) — critique §2 -->
               <div v-for="r in feedRows" :key="r.key" class="frow" :class="{fail:r.fail}">
