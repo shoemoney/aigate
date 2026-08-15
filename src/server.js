@@ -446,6 +446,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 function vaultOneKey(raw) {
   const provider = String(raw.provider || '').trim().toLowerCase();
   if (!provider) return { error: 'provider required' };
+  if (/[/\s]/.test(provider)) return { error: 'provider cannot contain spaces or slashes' };
+  if (!/^[a-z0-9._-]+$/.test(provider)) return { error: 'provider must match [a-z0-9._-]+' };
   let key = String(raw.key || '').trim();
   const qm = /^(['"])([\s\S]*)\1$/.exec(key); if (qm) key = qm[2];   // strip one layer of matching quotes
   if (!key || /\s/.test(key) || /^(export\s|\w+=)/.test(key))
