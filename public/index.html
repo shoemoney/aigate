@@ -788,14 +788,15 @@ const app=Vue.createApp({
       if(this._ws&&(this._ws.readyState===0||this._ws.readyState===1))return;   // already CONNECTING/OPEN — no duplicate socket
       this._ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',TOKEN?['aigate','bearer.'+TOKEN]:['aigate']);
       this._ws.onopen=async()=>{
-        this.live=true; this.liveLabel='live';
+        this.live=true; this.liveLabel='live'; this._wsBackoff=1000;
         try{
           const s=await api('/api/stats'); this.ingestStats(s);
           this.keys=await api('/api/keys');
           this.seeding=true; this.feed=[]; await this.seedFeed(); this.seeding=false;
         }catch(e){ this.seeding=false; if(e===401)this.kick(); }
       };
-      this._ws.onclose=()=>{ this.live=false; this.liveLabel='reconnecting'; setTimeout(this.connect,2000); };
+      this._ws.onerror=()=>{try{this._ws.close()}catch{}};
+      this._ws.onclose=()=>{ this.live=false; this.liveLabel='reconnecting'; const d=this._wsBackoff||1000; setTimeout(()=>this.connect(),d); this._wsBackoff=Math.min(d*2,30000); };
       this._ws.onmessage=e=>{
         let m; try{ m=JSON.parse(e.data); }catch{ return; }   // malformed frame — drop it, don't kill the handler (D9)
         if(m.type==='accounts') this.ingestAccounts(m.data);

@@ -753,8 +753,9 @@ createApp({
     connect(){
       const ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws',
         TOKEN?['aigate','bearer.'+TOKEN]:['aigate']);
-      ws.onopen=()=>{this.live=true;this.load();};
-      ws.onclose=()=>{this.live=false;this.wasDisconnected=true;setTimeout(()=>this.connect(),2000);};
+      ws.onopen=()=>{this.live=true;this._wsBackoff=1000;this.load();};
+      ws.onerror=()=>{try{ws.close()}catch{}};
+      ws.onclose=()=>{this.live=false;this.wasDisconnected=true;const d=this._wsBackoff||1000;setTimeout(()=>this.connect(),d);this._wsBackoff=Math.min(d*2,30000);};
       ws.onmessage=e=>{this.lastMsgAt=Date.now();try{const m=JSON.parse(e.data);if(m.type==='board')this.ingest(m.data);}catch{}};
     },
   },
