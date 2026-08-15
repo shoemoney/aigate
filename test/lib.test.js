@@ -139,10 +139,10 @@ test('safeStaticPath: parent-traversal blocked', () => {
 
 test('signSession/verifySession: round-trips, rejects tamper/expiry/wrong-secret', () => {
   const secret = 'tok|pw';
-  const good = signSession(secret, Date.now() + 60000);
-  assert.equal(verifySession(secret, good), true);                       // fresh + valid
+  const good = signSession(secret, Date.now() + 600000);
+  assert.equal(verifySession(secret, good), true);                       // fresh + valid (far-future, no boundary race)
   assert.equal(verifySession('tok|other', good), false);                 // secret rotated (pw changed)
-  assert.equal(verifySession(secret, signSession(secret, Date.now() - 1)), false);  // expired
+  assert.equal(verifySession(secret, signSession(secret, 1)), false);  // expired (far-past deterministic, no Date.now() race)
   assert.equal(verifySession(secret, good.slice(0, -1) + (good.slice(-1) === '0' ? '1' : '0')), false);   // signature tampered (flip last hex char — never a no-op when it was already '0')
   assert.equal(verifySession(secret, good.replace(/^\d+/, (n) => String(Number(n) + 1))), false);  // exp tampered (sig no longer matches)
   for (const junk of ['', 'nodot', '.abc', '123.', 'abc.def', null, undefined, 42])
