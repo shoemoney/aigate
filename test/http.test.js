@@ -243,7 +243,7 @@ test('POST /api/events/prompt truncates stored prompt to 400 chars', async () =>
   await fetch(base + '/api/events/prompt', { method: 'POST', headers: H,
     body: JSON.stringify({ account: 'alice', prompt: 'x'.repeat(1000) }) });
   const [row] = await (await fetch(base + '/api/logs?limit=1', { headers: H })).json();
-  assert.ok(row.prompt.length <= 400);
+  assert.equal(row.prompt.length, 400);
 });
 
 test('negative ?limit is clamped, not unbounded (SQLite reads LIMIT -1 as ALL)', async () => {
@@ -252,8 +252,13 @@ test('negative ?limit is clamped, not unbounded (SQLite reads LIMIT -1 as ALL)',
       body: JSON.stringify({ account: 'alice', prompt: 'seed ' + i }) });
   const logs = await (await fetch(base + '/api/logs?limit=-1', { headers: H })).json();
   const access = await (await fetch(base + '/api/access?limit=-1', { headers: H })).json();
-  assert.ok(Array.isArray(logs) && logs.length > 0 && logs.length <= 1000, 'logs clamped to [1,1000]');
-  assert.ok(Array.isArray(access) && access.length > 0 && access.length <= 1000, 'access clamped to [1,1000]');
+  assert.equal(logs.length, 1, 'logs limit -1 clamped to 1');
+  assert.equal(access.length, 1, 'access limit -1 clamped to 1');
+  // limit 0 must clamp to 1 per [1,1000] contract (Number("0")||100 bug → 100)
+  const logs0 = await (await fetch(base + '/api/logs?limit=0', { headers: H })).json();
+  const access0 = await (await fetch(base + '/api/access?limit=0', { headers: H })).json();
+  assert.equal(logs0.length, 1, 'logs limit 0 clamped to 1');
+  assert.equal(access0.length, 1, 'access limit 0 clamped to 1');
 });
 
 test('POST /api/events/prompt round-trips a multibyte UTF-8 prompt (no mojibake)', async () => {

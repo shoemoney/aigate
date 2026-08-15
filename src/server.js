@@ -58,6 +58,7 @@ const TRUSTED_PROXIES = (process.env.AIGATE_TRUSTED_PROXIES || '').split(',').ma
 // events an operator wants to hear about at 2am: selection outage, a provider key
 // going dead, a failed backup. Empty = disabled. Fire-and-forget, never blocks a request.
 const ALERT_WEBHOOK = (process.env.AIGATE_ALERT_WEBHOOK || '').trim();
+const clampLimit = (v) => { if (v == null || v === '') return 100; const n = Number(v); return Number.isFinite(n) ? Math.max(1, Math.min(Math.trunc(n), 1000)) : 100; };
 
 // weak = empty / a known placeholder / under 16 chars — any of these boots the
 // vault behind a GUESSABLE shared bearer that gates every OAuth token + provider key.
@@ -782,12 +783,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     // --- read models for the dashboard ---
-    // Math.max(1,…) floor: SQLite reads a negative LIMIT as unbounded, so a truthy -1 would dump the whole log.
+    // clamp [1,1000]: SQLite reads a negative LIMIT as unbounded, so -1 must not dump the whole log; 0 → 1 not 100.
     if (p === '/api/logs' && req.method === 'GET')
-      return json(res, 200, q.recentReq.all(Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 100, 1000))));
+      return json(res, 200, q.recentReq.all(clampLimit(url.searchParams.get('limit'))));
     // audit trail read path (access_log holds only hints/labels/actions, never secrets)
     if (p === '/api/access' && req.method === 'GET')
-      return json(res, 200, q.recentAccess.all(Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 100, 1000))));
+      return json(res, 200, q.recentAccess.all(clampLimit(url.searchParams.get('limit'))));
     if (p === '/api/stats' && req.method === 'GET') {
       const by_host_1h = q.statByHost1h.all().map((r) => ({
         ...r, rps: +(r.requests / 3600).toFixed(3), tps: +(r.tokens / 3600).toFixed(2),
