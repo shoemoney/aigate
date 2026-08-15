@@ -374,6 +374,10 @@ const liveHosts = () => {
   const cut = Date.now() - 120000;
   return [...new Set([...workers.values()].filter((w) => w.lastSeen > cut && w.host).map((w) => w.host))].sort();
 };
+function sweepWorkers() {
+  const now = Date.now();
+  for (const [id, w] of workers) if (now - w.lastSeen > 300000) workers.delete(id);
+}
 
 // ---- websocket hub ------------------------------------------------------
 // browsers abort unless the server echoes one offered subprotocol — echo 'aigate', never the bearer
@@ -886,8 +890,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, liveHosts());
     // full worker roster for the bottom activity panel: who's online, on what card, doing what
     if (p === '/api/board/workers' && req.method === 'GET') {
-      const now = Date.now();
-      for (const [id, w] of workers) if (now - w.lastSeen > 300000) workers.delete(id);   // prune dead (>5min)
+      sweepWorkers(); const now = Date.now();
       return json(res, 200, [...workers.entries()].filter(([, w]) => now - w.lastSeen < 60000)
         .map(([id, w]) => ({ worker: id, host: w.host || '?', cardId: w.cardId || null, activity: w.activity || null, ageMs: now - w.lastSeen, idle: !w.cardId })));
     }
@@ -1241,6 +1244,8 @@ if (isMain) {
 
   // evict expired auth-throttle entries so a spray of one-shot IPs can't grow the map
   setInterval(sweepAuthFails, AUTH_WINDOW_MS).unref();
+  // evict stale workers (>5min without heartbeat) so the map can't grow unbounded
+  setInterval(sweepWorkers, 60000).unref(); // periodic worker sweep
 
   server.listen(PORT, HOST, () =>
     console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
