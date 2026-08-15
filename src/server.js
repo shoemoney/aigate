@@ -17,6 +17,7 @@ import { readFile } from 'node:fs/promises';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
@@ -221,6 +222,21 @@ if (!db.prepare(`SELECT 1 FROM meta WHERE k='host_backfill_done'`).get()) {
   db.exec(`UPDATE request_log SET host = substr(host,1,instr(host,'.')-1) WHERE host LIKE '%.%'`);
   db.exec(`UPDATE access_log SET host = substr(host,1,instr(host,'.')-1) WHERE host LIKE '%.%'`);
   db.prepare(`INSERT INTO meta(k,v) VALUES('host_backfill_done','1')`).run();
+}
+// migration: key_hint was 8…4 and UNIQUE(provider,key_hint) — two distinct keys
+// with same first8+last4 silently overwrote (1 row not 2). New hint is 8…4#hash8
+// (hash of full key) so colliding prefixes get distinct rows. Backfill old rows
+// that lack the hash suffix. Gated on its own sentinel per ADD-COLUMN note.
+if (!db.prepare(`SELECT 1 FROM meta WHERE k='hint_backfill_done'`).get()) {
+  try {
+    for (const r of db.prepare(`SELECT id, key_enc, key_hint FROM provider_keys`).all()) {
+      if (r.key_hint && r.key_hint.includes('#')) continue;
+      let k; try { k = decrypt(r.key_enc); } catch { continue; }
+      const nh = k.slice(0, 8) + '…' + k.slice(-4) + '#' + createHash('sha256').update(k).digest('hex').slice(0, 8);
+      if (nh !== r.key_hint) db.prepare(`UPDATE provider_keys SET key_hint=? WHERE id=?`).run(nh, r.id);
+    }
+  } catch { /* best-effort — new inserts already use new hint */ }
+  try { db.prepare(`INSERT INTO meta(k,v) VALUES('hint_backfill_done','1')`).run(); } catch { /* raced */ }
 }
 
 // prepared once
@@ -452,7 +468,7 @@ function vaultOneKey(raw) {
   const qm = /^(['"])([\s\S]*)\1$/.exec(key); if (qm) key = qm[2];   // strip one layer of matching quotes
   if (!key || /\s/.test(key) || /^(export\s|\w+=)/.test(key))
     return { error: 'key looks malformed (whitespace or an export/NAME= prefix — send the raw value only)' };
-  const hint = key.slice(0, 8) + '…' + key.slice(-4);
+  const hint = key.slice(0, 8) + '…' + key.slice(-4) + '#' + createHash('sha256').update(key).digest('hex').slice(0, 8);
   const status = (raw.status === 'working' || raw.status === 'disabled') ? raw.status : 'working';
   q.addKey.run(provider, raw.label || '', encrypt(key), hint, status);
   const meta = PROVIDER_BY_ID.get(provider);
