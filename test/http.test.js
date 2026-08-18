@@ -292,11 +292,22 @@ test('POST /api/events/prompt survives a multibyte UTF-8 sequence split mid-code
     `Content-Length: ${payload.length}\r\n` +
     `Connection: close\r\n\r\n`, 'utf8');
   const sock = connect(server.address().port, '127.0.0.1');
+  sock.on('error', () => {});
+  // wait for the response body itself (chunked encoding's "0\r\n\r\n" terminator), not the
+  // socket's 'end'/'close' — under full-suite load (many prior sockets/keep-alives still
+  // settling) those teardown events can sit unfired for a long time even though the response
+  // already arrived, which made this test flaky. The DB write happens before the response is
+  // written, so seeing the full response is already proof enough that the row landed.
+  let resBuf = '';
+  const gotResponse = new Promise((resolve) => {
+    sock.on('data', (d) => { resBuf += d.toString('latin1'); if (resBuf.endsWith('0\r\n\r\n')) resolve(); });
+  });
   await new Promise((r) => sock.once('connect', r));
   sock.write(Buffer.concat([head, payload.subarray(0, splitAt)]));
   await new Promise((r) => setTimeout(r, 20));       // force two separate TCP-level writes/'data' events
   sock.write(payload.subarray(splitAt));
-  await new Promise((r) => sock.once('close', r));
+  await gotResponse;
+  sock.destroy();
   const [row] = await (await fetch(base + '/api/logs?limit=1', { headers: H })).json();
   assert.equal(row.prompt, prompt);
   assert.ok(!row.prompt.includes('�'), 'no U+FFFD replacement chars from a split-codepoint decode');
