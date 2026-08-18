@@ -209,7 +209,7 @@ sequenceDiagram
 | 📊 | **Live dashboard** | account cards w/ usage bars (🚨 runaway, 🔑 re-auth), **provider-key manager**, streaming activity feed, per-host/device stats — WS auth rides a **`bearer.<token>` subprotocol**, never the URL |
 | 🗂️ | **Kanban board — internal/unstable** | **TODO / RUNNING / DONE / ERROR** columns, drag-reorder, atomic `claim`, heartbeat `activity`, `result`/`followup`/`retry` turns — WS live; see [screenshots](#️-board--kanban-for-agents) |
 | 🎯 | **No-proxy Claude mode** | official binary + `cc` wrapper — won't flag accounts |
-| 🧪 | **Tested — 142 tests** | unit + HTTP (`node --test` on a throwaway DB, now 142 with 403 gate + limit clamp guards) + a **fleet switching test** on a real Pi — see [docs/TESTING.md](docs/TESTING.md) |
+| 🧪 | **Tested — 143 tests, CI on every push** | unit + HTTP (`node --test` on a throwaway DB — 403 gate, limit clamps, and a raw-socket mid-emoji UTF-8 split) + a **fleet switching test** on a real Pi — GitHub Actions runs the suite on Node 24 for every push/PR — see [docs/TESTING.md](docs/TESTING.md) |
 | 🐳 | **1 runtime dep** | `ws`. SQLite is Node's built-in `node:sqlite`. Buildless. Docker-ready. |
 
 ---
