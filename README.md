@@ -461,6 +461,28 @@ flowchart TD
 - 🧯 `.env` is git-ignored; **never** commit real tokens/keys.
 - ⚖️ **Personal, honest, visible.** Multiple *personal* subs via the official client is fine — pooling/reselling for others is not. aigate gives you the visibility to stay honest.
 
+### 🔐 Security Headers (CSP)
+
+The dashboard HTTP responses include a strict **Content-Security-Policy** header:
+
+```
+default-src 'self'
+style-src 'self' 'unsafe-inline'
+script-src 'self' 'unsafe-inline' 'unsafe-eval'
+connect-src 'self' ws: wss:
+img-src 'self' data:
+frame-ancestors 'none'
+```
+
+**Why `unsafe-eval` is necessary:**  
+The dashboard is a **single-file Vue app** compiled with the full Vue build, which compiles in-DOM `<template>` elements at runtime using `new Function()`. This requires `script-src 'unsafe-eval'`.
+
+**Why `unsafe-inline` for styles and scripts:**  
+Inline `<style>` and `<script>` tags are embedded directly in the HTML to keep it self-contained.
+
+**How to remove `unsafe-eval` (if desired):**  
+Pre-compile templates using Vue's **build-time compilation** (build to a `.js` file during the deploy step) or switch to the **runtime-only build** with externalized template files. Both eliminate the need for `new Function()`. WebSocket connections require explicit `connect-src ws: wss:` directives since CSP2 browsers don't treat WebSocket URLs as matching `'self'` for script-src.
+
 ---
 
 ## 🤝 Contributing
