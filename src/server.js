@@ -555,8 +555,10 @@ const server = http.createServer(async (req, res) => {
         const headers = { 'content-type': MIME[ext] || 'application/octet-stream' };
         if (ext === '.html') {
           headers['X-Frame-Options'] = 'DENY';
-          // dashboard is a single-file Vue app: inline <style>/<script> need 'unsafe-inline'; WS needs explicit connect-src (CSP2 browsers don't match ws: against 'self')
-          headers['Content-Security-Policy'] = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:; frame-ancestors 'none'";
+          // dashboard is a single-file Vue app: inline <style>/<script> need 'unsafe-inline', the full Vue build
+          // compiles in-DOM templates via new Function() so script-src also needs 'unsafe-eval';
+          // WS needs explicit connect-src (CSP2 browsers don't match ws: against 'self')
+          headers['Content-Security-Policy'] = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' ws: wss:; img-src 'self' data:; frame-ancestors 'none'";
           headers['X-Content-Type-Options'] = 'nosniff';
         }
         res.writeHead(200, headers);
