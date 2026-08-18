@@ -18,7 +18,10 @@ PRE=(); [ -n "${AIGATE_AI_PREARGS:-}" ] && read -ra PRE <<< "$AIGATE_AI_PREARGS"
 IDLE="${AIGATE_WORKER_IDLE:-3}"
 HOST="$(hostname -s)"
 WORKER="$HOST/$$"
-AUTH=(-H "Authorization: Bearer $AIGATE_TOKEN")
+# auth header lives in a mode-600 file, not argv — argv is visible to any local user via `ps`
+AUTHF="$(mktemp)"; chmod 600 "$AUTHF"; printf 'Authorization: Bearer %s\n' "$AIGATE_TOKEN" > "$AUTHF"
+trap 'rm -f "$AUTHF"' EXIT INT TERM
+AUTH=(-H "@$AUTHF")
 
 # top-level JSON field → stdout (empty on any error); same convention as hydrate.sh
 jget(){ python3 -c 'import sys,json
@@ -92,7 +95,8 @@ GIT — if you change anything in a git repo: commit (conventional message; hous
 
 CREDENTIALS / APIs — secrets are NOT in the repo; they live in the aigate vault:
     set -a; . ~/.claude/aigate/env; set +a
-    curl -s -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL/api/keys/<provider>"   # -> {provider,label,key}
+    printf 'Authorization: Bearer %s\n' "$AIGATE_TOKEN" > /tmp/authf; chmod 600 /tmp/authf
+    curl -s -H @/tmp/authf "$AIGATE_URL/api/keys/<provider>"   # -> {provider,label,key} (header via file, never argv — argv leaks via ps)
   Providers: openrouter google github brave exa firecrawl perplexity replicate fal elevenlabs deepgram huggingface groq together fireworks xai kimi cloudflare aws tavily apify context7 gmail venice fontawesome. Full live list: GET "$AIGATE_URL/api/capabilities". (You do NOT need a raw Anthropic API key — you already ARE Claude via the selected account.)
   - EMAIL: operator is jeremy@shoemoney.com; Gmail app-cred vaulted under provider "gmail" -> imap.gmail.com:993 / smtp.gmail.com:587, or the gmail-imap-watch skill.
   - AWS: credentials are already on this box at ~/.aws (config/credentials/sso) — the aws CLI is configured; no vault fetch needed.
