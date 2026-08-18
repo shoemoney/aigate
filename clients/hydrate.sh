@@ -18,10 +18,14 @@ BASE="${AIGATE_URL:-https://aigate.shoemoney.ai}"
 TOK="${AIGATE_TOKEN:-}"
 [ -n "$TOK" ] || { echo "aigate-hydrate: no AIGATE_TOKEN, skipping" >&2; exit 0; }
 
+# auth header lives in a mode-600 file, not argv — argv is visible to any local user via `ps`
+AUTHF="$(mktemp)"; chmod 600 "$AUTHF"; printf 'Authorization: Bearer %s\n' "$TOK" > "$AUTHF"
+trap 'rm -f "$AUTHF"' EXIT
+
 tmp="$(mktemp)"; got=0; fetched=""
 for pair in $PAIRS; do
   prov="${pair%%:*}"; var="${pair##*:}"
-  key="$(curl -s -m5 -H "Authorization: Bearer $TOK" "$BASE/api/keys/$prov" \
+  key="$(curl -s -m5 -H "@$AUTHF" "$BASE/api/keys/$prov" \
         | python3 -c 'import sys,json
 try:
     d=json.load(sys.stdin); print(d.get("key","") if isinstance(d,dict) else "")
@@ -42,3 +46,4 @@ else
   echo "aigate-hydrate: 0 keys fetched (nothing written)" >&2
 fi
 rm -f "$tmp"
+

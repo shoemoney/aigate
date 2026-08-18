@@ -14,12 +14,16 @@ set -uo pipefail
 HOST="$(hostname -s)"
 CLAUDE_BIN="${AIGATE_CLAUDE_BIN:-claude}"
 
+# auth header lives in a mode-600 file, not argv — argv is visible to any local user via `ps`
+AUTHF="$(mktemp)"; chmod 600 "$AUTHF"; printf 'Authorization: Bearer %s\n' "$AIGATE_TOKEN" > "$AUTHF"
+trap 'rm -f "$AUTHF" "${errf:-}"' EXIT INT TERM
+
 jget(){ python3 -c 'import sys,json;print(json.load(sys.stdin).get("'"$1"'",""))' 2>/dev/null; }
-select_acct(){ curl -s -m8 -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL/api/select?host=$HOST&exclude=$1"; }
-report_prompt(){ curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
+select_acct(){ curl -s -m8 -H "@$AUTHF" "$AIGATE_URL/api/select?host=$HOST&exclude=$1"; }
+report_prompt(){ curl -s -m5 -X POST -H "@$AUTHF" -H 'content-type: application/json' \
     -d "$(python3 -c 'import json,sys;print(json.dumps({"account":sys.argv[1],"host":sys.argv[2],"prompt":sys.argv[3][:400]}))' "$1" "$HOST" "$2")" \
     "$AIGATE_URL/api/events/prompt" >/dev/null 2>&1 || true; }
-report_limit(){ curl -s -m5 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
+report_limit(){ curl -s -m5 -X POST -H "@$AUTHF" -H 'content-type: application/json' \
     -d "$(python3 -c 'import json,sys
 d={"account":sys.argv[1],"host":sys.argv[2]}
 if len(sys.argv)>3 and sys.argv[3]!="":d["minutes"]=int(sys.argv[3])
@@ -106,11 +110,11 @@ if [ "$is_print" != 1 ]; then
     "$CLAUDE_BIN" "${cont[@]}" "$@"; rc=$?; first=0
     # On exit: cheap CACHED usage check first; only pay for a live re-poll when usage
     # is already near the cap, so a normal quit stays instant.
-    worst="$(curl -s -m5 -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL/api/accounts" 2>/dev/null \
+    worst="$(curl -s -m5 -H "@$AUTHF" "$AIGATE_URL/api/accounts" 2>/dev/null \
       | python3 -c 'import sys,json;d=json.load(sys.stdin);a=[x for x in d if x["account"]==sys.argv[1]];print(int(max(a[0].get("five_hour_pct") or 0,a[0].get("seven_day_pct") or 0)) if a else 0)' "$acct" 2>/dev/null)"
     maxed=""
     [ "${worst:-0}" -ge 85 ] 2>/dev/null && \
-      maxed="$(curl -s -m15 -X POST -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL/api/accounts/$acct/refresh" 2>/dev/null | jget maxed)"
+      maxed="$(curl -s -m15 -X POST -H "@$AUTHF" "$AIGATE_URL/api/accounts/$acct/refresh" 2>/dev/null | jget maxed)"
     [ "$maxed" = "1" ] || exit "$rc"        # headroom left (or unknown) → normal quit, done
     echo "aigate: $acct is out of headroom." >&2
     report_limit "$acct"; tried="${tried:+$tried,}$acct"
@@ -125,7 +129,6 @@ if [ "$is_print" != 1 ]; then
 fi
 
 prompt="$*"; tried=""
-trap 'rm -f "${errf:-}"' EXIT INT TERM   # don't leak the mktemp on Ctrl-C/TERM
 for attempt in 1 2 3; do
   resp="$(select_acct "$tried")"
   acct="$(printf '%s' "$resp" | jget account)"; tok="$(printf '%s' "$resp" | jget setup_token)"
