@@ -294,7 +294,7 @@ const q = {
   // Ranked (no LIMIT) so /api/select can skip client-excluded accounts on retry.
   pickRanked: db.prepare(`SELECT account FROM accounts
     WHERE disabled=0 AND reauth_needed=0 AND token_enc IS NOT NULL AND max(five_hour_pct,seven_day_pct) < ?
-      AND (parked_until IS NULL OR parked_until < datetime('now'))
+      AND (parked_until IS NULL OR parked_until <= datetime('now'))
     ORDER BY (usage_updated IS NULL) ASC, max(five_hour_pct,seven_day_pct) ASC, usage_updated ASC`),
   insReq: db.prepare(`INSERT INTO request_log(account,host,ip,cwd,model,prompt,tokens) VALUES(?,?,?,?,?,?,?)`),
   insAccess: db.prepare(`INSERT INTO access_log(account,host,ip,action,result) VALUES(?,?,?,?,?)`),
