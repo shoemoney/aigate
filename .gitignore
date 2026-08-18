@@ -10,3 +10,4 @@ npm-debug.log*
 CLAUDE.md
 .opencode/
 .playwright-mcp/
+.tmp/
