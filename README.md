@@ -431,6 +431,29 @@ See `.env.example` for the fully-commented list.
 
 </details>
 
+### 🔄 Rotating the encryption key
+
+If you suspect an `.env` compromise or want to rotate keys for routine security hygiene, **`scripts/rotate-key.js`** re-encrypts the entire vault under a new `AIGATE_ENCRYPTION_KEY`:
+
+```bash
+# Back up first (or copy from data/backups/)
+cp data/aigate.db data/aigate.db.backup
+
+# Generate a new key
+NEW_KEY=$(openssl rand -hex 32)
+
+# Rotate (current key must still be in env)
+AIGATE_ENCRYPTION_KEY=<current_hex> node scripts/rotate-key.js $NEW_KEY
+
+# Update .env
+echo "AIGATE_ENCRYPTION_KEY=$NEW_KEY" >> .env
+
+# Restart aigate
+docker compose up -d  # or your own restart
+```
+
+The rotation runs inside a **single transaction** — if it crashes mid-flight, everything rolls back and nothing changes. All accounts + provider keys are re-encrypted at once; the canary cell updates so the next boot proves the new key works. **See the script's header comments for full details.**
+
 ---
 
 ## 🗺️ Roadmap
