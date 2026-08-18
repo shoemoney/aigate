@@ -383,7 +383,7 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`**
 | `GET` / `POST` | `/api/keys` | list (**no secrets**, `first8…last4` hints, `stale` flag) / add `{provider, key, label}` — **sanitized**: trims + un-quotes, **400** on `export`/`NAME=` pastes, provider lowercased, non-fatal `warning` for uncataloged providers **or a key that doesn't match the catalog prefix** |
 | `POST` | `/api/keys/import` | 📥 **bulk import** `[{provider,key,label}]` (or `{keys:[…]}`) — one result row per key so a bad entry doesn't sink the batch (max 200) |
 | `GET` | `/api/keys/:provider?exclude=` | 🔑 newest working key for a provider (audited; name normalized — `BRAVE ` finds `brave`); `exclude=<hint>` skips a just-failed key and serves the next |
-| `POST` | `/api/keys/:id/refresh` | 💓 **liveness probe** ONE key (oaiCompat providers: `GET <base>/models`) → flips `status` working/dead; 200 `{checked:false}` for providers with no probe |
+| `POST` | `/api/keys/:id/refresh` | 💓 **liveness probe** ONE key (oaiCompat: `GET <base>/models`; anthropic: 1-token `POST /v1/messages`) → flips `status` working/dead; 200 `{checked:false}` for providers with no probe |
 | `DELETE` | `/api/keys/:id` | remove a provider key |
 | `GET` | `/api/metrics` | 📈 **Prometheus** text (bearer-gated) — `aigate_selectable`, `aigate_accounts_*`, `aigate_poll_ok/failed`, `aigate_provider_keys_working/dead`, … |
 | `GET` | `/api/logs?limit=` · `/api/stats` | prompt log · dashboard rollups |
