@@ -39,7 +39,7 @@ Born from three real pains:
 ### v1 — NOW (shipped)
 - SQLite vault (AES-256-GCM) · usage-aware Claude account selector · IP-audited
   handouts · prompt+usage event ingest · WebSocket dashboard · per-host stats.
-- …and everything that landed after the first cut: 59-provider key registry +
+- …and everything that landed after the first cut: 65-provider key registry +
   add-key UI · over-limit TTL-park retry · self-heal (`/health` + watchdog +
   autoheal) · boot canary + daily `VACUUM INTO` backups + corruption
   auto-restore · full-mutation audit trail (`/api/access`) · live re-poll
