@@ -265,14 +265,41 @@ test('negative ?limit is clamped, not unbounded (SQLite reads LIMIT -1 as ALL)',
 
 test('POST /api/events/prompt round-trips a multibyte UTF-8 prompt (no mojibake)', async () => {
   // body() now collects Buffers and decodes ONCE — a per-chunk toString() would split an
-  // emoji/CJK UTF-8 sequence across TCP boundaries into replacement chars. Can't force a
-  // chunk split in-process, but proving the emoji survives a normal POST exercises the
-  // decode-once path this fix restores.
+  // emoji/CJK UTF-8 sequence across TCP boundaries into replacement chars. See the raw-socket
+  // test below for a forced mid-sequence split.
   const prompt = '🛡️ café 日本語';
   await fetch(base + '/api/events/prompt', { method: 'POST', headers: H,
     body: JSON.stringify({ account: 'alice', prompt }) });
   const [row] = await (await fetch(base + '/api/logs?limit=1', { headers: H })).json();
   assert.equal(row.prompt, prompt);                 // byte-for-byte, no U+FFFD replacement chars
+});
+
+test('POST /api/events/prompt survives a multibyte UTF-8 sequence split mid-codepoint across two socket writes', async () => {
+  // fetch() always hands the whole body to the socket in one go, so the above test can't
+  // prove the per-chunk decode-once fix — force it with a raw net socket split inside the
+  // 4-byte UTF-8 sequence for 🛡 (U+1F6E1 -> F0 9F 9B A1), same pattern as the malformed-WS
+  // raw-socket test above.
+  const prompt = '🛡️ café 日本語 raw-socket split';
+  const payload = Buffer.from(JSON.stringify({ account: 'alice', prompt }), 'utf8');
+  const emoji = Buffer.from('🛡️', 'utf8');
+  const splitAt = payload.indexOf(emoji) + 2;        // 2 of the 4 bytes of U+1F6E1's encoding
+  assert.ok(splitAt > 0, 'sanity: emoji bytes present in JSON payload');
+  const head = Buffer.from(
+    `POST /api/events/prompt HTTP/1.1\r\n` +
+    `Host: 127.0.0.1\r\n` +
+    `Authorization: Bearer ${TOKEN}\r\n` +
+    `Content-Type: application/json\r\n` +
+    `Content-Length: ${payload.length}\r\n` +
+    `Connection: close\r\n\r\n`, 'utf8');
+  const sock = connect(server.address().port, '127.0.0.1');
+  await new Promise((r) => sock.once('connect', r));
+  sock.write(Buffer.concat([head, payload.subarray(0, splitAt)]));
+  await new Promise((r) => setTimeout(r, 20));       // force two separate TCP-level writes/'data' events
+  sock.write(payload.subarray(splitAt));
+  await new Promise((r) => sock.once('close', r));
+  const [row] = await (await fetch(base + '/api/logs?limit=1', { headers: H })).json();
+  assert.equal(row.prompt, prompt);
+  assert.ok(!row.prompt.includes('�'), 'no U+FFFD replacement chars from a split-codepoint decode');
 });
 
 test('POST /api/events/prompt scrubs pasted secrets; git SHAs survive', async () => {
