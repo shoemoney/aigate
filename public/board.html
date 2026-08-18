@@ -642,7 +642,7 @@ createApp({
       if(i<0||j<0||j>=ids.length)return;
       ids.splice(j,0,ids.splice(i,1)[0]); this.settle(c.id); await this.reorder(ids);
     },
-    async load(){ try{ this.ingest(await (await api('/api/board')).json()); }catch(e){} },
+    async load(){ try{ this.ingest(await (await api('/api/board')).json()); if(this.announce==='Board load failed')this.announce=''; }catch(e){ this.announce='Board load failed'; } },
     expand(c){ this.opened = this.opened===c.id ? null : c.id; },
     async loadHosts(){ try{ this.hosts=await (await api('/api/board/hosts')).json(); }catch{} },
     async loadWorkers(){
