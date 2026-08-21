@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI GREEN — WINNER: Binary Rain 0–10</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--green:hsl(142 76% 50%);--green-dim:hsla(142 76% 50% / 0.18);--green-mid:hsla(142 76% 50% / 0.5);--green-glow:hsla(142 76% 50% / 0.12)}
+html,body{background:#000;color:#fff;font-family:'SF Mono','Fira Code','Cascadia Code',ui-monospace,monospace}
+body{min-height:100vh;display:flex;flex-direction:column}
+#bg{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0;pointer-events:none;opacity:1}
+.hdr,.wrap,.ftr{position:relative;z-index:1}
+a{color:inherit;text-decoration:none}
+/* skip link */
+.skip{position:absolute;left:-9999px;top:12px;background:var(--green);color:#000;padding:8px 14px;font-size:12px;letter-spacing:0.08em;font-weight:700;z-index:100;border:1px solid var(--green);text-transform:uppercase}
+.skip:focus,.skip:focus-visible{left:12px;outline:none;border-color:hsla(142 76% 50% / 0.5);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.35), 0 0 18px hsla(142 76% 50% / 0.25)}
+/* header */
+.hdr{padding:52px 32px 34px;border-bottom:1px solid var(--green-dim);position:relative;overflow:hidden}
+.hdr::before{content:'';position:absolute;inset:0;background:radial-gradient(700px 340px at 30% 0%, var(--green-glow), transparent 70%);pointer-events:none}
+.hdr h1{font-size:clamp(44px,8vw,96px);font-weight:900;letter-spacing:-0.06em;line-height:0.85;position:relative}
+.hdr h1 span{color:var(--green)}
+.hdr .sub{margin-top:14px;font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:var(--green);opacity:0.95}
+.hdr .meta{margin-top:8px;font-size:11px;color:#777;letter-spacing:0.06em}
+.hdr .badges{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-size:10px;letter-spacing:0.12em;text-transform:uppercase;padding:5px 10px;border:1px solid var(--green-dim);color:var(--green);background:hsla(142 76% 50% / 0.06)}
+.badge.winner{background:var(--green);color:#000;border-color:var(--green);font-weight:800}
+/* wrap */
+.wrap{flex:1;padding:36px 28px 32px;max-width:860px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+.winner-label{display:flex;align-items:center;gap:10px;justify-content:center}
+.winner-pill{font-size:11px;letter-spacing:0.16em;text-transform:uppercase;padding:7px 14px;background:var(--green);color:#000;font-weight:900;border:1px solid var(--green)}
+.winner-sub{font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--green);opacity:0.8}
+/* winner card */
+.winner-card{position:relative;background:#0a0a0a;border:1.5px solid hsla(142 76% 50% / 0.42);overflow:hidden;display:flex;flex-direction:column;box-shadow:0 0 0 1px hsla(142 76% 50% / 0.18), 0 20px 60px hsla(142 76% 50% / 0.18);animation:cardIn 520ms ease both}
+.winner-card:hover{border-color:hsla(142 76% 50% / 0.62);box-shadow:0 0 0 1px hsla(142 76% 50% / 0.22), 0 24px 70px hsla(142 76% 50% / 0.22)}
+.winner-card:focus-visible{outline:none;border-color:hsla(142 76% 50% / 0.62);box-shadow:0 0 0 2px #000, 0 0 0 4px hsla(142 76% 50% / 0.32), 0 24px 70px hsla(142 76% 50% / 0.22)}
+.thumb{aspect-ratio:16/9;background:#000;position:relative;overflow:hidden;border-bottom:1px solid hsla(142 76% 50% / 0.14);display:flex;align-items:center;justify-content:center}
+.thumb::after{content:'';position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(to bottom, transparent 0px, transparent 2px, hsla(142 76% 50% / 0.035) 2px, hsla(142 76% 50% / 0.035) 3px);opacity:0.55}
+.thumb svg{width:100%;height:100%}
+.crown{position:absolute;top:14px;left:14px;padding:6px 10px;background:var(--green);color:#000;font-size:10px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;border:1px solid var(--green)}
+.arrow{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:999px;background:var(--green);color:#000;display:flex;align-items:center;justify-content:center;font-size:15px;transition:.2s}
+.winner-card:hover .arrow{transform:translate(2px,-2px)}
+.card-body{padding:18px 18px 16px;display:flex;flex-direction:column;gap:8px}
+.num{font-size:10px;letter-spacing:0.18em;color:var(--green);opacity:0.7}
+.card-body h3{font-size:20px;font-weight:800;letter-spacing:-0.03em;line-height:1}
+.card-body p{font-size:12px;color:#aaa;line-height:1.6}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.tag{font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:4px 8px;background:hsla(142 76% 50% / 0.08);color:var(--green);border:1px solid hsla(142 76% 50% / 0.14)}
+.cta{margin-top:12px;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;background:var(--green);color:#000;font-size:11px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;border:1px solid var(--green)}
+.cta:hover{background:hsla(142 76% 50% / 0.92)}
+.cta:focus-visible{outline:none;box-shadow:0 0 0 2px #000, 0 0 0 4px hsl(142 76% 50%);}
+.note{font-size:11px;color:#666;letter-spacing:0.04em;line-height:1.6;border:1px dashed hsla(142 76% 50% / 0.16);padding:14px 16px;background:hsla(142 76% 50% / 0.04)}
+/* footer */
+.ftr{padding:18px 28px;border-top:1px solid hsla(142 76% 50% / 0.12);display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;font-size:11px;color:#555;letter-spacing:0.04em}
+.ftr strong{color:var(--green);font-weight:600}
+@keyframes cardIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media(max-width:480px){.ftr{flex-direction:column;gap:8px;align-items:flex-start} #bg{opacity:0.85}}
+@media(min-width:1440px){ .card-body h3{font-size:21px} .card-body p{font-size:13px} }
+@media(prefers-reduced-motion:reduce){.winner-card{animation:none}}
+</style>
+</head>
+<body>
+<a href="#winner" class="skip">Skip to winner</a>
+<header class="hdr">
+  <h1>AI<span>GREEN</span></h1>
+  <div class="sub">WINNER — Binary Rain 0–10 · green at 50% lightness on black</div>
+  <div class="meta">hsl(142 76% 50%) — single champion, pure #000000. numbers 0–10 only. Three.js plane behind.</div>
+  <div class="badges">
+    <span class="badge winner">🏆 WINNER</span>
+    <span class="badge">binary-rain.html</span>
+    <span class="badge">0 1 2 3 4 5 6 7 8 9 10</span>
+    <span class="badge">three.js · 60fps · DPR aware</span>
+  </div>
+</header>
+
+<div class="wrap" id="winner">
+  <div class="winner-label">
+    <span class="winner-pill">🏆 Jury Winner</span>
+    <span class="winner-sub">selected from 11 · now solo</span>
+  </div>
+
+  <a class="winner-card" href="./binary-rain.html" aria-label="Open Binary Rain 0–10 winner">
+    <div class="thumb">
+      <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="0–10 digits drifting">
+        <rect width="640" height="360" fill="#000"/>
+        <g font-family="ui-monospace,monospace" fill="hsl(142 76% 50%)" text-anchor="middle" font-weight="700">
+          <text x="72" y="62" font-size="28" opacity="0.92">0</text><text x="148" y="48" font-size="22" opacity="0.62">4</text><text x="214" y="72" font-size="24" opacity="0.55">10</text><text x="298" y="54" font-size="20" opacity="0.42">7</text><text x="378" y="66" font-size="26" opacity="0.88">2</text><text x="452" y="42" font-size="18" opacity="0.38">9</text><text x="528" y="58" font-size="22" opacity="0.52">5</text><text x="588" y="38" font-size="16" opacity="0.32">3</text>
+          <text x="88" y="138" font-size="18" opacity="0.38">6</text><text x="162" y="126" font-size="26" opacity="0.72">1</text><text x="242" y="142" font-size="20" opacity="0.48">8</text><text x="318" y="118" font-size="16" opacity="0.32">3</text><text x="392" y="132" font-size="22" opacity="0.58">10</text><text x="468" y="118" font-size="18" opacity="0.42">0</text><text x="542" y="132" font-size="20" opacity="0.5">4</text>
+          <text x="62" y="214" font-size="16" opacity="0.30">9</text><text x="132" y="202" font-size="22" opacity="0.52">5</text><text x="208" y="218" font-size="18" opacity="0.40">2</text><text x="284" y="198" font-size="24" opacity="0.62">6</text><text x="362" y="212" font-size="20" opacity="0.48">1</text><text x="438" y="198" font-size="16" opacity="0.34">8</text><text x="514" y="214" font-size="22" opacity="0.55">10</text><text x="582" y="202" font-size="18" opacity="0.38">7</text>
+          <text x="96" y="288" font-size="20" opacity="0.46">10</text><text x="176" y="302" font-size="16" opacity="0.30">2</text><text x="252" y="286" font-size="22" opacity="0.54">0</text><text x="334" y="298" font-size="18" opacity="0.36">4</text><text x="412" y="286" font-size="24" opacity="0.64">9</text><text x="486" y="302" font-size="16" opacity="0.28">1</text><text x="562" y="288" font-size="20" opacity="0.44">3</text>
+        </g>
+        <g fill="hsl(142 76% 50%)" opacity="0.09"><circle cx="72" cy="62" r="18"/><circle cx="378" cy="66" r="20"/><circle cx="284" cy="198" r="18"/><circle cx="252" cy="286" r="18"/><circle cx="412" cy="286" r="18"/></g>
+        <!-- subtle 0-10 legend -->
+        <g font-family="ui-monospace,monospace" fill="hsla(142 76% 50% / 0.38)" text-anchor="middle" font-size="9" letter-spacing="1">
+          <text x="320" y="344">0  1  2  3  4  5  6  7  8  9  10  —  11 values  ·  snow drift  ·  flip on 0.5–1s</text>
+        </g>
+      </svg>
+      <span class="crown">🏆 WINNER</span>
+      <span class="arrow">↗</span>
+    </div>
+    <div class="card-body">
+      <div class="num">WINNER · BINARY-RAIN.HTML — 0 1 2 3 4 5 6 7 8 9 10</div>
+      <h3>Binary Rain 0–10 — Snow Drift Champion</h3>
+      <p>78 glyphs drifting like snow, each a random digit 0–10. Sway via <code style="color:var(--green)">sin(time*sway + phase)</code>, flip to a new 0–10 value every ~0.8s with green flash + halo. Size 11–22px, alpha 0.22–0.84, speed 0.45–1.8. That's the whole palette — nothing else survived the cut.</p>
+      <div class="tags"><span class="tag">0–10</span><span class="tag">snow</span><span class="tag">sway</span><span class="tag">flip</span><span class="tag">winner</span></div>
+      <span class="cta">Enter 0–10 →</span>
+    </div>
+  </a>
+
+  <div class="note">
+    <strong style="color:var(--green)">What changed:</strong> numbers 0–1 → <strong style="color:var(--green)">0–10</strong> (11 values, "10" as two-char glyph) via <code>DIGITS = ['0'…'10']</code> + <code>randDigit()</code>; gallery stripped from 11 cards to this single winner hero. Other 10 effect files remain on disk but are no longer linked — winner takes the grid. Three.js undulating plane stays behind as the stage.
+  </div>
+</div>
+
+<footer class="ftr">
+  <span>winner <strong>binary-rain 0–10</strong> · black <strong>#000</strong> · green <strong>hsl(142 76% 50%)</strong> · <strong>three.js</strong> bg</span>
+  <span>11 → 1 · <a href="./binary-rain.html" style="color:var(--green);text-decoration:underline">open winner ↗</a></span>
+</footer>
+
+<canvas id="bg" aria-hidden="true"></canvas>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const canvas = document.getElementById('bg');
+const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
+renderer.setClearColor(0x000000, 1);
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x000000, 12, 42);
+const camera = new THREE.PerspectiveCamera(52, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 4.2, 14);
+camera.lookAt(0, 0, 0);
+const green = new THREE.Color('hsl(142, 76%, 50%)');
+const PLANE_W = 34, PLANE_H = 34, SEG = 48;
+const geom = new THREE.PlaneGeometry(PLANE_W, PLANE_H, SEG, SEG);
+const mat = new THREE.MeshBasicMaterial({ color: green, wireframe:true, transparent:true, opacity:0.13 });
+const plane = new THREE.Mesh(geom, mat);
+plane.rotation.x = -Math.PI/2 + 0.18;
+plane.position.y = -2.8;
+scene.add(plane);
+const N = 220;
+const pGeo = new THREE.BufferGeometry();
+const pos = new Float32Array(N*3);
+const speeds = new Float32Array(N);
+for(let i=0;i<N;i++){ pos[i*3]=(Math.random()-0.5)*26; pos[i*3+1]=Math.random()*10-1.5; pos[i*3+2]=(Math.random()-0.5)*26; speeds[i]=0.35+Math.random()*0.9; }
+pGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+const pMat = new THREE.PointsMaterial({ color: green, size:0.07, transparent:true, opacity:0.55, sizeAttenuation:true });
+const points = new THREE.Points(pGeo, pMat);
+scene.add(points);
+const glowGeo = new THREE.PlaneGeometry(40, 6);
+const glowMat = new THREE.MeshBasicMaterial({ color: green, transparent:true, opacity:0.08, side:THREE.DoubleSide });
+const glow = new THREE.Mesh(glowGeo, glowMat);
+glow.position.set(0, -0.15, -8);
+scene.add(glow);
+function onResize(){ const w=innerWidth,h=innerHeight; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+addEventListener('resize', onResize); onResize();
+let t=0, raf=0, paused=document.hidden;
+document.addEventListener('visibilitychange', ()=> paused=document.hidden );
+if(reduce){
+  const pa = geom.attributes.position;
+  for(let i=0;i<pa.count;i++){ const x=pa.getX(i), y=pa.getY(i); pa.setZ(i, Math.sin(x*0.5)*0.35 + Math.cos(y*0.42)*0.28); }
+  pa.needsUpdate=true; geom.computeVertexNormals(); renderer.render(scene,camera);
+} else {
+  const pa = geom.attributes.position;
+  function tick(now){
+    if(paused) { raf=requestAnimationFrame(tick); return; }
+    t = now*0.001;
+    for(let i=0;i<pa.count;i++){ const x=pa.getX(i), y=pa.getY(i); pa.setZ(i, Math.sin(x*0.52 + y*0.31 + t*0.9)*0.55 + Math.cos(y*0.68 - t*0.65)*0.28 + Math.sin(x*0.18 - y*0.22 + t*0.42)*0.22); }
+    pa.needsUpdate=true;
+    camera.position.x = Math.sin(t*0.08)*1.4; camera.position.z = 14 + Math.cos(t*0.08)*0.6; camera.lookAt(0, -0.2, -2);
+    const p = pGeo.attributes.position;
+    for(let i=0;i<N;i++){ let y=p.getY(i); y+=0.004*speeds[i]; if(y>8) y=-2.2; p.setY(i,y); p.setX(i, p.getX(i)+Math.sin(t*0.3+i*0.11)*0.001); }
+    p.needsUpdate=true;
+    mat.opacity=0.11+Math.sin(t*0.7)*0.03; pMat.opacity=0.48+Math.sin(t*0.5)*0.10; glow.material.opacity=0.06+Math.sin(t*0.6)*0.02;
+    renderer.render(scene,camera); raf=requestAnimationFrame(tick);
+  }
+  raf=requestAnimationFrame(tick);
+}
+</script>
+</body>
+</html>

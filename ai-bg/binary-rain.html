@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Binary Rain 0–10 — AI GREEN</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000}
+canvas{display:block;width:100%;height:100%}
+.badge{position:fixed;top:14px;left:14px;z-index:2;display:flex;align-items:center;gap:10px;padding:8px 12px;background:hsla(0 0% 0% / 0.6);backdrop-filter:blur(8px);border:1px solid hsla(142 76% 50% / 0.25);font-family:ui-monospace,monospace}
+.badge b{font-size:11px;letter-spacing:0.14em;color:hsl(142 76% 50%);font-weight:700}
+.badge span{font-size:11px;color:hsla(142 76% 50% / 0.65)}
+.nav{position:fixed;top:14px;right:14px;z-index:2;padding:7px 12px;background:hsla(142 76% 50% / 0.12);border:1px solid hsla(142 76% 50% / 0.28);color:hsl(142 76% 50%);font-family:ui-monospace,monospace;font-size:11px;letter-spacing:0.08em;text-decoration:none}
+.foot{position:fixed;bottom:10px;right:14px;z-index:2;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;color:hsla(142 76% 50% / 0.55)}
+.foot-nav{display:inline-flex;gap:8px;align-items:center}
+.foot-nav a{color:hsl(142 76% 50%);text-decoration:none;border:1px solid hsla(142 76% 50% / 0.18);padding:2px 8px;border-radius:999px;font-size:10px;letter-spacing:0.08em}
+.foot-nav a:hover{border-color:hsla(142 76% 50% / 0.4);background:hsla(142 76% 50% / 0.08)}
+.vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(120% 120% at 50% 50%, transparent 55%, #000 88%)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="vignette"></div>
+<div class="badge"><b>BINARY RAIN 0–10</b><span>0–10 drifting like snow · sway &amp; flip · WINNER</span></div>
+<a class="nav" href="./index.html">← Gallery</a>
+<div class="foot"><span>WINNER · binary-rain 0–10 · hsl(142 76% 50%) on #000 · 0 1 2 3 4 5 6 7 8 9 10</span></div>
+<script>
+let prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let paused = document.hidden;
+let rafId = null;
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H,DPR;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;canvas.width=W*DPR;canvas.height=H*DPR;canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0)}
+addEventListener('resize',resize);resize();
+const DIGITS = ['0','1','2','3','4','5','6','7','8','9','10'];
+function randDigit(){ return DIGITS[Math.floor(Math.random()*DIGITS.length)]; }
+function randDigitExcept(cur){ let v; do{ v=randDigit(); }while(v===cur && DIGITS.length>1); return v; }
+const N=78;
+let bits=[];
+for(let i=0;i<N;i++) bits.push({
+  x:Math.random()*W, y:Math.random()*H - Math.random()*H*0.5,
+  vy: 0.45+Math.random()*1.35,
+  vx0:(Math.random()-0.5)*0.3,
+  swayAmp: 6+Math.random()*14,
+  swayFreq: 0.5+Math.random()*0.9,
+  phase: Math.random()*Math.PI*2,
+  size: 11+Math.random()*11,
+  alpha: 0.22+Math.random()*0.62,
+  val: randDigit(),
+  flipT: Math.random()*300
+});
+function drawFrame(time){
+  ctx.clearRect(0,0,W,H);
+  bits.forEach(b=>{
+    b.y+=b.vy;
+    b.flipT--;
+    if(b.flipT<=0){ b.val=randDigitExcept(b.val); b.flipT= 80+Math.random()*260;
+      b._flash=1;
+    }
+    if(b._flash) b._flash=Math.max(0,b._flash-0.08);
+    b.x+= Math.sin(time*b.swayFreq + b.phase)*0.22 + b.vx0*0.05;
+    if(b.y>H+30){ b.y=-30; b.x=Math.random()*W; b.val=randDigit(); }
+    if(b.x< -20) b.x=W+20; if(b.x>W+20) b.x=-20;
+    let swayX=b.x + Math.sin(time*b.swayFreq + b.phase)*b.swayAmp*0.35;
+    let flash=b._flash||0;
+    let a=b.alpha + flash*0.35;
+    let glow= b.size>17? true:false;
+    ctx.font=`${b.size}px ui-monospace,monospace`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    if(glow||flash>0.2){
+      ctx.shadowColor='hsl(142 76% 50%)'; ctx.shadowBlur= 7+flash*8;
+      ctx.fillStyle=`hsla(142 76% 50% / ${Math.min(1,a+flash*0.2)})`;
+      ctx.fillText(b.val, swayX, b.y);
+      ctx.shadowBlur=0;
+      if(flash>0.1){
+        ctx.beginPath(); ctx.arc(swayX,b.y,b.size*0.7,0,Math.PI*2);
+        ctx.fillStyle=`hsla(142 76% 50% / ${flash*0.12})`; ctx.fill();
+      }
+    } else {
+      ctx.fillStyle=`hsla(142 76% 50% / ${a})`;
+      ctx.fillText(b.val, swayX, b.y);
+    }
+  });
+}
+function frame(t){
+  if(paused) return;
+  if(prefersReducedMotion) return;
+  let time=t*0.001;
+  drawFrame(time);
+  rafId=requestAnimationFrame(frame);
+}
+if(prefersReducedMotion){
+  drawFrame(0);
+} else {
+  rafId=requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){
+    paused=true;
+    if(rafId!=null) cancelAnimationFrame(rafId);
+    rafId=null;
+  } else {
+    paused=false;
+    if(!prefersReducedMotion) rafId=requestAnimationFrame(frame);
+  }
+});
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',e=>{
+  prefersReducedMotion=e.matches;
+  if(e.matches){
+    if(rafId!=null) cancelAnimationFrame(rafId);
+    rafId=null;
+  } else {
+    if(!paused) rafId=requestAnimationFrame(frame);
+  }
+});
+</script>
+</body>
+</html>
