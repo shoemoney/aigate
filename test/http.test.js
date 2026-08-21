@@ -1307,6 +1307,28 @@ test('board: reorder persists position order', async () => {
   assert.ok(idx(a.id) < idx(b.id));
 });
 
+test('board: reorder moves a multi-selected block of ids together, preserving their relative order', async () => {
+  // mirrors what the board UI's multi-select drag does: it computes ONE combined ids[] array
+  // covering the whole queue (the dragged block spliced to a new spot) and posts it in one call.
+  const w = await (await P('/api/board', 'POST', { prompt: 'multi-w' })).json();
+  const x = await (await P('/api/board', 'POST', { prompt: 'multi-x' })).json();
+  const y = await (await P('/api/board', 'POST', { prompt: 'multi-y' })).json();
+  const z = await (await P('/api/board', 'POST', { prompt: 'multi-z' })).json();
+
+  // starting order: w, x, y, z. Select {x, z} (a non-contiguous, multi-card block) and drag it
+  // to sit before w — the block itself must land in its original relative order (x before z).
+  const r = await P('/api/board/reorder', 'POST', { ids: [x.id, z.id, w.id, y.id] });
+  assert.equal(r.status, 200);
+  const rBody = await r.json();
+  assert.equal(rBody.reordered, 4);
+
+  const list = await (await P('/api/board', 'GET')).json();
+  const idx = (id) => list.findIndex((card) => card.id === id);
+  assert.ok(idx(x.id) < idx(z.id), 'x should still precede z (block order preserved)');
+  assert.ok(idx(z.id) < idx(w.id), 'the moved block should land before w');
+  assert.ok(idx(w.id) < idx(y.id), 'untouched cards keep their relative order');
+});
+
 test('GET /api/stats — by_host_1h merges normalized hosts, rates are numeric, stale rows excluded', async () => {
   const insReq = db.prepare(`INSERT INTO request_log(account,host,ip,cwd,model,prompt,tokens) VALUES(?,?,?,?,?,?,?)`);
   insReq.run('a', 'web1.local', '1.1.1.1', '/', 'x', 'p', 100);
