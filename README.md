@@ -319,6 +319,7 @@ and auto-detects the `claude` binary.
 |---|---|
 | `install.sh` | sets up `cc` + `~/.claude/aigate/` + env; auto-detects `claude`; wires MCP-key hydration into the shell |
 | `aigate-run.sh` | the `cc` wrapper — select → set token → unset stray `ANTHROPIC_*` (incl. `BASE_URL`) → run `claude`; **interactive sessions auto-switch** on exhaustion — relaunch `claude --continue` on the next account, **no `[Y/n]`**, same conversation; **retry-on-limit** in `-p` mode (real limit → **15m park** + next account; transient **529 → wait 10s, retry the SAME account, no park**) w/ clean stdout; preflight-warns **shadow logins** + `BASE_URL` hijacks |
+| `aigate-kimi.sh` | **[Kimi K3 only]** — run the official `claude` binary against Kimi's Anthropic-compatible endpoint; fetches the `sk-kimi` key from the vault (audited, host+IP); atomic-writes a cache (mode 600) so parallel swarms survive vault blips; maps every model tier onto Kimi; adds `--dangerously-skip-permissions` in `-p` headless mode; bypasses the Claude-account warden (Kimi has no OAuth) but **stays a selector** — still the real binary, your own vaulted key, **never a proxy** |
 | `hydrate.sh` | MCP-key hydration — vault → `~/.claude/aigate/mcp-keys.env` so `${BRAVE_API_KEY}`-style MCP configs resolve at launch; **merges** partial fetches (a blip never wipes cached keys); `cc` **foreground-freshens** when missing/stale (>12h) so *this* launch gets keys |
 | `prompt-hook.sh` | Claude Code `UserPromptSubmit` hook → **re-evaluates the current account every turn** (parks it fleet-wide the instant it's exhausted) + logs the prompt; backgrounded & **stdio-detached** = zero turn latency |
 | `statusline-feed.sh` | statusline badge (account · wk %) → also feeds real usage back |
@@ -344,6 +345,39 @@ It knows the auth flow (source `~/.claude/aigate/env`), the 65-provider catalog,
 > **"Unable to connect to API"?** A stale `ANTHROPIC_BASE_URL` silently hijacks
 > every request. `cc` unsets the env var and **preflight-warns** when
 > `~/.claude/settings*.json` carries one — strip the key where it points.
+
+### 🥝 `cc kimi` — Kimi K3 via aigate
+
+Kimi K3 ("Kimi for Coding") has an Anthropic-compatible API endpoint. To run the official `claude` binary against Kimi:
+
+```bash
+cc kimi [claude args...]
+cc kimi -p "explain this repo"
+```
+
+**How it works:** `cc` dispatches `kimi` to `aigate-kimi.sh`, which fetches your vaulted `sk-kimi` key from aigate, points `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` at Kimi's endpoint, maps every model tier to Kimi, and runs the real `claude` binary. The architecture stays a **selector** — your own key, the real binary, never a proxy relaying requests through aigate. Kimi has no Claude OAuth account, so this bypasses the multi-account warden entirely.
+
+**Setup:**
+
+1. **Vault the Kimi key.** Use `/add-key` or curl:
+   ```bash
+   curl -X POST http://localhost:20200/api/keys \
+     -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
+     -d '{"provider":"kimi","key":"sk-…","label":"kimi-k3"}'
+   ```
+2. **Re-run the installer** on any box where you want `cc kimi`:
+   ```bash
+   AIGATE_URL='https://aigate.example.com' AIGATE_TOKEN='…' bash clients/install.sh
+   ```
+   The installer now installs both `aigate-run.sh` and `aigate-kimi.sh` alongside `cc`.
+
+**Env overrides** (optional):
+- `CC_KIMI_MODEL` — default `k3` (the Kimi model to use)
+- `CC_KIMI_FAST_MODEL` — default `kimi-for-coding-highspeed`
+- `CC_KIMI_BASE_URL` — default `https://api.kimi.com/coding`
+
+> [!WARNING]
+> Kimi is an **unprovisioned experimental mode** of aigate: fetch-first caching and vault reliability are proven, but a live end-to-end Kimi completion has not been verified under production conditions. Test before deploying to critical workloads.
 
 ---
 
