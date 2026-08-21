@@ -1,0 +1,107 @@
+{
+  "position": "VERIFIED: Do not install clients/tokens-hook.sh; remove the user-facing tokens and derived tps columns now, while retaining the nullable schema and dormant aggregation for a reversible future redesign. R1 shows the current parser captured only 8.0% of billed tokens across 5 turns and R2 shows it depends on an officially unstable transcript rather than a supported hook payload, while wiring it would also corrupt request counts through duplicate rows. THEORY: Revisit only after a defined metric and consumer exist, preferably using first-party OTel or a correlated completion update rather than the current hook.",
+  "claims": [
+    {
+      "claim": "Installing the existing tokens-hook.sh is not acceptable because it adds a second request_log row instead of completing the original request.",
+      "status": "VERIFIED",
+      "evidence": "C1 and R4b: clients/tokens-hook.sh POSTs a new row; src/server.js:823 unconditionally INSERTs each event, and existing prompt-hook.sh plus aigate-run.sh already produce rows.",
+      "test": ""
+    },
+    {
+      "claim": "The current hook materially undercounts agentic turns.",
+      "status": "VERIFIED",
+      "evidence": "R1b chair-verified measurement: after deduplicating message.id, 5 turns and 65 unique assistant messages produced 660,530 tokens from the last-message-only hook versus 8,300,849 summed billed tokens, or 8.0% captured.",
+      "test": ""
+    },
+    {
+      "claim": "The current hook relies on an unstable internal transcript format and can silently reproduce the present empty-column symptom.",
+      "status": "VERIFIED",
+      "evidence": "R2 operator documentation reports that transcripts are internal, version-sensitive, and asynchronously written; the hook itself fails open. The chair also verified from the installed binary that telemetry identifiers exist, but did not independently verify all documentation details.",
+      "test": ""
+    },
+    {
+      "claim": "The existing tokens aggregate is not a well-defined user metric.",
+      "status": "VERIFIED",
+      "evidence": "C4 and R1c: it sums input, output, cache-creation, and cache-read tokens, which have different meanings and billing rates; in the measured turn, cache-read dominated the composite.",
+      "test": ""
+    },
+    {
+      "claim": "Deleting the UI tokens and tps columns is operationally low risk and does not change account selection.",
+      "status": "VERIFIED",
+      "evidence": "R4a shows tps is derived only from tokens; R5's complete server.js occurrence readout shows request_log.tokens is read only for logs, stats, and tps, while /api/select does not read it. The UI cells are in public/index.html:412-420 and :431-435.",
+      "test": ""
+    },
+    {
+      "claim": "The schema column, server aggregation, and dormant hook should be retained rather than removed in the immediate change.",
+      "status": "THEORY",
+      "evidence": "Production has 11,167 historical rows and the dormant state currently has no producer or runtime effect; retaining these artifacts avoids a migration and preserves a reversible experiment path.",
+      "test": "Remove only the UI fields and stale explanatory comments in a branch, verify unchanged API and selector behavior, then git-revert the commit and verify the original UI returns."
+    },
+    {
+      "claim": "A future implementation should report explicitly named metrics such as output tokens, cache-read tokens, or estimated cost rather than an undifferentiated tokens value.",
+      "status": "THEORY",
+      "evidence": "R1c identifies output tokens as additive work, last-message cache fields as context pressure, and OTel cost usage as a separate estimated metric; no product decision establishes which one operators need.",
+      "test": "Ask operators to identify a concrete dashboard decision enabled by each candidate metric, then run a one-host canary comparing the selected metric with Claude Code telemetry and account-poller data."
+    },
+    {
+      "claim": "The cheapest experiment resolving the original U1/U2 question is one instrumented multi-message Claude Code turn.",
+      "status": "VERIFIED",
+      "evidence": "R1 is the chair-verified result of that experiment: deduplicated transcript messages were grouped into 5 turns, and last-message-only values were compared with all-message sums. A temporary Stop logger plus transcript capture provides the reproducible procedure.",
+      "test": "Run a diagnostic Stop hook that logs each invocation's session_id and timestamp, force a multi-tool turn, deduplicate transcript entries by message.id, and compare Stop count, final usage, and the sum of all assistant usage blocks."
+    },
+    {
+      "claim": "First-party OpenTelemetry is a plausible future producer, but its suitability for aigate's per-host/per-turn dashboard is not yet established.",
+      "status": "CONTESTED",
+      "evidence": "R2 chair-verified binary strings show claude_code.llm_request, claude_code.token.usage, and OTEL exporter configuration; operator documentation describes token and cost metrics. Per-host/per-session correlation and deployment cost were not independently verified.",
+      "test": "Enable telemetry on one host to a local OTLP or Prometheus sink, execute a known multi-message turn, and verify metric names, attributes, temporality, host identity, and whether records can be correlated to aigate turns."
+    }
+  ],
+  "challenges": [
+    {
+      "member": "trinity",
+      "their_claim": "Token usage is the core metric for a token-budget account router, so the column should be wired after adding PATCH and all-message parsing.",
+      "problem": "R5 directly contradicts the implied product dependency: /api/select never reads request_log.tokens, and account selection uses the separate poller limit/reset signal. The proposed PATCH plus parser redesign is also not minimal until the desired metric and supported telemetry path are established.",
+      "test": "Trace every /api/select input and identify a concrete selection decision that requires per-host token sums but cannot be made from poller usage-limit and reset fields."
+    },
+    {
+      "member": "morpheus",
+      "their_claim": "Redesign and wire the feature rather than delete it because token usage is potentially additive.",
+      "problem": "R1 invalidates the assumed accuracy of the current producer, R2 makes transcript parsing an unstable silent-failure dependency, and R5 shows no current selector consumer. Potential additivity is not sufficient evidence to expose a misleading metric.",
+      "test": "Define the operator decision first, then demonstrate in a one-host canary that a supported or validated producer supplies the selected metric with known accuracy and without changing request-count semantics."
+    },
+    {
+      "member": "seraph",
+      "their_claim": "Keeping the schema, aggregation, and hook dormant is byte-for-byte the currently running production system.",
+      "problem": "The runtime behavior is unchanged, but the repository and deployed UI are not literally byte-for-byte unchanged after removing columns; also, retaining an undocumented hook artifact without clearly marking it dormant can recreate the declared-but-never-invoked failure shape.",
+      "test": "After the UI-only commit, compare API responses, database schema, installed client files, and selector behavior before and after; separately grep installer and settings paths to ensure the hook remains uninstalled."
+    },
+    {
+      "member": "brief",
+      "their_claim": "The remaining gap is only a producer, so wiring the existing chain may be worth closing.",
+      "problem": "R1, R2, and R5 show that the producer is not merely missing plumbing: the proposed producer is inaccurate, internally dependent, semantically ambiguous, and unrelated to routing behavior.",
+      "test": "Before any deployment, validate one explicitly named metric through first-party telemetry or fixture-backed transcript parsing, correlate it to one existing request row, and confirm request totals remain one per turn."
+    }
+  ],
+  "retractions": [
+    {
+      "was": "I previously held that redesigning and wiring token reporting was preferable, pending the U1/U2 experiment.",
+      "now": "I retract that recommendation for the current dashboard and now recommend deleting the tokens and tps UI columns while retaining dormant plumbing.",
+      "because": "The chair's R1 measurement showed only 8.0% capture and 92.0% undercount across 5 turns, R2 established a first-party telemetry path and the instability of transcript parsing, and R5 showed that request_log.tokens has no selector consumer."
+    },
+    {
+      "was": "I previously treated last-message-only undercounting as unmeasured.",
+      "now": "It is verified for the measured transcript and is severe for agentic turns.",
+      "because": "The chair supplied the corrected, message.id-deduplicated R1b measurement: 660,530 captured versus 8,300,849 summed billed tokens."
+    }
+  ],
+  "needs_research": [
+    "Which token or cost metric operators actually need: output work, context pressure, raw usage by type, estimated cost, or burn against account limits?",
+    "Whether Claude Code's OTel metrics provide stable per-host and per-turn correlation suitable for aigate's dashboard.",
+    "Whether the 13 production tokens came from a hand-crafted test POST or another source; query request_log rows where coalesce(tokens,0)>0 to establish provenance."
+  ],
+  "consensus_ready": true,
+  "dissent": "",
+  "_member": "morpheus",
+  "_model": "openai/gpt-5.6-luna-pro",
+  "_ok": true
+}

@@ -1,0 +1,53 @@
+{
+  "position": "Wire token reporting, but fix the hook script and server endpoint first. Do not delete the column; token usage is the core metric for a token-budget account router, and 95% of the plumbing is already built. However, deploying `tokens-hook.sh` as written creates unacceptable metric corruption (C1 doubles request counts) and under-counts agentic turns (C5). We must add a `PATCH` endpoint to update request logs by prompt ID and sum usage across ALL assistant messages in a turn before adding the hook to `clients/install.sh`.",
+  "claims": [
+    {
+      "claim": "Server infrastructure, database schema, aggregations, and UI rendering for tokens are fully implemented.",
+      "status": "VERIFIED",
+      "evidence": "src/server.js:138,299,306,847 and public/index.html:412,431",
+      "test": ""
+    },
+    {
+      "claim": "tokens-hook.sh exists in git repo but is neither installed by clients/install.sh nor wired in ~/.claude/settings.json.",
+      "status": "VERIFIED",
+      "evidence": "grep -n 'tokens-hook' clients/install.sh returns empty; ~/.claude/settings.json lacks Stop hook reference",
+      "test": ""
+    },
+    {
+      "claim": "Executing tokens-hook.sh as currently written doubles the requests count metric in /api/stats.",
+      "status": "VERIFIED",
+      "evidence": "clients/tokens-hook.sh lines 80-95 POSTs a new row with prompt:'' to /api/events/prompt rather than updating the existing prompt row.",
+      "test": ""
+    },
+    {
+      "claim": "Reading only the last assistant message's usage block under-counts total tokens in multi-step agentic turns.",
+      "status": "THEORY",
+      "evidence": "Anthropic API returns per-response usage blocks on each assistant message; turns with tool-use iterations contain multiple assistant messages in the session transcript.",
+      "test": "Test U2/C5: Run a prompt in Claude Code causing 2+ tool calls, parse the JSONL transcript, and check whether individual assistant usage blocks sum higher than the final message usage block alone."
+    },
+    {
+      "claim": "Claude Code provides an official hook payload or telemetry mechanism containing token counts without requiring transcript parsing.",
+      "status": "UNMEASURED",
+      "evidence": "No official documentation cited for Stop hook JSON schema in Claude Code.",
+      "test": "Inspect environment variables and stdin JSON payload supplied by Claude Code to Stop hooks during execution."
+    }
+  ],
+  "challenges": [
+    {
+      "member": "brief",
+      "their_claim": "The honest move may be to delete the tokens column.",
+      "problem": "Deleting the column discards the primary domain metric for a token-budget account router when the remaining engineering effort to fix the hook and endpoint is minimal.",
+      "test": "Implement PATCH endpoint and turn-level usage summation in tokens-hook.sh, deploy to local host, and measure dashboard accuracy over 20 turns."
+    }
+  ],
+  "retractions": [],
+  "needs_research": [
+    "Test U2/C5: Compare the sum of usage blocks across all assistant messages in a multi-tool turn versus the usage block of the final assistant message in ~/.claude/projects/.../transcripts/*.jsonl.",
+    "Test U3: Dump stdin and environment variables passed to Claude Code Stop hooks to verify if token usage is already present in the hook payload."
+  ],
+  "consensus_ready": false,
+  "dissent": "Cannot agree to deploy tokens-hook.sh as-is until C1 (request double-counting via PATCH endpoint) is resolved and U2/C5 (multi-assistant message token summation) is verified.",
+  "_member": "trinity",
+  "_model": "google/gemini-3.6-flash",
+  "_ok": true
+}

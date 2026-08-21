@@ -1,0 +1,104 @@
+{
+  "position": "Delete the tokens column and the derived tps column from the UI. Do not install tokens-hook.sh \u2014 not as written, not 'fixed.' R1 measured a 92% undercount on real agentic traffic; R2 shows hooks carry no usage and the transcript is an officially unstable internal format; R5 shows request_log.tokens is display-only and drives zero routing. The plumbing is a museum piece, not a mandate. Keep schema/aggregation/hook dormant (zero migration, git-revertible), rewrite the stale F4 comments, and stop pretending a composite that is 95% discounted cache-read answers any question the fleet is asking.",
+  "claims": [
+    {
+      "claim": "tokens-hook.sh as written captures ~8% of billed tokens on a real multi-turn session (92% undercount), and is exact only for single-message turns",
+      "status": "VERIFIED",
+      "evidence": "CHAIR R1b: this session's transcript, deduped by message.id \u2014 65 unique msgs / 5 turns; hook last-only sum 660,530 vs actual 8,300,849 (8.0%); turn 3 (38 msgs, agentic) captured 3.1%",
+      "test": ""
+    },
+    {
+      "claim": "Claude Code Stop/hook payloads carry no token or usage fields; the supported path is first-party OTel (claude_code.token.usage / claude_code.cost.usage / claude_code.llm_request)",
+      "status": "VERIFIED",
+      "evidence": "CHAIR R2: greps on installed binary ~/.local/share/claude/versions/2.1.238 hit claude_code.token.usage, claude_code.cost.usage, CLAUDE_CODE_ENABLE_TELEMETRY, OTEL_*; Operator docs: hooks expose only session_id/transcript_path/cwd/permission_mode/hook_event_name/prompt_id",
+      "test": ""
+    },
+    {
+      "claim": "The session transcript JSONL is officially internal, version-unstable, and async-written \u2014 so a fail-open transcript parser's failure mode is silent zeroes, indistinguishable from today's bug",
+      "status": "VERIFIED",
+      "evidence": "CHAIR R2 citing Anthropic docs retrieved with the research bundle; tokens-hook.sh header already admits format 'has shifted before' and fails open (brief C2)",
+      "test": ""
+    },
+    {
+      "claim": "request_log.tokens is display-only; no selector/routing/alerting path reads it",
+      "status": "VERIFIED",
+      "evidence": "CHAIR R5 full grep of src/server.js: every tokens read feeds /api/logs or /api/stats display (lines 301,306,313/314,847); /api/select never references it",
+      "test": ""
+    },
+    {
+      "claim": "Deleting the UI tokens (and tps) columns is operationally inert and fully reversible",
+      "status": "VERIFIED",
+      "evidence": "R5 (no consumers) + R4a (tps = tokens/3600 at src/server.js:847, also dead in prod by_host_1h) + UI confined to public/index.html ~412-435; git revert restores",
+      "test": ""
+    },
+    {
+      "claim": "Installing tokens-hook.sh would be a third INSERT producer and corrupt displayed requests counts against 11,167 rows of prior semantics",
+      "status": "VERIFIED",
+      "evidence": "R4b: prompt-hook.sh:25 and aigate-run.sh:23 already POST /api/events/prompt; server.js:823 unconditional INSERT; hook posts another row with prompt:\"\" (C1)",
+      "test": ""
+    },
+    {
+      "claim": "The summed 'tokens' figure is ~95% cache_read, billed at a deep discount \u2014 not cost, not context size, not throughput",
+      "status": "VERIFIED",
+      "evidence": "CHAIR R1c: input_tokens \u22482 negligible; cache_read grows monotonically and dominates; output_tokens alone are the clean additive 'work' metric; last-message cache_read+cache_creation \u2248 end-of-turn context pressure",
+      "test": ""
+    },
+    {
+      "claim": "Trinity's claim that token usage is 'the core metric for a token-budget account router' is false of this codebase",
+      "status": "VERIFIED",
+      "evidence": "R5: account selection uses the poller's usage-limit/reset path, not request_log.tokens; column empty across 11,167 prod rows with no attributed routing failure (F3)",
+      "test": ""
+    },
+    {
+      "claim": "Any future revival should be OTel/prometheus scrape into existing /api/metrics \u2014 not a bash transcript parser \u2014 and only after U5 names the consumer metric (cost vs output vs context pressure)",
+      "status": "THEORY",
+      "evidence": "R2 official OTel counters exist; R3 aigate already exports Prometheus at server.js:854; R1c splits three real metrics hiding under one header",
+      "test": "Enable CLAUDE_CODE_ENABLE_TELEMETRY=1 with OTEL_METRICS_EXPORTER=otlp|prometheus on one host, run one agentic turn, confirm claude_code.token.usage attributes (type/model/host) match dashboard grain; if yes and a named consumer exists, design against that \u2014 else leave deleted"
+    }
+  ],
+  "challenges": [
+    {
+      "member": "trinity",
+      "their_claim": "Do not delete the column; token usage is the core metric for a token-budget account router, and 95% of the plumbing is already built",
+      "problem": "R5 falsifies the premise: nothing in /api/select or any server path reads request_log.tokens. Plumbing that no decision consumes is not '95% done core product' \u2014 it is display chrome. R1 further shows the remaining 5% is not a wire; the written producer is 92% wrong on the fleet's actual workload.",
+      "test": "Already run: R5 grep + R1 transcript measurement. Retract 'core metric' or cite the selector line that reads request_log.tokens."
+    },
+    {
+      "member": "morpheus",
+      "their_claim": "Redesign and wire via correlated PATCH + split fields; delete only if the multi-message experiment fails",
+      "problem": "The experiment Morpheus gated on has been run (R1) and failed harder than the brief feared: 8% capture, not 'maybe undercount.' R2 also kills the hook/transcript approach entirely \u2014 official path is OTel, hooks carry no usage. A PATCH endpoint that amends rows from an unstable fail-open parser is polishing the wrong instrument.",
+      "test": "Accept R1/R2 as the gate Morpheus named; if still pro-wire, propose an OTel-based design with a named consumer (U5) rather than a fixed transcript hook."
+    },
+    {
+      "member": "brief",
+      "their_claim": "Wire it, redesign it, or delete it \u2014 treating redesign-via-tokens-hook as a live peer option",
+      "problem": "After R1+R2 the redesign-the-hook branch is not peer to delete. The hook's dependency (transcript) is officially unsupported; its accuracy on agentic turns is measured-bad; its metric is undefined (C4/R1c). Honest options are: delete now, or a different architecture (OTel) gated on U5 \u2014 not 'fix the bash parser.'",
+      "test": "None remaining on the hook path; U5 consumer interview is the only open product question."
+    }
+  ],
+  "retractions": [
+    {
+      "was": "UNMEASURED: last-assistant-message-only read under-counts multi-step tool-use turns (depends on U1/U2)",
+      "now": "VERIFIED 92% undercount (8.0% captured) on a real 5-turn agentic session; exact only for single-message turns",
+      "because": "CHAIR R1b supplied the controlled multi-message measurement the brief and my round-1 position both demanded \u2014 including the message.id dedupe trap (R1a) that would have bitten any implementer"
+    },
+    {
+      "was": "THEORY: tokens column is redundant with the account poller's limit/reset path",
+      "now": "VERIFIED display-only with zero routing consumers; redundancy for selection is established, and 'additive observability' still has no named consumer (U5 open)",
+      "because": "CHAIR R5 full server.js tokens grep \u2014 every read is /api/logs or /api/stats display; /api/select never touches it. Strengthens delete: blast radius is two cells and tps."
+    },
+    {
+      "was": "Implied openness to revisit wiring after U2 falsifies undercount",
+      "now": "U2 did not falsify undercount \u2014 it confirmed catastrophe. Revisit only via OTel + named metric, never via tokens-hook.sh",
+      "because": "R1 + R2 together disqualify the entire Stop-hook/transcript design, not merely the current script's bugs"
+    }
+  ],
+  "needs_research": [
+    "U5 only: what decision, if any, would a fleet operator make from per-host cost_usd vs output_tokens vs end-of-turn context size that the poller limit/reset signals do not already answer? If empty, permanent delete."
+  ],
+  "consensus_ready": true,
+  "dissent": "",
+  "_member": "mouse",
+  "_model": "x-ai/grok-4.5",
+  "_ok": true
+}

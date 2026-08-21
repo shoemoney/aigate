@@ -1,0 +1,110 @@
+{
+  "position": "Delete the user-facing tokens column now and do not install clients/tokens-hook.sh in its current form; if we want a clean cut, move the hook out of clients or delete it, but keep the nullable schema and aggregation dormant. The verified production data shows the column has no real telemetry, and the available producer creates unacceptable side effects: request double-counting, silent dependency on an undocumented transcript format, and unknown counting semantics for multi-message turns. The safe Monday move is UI-only removal while avoiding a production migration, because it is reversible via git and preserves the option to revisit. If a cheap local experiment later proves Stop usage is cumulative and we add an idempotent update/correlation endpoint, we can re-add the column; until then, cut it.",
+  "claims": [
+    {
+      "claim": "The tokens column in the aigate dashboard is effectively empty in production.",
+      "status": "VERIFIED",
+      "evidence": "Brief F3: read-only GET /api/stats against prod returned 11,167 requests and 13 total tokens across all hosts.",
+      "test": ""
+    },
+    {
+      "claim": "The server-side storage, aggregation, and rendering pipeline for tokens already exists.",
+      "status": "VERIFIED",
+      "evidence": "Brief F1: src/server.js:138,299,306,313,847 and public/index.html:412,420,431,435 show schema, insert, aggregation, rate, and UI rendering.",
+      "test": ""
+    },
+    {
+      "claim": "clients/tokens-hook.sh exists in the repo but is not installed or invoked.",
+      "status": "VERIFIED",
+      "evidence": "Brief F2: grep for tokens-hook in clients/install.sh returns nothing; ~/.claude/aigate lacks tokens-hook.sh; settings.json Stop hooks list other scripts only.",
+      "test": ""
+    },
+    {
+      "claim": "Installing the existing hook as-is will create a new request_log row for each turn and therefore distort the displayed requests metric.",
+      "status": "THEORY",
+      "evidence": "Brief C1 and the hook header say it POSTs a new row because no UPDATE endpoint exists; I have not independently run or inspected the code path.",
+      "test": "Deploy the hook only in staging, generate N known Claude Code turns, then compare request_log row count and /api/stats requests against N and against prompt-hook events."
+    },
+    {
+      "claim": "The existing hook can fail silently into empty or zero token reporting if the Claude Code transcript format changes.",
+      "status": "THEORY",
+      "evidence": "Brief C2 says it parses an undocumented internal JSONL format and fails open; no test or alerting path is described.",
+      "test": "Run the hook against malformed or version-shifted transcript fixtures and verify whether any alert, log, or dashboard state distinguishes failure from genuine zero usage."
+    },
+    {
+      "claim": "Whether the Stop hook fires once per turn or once per session is currently unknown.",
+      "status": "UNMEASURED",
+      "evidence": "No measurement supplied in brief; this is U1.",
+      "test": "Add a local diagnostic Stop hook that logs each invocation with session id, timestamp, and stdin, then run a controlled session with multiple turns."
+    },
+    {
+      "claim": "Whether the last assistant usage block is cumulative for the whole turn is currently unknown.",
+      "status": "UNMEASURED",
+      "evidence": "No measurement supplied in brief; this is U2.",
+      "test": "In the same diagnostic Stop hook, extract all assistant usage blocks from the transcript and compare the last block with the sum of prior blocks for single-message and multi-message turns."
+    },
+    {
+      "claim": "UI-only deletion is the lowest-risk current action because it does not require a database migration and can be reverted via git.",
+      "status": "THEORY",
+      "evidence": "The change would remove presentation code while leaving nullable schema and existing rows intact; I have not executed the change or revert.",
+      "test": "Apply the UI deletion in a branch, deploy to staging, confirm dashboard renders without errors, then git revert and confirm the column returns."
+    },
+    {
+      "claim": "Dropping the schema column now is not justified because historical rows exist and the product decision may be revisited after the experiment.",
+      "status": "THEORY",
+      "evidence": "Brief says prod has 11,167 historical rows and constraints require a migration story; no irreversible benefit from dropping the column is shown.",
+      "test": "Attempt a reversible staging migration to drop and re-add tokens, then verify whether any historical analytics, API consumers, or dashboards break."
+    },
+    {
+      "claim": "The minimum acceptable future wiring requires an idempotent update or correlation path, not a second insert.",
+      "status": "THEORY",
+      "evidence": "This follows from the double-counting risk in C1; no implementation has been measured.",
+      "test": "Implement PATCH or UPSERT keyed by session, turn, or correlation id, run the hook in staging, and verify requests count remains one row per turn while tokens update correctly."
+    },
+    {
+      "claim": "The single cheapest decisive experiment is a local diagnostic Stop hook that records invocation frequency and all transcript usage blocks, then runs controlled single-message and multi-assistant turns.",
+      "status": "THEORY",
+      "evidence": "Proposed experiment; it has not yet been executed.",
+      "test": "Run the local diagnostic hook and check whether Stop count maps to turns or sessions and whether the last usage block equals cumulative usage or only final-message usage."
+    },
+    {
+      "claim": "The tokens column would be additive rather than redundant with existing account-poller usage and reset signals.",
+      "status": "CONTESTED",
+      "evidence": "Brief suggests token usage is natural for a token-budget-aware router, but also says account poller already tracks usage limits and reset windows; no user requirement or decision log proves the composite token sum changes behavior.",
+      "test": "Review account-selection logic and ask fleet users whether a composite token total changes account choice or operational action; if not, treat the column as redundant."
+    }
+  ],
+  "challenges": [
+    {
+      "member": "brief",
+      "their_claim": "The only missing link is a producer.",
+      "problem": "A producer that inserts duplicate rows and relies on undocumented transcript parsing does not merely fill the column; it risks corrupting the requests metric and hiding failures as empty data.",
+      "test": "Deploy the hook in staging with controlled turns and compare request counts, token sums, and failure behavior against ground truth."
+    },
+    {
+      "member": "brief",
+      "their_claim": "A complete Stop-hook reporter exists in the repo.",
+      "problem": "Code existence and review do not prove production correctness for multi-message agentic turns, cumulative usage semantics, or transcript-format stability.",
+      "test": "Run the diagnostic Stop hook on single-message, multi-assistant, and cache-heavy turns, then compare last-message usage against all usage blocks and expected usage."
+    },
+    {
+      "member": "brief",
+      "their_claim": "Because the plumbing is already built, wiring may be preferable to deletion.",
+      "problem": "Sunk implementation cost does not outweigh exposing an unvalidated metric, especially when the fix may require a new PATCH endpoint, monitoring, and migration semantics.",
+      "test": "Estimate and compare the cost of a validated wire-up (endpoint, correlation, tests, alerting) against UI deletion plus future re-addition if the experiment succeeds."
+    }
+  ],
+  "retractions": [],
+  "needs_research": [
+    "Does Claude Code provide a supported Stop-hook payload, OTel export, or JSON output field containing turn token usage without parsing internal transcripts?",
+    "What exact token metric should the dashboard show: cost-equivalent, context pressure, throughput, or per-account burn against limits?",
+    "Are existing dashboard request counts used for alerts, billing, capacity, or account-selection decisions such that double-counting would cause operational harm?",
+    "Is there a stable correlation identifier available in prompt and Stop hooks to allow PATCH or UPSERT of the same logical request?",
+    "How do multi-step agentic turns report usage in Claude Code transcripts across cache creation, cache read, and tool-use loops?"
+  ],
+  "consensus_ready": true,
+  "dissent": "",
+  "_member": "niobe",
+  "_model": "qwen/qwen3.8-max",
+  "_ok": true
+}

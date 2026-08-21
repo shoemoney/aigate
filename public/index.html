@@ -149,14 +149,14 @@ section:first-child{border-top:0}
 .scrollx{overflow-x:auto}
 .feedmax{max-height:620px;overflow-y:auto}
 .feed{min-width:620px}
-.frow{display:grid;grid-template-columns:46px 104px 82px 62px 66px 1fr;gap:11px;align-items:baseline;padding:9px 9px;border-radius:3px;font-size:13.5px;transition:background .12s}
+.frow{display:grid;grid-template-columns:46px 104px 82px 62px 1fr;gap:11px;align-items:baseline;padding:9px 9px;border-radius:3px;font-size:13.5px;transition:background .12s}
 .frow:hover{background:#1b1e1a}
 .frow.head{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);border-radius:0;padding-bottom:9px}
 .frow.head:hover{background:none}
 .frow>span{font-family:var(--mono);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.frow .t{color:var(--dim)} .frow .h{color:var(--dim)} .frow .m{color:var(--dim)} .frow .tk{text-align:right;color:var(--dim)}
+.frow .t{color:var(--dim)} .frow .h{color:var(--dim)} .frow .m{color:var(--dim)}
 .frow .snip{color:var(--fg);opacity:.85;font-family:var(--sans);font-size:13.5px}
-.frow.fail .snip,.frow.fail .tk,.frow.fail .m{color:var(--crit)}
+.frow.fail .snip,.frow.fail .m{color:var(--crit)}
 .frow.fail{box-shadow:inset 2px 0 0 var(--crit);background:rgba(224,93,68,.05)}
 .frow.fail:hover{background:rgba(224,93,68,.09)}
 h3.sub{font-family:var(--mono);font-size:12.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:13px}
@@ -409,15 +409,13 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
           </div>
           <div class="scrollx feedmax">
             <TransitionGroup name="feed" tag="div" class="feed" role="log" aria-live="polite" aria-label="activity feed">
-              <div class="frow head" key="head"><span>age</span><span>account</span><span>host</span><span>model</span><span class="tk">tokens</span><span>prompt</span></div>
+              <div class="frow head" key="head"><span>age</span><span>account</span><span>host</span><span>model</span><span>prompt</span></div>
               <!-- :key="r.key" — a monotonic id minted once in rowFrom(), NOT r.ts (1s sqlite granularity collides) or array index (unstable under unshift) — critique §2 -->
               <div v-for="r in feedRows" :key="r.key" class="frow" :class="{fail:r.fail}">
                 <span class="t">{{ fmtAge((now-r.ts)/1000) }}</span>
                 <span>{{ r.account||'—' }}</span>
                 <span class="h">{{ r.host }}</span>
                 <span class="m">{{ r.model }}</span>
-                <!-- tokens are always 0 — see CLAUDE.md; rowFrom() already stored '—' for this cell, never animate it -->
-                <span class="tk num">{{ r.tokens }}</span>
                 <span class="snip">{{ r.text }}</span>
               </div>
               <div v-if="!feedRows.length" class="frow" key="empty"><span class="t"></span><span class="dim" style="grid-column:2/-1">no activity yet</span></div>
@@ -428,13 +426,12 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
         <div>
           <h3 class="sub">By host / device</h3>
           <div class="scrollx"><table>
-            <thead><tr><th>host</th><th class="r">requests</th><th class="r">tokens</th><th class="r">last seen</th><th class="r">tps</th></tr></thead>
+            <thead><tr><th>host</th><th class="r">requests</th><th class="r">last seen</th></tr></thead>
             <tbody>
-              <tr v-if="!hostRows.length"><td colspan="5" class="dim">no traffic yet</td></tr>
+              <tr v-if="!hostRows.length"><td colspan="3" class="dim">no traffic yet</td></tr>
               <tr v-for="h in hostRows" :key="h.host">
-                <td>{{ h.host }}</td><td class="r num">{{ h.requests }}</td><td class="r num">{{ h.tokens }}</td>
+                <td>{{ h.host }}</td><td class="r num">{{ h.requests }}</td>
                 <td class="r num" :class="h.stale?'warn':'dim'">{{ h.ageText }}</td>
-                <td class="r num">{{ h.tps }}</td>
               </tr>
             </tbody>
           </table></div>
@@ -565,7 +562,6 @@ const app=Vue.createApp({
     accounts:[],             // /api/stats.accounts  |  WS 'accounts'
     keys:[],                 // /api/keys            |  WS 'keys'
     hosts:[],                // /api/stats.by_host
-    hosts1h:[],              // /api/stats.by_host_1h
     providers:[],            // /api/providers → <datalist>
     acctsAt:0,                // ms epoch when `accounts` last arrived (ages usage_age_s)
 
@@ -582,7 +578,7 @@ const app=Vue.createApp({
     copiedId:null,               // inbox item id whose copy button currently reads 'copied'
 
     /* ---- activity feed ---- */
-    feed:[],                  // newest-first rows {key,kind,ts,account,host,model,tokens,text,fail}; CAP 200
+    feed:[],                  // newest-first rows {key,kind,ts,account,host,model,text,fail}; CAP 200
     paused:false,
     queue:[],                  // [{d,kind}] held while paused
     seenAccounts:{},            // name -> true   (chip source)
@@ -694,20 +690,12 @@ const app=Vue.createApp({
       return this.hosts.map(h=>{
         const ts = h.last ? +toDate(h.last) : null;
         const age = ts ? (this.now-ts)/1000 : null;   // this.now, not Date.now() — re-ticks every second off startClock's interval
-        // tps join quirk preserved VERBATIM from the original: by_host_1h is keyed by the SHORT
-        // hostname (first dot-segment) even when by_host itself carries an FQDN. Not a bug — do not "fix" it.
-        const r1h = this.hosts1h.find(x=>x.host===(h.host||'').split('.')[0]);
         return {
           host: h.host||'—',
           requests: fmtNum(h.requests),
-          // jury r1 (2 votes): tokens are 0 for EVERY row by construction — the upstream reporter is a
-          // prompt-submit hook that fires before the response exists, so no count is ever recorded.
-          // Render the absence honestly instead of a confident 0, matching the feed's tk cell.
-          tokens: h.tokens ? fmtNum(h.tokens) : '—',
           age,
           stale: age!=null && age>STALE_S,
           ageText: ts ? fmtAge(age)+' ago' : '—',
-          tps: r1h ? r1h.tps : '—',
         };
       });
     },
@@ -804,7 +792,7 @@ const app=Vue.createApp({
         else if(m.type==='prompt'){
           this.feedEvent(m.data,'prompt');
           clearTimeout(this._statsT);
-          this._statsT=setTimeout(()=>api('/api/stats').then(s=>{ this.hosts=s.by_host||[]; this.hosts1h=s.by_host_1h||[]; }).catch(()=>{}),1500);
+          this._statsT=setTimeout(()=>api('/api/stats').then(s=>{ this.hosts=s.by_host||[]; }).catch(()=>{}),1500);
         }
         else if(m.type==='access') this.feedEvent(m.data,'access');
         // anything else — ignored
@@ -812,7 +800,7 @@ const app=Vue.createApp({
     },
 
     ingestStats(s){
-      this.accounts=s.accounts||[]; this.acctsAt=Date.now(); this.hosts=s.by_host||[]; this.hosts1h=s.by_host_1h||[];
+      this.accounts=s.accounts||[]; this.acctsAt=Date.now(); this.hosts=s.by_host||[];
       for(const a of this.accounts) if(!this.rings[a.account]) this.rings[a.account]=[{t:this.now,v:worstOf(a)}];   // seed once, never on later calls
       this.detectTransitions();
       this.syncHero();
@@ -1068,7 +1056,7 @@ const app=Vue.createApp({
         key, kind, ts,
         account: d.account||'',    // empty-string fallback (NOT '?') — access rows with no account never become a filter chip, see addRows()
         host: d.host||'',
-        model:'—', tokens:'—',
+        model:'—',
         text:'▸ '+(d.action||'')+(d.result?' — '+d.result:''),
         fail: !!(d.result && d.result!=='ok'),
       };
@@ -1078,10 +1066,6 @@ const app=Vue.createApp({
         account: d.account||'?',   // '?' fallback here, deliberately different from the access-row '' above
         host: d.host||'',
         model: d.model||'—',
-        // tokens are always 0/null in this system — see CLAUDE.md; the reporting hook fires on
-        // UserPromptSubmit, before the model has responded, so the real count never exists at write
-        // time. Render an em-dash and never animate it. Remove this check if the hook is ever fixed.
-        tokens: d.tokens!=null ? fmtNum(d.tokens) : '—',
         text: d.prompt||'',
         fail: false,
       };

@@ -1,0 +1,80 @@
+{
+  "position": "Delete the UI column. Do not install tokens-hook.sh as written. The existence of unused plumbing is sunk cost, not a mandate \u2014 and wiring it today would ship a number that is not cost, not context, not throughput, may systematically under-count the fleet's actual workload (C5), and deliberately corrupts the requests metric (C1) to get there. aigate already has a working usage-limit/reset signal via the account poller; nobody in this brief has named a decision the composite tokens sum enables that that signal does not. Revisit only after the U2 experiment falsifies under-count and someone defines what the column is actually for.",
+  "claims": [
+    {
+      "claim": "Server accepts, aggregates, and renders tokens; the only missing link is a producer that is never invoked",
+      "status": "VERIFIED",
+      "evidence": "Brief F1/F2: src/server.js schema/insert/aggregate; clients/tokens-hook.sh present; grep tokens-hook clients/install.sh empty; Stop hooks in settings.json are aaa-selfimprove.sh and nohumans.js only",
+      "test": ""
+    },
+    {
+      "claim": "Production tokens column has never carried real telemetry",
+      "status": "VERIFIED",
+      "evidence": "Brief F3: GET /api/stats on prod \u2014 11,167 requests, 13 tokens total",
+      "test": ""
+    },
+    {
+      "claim": "Installing tokens-hook.sh as written roughly doubles displayed request counts",
+      "status": "VERIFIED",
+      "evidence": "Hook header / brief C1: no UPDATE endpoint; Stop posts a second request_log row with prompt:\"\"; aggregate sums requests as row count",
+      "test": ""
+    },
+    {
+      "claim": "The summed token figure (in+out+cache_write+cache_read) is not cost, context size, or billed usage",
+      "status": "VERIFIED",
+      "evidence": "Anthropic bills cache-read at a discount vs input; hook sums raw counts into one integer; column header is undifferentiated 'tokens'",
+      "test": ""
+    },
+    {
+      "claim": "Last-assistant-message-only read under-counts multi-step tool-use turns",
+      "status": "UNMEASURED",
+      "evidence": "Brief C5/U1/U2 \u2014 no transcript fixture or live capture in evidence bundle; depends entirely on whether usage blocks are per-message or cumulative",
+      "test": "Run experiment E1 below on a multi-tool turn"
+    },
+    {
+      "claim": "tokens column is redundant with the account poller's limit/reset path for aigate's core job (usage-aware account selection)",
+      "status": "THEORY",
+      "evidence": "Brief product context: selector already tracks per-account usage limits and reset windows by another path; tokens column empty in prod with no reported decision failure attributed to it",
+      "test": "List concrete router or operator decisions made from per-host token sums that cannot be made from limit/remaining/reset fields; if list is empty, redundancy holds"
+    },
+    {
+      "claim": "UI comments claiming tokens are architecturally always null are stale",
+      "status": "VERIFIED",
+      "evidence": "Brief F4: public/index.html:1081-1083, :703-705 vs tokens-hook.sh Stop-hook design landed in 02e326e/cd78c58",
+      "test": ""
+    }
+  ],
+  "challenges": [
+    {
+      "member": "brief",
+      "their_claim": "Most of the machinery already exists, so the remaining gap may be worth closing",
+      "problem": "Treats sunk server/UI plumbing as pressure to ship. The gap is not a small wire \u2014 it is an unvalidated producer with known semantic corruption (C1), an undocumented dependency (C2), and an unmeasured accuracy failure mode on the dominant workload (C5). Machinery without a correct producer is not 'almost done'; it is a UI lie waiting for a bad number.",
+      "test": "Before any wire decision: pass E1 (U2) and write one sentence naming the user question the column answers that limit/reset does not"
+    },
+    {
+      "member": "brief",
+      "their_claim": "Author argues tokens and tps stay correct because prompt rows carry tokens=null",
+      "problem": "Even if tps arithmetic is correct, the dashboard displays requests too. Trading a working metric for a speculative one is not 'acceptable cost' \u2014 it is moving the empty-state honesty problem from tokens onto requests. Also tps = tokens/3600 is only as meaningful as the composite token definition (C4).",
+      "test": "Mock two rows per turn (prompt null-tokens + stop with tokens) through /api/stats and show the exact requests and tps operators would see; decide if that requests figure is still fit for display"
+    },
+    {
+      "member": "brief",
+      "their_claim": "A dashboard for a token-budget-aware account router arguably has token usage as its most natural headline metric",
+      "problem": "aigate is not in the request path and does not meter budgets from this column today. The working budget signal is limits/resets. 'Arguably natural' is product poetry until someone shows the column changing an account-selection outcome.",
+      "test": "Trace one real routing decision end-to-end; cite whether request_log.tokens is read. If not, headline-metric claim is false for current code."
+    }
+  ],
+  "retractions": [],
+  "needs_research": [
+    "E1/U2: In Claude Code session JSONL, is assistant message usage per-message or cumulative across the turn?",
+    "U3: Does Claude Code expose token usage via a supported hook input field, OTel, or CLI JSON output without parsing transcript JSONL?",
+    "U4: What Stop-hook contract do aaa-selfimprove.sh and nohumans.js journal --hook already rely on (stdin payload shape)?",
+    "U5: What single operator question should the column answer \u2014 cost, context pressure, burn rate, or something else?",
+    "Does any server path read request_log.tokens for routing, or is it display-only?"
+  ],
+  "consensus_ready": false,
+  "dissent": "I will not agree to wire tokens-hook.sh as-is under any consensus that hand-waves C1 or C5. Minimum bar: (1) E1 shows last-message usage is cumulative OR the hook sums all assistant usage blocks in the turn, (2) requests double-count is fixed (PATCH/update-by-session or stop counting empty-prompt rows) before enablement, (3) column header/semantics match a defined question \u2014 not a four-way undenominated sum. Until then the honest move is delete the UI column (keep schema + aggregator for cheap revival; quarantine the hook as un-installed proposal). Single cheapest experiment for the chair: pick one multi-tool-use session JSONL, extract every assistant message usage block in the last turn in order, print input/output/cache fields per message, and report whether each field is strictly per-message or monotonically cumulative \u2014 that kills or confirms C5 in one pass.",
+  "_member": "mouse",
+  "_model": "x-ai/grok-4.5",
+  "_ok": true
+}
