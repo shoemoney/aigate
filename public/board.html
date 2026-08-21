@@ -181,6 +181,14 @@
     background:linear-gradient(90deg,var(--todo),var(--violet));box-shadow:0 0 12px 1px rgba(107,124,255,.8);z-index:6}
   .card.drop-before::before{top:-7px} .card.drop-after::after{bottom:-7px}
   .card.settled{animation:settle .42s var(--spring)}          /* drop-release overshoot */
+  /* multi-select: shift/ctrl-click or the checkbox add a Todo card to the block that drags together */
+  .card.selected{border-color:var(--accent);background:linear-gradient(180deg,rgba(107,124,255,.14),rgba(19,27,40,.72));
+    box-shadow:0 0 0 1px rgba(107,124,255,.55),0 10px 22px -12px rgba(107,124,255,.5)}
+  .card.selected.dragging{box-shadow:0 22px 44px -12px rgba(0,0,0,.8),0 0 0 2px var(--accent),0 0 26px -4px rgba(107,124,255,.85)}
+  .selectbox{margin:0 2px 0 0;accent-color:var(--accent);cursor:pointer;width:15px;height:15px;flex:none}
+  .selectionbar{display:inline-flex;align-items:center;gap:8px;font-size:11px;color:var(--dim);font-weight:600;margin-left:8px}
+  .selectionbar button{background:none;border:none;color:var(--accent);font:inherit;font-weight:700;cursor:pointer;padding:0}
+  .selectionbar button:hover{text-decoration:underline}
   /* live-update sheen: brief sweep whenever a card patches over the WS */
   .sheen{position:absolute;inset:0;border-radius:14px;pointer-events:none;z-index:4;
     background:linear-gradient(105deg,transparent 32%,rgba(160,185,255,.14) 50%,transparent 68%);background-size:220% 100%;animation:sheenmove .7s ease}
@@ -329,22 +337,26 @@
       <h2><span class="glyph">{{col.glyph}}</span>{{col.label}}
         <span class="count" :class="['ct-'+col.key,{alarm: col.key==='error' && cards('error').length>0}]"><transition name="roll"><span class="roll" :key="cards(col.key).length">{{cards(col.key).length}}</span></transition></span>
         <span class="meter" :title="'active load: '+meterPct(col.key)+'%'"><i :style="{width:meterPct(col.key)+'%'}"></i></span>
+        <span v-if="col.key==='todo'&&selectedIds.length>0" class="selectionbar">{{selectedIds.length}} selected <button type="button" @click="selectedIds=[]">clear</button></span>
       </h2>
       <transition-group name="flip" tag="div" class="list">
         <div v-for="(c,idx) in cards(col.key)" :key="c.id" class="card" :data-id="c.id"
-             :class="[c.status,staleClass(c),runOverClass(c),{open:opened===c.id,dragging:dragId===c.id,settled:justMoved===c.id,flash:flashing[c.id],flying:flying[c.id],linked:linked===c.id,'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
+             :class="[c.status,staleClass(c),runOverClass(c),{open:opened===c.id,dragging:dragId===c.id||(dragIds&&dragIds.includes(c.id)),settled:justMoved===c.id,flash:flashing[c.id],flying:flying[c.id],linked:linked===c.id,selected:col.key==='todo'&&selectedIds.includes(c.id),'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
              @mouseenter="c.status==='running'&&(linked=c.id)" @mouseleave="linked===c.id&&(linked=null)"
-             tabindex="0" role="button" :aria-expanded="opened===c.id"
+             tabindex="0" role="button" :aria-expanded="opened===c.id" :aria-selected="col.key==='todo'&&selectedIds.includes(c.id)"
              :draggable="col.key==='todo'"
              @dragstart="col.key==='todo'&&dragStart(c,$event)" @dragend="dragEnd"
              @dragover="col.key==='todo'&&dragOver(c,$event)" @drop="col.key==='todo'&&drop(c)"
-             @click="expand(c)" @keydown.enter.self.prevent="expand(c)" @keydown.space.self.prevent="expand(c)"
+             @click="col.key==='todo'&&($event.shiftKey||$event.ctrlKey||$event.metaKey) ? toggleSelect(c,$event) : expand(c)"
+             @keydown.enter.self.prevent="expand(c)" @keydown.space.self.prevent="expand(c)"
              @keydown.alt.up.prevent="col.key==='todo'&&moveCard(c,-1)" @keydown.alt.down.prevent="col.key==='todo'&&moveCard(c,1)">
           <span v-if="flashing[c.id]" class="sheen" aria-hidden="true"></span>
           <span v-if="col.key==='todo'&&idx===0&&dragId==null&&!filter" class="nexthalo" aria-hidden="true" title="next to be claimed"></span>
           <template v-if="celebrating[c.id]"><span class="ripple" aria-hidden="true"></span><span class="bloom" aria-hidden="true">✓</span></template>
           <template v-if="alarming[c.id]"><span class="errpulse" aria-hidden="true"></span><span class="errmark" aria-hidden="true">!</span></template>
           <div class="head">
+            <input v-if="col.key==='todo'" type="checkbox" class="selectbox" :checked="selectedIds.includes(c.id)"
+                   @click.stop="toggleSelect(c,$event)" @mousedown.stop title="select for multi-drag (shift-click a card to select a range)" :aria-label="'select card '+c.id+' for multi-drag'">
             <span v-if="col.key==='todo'" class="grip" title="drag to reprioritize" aria-hidden="true">⋮⋮</span>
             <span v-if="col.key==='todo'" class="rank">{{idx+1}}</span>
             <span class="id">#{{c.id}}</span>
@@ -492,7 +504,7 @@ createApp({
   data(){return{
     all:[], live:false, showNew:false, busy:false, formMsg:'', announce:'', filter:'',
     opened:null, followText:{}, sending:{}, confirmDel:null, now:Date.now(),
-    dragId:null, dragOverId:null, dragOverPos:'before',
+    dragId:null, dragOverId:null, dragOverPos:'before', dragIds:null, selectedIds:[], _lastSelected:null,
     celebrating:{}, flashing:{}, alarming:{}, justMoved:null, lastMsgAt:0, flying:{}, copied:'',
     wasDisconnected:false, catchup:'', linked:null,
     _seen:{}, _wstall:{},
@@ -710,22 +722,47 @@ createApp({
       if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); last.focus(); }
       else if(!e.shiftKey&&document.activeElement===last){ e.preventDefault(); first.focus(); }
     },
+    // --- multi-select (shift/ctrl-click, or the checkbox) ---
+    toggleSelect(c,e){
+      if(e&&e.shiftKey&&this._lastSelected!=null){
+        const ids=this.cards('todo').map(x=>x.id);
+        const i=ids.indexOf(this._lastSelected), j=ids.indexOf(c.id);
+        if(i>-1&&j>-1){
+          const lo=Math.min(i,j), hi=Math.max(i,j);
+          const set=new Set(this.selectedIds);
+          for(let k=lo;k<=hi;k++)set.add(ids[k]);
+          this.selectedIds=[...set];
+        }
+      }else{
+        const i=this.selectedIds.indexOf(c.id);
+        if(i>-1)this.selectedIds.splice(i,1); else this.selectedIds.push(c.id);
+      }
+      this._lastSelected=c.id;
+    },
     // --- drag & drop reorder (Todo priority) ---
-    dragStart(c,e){ this.dragId=c.id; e.dataTransfer.effectAllowed='move'; try{e.dataTransfer.setData('text/plain',String(c.id))}catch{} },
-    dragOver(c,e){ if(this.dragId==null||c.id===this.dragId)return; e.preventDefault();
+    dragStart(c,e){
+      // dragging a card that's part of the current multi-select moves the whole block; otherwise it's a normal single-card drag
+      if(this.selectedIds.length>1&&this.selectedIds.includes(c.id)){ this.dragId=c.id; this.dragIds=[...this.selectedIds]; }
+      else{ this.selectedIds=[]; this.dragId=c.id; this.dragIds=[c.id]; }
+      e.dataTransfer.effectAllowed='move'; try{e.dataTransfer.setData('text/plain',String(c.id))}catch{}
+    },
+    dragOver(c,e){ if(this.dragId==null||(this.dragIds&&this.dragIds.includes(c.id)))return; e.preventDefault();
       const r=e.currentTarget.getBoundingClientRect(); this.dragOverId=c.id; this.dragOverPos=(e.clientY-r.top)<r.height/2?'before':'after';
       // native HTML5 DnD won't auto-scroll an inner overflow container — nudge it so off-screen ranks are reachable
       const list=e.currentTarget.closest('.list');
       if(list){ const lr=list.getBoundingClientRect();
         if(e.clientY-lr.top<44) list.scrollTop-=14; else if(lr.bottom-e.clientY<44) list.scrollTop+=14; } },
-    dragEnd(){ this.dragId=null; this.dragOverId=null; },
+    dragEnd(){ this.dragId=null; this.dragOverId=null; this.dragIds=null; },
     async drop(target){
-      const src=this.dragId; this.dragOverId=null;
-      if(src==null||target.id===src){ this.dragId=null; return; }
-      const ids=this.cards('todo').map(c=>c.id).filter(id=>id!==src);
+      const src=this.dragId; const moving=(this.dragIds&&this.dragIds.length)?this.dragIds:(src==null?[]:[src]);
+      this.dragOverId=null;
+      if(src==null||moving.includes(target.id)){ this.dragId=null; this.dragIds=null; return; }
+      const order=this.cards('todo').map(c=>c.id);
+      const movingOrdered=order.filter(id=>moving.includes(id));   // keep the block's own relative order intact
+      const ids=order.filter(id=>!moving.includes(id));
       let at=ids.indexOf(target.id); if(this.dragOverPos==='after')at+=1;
-      ids.splice(at,0,src);
-      this.dragId=null; this.settle(src);                      // spring overshoot on the landed card
+      ids.splice(at,0,...movingOrdered);
+      this.dragId=null; this.dragIds=null; this.selectedIds=[]; this.settle(src);   // spring overshoot on the landed card
       await this.reorder(ids);
     },
     async create(){
@@ -759,7 +796,7 @@ createApp({
     },
     onKey(e){
       const typing=/^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName||''));
-      if(e.key==='Escape'){ if(this.showNew)this.showNew=false; else if(this.opened!=null)this.opened=null; return; }
+      if(e.key==='Escape'){ if(this.showNew)this.showNew=false; else if(this.opened!=null)this.opened=null; else if(this.selectedIds.length)this.selectedIds=[]; return; }
       if(typing)return;
       if((e.key==='n'||e.key==='N') && !this.showNew){ e.preventDefault(); this.openNew(); }
       else if(e.key==='/'){ e.preventDefault(); this.$refs.filter&&this.$refs.filter.focus(); }
