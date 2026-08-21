@@ -1,0 +1,81 @@
+{
+  "position": "The tokens column must be deleted from the dashboard. The cost to wire it correctly exceeds its value given the current architecture. The server-side plumbing is elegant but the client-side hook is fundamentally broken: it duplicates request counts (C1), depends on an undocumented internal format (C2), undercounts multi-step turns by an unknown but likely large factor (C5), and the resulting metric is a confusing composite (C4). The honest, maintainable move is to remove the UI column and its related render code, leave the server-side schema and aggregation intact (they cost nothing and enable future work), and document the gap clearly. A single experiment \u2014 reading the transcript's usage block structure \u2014 will decide whether a better approach is even possible.",
+  "claims": [
+    {
+      "claim": "The tokens-hook.sh reporter, if deployed, would double the requests count in the dashboard by posting separate rows instead of updating existing ones.",
+      "status": "VERIFIED",
+      "evidence": "Hook header at clients/tokens-hook.sh lines 18-25 documents: 'No PATCH endpoint exists \u2014 we POST a new row. This doubles req counts.' Server code at src/server.js:299 confirms INSERT only. No UPDATE path exists. Confirmed by chair reading both files in 02e326e and cd78c58.",
+      "test": ""
+    },
+    {
+      "claim": "The Stop hook fires once per turn, not once per session.",
+      "status": "UNMEASURED",
+      "evidence": "No empirical test has been run. The Claude Code hook documentation is not explicitly clear. This is U1 from the brief.",
+      "test": "Add 'console.log(\"stop hook fired\")' to the hook script, run one multi-turn Claude request (e.g. 'write a script, then run it, then fix the output'), count log lines versus assistant messages in the transcript JSON."
+    },
+    {
+      "claim": "The last assistant message's usage block reports cumulative turn usage, not per-message usage, which would make C5 irrelevant.",
+      "status": "UNMEASURED",
+      "evidence": "No one on the council has inspected a transcript with multiple assistant messages. The Anthropic API documentation reports per-request usage, but the transcript format may aggregate. This is U2 from the brief.",
+      "test": "Run a single turn that produces multiple assistant messages (e.g. tool-use loop). Parse the transcript JSONL. Compare usage fields in the final message vs individual messages. If final usage > any individual message's, it's cumulative."
+    },
+    {
+      "claim": "The column header 'tokens' is ambiguous and does not map to any single meaningful metric (cost, context, throughput, or limit burn).",
+      "status": "VERIFIED",
+      "evidence": "Hook code at clients/tokens-hook.sh:45-55 sums input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens into one number. These have different billing rates (cache reads ~10% cost). The Anthropic API never returns this combined value \u2014 it's an invention. No dashboard label explains the composite.",
+      "test": ""
+    },
+    {
+      "claim": "The transcript JSONL format is undocumented and has changed historically, creating an untracked dependency.",
+      "status": "VERIFIED",
+      "evidence": "Hook author's own comment at clients/tokens-hook.sh:30-33: 'The session transcript format is not documented by Anthropic and has shifted before. We parse defensively and fail open.' No test suite covers the format. A format change produces silent zeroes.",
+      "test": ""
+    },
+    {
+      "claim": "Deleting the tokens column from the UI is cheap and reversible via git revert.",
+      "status": "VERIFIED",
+      "evidence": "The tokens column is rendered in two places in public/index.html (lines 412-420 for per-request view, 431-435 for per-host view). Removing those spans and adjusting table headers is a ~10 line change. Git revert or checkout restores it instantly.",
+      "test": ""
+    }
+  ],
+  "challenges": [
+    {
+      "member": "brief (premise)",
+      "their_claim": "The question is whether to 'wire it, redesign it, or delete it' \u2014 implying all three are viable.",
+      "problem": "The premise treats 'wire it' as a live option when the hook's design creates a new bug (double-counted requests) worse than the one it fixes. Wiring-it-as-written is not viable. The real choice is between redesign and delete.",
+      "test": "If someone can argue that doubling requests is an acceptable trade for displaying tokens, produce an argument that doesn't also apply to displaying a random number. I claim no such argument exists."
+    },
+    {
+      "member": "hypothetical pro-wire member",
+      "their_claim": "The existing tokens-hook.sh works and just needs deployment in clients/install.sh.",
+      "problem": "This ignores C1 (doubled requests), a verified cost that makes the dashboard less honest than leaving the column empty. Fixing C1 requires either a new PATCH endpoint or accepting broken request counts on the same page that shows requests. Neither has been argued for.",
+      "test": "Add the hook to install.sh, point out to a user that their 'requests: 5000' column now means 2500 actual requests + 2500 token rows. Ask if they prefer this or empty tokens. I predict they prefer empty tokens."
+    },
+    {
+      "member": "hypothetical 'add PATCH endpoint' member",
+      "their_claim": "Add PATCH /api/events/prompt/:id to avoid double-counting, then wire the hook.",
+      "problem": "This is a non-trivial server change that touches the request_log schema (add a unique ID if missing), the INSERT path (generate and return the ID), and the hook (require the ID from the prompt-hook). It also invalidates all 11,167 historical rows that carry no ID. No migration is proposed.",
+      "test": "Write the migration script for 11,167 rows. Count the hours. Compare to the lifetime value of the column."
+    }
+  ],
+  "retractions": [],
+  "needs_research": [
+    "Does the transcript JSONL usage block report cumulative per-turn or per-message token counts? (U2 \u2014 critical)",
+    "Does the Stop hook fire per-turn or per-session? (U1 \u2014 important but secondary to U2)",
+    "Is there an official, documented Claude Code hook payload field for token usage? (U3 \u2014 would supersede transcript parsing entirely)",
+    "What format is the usage block in multi-message transcripts from real agentic sessions (not single-turn tests)?",
+    "What is the actual token volume on this fleet? 13 tokens across 11,167 requests suggests no real use, but maybe accounts differ. Run a test with a known high-usage account."
+  ],
+  "consensus_ready": false,
+  "dissent": "I cannot agree to 'wire it' or 'redesign it' until U2 is resolved. If the transcript usage block is cumulative per-turn, then C5 dissolves and a redesign becomes feasible. If it's per-message, then the hook undercounts by an unknown but possibly order-of-magnitude factor, and the column's value drops to near-zero \u2014 stronger case for deletion. I also cannot agree to delete the server-side schema column or aggregation logic: they cost zero and preserve options. The single experiment (U2) should complete before the council closes.",
+  "experiment_required": {
+    "name": "transcript-usage-structure-test",
+    "description": "Determine whether the transcript's last assistant message usage block reports cumulative turn usage or per-message usage.",
+    "protocol": "1. Run one multi-step Claude request: 'Create a file, then read it back, then modify it \u2014 show me the final content.' 2. After completion, dump the session transcript JSONL from ~/.claude/projects/*/sessions/*.jsonl 3. For each message with 'role: assistant' and a 'usage' block, record input_tokens, output_tokens. 4. Compare the last message's values to any individual earlier message. If last message values are strictly greater than any earlier individual message, they are cumulative (C5 dissolves). If last message is identical to a per-message pattern, they are per-message (C5 remains).",
+    "estimated_time": "10 minutes",
+    "chair_action": "Chair runs this experiment and reports results back to the council before a final ruling."
+  },
+  "_member": "tank",
+  "_model": "deepseek/deepseek-v4-flash",
+  "_ok": true
+}

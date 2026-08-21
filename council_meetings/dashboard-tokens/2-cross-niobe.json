@@ -1,0 +1,142 @@
+{
+  "position": "Delete the user-facing tokens column now, and remove or hide the derived tps column because it is dead when tokens are absent. Do not install clients/tokens-hook.sh. Keep request_log.tokens, server aggregation, and API fields dormant rather than dropping the schema, because that is a UI-level reversible change and R5 verifies no routing reads the column. The chair's R1 measurement shows the existing transcript hook captured only 8.0% of deduped billed tokens in one real session, so it is not a cheap fix. If a real consumer later appears, rebuild on first-party OTel or an idempotent correlated update after proving accuracy and defining the metric.",
+  "claims": [
+    {
+      "claim": "Production tokens data is effectively empty: 11,167 requests and 13 total tokens across all hosts.",
+      "status": "VERIFIED",
+      "evidence": "Brief F3: read-only GET https://aigate.shoemoney.ai/api/stats returned the per-host table; this is a point-in-time cumulative production sample, not a rate.",
+      "test": ""
+    },
+    {
+      "claim": "clients/tokens-hook.sh exists but is not installed or invoked by the current client setup.",
+      "status": "VERIFIED",
+      "evidence": "Brief F2: grep -n 'tokens-hook' clients/install.sh returned nothing; ls ~/.claude/aigate/ did not show tokens-hook.sh; settings.json Stop hooks listed only aaa-selfimprove.sh and nohumans.js.",
+      "test": ""
+    },
+    {
+      "claim": "The current hook design appends a new request_log row with an empty prompt because no UPDATE endpoint exists.",
+      "status": "VERIFIED",
+      "evidence": "clients/tokens-hook.sh header and POST behavior; src/server.js:823 performs an unconditional INSERT for /api/events/prompt; R4b confirms the append-only producer pattern.",
+      "test": ""
+    },
+    {
+      "claim": "Installing the current hook unchanged would distort displayed request counts by adding extra rows per reported turn.",
+      "status": "THEORY",
+      "evidence": "Follows from the verified append-only hook and server INSERT path, plus /api/stats counting request_log rows; no staging measurement with the hook installed has been supplied.",
+      "test": "In staging, generate N known Claude Code turns with prompt-hook and tokens-hook installed, then compare request_log row count and /api/stats requests against N."
+    },
+    {
+      "claim": "In the chair's measured session, last-assistant-message-only reporting captured 8.0% of deduped billed tokens.",
+      "status": "VERIFIED",
+      "evidence": "R1b: one real session, 5 user turns, 65 unique assistant messages after deduping by message.id; hook-equivalent last-only total 660,530 versus all-message billed total 8,300,849.",
+      "test": ""
+    },
+    {
+      "claim": "The existing last-message-only design would systematically undercount multi-message agentic turns.",
+      "status": "THEORY",
+      "evidence": "R1b shows capture falling to 3.1% on a 38-message turn and 100% only on a single-message turn; sample is one session, so fleet-wide systematic behavior is extrapolated.",
+      "test": "Repeat the deduped transcript audit across multiple tool-heavy sessions; if capture remains far below 100% for multi-message turns, systematic undercount is confirmed."
+    },
+    {
+      "claim": "The installed Claude Code binary contains first-party OpenTelemetry token and cost metric identifiers.",
+      "status": "VERIFIED",
+      "evidence": "R2: strings/grep against /Users/shoemoney/.local/share/claude/versions/2.1.238 found claude_code.token.usage, claude_code.cost.usage, CLAUDE_CODE_ENABLE_TELEMETRY, OTEL_METRICS_EXPORTER, and OTEL_EXPORTER_OTLP_ENDPOINT identifiers.",
+      "test": ""
+    },
+    {
+      "claim": "Whether Claude Code OTel output has the granularity needed for aigate dashboard rows is unknown.",
+      "status": "UNMEASURED",
+      "evidence": "No runtime capture has shown session_id, host, account, model, or cost attributes sufficient for per-host/per-account dashboard rows. Experiment: run one turn with CLAUDE_CODE_ENABLE_TELEMETRY=1 and OTEL_METRICS_EXPORTER=console or OTLP to a local sink, then inspect emitted metrics.",
+      "test": ""
+    },
+    {
+      "claim": "request_log.tokens is display-only; the account-selection path does not read it.",
+      "status": "VERIFIED",
+      "evidence": "R5: full grep readout of src/server.js shows every tokens read feeds /api/logs, /api/stats, or derived tps; /api/select does not read request_log.tokens.",
+      "test": ""
+    },
+    {
+      "claim": "tps is derived from tokens and is equally dead in current production data.",
+      "status": "VERIFIED",
+      "evidence": "R4a: src/server.js:847 computes tps from tokens; live /api/stats by_host_1h showed tps: 0 for mbp and wick in that point-in-time window.",
+      "test": ""
+    },
+    {
+      "claim": "UI-only deletion of tokens and tps, while leaving schema and aggregation dormant, is the lowest-cost reversible action.",
+      "status": "THEORY",
+      "evidence": "R5 proves no routing dependency; R4 proves tps is dead; removal is presentation-level and git-revertible, avoiding a database migration.",
+      "test": "Apply the UI deletion in a branch or staging, verify dashboard rendering and API behavior, then git revert and verify restoration."
+    },
+    {
+      "claim": "Deleting or clearly deprecating clients/tokens-hook.sh is safer than leaving it in clients as an apparently ready producer.",
+      "status": "THEORY",
+      "evidence": "R1 and R2 show the script is known-bad for the dominant workload and depends on an internal transcript format; it is not currently installed, so removal should not affect production clients.",
+      "test": "Remove or deprecate the script in a branch, grep install paths, run the installer in staging, and confirm no current client behavior changes."
+    },
+    {
+      "claim": "Future token reporting should be rebuilt on OTel or an idempotent correlated update only after a real consumer and accurate metric definition exist.",
+      "status": "THEORY",
+      "evidence": "R1 disqualifies the current transcript last-message design; R2 shows a first-party telemetry path; R5 shows no current routing consumer.",
+      "test": "Prototype OTel ingest or PATCH correlation on one host, name an operational decision that changes because of the metric, and verify accuracy against transcript or billing data."
+    },
+    {
+      "claim": "The UI comments saying tokens are architecturally always null are stale and should be removed or rewritten in the deletion commit.",
+      "status": "VERIFIED",
+      "evidence": "Brief F4: public/index.html:1081-1083 and :703-705 describe a limitation that predates the landed but undeployed Stop-hook reporter.",
+      "test": ""
+    }
+  ],
+  "challenges": [
+    {
+      "member": "trinity",
+      "their_claim": "Wire token reporting because token usage is the core metric for a token-budget account router and the plumbing is mostly built; fix with PATCH and all-message sums.",
+      "problem": "R5 verifies the router does not read request_log.tokens, so the core-metric argument is not supported by this codebase. R1 shows the available transcript source captures only 8.0% of measured billed tokens, and PATCH would fix row duplication but not undercount, transcript instability, or the undefined composite metric.",
+      "test": "Show a concrete selection or operator decision that changes because of this per-host token number, and demonstrate a staging reporter that captures near-complete usage for tool-heavy turns without corrupting request counts."
+    },
+    {
+      "member": "morpheus",
+      "their_claim": "Redesign and wire if the controlled multi-message experiment leaves room; otherwise deletion is safer.",
+      "problem": "The experiment has been run and the result is adverse: last-only capture was 8.0% in the measured session, with 3.1% on the largest agentic turn. That removes the conditional basis for redesigning the existing transcript hook.",
+      "test": "Supply a different source, such as a verified OTel capture or an all-message correlated reporter, that demonstrates accurate usage and a defined metric; without that, deletion is safer."
+    },
+    {
+      "member": "brief",
+      "their_claim": "The remaining gap may be worth closing: wire the existing machinery or delete the column.",
+      "problem": "The remaining gap is not a small wire. The available producer appends rows, corrupts a displayed metric, parses an internal format, fails open into silent zeroes, and reports a composite number whose meaning is not defined. R5 also shows no product behavior depends on the column.",
+      "test": "Name a consumer and run a staging comparison showing accurate, non-corrupting telemetry; if no consumer or accurate producer exists, delete the UI column."
+    }
+  ],
+  "retractions": [
+    {
+      "was": "If a cheap local experiment later proves Stop usage is cumulative and we add an idempotent update/correlation endpoint, we can re-add the column.",
+      "now": "The experiment did not prove cumulative usage; it showed last-message-only capture of 8.0% of billed tokens, so re-adding the column via the existing transcript hook is not viable.",
+      "because": "Chair-supplied R1 measurement resolved U1/U2/C5 against the existing hook."
+    },
+    {
+      "was": "Whether the last assistant usage block is cumulative for a turn is UNMEASURED.",
+      "now": "It has been measured as inadequate for this purpose: last-only is far below the deduped all-message sum in the tested session.",
+      "because": "R1b chair-verified transcript audit with 5 turns and 65 unique assistant messages."
+    },
+    {
+      "was": "Leaving clients/tokens-hook.sh dormant preserves option value with little risk.",
+      "now": "Leaving it in clients is a footgun; it should be deleted from the active client path or clearly deprecated because it is known to undercount heavily and depends on unstable internals.",
+      "because": "R1 and R2 supplied by the chair show the script is not merely unfinished but misleading."
+    },
+    {
+      "was": "Request double-counting from the hook was an untested theory.",
+      "now": "The append mechanism is established by code and R4b; I still treat fleet-scale magnitude as staging-testable, but the failure shape is real enough to disqualify installing the hook unchanged.",
+      "because": "Chair-supplied R4b and src/server.js citations confirmed unconditional INSERT per POST and multiple producers."
+    }
+  ],
+  "needs_research": [
+    "What runtime attributes and granularity does Claude Code OTel actually emit, and does it include session, host, account, model, or cost labels usable by aigate?",
+    "What concrete fleet decision or dashboard consumer would use per-host or per-account token totals that is not already served by the account poller's limits and reset windows?",
+    "Do any non-dashboard API consumers depend on /api/stats tokens or tps fields if we later remove them from the API as well as the UI?",
+    "What is the provenance of the 13 historical production token rows, and should they be marked legacy if any future token metric is introduced?"
+  ],
+  "consensus_ready": true,
+  "dissent": "",
+  "_member": "niobe",
+  "_model": "qwen/qwen3.8-max",
+  "_ok": true
+}

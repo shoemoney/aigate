@@ -1,0 +1,87 @@
+{
+  "position": "[THEORY] Redesign and wire the feature rather than delete it, because token usage is potentially additive to account-limit telemetry, but do not deploy the current duplicate-row hook. [THEORY] The minimum acceptable implementation is a correlated completion update that preserves one request row per turn, reports separately named input, output, and cache fields, and retains the existing aggregate only as a backward-compatible historical field. [UNMEASURED] Whether this is worth shipping depends first on one controlled multi-message turn experiment; until that result exists, deleting the column is safer than presenting misleading data.",
+  "claims": [
+    {
+      "claim": "The server-side token storage, aggregation, rate calculation, and UI rendering already exist; the missing production link is a producer.",
+      "status": "VERIFIED",
+      "evidence": "The brief cites src/server.js:138, :299, :306, :313, :823, :847 and public/index.html:412, :420, :431, :435.",
+      "test": ""
+    },
+    {
+      "claim": "The existing tokens-hook.sh is not installed or invoked in the checked production client configuration.",
+      "status": "VERIFIED",
+      "evidence": "The brief reports no tokens-hook entry in clients/install.sh, no deployed tokens-hook.sh under ~/.claude/aigate/, and a ~/.claude/settings.json Stop list containing only aaa-selfimprove.sh and nohumans.js.",
+      "test": ""
+    },
+    {
+      "claim": "Deploying the current hook unchanged would approximately double displayed request counts because it inserts a second request_log row instead of updating the prompt row.",
+      "status": "VERIFIED",
+      "evidence": "C1 in the brief states that the hook posts a new row with prompt: \"\" and that /api/stats request counts therefore count roughly two rows per turn.",
+      "test": ""
+    },
+    {
+      "claim": "A correlated update endpoint is preferable to duplicate completion rows because it preserves request-count semantics and avoids making new data incomparable with the existing metric.",
+      "status": "THEORY",
+      "evidence": "The current duplicate-row behavior is documented in C1; no measurement yet compares the operational cost or failure modes of an update endpoint.",
+      "test": "Implement a request-id-correlated PATCH or equivalent idempotent completion operation in staging, replay representative prompt and Stop events including retries and missing IDs, and verify exactly one request row per turn while tokens remain correctly attached."
+    },
+    {
+      "claim": "The current single tokens value has ambiguous meaning because it combines input, output, cache-creation, and cache-read tokens, which are not equivalent cost or throughput quantities.",
+      "status": "VERIFIED",
+      "evidence": "C4 in the brief states that tokens-hook.sh sums input_tokens + output_tokens + cache_creation_input_tokens + cache_read_input_tokens into one value.",
+      "test": ""
+    },
+    {
+      "claim": "The current hook may substantially undercount agentic turns if the final assistant usage block is message-local rather than cumulative.",
+      "status": "UNMEASURED",
+      "evidence": "C5 and U1/U2 explicitly identify this as unknown; no transcript capture or Stop-hook invocation measurement was supplied.",
+      "test": "Run one controlled Claude Code turn that forces at least two assistant/tool iterations, capture the exact Stop-hook invocation count and transcript, and compare the final assistant usage block with the sum of every assistant usage block."
+    },
+    {
+      "claim": "The cheapest experiment resolving both U1 and U2 is a single instrumented multi-message turn without production posting.",
+      "status": "THEORY",
+      "evidence": "The experiment directly observes Stop invocation count and compares per-message versus final usage values, addressing both unknowns with one captured run.",
+      "test": "Temporarily wrap or copy the Stop hook to log invocation timestamps and session identifiers, execute one deliberately multi-step turn, then inspect the resulting JSONL usage blocks and logs."
+    },
+    {
+      "claim": "The migration should preserve historical rows and label the new metric semantics rather than rewrite the existing 11,167-row series.",
+      "status": "THEORY",
+      "evidence": "The brief reports 11,167 existing production requests and warns that semantic changes make historical data non-comparable; no migration has been executed.",
+      "test": "Add nullable, explicitly named usage columns or a version marker, backfill nothing, expose a distinct post-deployment time boundary in the UI, and verify historical aggregates remain unchanged."
+    },
+    {
+      "claim": "If the controlled experiment shows session-level Stop behavior, non-cumulative final usage, or an unsupported transcript format with no reliable fallback, deleting the UI column is more honest than shipping the current hook.",
+      "status": "THEORY",
+      "evidence": "This follows from the fail-open silent-zero risk in C2 and the undercount risk in C5, but no such experiment result is available.",
+      "test": "Use the experiment result and a fixture-based parser test across representative transcripts; falsify this recommendation if the usage is cumulative or reliably reconstructable and the format remains stable enough for operational monitoring."
+    }
+  ],
+  "challenges": [
+    {
+      "member": "brief",
+      "their_claim": "The existing Stop-hook reporter is a finished, careful implementation and the remaining gap is only packaging.",
+      "problem": "Its implementation may be defensive, but correctness is not established for multi-message turns, transcript-version changes, or the semantic meaning of the combined token value; the brief itself marks these as unresolved.",
+      "test": "Run the controlled multi-message transcript experiment, add fixtures from multiple Claude Code versions, and compare reported totals against independently summed usage fields."
+    },
+    {
+      "member": "brief",
+      "their_claim": "Because the server chain is complete, wiring the hook is the minimum change.",
+      "problem": "Wiring alone knowingly corrupts the displayed request-count metric through duplicate rows and leaves token semantics ambiguous.",
+      "test": "Stage the current hook beside a correlated-update implementation and compare one-row-per-turn request counts, retry idempotency, and token totals over identical replayed events."
+    }
+  ],
+  "retractions": [],
+  "needs_research": [
+    "Whether Claude Code Stop hooks fire once per turn or once per session.",
+    "Whether the final assistant usage block is cumulative for the turn or only covers that assistant message.",
+    "Whether Claude Code exposes a documented token-usage hook payload, OTel export, or JSON output field.",
+    "Whether the other registered Stop hooks provide a supported integration pattern.",
+    "Whether users need cost, context pressure, throughput, or burn against account limits.",
+    "Whether the existing prompt-hook API returns a stable request identifier that can support an idempotent completion update."
+  ],
+  "consensus_ready": false,
+  "dissent": "I cannot agree to deploy the current duplicate-row hook or to delete the feature permanently before the single controlled multi-message turn experiment and a user-metric decision. The experiment and a staged correlated-update prototype should determine whether accurate, interpretable telemetry is achievable at acceptable cost.",
+  "_member": "morpheus",
+  "_model": "openai/gpt-5.6-luna-pro",
+  "_ok": true
+}

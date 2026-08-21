@@ -1,0 +1,78 @@
+{
+  "position": "Delete the tokens column from the UI now. The hook as written is disqualified by a verified 92% undercount on agentic turns (R1), deliberate double-counting of requests (C1), and reliance on an undocumented transcript format that fails open to silent zeros (C2). The column is display-only \u2014 no routing or selection logic reads request_log.tokens (R5). Immediate action: remove the rendering spans (public/index.html:412-420,431-435) and rewrite the stale explanatory comments (F4). Keep the server-side schema and aggregation dormant: zero risk, zero migration, fully reversible. Future revival requires (a) a stated consumer who can define what question the column answers (U5), and (b) a producer that does not corrupt existing metrics \u2014 neither condition is met today.",
+  "claims": [
+    {
+      "claim": "The existing hook (tokens-hook.sh) captures 8.0% of billed tokens per session on agentic workloads \u2014 a 92% undercount \u2014 by reading only the last assistant usage block.",
+      "status": "VERIFIED",
+      "evidence": "Chair-verified experiment (R1): parsed this session's transcript (5 turns, 65 unique messages), compared hook logic (last message only) vs sum of all messages. Turn 3 (38 messages): 3.1% captured. Session total: 8.0%. Command and table in R1b. Deduplication by message.id was required; raw lines overcount by ~2.5\u00d7 due to triplicate writes.",
+      "test": ""
+    },
+    {
+      "claim": "Claude Code does not expose token usage in hook payloads; the official telemetry path is OpenTelemetry export (OTEL_METRICS_EXPORTER), not transcript parsing.",
+      "status": "VERIFIED",
+      "evidence": "Chair-verified binary strings (R2): binary /Users/shoemoney/.local/share/claude/versions/2.1.238 contains claude_code.token.usage, CLAUDE_CODE_ENABLE_TELEMETRY, OTEL_METRICS_EXPORTER, etc. Operator's documentation search (docs.anthropic.com) confirms hooks carry no usage fields \u2014 only session_id, transcript_path, etc. The hook's approach of parsing the transcript is working around an intentional gap.",
+      "test": ""
+    },
+    {
+      "claim": "request_log.tokens is display-only: no routing, selection, or alerting path reads it.",
+      "status": "VERIFIED",
+      "evidence": "Chair-verified grep of src/server.js (R5): every read of tokens feeds a display surface (/api/logs, /api/stats, tps). /api/select \u2014 the account-selection path \u2014 never reads request_log.tokens. Account selection runs off poller usage-limit/reset data, a separate and working signal.",
+      "test": ""
+    },
+    {
+      "claim": "Deleting the tokens column from the UI is cheap, reversible via git revert, and behavior-preserving because the dormant state is the current production state.",
+      "status": "VERIFIED",
+      "evidence": "UI rendering in two spans (public/index.html:412-420,431-435). Chair confirmed no downstream consumers of those fields. Revert = one git checkout. Production currently shows 13 tokens across 11,167 requests (F3) \u2014 the column is effectively empty.",
+      "test": ""
+    },
+    {
+      "claim": "The hook's composite 'tokens' value (input+output+cache_creation+cache_read) has no clean English meaning : it is ~95% cache_read on agentic turns, which bills at ~10% rate, so it is not cost, not context size, not throughput.",
+      "status": "VERIFIED",
+      "evidence": "Chair-verified per-message breakdown (R1c): turn 3 cache_read_input_tokens monotonically grew from 84,898 to 150,938 \u2014 95% of the last message's total 150,938. output_tokens summed across all assistant messages = 23,942 (clean 'work done' metric). The hook's sum conflates both with cache_creation and input (negligible). Nothing in the UI header explains the composite.",
+      "test": ""
+    },
+    {
+      "claim": "The transcript JSONL format is officially internal and changes between versions; the hook fails open, so format changes produce silent zeros indistinguishable from today's symptom.",
+      "status": "VERFIED",
+      "evidence": "Hook author's own comment (clients/tokens-hook.sh:30-33) acknowledges the format is undocumented and has shifted before. Anthropic documentation (R2) explicitly states the transcript is internal and may lag in-memory state. No test suite covers format versioning. A format break produces no alert, no log, and no change in the dashboard's empty column.",
+      "test": ""
+    },
+    {
+      "claim": "The minimum correct future implementation requires (a) a PATCH endpoint to avoid double-counting requests, (b) walking all assistant messages since last-marked offset, and (c) declaring a migration story for the 11,167 historical rows.",
+      "status": "THEORY",
+      "evidence": "Derived from C1 (no UPADTE endpoint), R1 (undercount from last-message-only read), and the brief's constraint about 11,167 historical rows. No such implementation has been attempted or measured on this codebase.",
+      "test": "Implement PATCH /api/events/prompt/:id; modify prompt-hook to return row id; modify tokens-hook to store per-session byte offset and walk all assistant messages since that offset; add kind TEXT DEFAULT 'prompt' to request_log schema; verify requests count remains unchanged and tokens count matches sum of all assistant usage blocks for one known multi-turn session."
+    }
+  ],
+  "challenes": [
+    {
+      "member": "TRINITY",
+      "their_claim": "'Token usage is the core metric for a token-budget account router' and '95% of the plumbing is already built'.",
+      "problem": "The first claim is false for this codebase: R5 shows request_log.tokens is never read by the selection path. The second confuses presence of code with correctness: the hook as written captures 8% of billed tokens (R1), corrupts the requests metric (C1), and relies on an undocumented transcript (C2). The missing 5% is not a trivial wire \u2014 it is a fundamental redesign of the producer's sampling, storage, and telemetry contract.",
+      "test": "Show one decision made by /api/select that reads request_log.tokens today, or fail the claim. For '95% built': deploy the current hook in staging and measure (a) requests inflation and (b) per-turn token accuracy against the sum of all Anthropic API responses. If requests double or accuracy <80%, the claim fails."
+    },
+    {
+      "member": "MORPHEUS",
+      "their_claim": "A correlated update endpoint (PATCH /api/events/prompt/:id) is the minimum acceptable implementation and would preserve request-count semantics.",
+      "problem": "Even with an UPDATE endpoint that fixes double-counting, the hook's undercount on agentic turns (R1: 8%) remains because it reads only the last assistant message. Fixing undercount requires walking all assistant messages \u2014 which is what I propose as part of the minimum correct redesign. Morpheus's correlated update alone does not address R1. The claim that 'if the controlled experiment shows... non-cumulative final usage... deleting is safer' \u2014 the experiment (R1) did show non-cumulative usage: last-message-only captured 8%.",
+      "test": "Implement the PATCH endpoint but keep the hook's current last-message-only read. Run one 5-turn agentic session in staging. Compare reported tokens against Anthropic API billing data. If accuracy <50%, the claim that PATCH alone suffices is falsified."
+    }
+  ],
+  "retractions": [
+    {
+      "was": "I previously considered that the hook's undercount might be a small factor or that a simple fix like reading cumulative usage could rescue it.",
+      "now": "The measured 92% undercount (R1) and the finding that the composite is 95% cache_read (R1c) make the current approach unsalvageable even with an UPDATE endpoint. The transcript is the wrong data source for token reporting.",
+      "beause": "Chair's own controlled session transcript measurement (R1) showed that on the fleet's dominant workload (multi-step agentic turns), the hook captures 8% of billed usage. Per-message breakdown showed cache_read dominates the sum, making the composite uninterpretable. The correct path is not to fix the hook but to abandon it."
+    }
+  ],
+  "needs_reserch": [
+    "What specific metric do fleet operators actually want from a tokens column? (U5) \u2014 cost, output volume, context pressure, or limit burn? This determines whether the column should even exist, and what shape it takes.",
+    "Can Claude Code's OpenTelemetry export (R2) provide per-session token breakdowns with acceptable granularity and latency for a dashboard refresh? This would dissolve C2 but requires a collector. What is the cost/complexity of that approach vs the current dead code?",
+    "Does the 92% undercount replicate across a broader sample of sessions beyond the single measured one? (R1 is n=1, though the agentic pattern is dominant on this fleet.)"
+  ],
+  "consensus_ready": true,
+  "dissent": "All five responding members in round 1 convered on 'do NOT install tokens-hook.sh as written.' Four of six outright delete. I join the delete camp. The only open question is whether future revival is worth gating on a stated consumer (U5). I believe it is \u2014 the column stays dead until someone can say what they want it to show. That is not a majority position in the council, but it is a minimal bar that costs nothing to enforce.",
+  "_member": "tank",
+  "_model": "deepseek/deepseek-v4-flash",
+  "_ok": true
+}
