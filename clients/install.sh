@@ -56,6 +56,9 @@ if [ ! -f "$MK" ] || [ -n "$(find "$MK" -mmin +720 2>/dev/null)" ]; then
   "$HOME/.claude/aigate/hydrate.sh" >/dev/null 2>&1 || true
 fi
 [ -f "$MK" ] && . "$MK"
+# force a plain single-session REPL — never the experimental agent-teams board
+# (cmux injects CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1; unset beats it, "=0" would not)
+unset CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
 # `cc kimi …` → Kimi K3 via its Anthropic endpoint (bypasses the Claude warden);
 # anything else → the account warden, unchanged.
 [ "${1:-}" = kimi ] && { shift; exec "$HOME/.claude/aigate/aigate-kimi.sh" "$@"; }

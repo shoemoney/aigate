@@ -377,7 +377,7 @@ cc kimi -p "explain this repo"
 - `CC_KIMI_BASE_URL` — default `https://api.kimi.com/coding`
 
 > [!WARNING]
-> Kimi is an **unprovisioned experimental mode** of aigate: fetch-first caching and vault reliability are proven, but a live end-to-end Kimi completion has not been verified under production conditions. Test before deploying to critical workloads.
+> Kimi is an **unprovisioned experimental mode** of aigate. `cc kimi` is confirmed to *route* to `aigate-kimi.sh` (verified via a sandbox install), but the script has **no automated test coverage** and a live end-to-end Kimi completion has never been run. Treat the vault-fetch and cache paths as unexercised. Test before deploying to critical workloads.
 
 ---
 
