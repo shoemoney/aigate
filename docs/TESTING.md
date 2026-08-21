@@ -9,6 +9,7 @@ framework — Node 24's built-in test runner + a couple of shell scripts.
 |-------|----------------|--------|
 | **Unit** (`test/lib.test.js`) | Vault crypto (GCM tamper-detect), CIDR/IP gate, timing-safe token compare, static-path containment, token-liveness classifier | `npm test` |
 | **HTTP integration** (`test/http.test.js`) | Every route end-to-end on a throwaway DB: auth gate, accounts/keys round-trips (secrets never leak), **sanitized key intake** (quote-strip, `export`/`NAME=` → 400, `first8…last4` hints, normalized lookups), selector, **exclude retry**, **TTL parking** (+ 404 on unknown accounts), reauth-skip, **boot canary**, **vault backups**, `/health` selectable parity, providers catalog, **WS `bearer.<token>` subprotocol auth** | `npm test` |
+| **Client behavior** (`test/switching-client.test.js`) | The `[Y/n]` prompt is gone (interactive **auto-switch**), and `prompt-hook.sh` re-evaluates the account **every turn** — parks it when exhausted, leaves it alone with headroom, no-ops on non-`cc` sessions — driven against a **mock aigate**; backgrounded work is stdio-detached (**zero turn latency**) | `npm test` |
 | **Dashboard smoke** (manual) | The key-add UI adds → persists → deletes with the secret masked — every route it touches is already covered by the HTTP tests | see below |
 | **Fleet integration** (`clients/test-switching.sh`) | A real Pi runs `cc -p` through aigate, and account selection **switches** correctly as accounts are disabled/enabled — logged in the DB | see below |
 
@@ -25,6 +26,24 @@ actual HTTP — including the WebSocket upgrade.
 Covers, among others, the four bugs fixed during hardening (static-file sibling
 leak, XFF spoof, auth-compare crash, `ip2int` garbage) — each has a
 failed-before/passes-after regression test.
+
+## Continuous re-eval + auto-switch (client behavior) 🔄
+
+`test/switching-client.test.js` proves the two client-side behaviors that make
+selection **continuous + automatic** — no live accounts or real `claude` needed.
+It drives `clients/prompt-hook.sh` against a **mock aigate** (an in-process HTTP
+server) and static-checks `clients/aigate-run.sh`:
+
+- **No `[Y/n]`** — the interactive supervise loop's confirm prompt is gone; on
+  exhaustion it auto-continues (`claude --continue`) on the next account.
+- **Per-turn parking** — when the current account is **≥85 % + live-refresh-confirmed
+  maxed**, the hook `POST`s `/api/events/limit` to park it immediately (fleet-wide
+  reroute); with headroom it does **nothing** (and skips the costly refresh).
+- **Fail-open** — a non-`cc` session (no `AIGATE_ACCOUNT`) triggers **zero**
+  selection side effects.
+- **Zero turn latency** — both backgrounded blocks detach stdio, so the hook
+  returns instantly regardless of the HTTP calls (the test polls the mock rather
+  than relying on the child holding the pipe open).
 
 ## Dashboard smoke (manual)
 

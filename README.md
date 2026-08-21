@@ -190,6 +190,13 @@ sequenceDiagram
   AG->>AG: ORDER BY max(5h%,7d%) ASC, skip disabled/over-cutoff
   AG-->>Box: { account, setup_token }  📝 (logs access + IP)
   Box->>AN: run OFFICIAL claude w/ token 🔑
+  Note over Box,AG: every prompt turn (UserPromptSubmit hook)
+  Box->>AG: re-check current account headroom
+  AG-->>Box: exhausted? → park it (fleet-wide reroute)
+  Note over Box,AN: on exhaustion — auto, no [Y/n]
+  Box->>AG: GET /api/select?exclude=drained
+  AG-->>Box: { next account, setup_token }
+  Box->>AN: relaunch claude --continue 🔁 (same convo)
 ```
 
 ---
@@ -203,13 +210,14 @@ sequenceDiagram
 | 📈 | **Server-side usage poller** | reads each account's **real** rate-limit headroom straight from Anthropic every 10 min → auto-skip maxed, **auto-recover after reset**, zero manual seeding |
 | 🔑 | **Provider-key registry** | encrypted store + `/api/keys` for a **65-provider catalog** (OpenAI / OpenRouter / Gemini / Groq / Together / fal / ElevenLabs / …); **sanitized intake** (trims + un-quotes pastes, **400s** `export`/`NAME=` blobs, provider lowercased) + collision-proof **`first8…last4#hash8`** hints; `GET /api/providers` feeds a dashboard **add-key form** with per-provider key-format hints |
 | 🔁 | **Over-limit detect + retry** | headless `cc -p` classifies claude's failure — a **real per-account usage limit** → **TTL-parks** that account (`/api/events/limit` — **15m** default, real usage untouched) and **retries the next-best** via `/api/select?exclude=` (up to 3); a **transient 529/overload** → **waits 10s and retries the SAME account** (no park — 529 is global load-shedding; parking/hopping just drains the pool) |
+| 🔄 | **Continuous auto-switch** | account choice is **re-checked every prompt turn** — the `UserPromptSubmit` hook **parks the current account the instant it's exhausted** (fleet-wide reroute), and interactive sessions **auto-switch with no `[Y/n]`**: relaunch `claude --continue` on the next account, same conversation. Fires only on **genuine exhaustion** (not a fixed cadence — that'd be cap-sharding); the token swaps at process boundaries, so aigate stays a selector, **never in Anthropic's path** |
 | 🩺 | **Self-healing daemon** | unauthenticated **`/health`** (DB-backed; `selectable` uses the **exact selection query**, so parked accounts don't mask an outage) + internal **watchdog** (exits→restart on a wedged DB) + Docker `HEALTHCHECK` wired to **autoheal** — three recovery layers |
 | 🐤 | **Boot canary + daily backups** | wrong `AIGATE_ENCRYPTION_KEY` = **loud FATAL at boot** (not a decrypt blow-up mid-request); daily `VACUUM INTO` snapshot → `data/backups/` w/ **14-day retention** (ciphertext only — `.env` never copied) |
 | 🧾 | **Full audit trail** | every **handout, key-fetch, and mutation** (account add/overwrite/delete/disable/enable · key add/delete · limit-park) logged with **timestamp + IP + host**; every prompt is **secret-scrubbed** (`sk-`/`ghp`/`AIza`-shaped tokens redacted) **before** storage then capped at **400 chars**; all readable at **`/api/access`**; auto-pruned after **30 days** (daily, piggybacked on the backup pass) |
 | 📊 | **Live dashboard** | account cards w/ usage bars (🚨 runaway, 🔑 re-auth), **provider-key manager**, streaming activity feed, per-host/device stats — WS auth rides a **`bearer.<token>` subprotocol**, never the URL |
 | 🗂️ | **Kanban board — internal/unstable** | **TODO / RUNNING / DONE / ERROR** columns, drag-reorder, atomic `claim`, heartbeat `activity`, `result`/`followup`/`retry` turns — WS live; see [screenshots](#️-board--kanban-for-agents) |
 | 🎯 | **No-proxy Claude mode** | official binary + `cc` wrapper — won't flag accounts |
-| 🧪 | **Tested — 143 tests, CI on every push** | unit + HTTP (`node --test` on a throwaway DB — 403 gate, limit clamps, and a raw-socket mid-emoji UTF-8 split) + a **fleet switching test** on a real Pi — GitHub Actions runs the suite on Node 24 for every push/PR — see [docs/TESTING.md](docs/TESTING.md) |
+| 🧪 | **Tested — 148 tests, CI on every push** | unit + HTTP (`node --test` on a throwaway DB — 403 gate, limit clamps, and a raw-socket mid-emoji UTF-8 split) **+ client-behavior tests** (drives `prompt-hook.sh` against a mock aigate to prove **per-turn parking** + **no-prompt switching**) and a **fleet switching test** on a real Pi — GitHub Actions runs the suite on Node 24 for every push/PR — see [docs/TESTING.md](docs/TESTING.md) |
 | 🐳 | **1 runtime dep** | `ws`. SQLite is Node's built-in `node:sqlite`. Buildless. Docker-ready. |
 
 ---
@@ -310,9 +318,9 @@ and auto-detects the `claude` binary.
 | File | Role |
 |---|---|
 | `install.sh` | sets up `cc` + `~/.claude/aigate/` + env; auto-detects `claude`; wires MCP-key hydration into the shell |
-| `aigate-run.sh` | the `cc` wrapper — select → set token → unset stray `ANTHROPIC_*` (incl. `BASE_URL`) → run `claude`; **retry-on-limit** in `-p` mode (real limit → **15m park** + next account; transient **529 → wait 10s, retry the SAME account, no park**) w/ clean stdout; preflight-warns **shadow logins** + `BASE_URL` hijacks |
+| `aigate-run.sh` | the `cc` wrapper — select → set token → unset stray `ANTHROPIC_*` (incl. `BASE_URL`) → run `claude`; **interactive sessions auto-switch** on exhaustion — relaunch `claude --continue` on the next account, **no `[Y/n]`**, same conversation; **retry-on-limit** in `-p` mode (real limit → **15m park** + next account; transient **529 → wait 10s, retry the SAME account, no park**) w/ clean stdout; preflight-warns **shadow logins** + `BASE_URL` hijacks |
 | `hydrate.sh` | MCP-key hydration — vault → `~/.claude/aigate/mcp-keys.env` so `${BRAVE_API_KEY}`-style MCP configs resolve at launch; **merges** partial fetches (a blip never wipes cached keys); `cc` **foreground-freshens** when missing/stale (>12h) so *this* launch gets keys |
-| `prompt-hook.sh` | Claude Code `UserPromptSubmit` hook → logs the prompt to aigate |
+| `prompt-hook.sh` | Claude Code `UserPromptSubmit` hook → **re-evaluates the current account every turn** (parks it fleet-wide the instant it's exhausted) + logs the prompt; backgrounded & **stdio-detached** = zero turn latency |
 | `statusline-feed.sh` | statusline badge (account · wk %) → also feeds real usage back |
 | `test-switching.sh` | end-to-end switching test (below) |
 
@@ -468,7 +476,7 @@ flowchart TD
 
 | Ring | Ships | Kills the pain of… |
 |---|---|---|
-| ✅ **v1** | headroom selector · **over-limit retry (TTL parks)** · encrypted vault (**boot canary** + daily backups) · **10-min usage poller** · **65-provider key registry + dashboard add-key UI** · **self-heal (`/health` + watchdog + autoheal)** · WS dashboard | "which of my 35 boxes is that?" + manual usage babysitting + re-login churn |
+| ✅ **v1** | headroom selector · **continuous per-turn re-select + auto-switch (no `[Y/n]`)** · **over-limit retry (TTL parks)** · encrypted vault (**boot canary** + daily backups) · **10-min usage poller** · **65-provider key registry + dashboard add-key UI** · **self-heal (`/health` + watchdog + autoheal)** · WS dashboard | "which of my 35 boxes is that?" + manual usage babysitting + re-login churn |
 | 🔨 **R2** | secure proxy for API providers · per-`model×key` **latching budget breaker** · Redis | the **$500 nano-banana loop** |
 | ⬜ **R3** | universal `keys(provider)` registry · **cost-first routing** (included quota → prepaid → paid) | paying twice for quota you already own |
 | ⬜ **R4** | inbox account discovery · fuller **agent capability registry** — the read-only `GET /api/capabilities` slice (counts + selectability + version) **already ships**; R4 is the metered, on-demand-handout registry layered on top | keys too annoying to use → agents just use them |

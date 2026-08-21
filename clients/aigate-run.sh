@@ -116,14 +116,13 @@ if [ "$is_print" != 1 ]; then
     [ "${worst:-0}" -ge 85 ] 2>/dev/null && \
       maxed="$(curl -s -m15 -X POST -H "@$AUTHF" "$AIGATE_URL/api/accounts/$acct/refresh" 2>/dev/null | jget maxed)"
     [ "$maxed" = "1" ] || exit "$rc"        # headroom left (or unknown) → normal quit, done
-    echo "aigate: $acct is out of headroom." >&2
+    echo "aigate: $acct out of headroom → auto-switching to the next account…" >&2
     report_limit "$acct"; tried="${tried:+$tried,}$acct"
-    if [ -t 0 ]; then
-      # generic prompt: the loop top does the ONE real select (handles "none left")
-      # and its "using account: X" banner names the actual pick — no peek/TOCTOU
-      printf 'aigate: resume this conversation on another account? [Y/n] ' >&2
-      read -r ans; case "$ans" in [Nn]*) exit "$rc";; esac
-    fi
+    # AUTO-SWITCH (no confirm): fall straight through to the loop top, which re-selects
+    # the next-best account (skipping tried) and relaunches `claude --continue` so the
+    # SAME conversation carries over. Still the official binary on YOUR OWN accounts,
+    # no relay, no forged headers — the switch only lands at this process boundary
+    # (the OAuth token is fixed for a claude process's life; aigate is never in the path).
     # loop → re-select (skips tried) → claude --continue on the next account
   done
 fi
