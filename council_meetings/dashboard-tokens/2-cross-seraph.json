@@ -1,0 +1,107 @@
+{
+  "position": "Delete \u2014 and the scope is now larger than my round-1 vote: remove the tokens cells from both render sites AND the tps column from the by-host table (R4a: it is a second dead column, live prod shows tps:0 on every host), delete the stale F4 comments, and delete clients/tokens-hook.sh from main rather than leaving it dormant, because its own header invites wiring ('wire it in yourself for now') and R1 measures the result of wiring at 8.0% capture. Keep the schema column, aggregations, and /api/stats JSON fields untouched: that state is byte-for-byte the running production system, so zero migration, zero routing impact (R5: display-only), and reversal is one git revert for the UI plus git history (02e326e) for the hook. Round 1 stood 4-2 for delete with BOTH wire votes explicitly conditioned on the U2 experiment; R1 is that experiment, its result (92% undercount, degrading to 3.1% on the most agentic turn) is materially worse than the wire camp assumed, and R5 falsifies Trinity's premise that the router consumes this metric. If U5 ever names a consumer, the revival path is first-party OTel export (R2) \u2014 adjacent to aigate's existing /api/metrics surface (R3) \u2014 not transcript parsing; the single cheapest remaining experiment is a one-host CLAUDE_CODE_ENABLE_TELEMETRY=1 console-exporter run to check attribute granularity, and it is gated on someone first answering U5.",
+  "claims": [
+    {
+      "claim": "tokens-hook.sh as written captures 8.0% of reported token volume (660,530 of 8,300,849), exact only for single-message turns and degrading to 3.1% on a 38-message turn \u2014 i.e., systematically worst on this fleet's dominant workload.",
+      "status": "VERIFIED",
+      "evidence": "Chair R1b, measured on this machine's transcript b87f3594: n=1 session, 5 user turns, 65 unique assistant messages after dedupe. This is a single-session window, not a fleet rate \u2014 the magnitude may vary, but the direction (capture degrades as turns get more agentic) is structural. Note: 8,300,849 is summed reported usage VOLUME, not cost.",
+      "test": ""
+    },
+    {
+      "claim": "~60% of assistant lines in the transcript are duplicates by message.id (162 raw lines, 65 unique messages); any transcript-walking design that does not dedupe by message.id overcounts by roughly 2.5x.",
+      "status": "VERIFIED",
+      "evidence": "Chair R1a, same transcript and window. Recorded by the chair as a live trap after it invalidated their own first-pass '98.7% undercount' figure.",
+      "test": ""
+    },
+    {
+      "claim": "The installed Claude Code binary (v2.1.238) contains first-party telemetry identifiers claude_code.token.usage, claude_code.cost.usage, claude_code.llm_request, plus CLAUDE_CODE_ENABLE_TELEMETRY and OTEL_* exporter env vars; the Operator's claimed identifier claude_code.api_request returns ZERO hits.",
+      "status": "VERIFIED",
+      "evidence": "Chair R2 greps against /Users/shoemoney/.local/share/claude/versions/2.1.238: token.usage hits=2, cost.usage hits=2, llm_request present in strings output, api_request hits=0. One binary, one machine, one version.",
+      "test": ""
+    },
+    {
+      "claim": "The stronger claim 'hooks receive NO usage fields' rests on Operator-retrieved documentation, NOT on a first-hand inspection of an actual Stop payload; the chair's greps confirm identifiers exist but cannot prove a negative about hook stdin.",
+      "status": "THEORY",
+      "evidence": "R2's own sourcing note: docs findings 'NOT independently re-verified by the chair beyond the binary greps.' tokens-hook.sh reaching around the payload into the transcript is circumstantial corroboration only.",
+      "test": "One diagnostic Stop hook that appends its full stdin JSON to a file; run one turn; inspect for usage/cost fields. Settles it in minutes. Verdict-robust either way: even if hooks DID carry usage, R1's capture failure, C1 and C4 still disqualify the hook as written."
+    },
+    {
+      "claim": "request_log.tokens is display-only: every read feeds /api/logs, /api/stats, or the derived tps; /api/select never reads it. Deleting the column changes no routing, alerting, billing, or selection behavior.",
+      "status": "VERIFIED",
+      "evidence": "Chair R5 full grep readout of src/server.js: lines 138, 299, 301, 306, 313/314, 823, 847 enumerated; all reads are display surfaces. This falsifies 'token usage is the core metric for a token-budget account router' as a claim about THIS codebase.",
+      "test": ""
+    },
+    {
+      "claim": "tps is dead for the same reason tokens is dead: live prod by_host_1h returns tps:0 for every host, and two of the five by-host columns carry no information.",
+      "status": "VERIFIED",
+      "evidence": "Chair R4a: src/server.js:847 derives tps from tokens; live GET /api/stats shows mbp tps:0, wick tps:0. Point-in-time window, consistent with F3's cumulative 13 tokens across 11,167 requests.",
+      "test": ""
+    },
+    {
+      "claim": "Deleting tokens-hook.sh from main is preferable to leaving it dormant: it is not a finished reporter awaiting deployment (brief F2's characterization) but a measured-broken one (8.0% capture) whose header invites exactly the installation the council unanimously rejects. Git history at 02e326e/cd78c58 preserves it if ever wanted.",
+      "status": "THEORY",
+      "evidence": "R1 (capture measurement) + F2 (header text 'wire it in yourself for now') + round-1 unanimity that the hook must not be installed as written.",
+      "test": "If any member can name a near-term correct use for the file AS WRITTEN \u2014 one that survives R1's 8.0% figure \u2014 keep it dormant instead. I have heard none."
+    },
+    {
+      "claim": "If U5 produces a consumer, the minimum correct revival is OTel-based, not a transcript-parser rewrite: claude_code.token.usage is typed (input/output/cache_read/cache_creation, dissolving C4), claude_code.cost.usage gives USD directly, and the format is supported (dissolving C2). Per-session/per-host attribute granularity is UNCONFIRMED.",
+      "status": "THEORY",
+      "evidence": "R2 binary identifiers + Operator docs findings (attribute lists are docs-sourced, not chair-verified) + R3 (aigate already serves /api/metrics at src/server.js:854). OTel counters are cumulative and instance-scoped, so per-request rows in the feed may be unfillable via this path \u2014 per-host aggregates likely fillable.",
+      "test": "On one host: CLAUDE_CODE_ENABLE_TELEMETRY=1, OTEL_METRICS_EXPORTER=console, run one multi-tool turn, inspect emitted metric names and attributes for session/host labels. If granularity matches the dashboard's per-host rows, cost-compare a scrape path against the (now deleted) request_log.tokens design."
+    },
+    {
+      "claim": "The '13 tokens = one hand-crafted test POST' reading remains inference, not measurement; provenance is still uninspected.",
+      "status": "CONTESTED",
+      "evidence": "F3 provides only the aggregate; no row-level query has been run. Carried over from my round-1 challenge.",
+      "test": "On the prod host, read-only: SELECT id, ts, host, prompt, tokens FROM request_log WHERE coalesce(tokens,0) > 0 \u2014 timestamps and prompt contents settle it in one query. Not verdict-blocking."
+    }
+  ],
+  "challenges": [
+    {
+      "member": "morpheus",
+      "their_claim": "Round 1: 'If the controlled experiment shows session-level Stop behavior, non-cumulative final usage, or an unsupported transcript format with no reliable fallback, deleting the UI column is more honest than shipping the current hook' \u2014 while voting redesign-and-wire pending that experiment.",
+      "problem": "Your pre-registered falsification criterion has fired on every disjunct. R1b: turn 3's last block is 150,938 against a deduped turn sum of 4,865,640 \u2014 non-cumulative final usage, confirmed. R2: the transcript is officially internal and async-written, and a supported fallback (OTel) exists but puts data outside request_log, which dissolves your 'correlated completion update' design's data source. Your own stated condition now compels the delete vote; the correlated-PATCH redesign you proposed would faithfully transport an 8.0%-accurate number.",
+      "test": "None needed beyond R1/R2 \u2014 either retract the wire recommendation per your own criterion, or state which specific R1/R2 measurement you dispute and what re-measurement would change it."
+    },
+    {
+      "member": "trinity",
+      "their_claim": "'Token usage is the core metric for a token-budget account router' and '95% of the plumbing is already built' with 'minimal' remaining effort.",
+      "problem": "R5's full grep readout falsifies the premise for this codebase: /api/select never reads request_log.tokens; every read is a display surface. The router's actual budget signal is the poller's limit/reset data \u2014 a separate, working path. And the 'minimal' remainder is a producer that R1 measures at 8.0% capture on the dominant workload, sourcing from a format R2 shows is officially unstable, with hooks documented to carry no usage fields at all. The missing 5% is the entire correctness of the number.",
+      "test": "Produce one code path in src/server.js where account selection consumes request_log.tokens, or retract the core-metric justification. If retracted, state what decision the column enables that limits/remaining/reset does not \u2014 that is U5, and no one has answered it."
+    },
+    {
+      "member": "brief",
+      "their_claim": "F2 describes tokens-hook.sh as 'a finished, careful implementation... it is defensive throughout' and the brief frames it as 'correct, passed review.'",
+      "problem": "R1 measures the artifact at 8.0% capture on real traffic \u2014 exact only for single-message turns, 3.1% on the most agentic turn. 'Finished and careful' is a description of its error handling, not its output; as a reporter of tokens it is measured-broken by more than an order of magnitude on the workload that matters. The chair should retract 'correct' from the record, because that word is doing quiet work for the wire camp: it makes the gap look like packaging when R1 shows it is design.",
+      "test": "Already executed \u2014 R1b. Unless someone re-runs the same methodology on a different session and gets materially different capture rates, the characterization stands falsified."
+    }
+  ],
+  "retractions": [
+    {
+      "was": "Round 1 THEORY: each transcript usage block is per-API-call, so a last-message-only read under-counts a tool-looping turn by roughly its number of API calls.",
+      "now": "VERIFIED and quantified: 8.0% capture session-wide, 3.1% on the 38-message turn, 100% on the single-message turn (n=1 session, 5 turns, 65 unique messages \u2014 a window, not a fleet rate; direction structural, magnitude from one session).",
+      "because": "Chair's R1b measurement, which is precisely the experiment I specified."
+    },
+    {
+      "was": "Round 1 THEORY: the minimum CORRECT revival is (a) rewrite the reporter to walk all assistant usage blocks since a persisted byte offset, (b) add PATCH /api/events/prompt/:id, (c) add kind TEXT DEFAULT 'prompt', (d) rename the column.",
+      "now": "That plan is demoted to fallback. The primary revival path \u2014 IF U5 is ever answered \u2014 is first-party OTel (R2) feeding a scrape surface (R3), which dissolves C2 and C4 by construction. Any transcript-walking variant additionally inherits the R1a dedupe-by-message.id trap, which the chair themselves fell into on first pass; I no longer present transcript parsing as the correct primary design.",
+      "because": "Chair's R2 binary greps (claude_code.token.usage / cost.usage / llm_request present), R3 (/api/metrics exists), and the R1a trap demonstration."
+    },
+    {
+      "was": "Round 1: keep tokens-hook.sh dormant in the repo as part of the zero-risk dormant state.",
+      "now": "Delete it from main. Dormant was defensible when its header's claim of correctness was unrefuted; R1 refutes it, and the header's 'wire it in yourself for now' is now known-bad advice sitting in clients/. Recovery is git history (02e326e), so reversibility is unchanged.",
+      "because": "Chair's R1 capture measurement, applied to the artifact's own installation instructions."
+    }
+  ],
+  "needs_research": [
+    "U5, now the central open question: name one concrete operator or router decision that a per-host tokens/tps number enables that the poller's limit/remaining/reset signal does not. Without this, revival has no consumer and the OTel experiment should not even be run.",
+    "Attribute granularity of claude_code.token.usage / claude_code.cost.usage: do the emitted metrics carry session or host labels sufficient to populate per-host dashboard rows? (Docs attribute lists are Operator-retrieved, not chair-verified.) Test: one-host console-exporter run, gated on U5.",
+    "First-hand confirmation that Stop-hook stdin carries no usage/cost fields \u2014 currently a docs-only claim. Test: diagnostic Stop hook dumping full stdin JSON; one turn.",
+    "Provenance of the 13 tokens in prod: SELECT id, ts, host, prompt, tokens FROM request_log WHERE coalesce(tokens,0) > 0. Curiosity-grade, not verdict-blocking."
+  ],
+  "consensus_ready": true,
+  "dissent": "",
+  "_member": "seraph",
+  "_model": "moonshotai/kimi-k3",
+  "_ok": true
+}
