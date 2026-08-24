@@ -221,8 +221,45 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
   background-size:200% 100%;animation:shimmer 1.6s ease-in-out infinite}
 @keyframes shimmer{from{background-position:130% 0}to{background-position:-30% 0}}
 
+/* ============ Warp Palette — Cmd+K spotlight command bar (iteration 1) ============ */
+.palette-mask{position:fixed;inset:0;z-index:80;background:rgba(8,10,8,.72);backdrop-filter:blur(10px) saturate(1.15);display:flex;align-items:flex-start;justify-content:center;padding:18vh 16px 16px}
+.palette{width:min(640px,94vw);background:var(--panel);border:1px solid #2e332b;border-radius:12px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.7),0 0 0 1px rgba(232,179,75,.08),0 0 40px rgba(232,179,75,.06)}
+.palette-head{display:flex;align-items:center;gap:10px;padding:14px 14px 12px;border-bottom:1px solid var(--line);position:relative;overflow:hidden}
+.palette-head::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:var(--spot-o,0);background:radial-gradient(220px 220px at var(--spot-x,50%) var(--spot-y,50%),rgba(232,179,75,.13),transparent 70%);transition:opacity .2s}
+.palette-head input{flex:1;background:transparent;border:0;color:var(--fg);font:15px/1.4 var(--sans);outline:none;position:relative;z-index:1}
+.palette-head input::placeholder{color:var(--dim)}
+.palette-head .kbd{flex:none;position:relative;z-index:1}
+.palette-list{max-height:380px;overflow-y:auto;padding:6px}
+.palette-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:background .12s,transform .12s}
+.palette-item:hover{background:#1c201b}
+.palette-item.on{background:rgba(232,179,75,.1);border:1px solid rgba(232,179,75,.18);transform:translateX(2px)}
+.palette-item .pi-icon{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;font-size:14px;flex:none;background:var(--inset);border:1px solid var(--line)}
+.palette-item.on .pi-icon{background:rgba(232,179,75,.15);border-color:rgba(232,179,75,.3)}
+.palette-item .pi-title{font-size:14px;font-weight:600;color:var(--fg)}
+.palette-item .pi-sub{font:12px var(--mono);color:var(--dim)}
+.palette-item .pi-hot{margin-left:auto;font:11px var(--mono);color:var(--dim);background:var(--inset);border:1px solid var(--line);border-radius:4px;padding:2px 6px}
+.palette-enter-active{transition:opacity .18s ease,transform .18s cubic-bezier(.16,1,.3,1)}
+.palette-leave-active{transition:opacity .12s ease}
+.palette-enter-from{opacity:0;transform:translateY(8px) scale(.98)}
+.palette-leave-to{opacity:0}
+
+/* ============ Curl Monsoon — flow field generative bg (iteration 1) ============ */
+#monsoon{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.42}
+#app{position:relative;z-index:1}
+header,main,footer{position:relative}
+
+/* ============ Liquid gauge polish (iteration 1) ============ */
+.track{overflow:visible}
+.fill{transition:width .7s cubic-bezier(.16,1,.3,1),background .4s ease,box-shadow .4s ease}
+.card:hover .fill{filter:brightness(1.15)}
+.card.is-crit .fill.crit{box-shadow:0 0 14px rgba(224,93,68,.45)}
+.card.is-warn .fill.warn{box-shadow:0 0 10px rgba(217,154,61,.35)}
+.spark{transition:transform .2s ease,box-shadow .2s ease}
+.card:hover .spark{transform:scale(1.02);box-shadow:0 2px 12px rgba(0,0,0,.2)}
+
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
   .spark svg polyline{stroke-dashoffset:0}   /* draw-in cut → show the full line, not a blank one */
+  #monsoon{display:none}
 }
 @media (max-width:980px){.act-grid{grid-template-columns:1fr}}
 @media (max-width:760px){.rollup{display:none}.hwrap{gap:12px;padding-top:8px;padding-bottom:8px}}
@@ -230,6 +267,7 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
 </style>
 </head>
 <body>
+<canvas id="monsoon" aria-hidden="true"></canvas>
 
 <div id="app" v-cloak>
 
@@ -253,6 +291,7 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
     <div class="rollup">{{ rollupText }}<template v-if="polledText"> · polled <span>{{ polledText }}</span></template></div>
     <div class="clock num" aria-hidden="true">{{ clockText }}</div>
     <a class="btn" href="/board.html" title="task board">🗂 board</a>
+    <button class="btn" @click="paletteOpen=true" title="command palette (⌘K)">⌘K</button>
     <button class="btn" @click="toggleBell" :aria-pressed="String(notifyOn)"
             :aria-label="notifyOn?'disable browser notifications':'enable browser notifications'"
             :title="notifyOn?'notifications on':'browser notifications'">🔔</button>
@@ -261,6 +300,28 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
 </header>
 
 <!-- ============ critical banner — flare spec §7 ============ -->
+<Teleport to="body">
+<Transition name="palette">
+<div v-if="paletteOpen" class="palette-mask" @click.self="paletteOpen=false" @mousemove="onPaletteMouse">
+  <div class="palette" role="dialog" aria-label="command palette">
+    <div class="palette-head" :style="{'--spot-x':paletteSpot.x+'px','--spot-y':paletteSpot.y+'px','--spot-o':paletteSpot.o}">
+      <span aria-hidden="true" style="color:var(--accent)">⌘</span>
+      <input ref="paletteInput" v-model="paletteQuery" placeholder="Search commands, accounts, providers…" @keydown.down.prevent="paletteIdx=Math.min(paletteIdx+1,paletteResults.length-1)" @keydown.up.prevent="paletteIdx=Math.max(paletteIdx-1,0)" @keydown.enter.prevent="paletteSelect(paletteResults[paletteIdx])" @keydown.esc="paletteOpen=false" autocomplete="off" spellcheck="false">
+      <span class="kbd">ESC</span>
+    </div>
+    <div class="palette-list">
+      <div v-for="(r,i) in paletteResults" :key="r.id" class="palette-item" :class="{on:i===paletteIdx}" @click="paletteSelect(r)" @mouseenter="paletteIdx=i">
+        <span class="pi-icon">{{ r.icon }}</span>
+        <div style="min-width:0"><div class="pi-title">{{ r.title }}</div><div class="pi-sub">{{ r.sub }}</div></div>
+        <span v-if="r.hot" class="pi-hot">{{ r.hot }}</span>
+      </div>
+      <div v-if="!paletteResults.length" style="padding:18px 14px;color:var(--dim);font-size:13px">No results for "{{ paletteQuery }}"</div>
+    </div>
+  </div>
+</div>
+</Transition>
+</Teleport>
+
 <Transition name="banner">
   <div class="banner" v-if="showBanner">
     <div><b>CRITICAL</b><span>0 accounts selectable — every account is parked, disabled, or needs re-auth. Requests are failing.</span></div>
@@ -595,11 +656,32 @@ const app=Vue.createApp({
     kmsg:'', kmsgColor:'',            // #kmsg text + inline color ('var(--ok)' | 'var(--crit)' | 'var(--dim)')
     kprov:'', klabel:'', kkey:'',      // add-key form fields
 
+    /* ---- palette (iteration 1 — Warp Palette) ---- */
+    paletteOpen:false,
+    paletteQuery:'',
+    paletteIdx:0,
+    paletteSpot:{x:320,y:28,o:0},
+
     /* ---- private bookkeeping, never rendered ---- */
     _prevWorst:{},                       // account -> previous worst% (79→80 runaway edge)
     _heroRaf:{},                          // account -> requestAnimationFrame handle (so a re-trigger cancels the old tween)
   }},
   computed:{
+    // Warp Palette — fuzzy search across commands + accounts + providers
+    paletteResults(){
+      const q=(this.paletteQuery||'').toLowerCase().trim();
+      const all=[
+        {id:'cmd:board',icon:'🗂',title:'Open board',sub:'Go to /board.html',hot:'G B',match:'board kanban tasks'},
+        {id:'cmd:clear',icon:'🧹',title:'Clear all filters',sub:'Reset account + host chips on activity feed',hot:'',match:'clear filter reset'},
+        {id:'cmd:pause',icon:'⏸',title: this.paused?'Resume live feed':'Pause live feed',sub: this.paused?'Resume streaming activity':'Freeze the feed and queue incoming rows',hot:'Space',match:'pause resume feed live'},
+        {id:'cmd:keys',icon:'🔑',title: this.keysOpen?'Hide provider keys':'Show provider keys',sub:'Toggle the provider keys disclosure',hot:'',match:'keys provider vault'},
+        ...this.accounts.map(a=>({id:'acct:'+a.account,icon:eligible(a)?'🟢':a.reauth_needed?'🔴':'🟡',title:a.account,sub:(a.label||'')+' · '+worstOf(a)+'% worst · '+(eligible(a)?'selectable':'needs attention'),hot:'',match:a.account+' '+(a.label||'') })),
+        ...this.providers.map(p=>({id:'prov:'+p.id,icon:'⬢',title:p.id,sub:(p.label||'')+' · add a key for this provider',hot:'',match:p.id+' '+(p.label||'') })),
+      ];
+      if(!q) return all.slice(0,9);
+      const scored=all.map(r=>{const hay=(r.title+' '+r.sub+' '+r.match).toLowerCase();let s=0;if(hay.includes(q))s=10;else{let qi=0;for(const ch of hay){if(ch===q[qi]){qi++;if(qi===q.length){s=5;break;}}}}return {...r,_s:s}}).filter(r=>r._s>0).sort((a,b)=>b._s-a._s);
+      return scored.slice(0,9);
+    },
     /* ================= CORE (§2.1) ================= */
     selectableCount(){ return this.accounts.filter(eligible).length; },
     parkedCount(){ return this.accounts.filter(a=>a.parked&&!a.disabled).length; },
@@ -718,6 +800,9 @@ const app=Vue.createApp({
   },
   watch:{
     titleText:{ immediate:true, handler(v){ document.title=v; } },
+    paletteOpen(v){
+      if(v){ this.paletteQuery=''; this.paletteIdx=0; this.$nextTick(()=>this.$refs.paletteInput?.focus()); }
+    }
   },
   methods:{
     /* ================= CORE (§2.1) ================= */
@@ -1121,6 +1206,24 @@ const app=Vue.createApp({
       this.fAccounts = {};
       this.fHosts = {};
     },
+    // ---- Warp Palette (iteration 1) ----
+    onPaletteMouse(e){
+      const r=e.currentTarget.getBoundingClientRect();
+      this.paletteSpot={x:e.clientX-r.left,y:e.clientY-r.top,o:1};
+    },
+    paletteSelect(row){
+      if(!row) return;
+      this.paletteOpen=false;
+      if(row.id==='cmd:board') location.href='/board.html';
+      else if(row.id==='cmd:clear') this.clearChips();
+      else if(row.id==='cmd:pause') this.togglePause();
+      else if(row.id==='cmd:keys'){ this.keysOpen=true; this.$nextTick(()=>document.querySelector('.disclosure')?.scrollIntoView({behavior:'smooth',block:'center'})); }
+      else if(row.id.startsWith('acct:')){
+        const id=row.id.slice(5);
+        // scroll the card into view and flash it
+        this.$nextTick(()=>{const el=[...document.querySelectorAll('.card')].find(c=>c.textContent.includes(id)); if(el){el.scrollIntoView({behavior:'smooth',block:'center'}); el.style.outline='1px solid var(--accent)'; el.style.outlineOffset='2px'; setTimeout(()=>el.style.outline='',900);}});
+      }
+    },
 
     /* ================= KEYS (§2.4) ================= */
     relTime(v,empty){ return !v?(empty||'—'):fmtAge((this.now-(+toDate(v)))/1000)+' ago'; },
@@ -1171,6 +1274,13 @@ const app=Vue.createApp({
     this.boot();
     window.addEventListener('pointerdown',this.clearFlash,{passive:true});
     window.addEventListener('keydown',this.clearFlash,{passive:true});
+    // Warp Palette — Cmd+K / Ctrl+K (iteration 1)
+    window.addEventListener('keydown',this._paletteKey=e=>{
+      if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();this.paletteOpen=!this.paletteOpen;}
+      else if(e.key==='Escape'&&this.paletteOpen){this.paletteOpen=false;}
+    });
+    // Curl Monsoon — flow field bg (iteration 1) — respects prefers-reduced-motion via CSS display:none, but also gate JS
+    if(!matchMedia('(prefers-reduced-motion: reduce)').matches) this.$nextTick(()=>startMonsoon());
   },
   unmounted(){
     clearInterval(this._tick);
@@ -1178,10 +1288,71 @@ const app=Vue.createApp({
     clearTimeout(this._copyT);
     window.removeEventListener('pointerdown',this.clearFlash);
     window.removeEventListener('keydown',this.clearFlash);
+    if(this._paletteKey) window.removeEventListener('keydown',this._paletteKey);
   },
 });
 app.component('dashboard-body',DashboardBody);
 app.mount('#app');
+
+// ── Curl Monsoon — generative flow field (iteration 1) — ~90 lines, no deps ──
+function startMonsoon(){
+  const c=document.getElementById('monsoon'); if(!c) return;
+  const g=c.getContext('2d'); if(!g) return;
+  let w,h,dpr=Math.min(devicePixelRatio||1,2), raf=0, t=0;
+  const N=90; // particles
+  const parts=[];
+  function resize(){ w=c.width=Math.floor(innerWidth*dpr); h=c.height=Math.floor(innerHeight*dpr); c.style.width=innerWidth+'px'; c.style.height=innerHeight+'px'; }
+  resize(); addEventListener('resize',resize);
+  // init particles
+  for(let i=0;i<N;i++) parts.push({x:Math.random()*w,y:Math.random()*h, vx:0,vy:0, life:Math.random()*200});
+  // curl noise via sin/cos field — cheap, no texture, looks like fluid
+  function field(x,y,tt){
+    const s=0.0018, a=tt*0.00022;
+    const nx=Math.sin(x*s + a*1.3 + Math.cos(y*s*0.7))*1.2;
+    const ny=Math.cos(x*s*0.6 - a + Math.sin(y*s))*1.2;
+    // curl = (-dF/dy, dF/dx) approximated by perpendicular
+    return {x: -ny*1.55, y: nx*1.55};
+  }
+  function frame(){
+    if(document.hidden){ raf=requestAnimationFrame(frame); return; }
+    t++;
+    // fade trails — amber phosphor
+    g.fillStyle='rgba(16,18,17,0.11)';
+    g.fillRect(0,0,w,h);
+    for(const p of parts){
+      const f=field(p.x,p.y,t);
+      p.vx += f.x*0.08; p.vy += f.y*0.08;
+      p.vx *= 0.985; p.vy *= 0.985;
+      p.x += p.vx*dpr; p.y += p.vy*dpr;
+      p.life--;
+      if(p.life<=0 || p.x<0||p.x>w||p.y<0||p.y>h){ p.x=Math.random()*w; p.y=Math.random()*h; p.vx=p.vy=0; p.life=120+Math.random()*220; }
+      const alpha=Math.min(1, Math.max(0, p.life/90))*0.55;
+      // size varies with speed
+      const sp=Math.hypot(p.vx,p.vy);
+      const r=(0.7 + sp*0.45)*dpr;
+      g.beginPath();
+      g.arc(p.x,p.y,r,0,Math.PI*2);
+      // amber → teal lerp by field angle for subtle color shift
+      const hue=38 + Math.atan2(f.y,f.x)*4; // 34..42 amber wobble
+      g.fillStyle='hsla('+hue.toFixed(1)+' 78% 58% / '+alpha.toFixed(3)+')';
+      // glow for fast movers
+      if(sp>1.2){ g.shadowColor='hsla(38 85% 60% / 0.35)'; g.shadowBlur=6*dpr; } else g.shadowBlur=0;
+      g.fill();
+      g.shadowBlur=0;
+    }
+    // occasional accent streak — long trail of one particle
+    if(t%3===0){
+      const p=parts[t%N];
+      g.beginPath(); g.moveTo(p.x-p.vx*3, p.y-p.vy*3); g.lineTo(p.x,p.y);
+      g.strokeStyle='hsla(38 80% 60% / 0.07)'; g.lineWidth=1*dpr; g.stroke();
+    }
+    raf=requestAnimationFrame(frame);
+  }
+  // pause when tab hidden is handled inside frame; also stop entirely if user prefers reduced motion (CSS already hides canvas)
+  frame();
+  // stop on page hide to save battery
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden) cancelAnimationFrame(raf); else frame(); });
+}
 </script>
 </body>
 </html>
