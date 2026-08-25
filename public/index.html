@@ -522,6 +522,26 @@ main.shake{animation:seismo-shake .38s ease}
 .ferrofabric-meta .mode{color:#e8e0c8}
 .ferrofabric-meta .hint{opacity:.75}
 .ferrofabric-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(232,224,200,.52);background:rgba(8,10,12,.55);border:1px solid rgba(200,196,184,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+/* <!-- IMPL: Spectral Vault --> — SDF vault door: torus-knot keyhole, depth tumblers, volumetric shafts, BREACH shockwave */
+#vault-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #23262a;border-radius:6px;overflow:hidden;background:#06090c;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
+.vault-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#13191c 0%,#0c1012 55%,#06090c 100%);border-bottom:1px solid #23262a}
+.vault-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#e8b34b}
+.vault-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.vault-head .vault-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.vault-head .vault-note b{color:#e8dcc8;font-weight:600}
+.vault-head .vault-actions{display:flex;align-items:center;gap:6px}
+.vault-canvas-wrap{position:relative;height:160px;background:#05070a;overflow:hidden;cursor:grab;touch-action:none}
+.vault-canvas-wrap.dragging{cursor:grabbing}
+#vault{display:block;width:100%;height:100%;pointer-events:auto}
+.vault-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0a0e10;border-top:1px solid #23262a;font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.vault-meta .mode{color:#e8dcc8}
+.vault-meta .hint{opacity:.75}
+.vault-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(232,220,200,.52);background:rgba(5,7,10,.55);border:1px solid rgba(232,179,75,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+#vault-sec.is-fullscreen{position:fixed;inset:0;z-index:46;margin:0;border-radius:0;border:0;display:flex;flex-direction:column;background:#05070a}
+#vault-sec.is-fullscreen .vault-canvas-wrap{flex:1;height:auto;min-height:0}
+#vault-sec.is-fullscreen .vault-head{border-radius:0}
+.vault-shock{position:absolute;inset:0;pointer-events:none;opacity:0}
+.vault-shard{position:absolute;width:8px;height:8px;background:linear-gradient(135deg,#e8dcc8 0%,#e8b34b 55%,#8a6b1e 100%);border:1px solid rgba(232,179,75,.5);border-radius:1px;box-shadow:0 1px 6px rgba(0,0,0,.4),0 0 10px rgba(232,179,75,.25);will-change:transform,opacity}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
   .spark svg polyline{stroke-dashoffset:0}   /* draw-in cut → show the full line, not a blank one */
   #monsoon{display:none}
@@ -535,6 +555,8 @@ main.shake{animation:seismo-shake .38s ease}
   #horizon{display:none!important}
   #ferrofabric-sec{display:none!important}
   #ferrofabric{display:none!important}
+  #vault-sec{display:none!important}
+  #vault{display:none!important}
   .card{transform:none!important;box-shadow:none!important}
   .card .glare{display:none}
 }
@@ -649,6 +671,8 @@ main.shake{animation:seismo-shake .38s ease}
     <button id="ferro-toggle" class="btn" type="button" aria-pressed="false" title="Ferrofluid Séance — oil-black, thorns chase magnet (drag)">⬢ séance</button>
     <!-- IMPL: Event Horizon — quad-state with monsoon/chladni/ferro; 10k lensed stars -->
     <button id="horizon-toggle" class="btn" type="button" aria-pressed="false" title="Event Horizon — drag the black hole, bend starlight (◐ photon ring)">◆ horizon</button>
+    <!-- IMPL: Spectral Vault — SDF vault door, torus-knot keyhole, tumblers, BREACH -->
+    <button id="vault-toggle" class="btn" type="button" aria-pressed="false" title="Spectral Vault — spin torus-knot to align tumblers → BREACH">⬡ vault</button>
     <!-- IMPL: Mercury Blob Toggle -->
     <button id="mercury-toggle" class="mercury-blob" type="button" role="switch" aria-checked="false" aria-label="Mercury blob — drag thumb to stretch, click to toggle" title="Mercury Blob — drag to liquefy"><span class="mercury-label" aria-hidden="true">◉ mercury</span><span class="mercury-track" aria-hidden="true"><span class="mercury-goo"><i class="mercury-dot"></i><i class="mercury-thumb"></i></span></span></button>
     <button class="btn" @click="paletteOpen=true" title="command palette (⌘K)">⌘K</button>
@@ -747,6 +771,26 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="horizon-meta">
         <span class="mode">▸ <span id="horizon-readout">10 000 stars · lensing 1/r · photon ring</span></span>
         <span class="hint">pure math · 1 canvas · Schwarzschild approx</span>
+      </div>
+    </section>
+    <!-- IMPL: Spectral Vault — SDF vault door, torus-knot, depth tumblers, BREACH -->
+    <section id="vault-sec" class="vault-sec" hidden aria-label="Spectral Vault">
+      <div class="vault-head">
+        <span class="sec-num">00</span><h2>Spectral Vault</h2>
+        <span class="vault-note">drag knot · <b id="vault-mode">LOCKED</b> · gyro=spin</span>
+        <span class="vault-actions">
+          <button id="vault-fs" class="btn sm" type="button" aria-label="toggle fullscreen">⤢ fullscreen</button>
+          <button id="vault-close" class="btn sm" type="button" aria-label="close Spectral Vault">✕</button>
+        </span>
+      </div>
+      <div class="vault-canvas-wrap" id="vault-wrap">
+        <canvas id="vault" width="1200" height="160" aria-label="Spectral Vault — drag to spin torus-knot, align tumblers to BREACH" role="img"></canvas>
+        <span class="vault-spec">⬡ SDF torus-knot · parallax · chromatic · shafts</span>
+        <div id="vault-shock" class="vault-shock" aria-hidden="true"></div>
+      </div>
+      <div class="vault-meta">
+        <span class="mode">▸ <span id="vault-readout">idle · breathing</span></span>
+        <span class="hint">100% shader · zero DOM · align 3 tumblers → BREACH</span>
       </div>
     </section>
     <!-- IMPL: Ferrofabric — standalone 160px fabric below hero, above seismo — single canvas, no physics engine -->
@@ -3252,6 +3296,8 @@ function startMonsoon(){
   // reduced-motion: ensure no goo/filter inline survives
   if(reduce()){ btn.style.touchAction='auto'; }
 })();
+</script>
+<script>
 /* <!-- IMPL: Event Horizon --> — 10k stars + Schwarzschild 1/r lens + photon ring + Doppler disk — single <canvas>, DPR≤2, 60fps */
 (function(){
   if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -4095,6 +4141,570 @@ function startMonsoon(){
   resize();
   start();
   window.__ferrofabric={get N(){return filaments.length}, get density(){return density}, get shatter(){return shatter}, shuffle:()=>{buildFilaments(); shatter=0.55;}, _stop:stop, _start:start};
+})();
+</script>
+<!-- IMPL: Spectral Vault -->
+<script>
+/* <!-- IMPL: Spectral Vault --> — SDF vault door: torus-knot SDF + breathing idle, draggable tumblers, BREACH iris+shockwave+shards. 2D canvas faking raymarch, DPR≤2, penta-state exclusive */
+(function(){
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('vault-sec');
+  const wrap=document.getElementById('vault-wrap');
+  const cv=document.getElementById('vault');
+  const btn=document.getElementById('vault-toggle');
+  const closeBtn=document.getElementById('vault-close');
+  const fsBtn=document.getElementById('vault-fs');
+  const modeEl=document.getElementById('vault-mode');
+  const readout=document.getElementById('vault-readout');
+  const shockEl=document.getElementById('vault-shock');
+  const monsoon=document.getElementById('monsoon');
+  const altarSec=document.getElementById('altar-sec');
+  const ferroSec=document.getElementById('ferro-sec');
+  const horizonSec=document.getElementById('horizon-sec');
+  const altarBtn=document.getElementById('altar-toggle');
+  const ferroBtn=document.getElementById('ferro-toggle');
+  const horizonBtn=document.getElementById('horizon-toggle');
+  if(!sec||!wrap||!cv||!btn) return;
+  const ctx=cv.getContext('2d'); if(!ctx) return;
+  let dpr=Math.min(window.devicePixelRatio||1,2);
+  let W=0,H=0,cssW=0,cssH=160,raf=0,running=false,t=0;
+  let dial=0, targetDial=0, breathingPhase=0;
+  let dragging=false, dragStartX=0, dragStartDial=0;
+  let gyroYaw=0, gyroEnabled=false;
+  let breaching=false, breachT=0, irisR=0, shockR=0;
+  let shards=[];
+  // providers as depth tumblers — try to read live providers, fallback to synthetic
+  function getProviders(){
+    try{
+      const p=(typeof app!=='undefined' && app._instance && app._instance.proxy && app._instance.proxy.providers);
+      if(Array.isArray(p) && p.length) return p.slice(0,5).map(q=>({id:q.id||q, label:q.name||q.id||q}));
+    }catch(_){}
+    try{
+      const el=document.querySelectorAll('#provlist option');
+      if(el.length) return Array.from(el).slice(0,5).map(o=>({id:o.value,label:o.label||o.value}));
+    }catch(_){}
+    return [{id:'anthropic',label:'Anthropic'},{id:'openai',label:'OpenAI'},{id:'google',label:'Google'},{id:'fal',label:'fal'}];
+  }
+  let tumblers=[];
+  function buildTumblers(){
+    const provs=getProviders();
+    const N=Math.max(3, Math.min(5, provs.length||4));
+    const cols=['#e8b34b','#5fae7a','#6ec6ff','#e07a9a','#b8a0ff'];
+    tumblers=[];
+    for(let i=0;i<N;i++){
+      const p=provs[i]||{id:'prov'+i,label:'L'+i};
+      // each tumbler: depth z 0..1, parallax speed, chromatic offset, target alignment
+      const depth=i/(N-1);
+      const speed=0.82 + depth*0.55; // parallax: deeper moves slower
+      const offset=(i* 137.5) * Math.PI/180; // spread initial offsets so not aligned at 0
+      // target is where effective angle ==0  => dial = -offset/speed
+      tumblers.push({id:p.id,label:p.label,depth,speed,offset,col:cols[i%cols.length],phase:Math.random()*Math.PI*2});
+    }
+  }
+  buildTumblers();
+  // watch provider list changes to rebuild
+  try{
+    const obs=new MutationObserver(()=>buildTumblers());
+    const dl=document.getElementById('provlist');
+    if(dl) obs.observe(dl,{childList:true});
+  }catch(_){}
+  function isHidden(){ return sec.hidden||sec.style.display==='none'||document.hidden; }
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const r=wrap.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(r.width));
+    cssH=sec.classList.contains('is-fullscreen') ? Math.max(1,Math.floor(r.height)) : 160;
+    if(!sec.classList.contains('is-fullscreen')) cssH=160;
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+    W=cv.width; H=cv.height;
+  }
+  function updateMonsoon(){
+    const anyAlt=altarSec&&!altarSec.hidden;
+    const anyFer=ferroSec&&!ferroSec.hidden;
+    const anyHor=horizonSec&&!horizonSec.hidden;
+    const anyVault=!sec.hidden;
+    if(monsoon) monsoon.style.display=(anyAlt||anyFer||anyHor||anyVault)?'none':'';
+  }
+  function setVault(open){
+    const wasOpen=!sec.hidden;
+    if(open===wasOpen) return;
+    sec.hidden=!open;
+    btn.setAttribute('aria-pressed',String(open));
+    btn.textContent=open?'⬡ close':'⬡ vault';
+    if(open){
+      if(altarSec&&!altarSec.hidden){ altarSec.hidden=true; if(altarBtn){altarBtn.setAttribute('aria-pressed','false'); altarBtn.textContent='◈ altar';} if(window.__altar) try{window.__altar._stop();}catch(_){} }
+      if(ferroSec&&!ferroSec.hidden){ ferroSec.hidden=true; if(ferroBtn){ferroBtn.setAttribute('aria-pressed','false'); ferroBtn.textContent='⬢ séance';} if(window.__ferro) try{window.__ferro._stop();}catch(_){} }
+      if(horizonSec&&!horizonSec.hidden){ horizonSec.hidden=true; if(horizonBtn){horizonBtn.setAttribute('aria-pressed','false'); horizonBtn.textContent='◆ horizon';} if(window.__horizon) try{window.__horizon._stop();}catch(_){} }
+      updateMonsoon();
+      resize();
+      if(!running) start();
+      if(!sec.classList.contains('is-fullscreen')) wrap.scrollIntoView({behavior:'smooth',block:'nearest'});
+      // enable gyro on open if permission available
+      tryEnableGyro();
+      // nudge dial slightly to show breathing
+      targetDial+=0.18;
+    } else {
+      stop();
+      sec.classList.remove('is-fullscreen');
+      if(fsBtn) fsBtn.textContent='⤢ fullscreen';
+      breaching=false; irisR=0; shockR=0; shards=[];
+      if(shockEl) shockEl.innerHTML='';
+      updateMonsoon();
+    }
+  }
+  function start(){ if(running) return; if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; running=true; cancelAnimationFrame(raf); t=0; loop(); }
+  function stop(){ running=false; cancelAnimationFrame(raf); raf=0; }
+  function normAngle(a){ a%=Math.PI*2; if(a>Math.PI) a-=Math.PI*2; if(a<-Math.PI) a+=Math.PI*2; return a; }
+  function checkAligned(){
+    if(breaching) return false;
+    const tol=0.28; // ~16deg
+    for(let i=0;i<tumblers.length;i++){
+      const eff=normAngle(dial*tumblers[i].speed + tumblers[i].offset);
+      if(Math.abs(eff)>tol) return false;
+    }
+    return true;
+  }
+  function triggerBreach(){
+    if(breaching) return;
+    breaching=true; breachT=0; irisR=0; shockR=0;
+    // expand to fullscreen takeover momentarily? spec says expanding to fullscreen — we trigger is-fullscreen for 2.4s
+    const wasFull=sec.classList.contains('is-fullscreen');
+    if(!wasFull){ sec.classList.add('is-fullscreen'); if(fsBtn) fsBtn.textContent='⤢ exit'; resize(); }
+    // spawn shards as DOM
+    spawnShards(22);
+    if(modeEl) modeEl.textContent='BREACH';
+    if(readout) readout.textContent='BREACH · iris open · shards spilling';
+  }
+  function spawnShards(n){
+    if(!wrap) return;
+    // clear old
+    if(shockEl) shockEl.innerHTML='';
+    shards=[];
+    const cx=cssW*0.5, cy=cssH*0.5;
+    for(let i=0;i<n;i++){
+      const el=document.createElement('div');
+      el.className='vault-shard';
+      const ang=(i/n)*Math.PI*2 + (Math.random()-0.5)*0.45;
+      const speed= 5 + Math.random()*11;
+      const sz= 5 + Math.random()*9;
+      const spin= (Math.random()-0.5)*720;
+      el.style.width=sz+'px'; el.style.height=sz+'px';
+      el.style.left=cx+'px'; el.style.top=cy+'px';
+      el.style.opacity='0.96';
+      el.style.transform='translate(-50%,-50%) rotate('+ (Math.random()*360).toFixed(1)+'deg)';
+      if(shockEl) shockEl.appendChild(el);
+      shards.push({el, x:cx, y:cy, vx:Math.cos(ang)*speed, vy:Math.sin(ang)*speed - Math.random()*2, ang:ang, spin:spin, life:0, sz:sz, rot:Math.random()*360});
+    }
+    if(shockEl){ shockEl.style.opacity='1'; }
+  }
+  // ---- gyro ----
+  function tryEnableGyro(){
+    if(gyroEnabled) return;
+    try{
+      if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+        DeviceOrientationEvent.requestPermission().then(s=>{ if(s==='granted'){ window.addEventListener('deviceorientation', onGyro, true); gyroEnabled=true; }}).catch(()=>{});
+      } else if('DeviceOrientationEvent' in window){
+        window.addEventListener('deviceorientation', onGyro, true); gyroEnabled=true;
+      }
+    }catch(_){}
+  }
+  function onGyro(e){
+    if(dragging||breaching||sec.hidden) return;
+    const g=e.gamma; // left-right tilt -90..90
+    if(g==null) return;
+    // map gamma -45..45 to dial delta
+    const clamped=Math.max(-45,Math.min(45,g));
+    const target= clamped * 0.045; // scale
+    // smooth lerp targetDial toward gyro-influenced
+    targetDial += (target - gyroYaw)*0.08;
+    gyroYaw=target;
+  }
+  // ---- SDF helpers (2D fake raymarch) ----
+  // torus-knot centerline: p=2,q=3
+  function knotPoint(u, rot, scale, cx, cy){
+    // u 0..2π
+    const R=scale*0.62;
+    const r=scale*0.22;
+    const p=2, q=3;
+    // tube centerline in 3D then project
+    const cu=Math.cos(q*u), su=Math.sin(q*u);
+    const cc=Math.cos(p*u + rot), sc=Math.sin(p*u + rot);
+    const x=(R + r*cu)*cc;
+    const y=(R + r*cu)*sc;
+    const z=r*su;
+    // orthographic project with slight perspective
+    const persp= 1 + z*0.35/scale;
+    return {x:cx + x*persp, y:cy + y*persp*0.86, z:z, c:Math.cos(u), s:Math.sin(u)};
+  }
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    t++;
+    breathingPhase+=0.018;
+    const breath=Math.sin(breathingPhase)*0.045 + Math.sin(breathingPhase*0.53)*0.018;
+    // dial lerp
+    dial += (targetDial - dial)*0.14;
+    // idle autonomous slow spin when not dragging+not breaching
+    if(!dragging && !breaching){
+      targetDial+=0.0032 + breath*0.006;
+    }
+    // breach anim
+    if(breaching){
+      breachT++;
+      irisR += (Math.max(cssW,cssH)*0.62 - irisR)*0.11;
+      shockR += (Math.max(cssW,cssH)*0.85 - shockR)*0.09;
+      // update shards physics
+      for(let i=0;i<shards.length;i++){
+        const s=shards[i];
+        s.life++;
+        s.vy+=0.42; // gravity
+        s.vx*=0.998; s.vy*=0.998;
+        s.x+=s.vx; s.y+=s.vy;
+        s.rot+=s.spin*0.016;
+        const p=Math.min(1, s.life/68);
+        const alpha=1 - p*0.92;
+        s.el.style.left=s.x+'px'; s.el.style.top=s.y+'px';
+        s.el.style.opacity=alpha.toFixed(3);
+        s.el.style.transform='translate(-50%,-50%) rotate('+s.rot.toFixed(1)+'deg) scale('+(1 - p*0.18).toFixed(3)+')';
+        if(s.life> 70) s.el.style.display='none';
+      }
+      if(breachT> 140){
+        breaching=false; irisR=0; shockR=0;
+        // reset shards
+        setTimeout(()=>{ if(shockEl) shockEl.innerHTML=''; shards=[]; }, 600);
+        // randomize offsets to relock
+        for(let i=0;i<tumblers.length;i++){ tumblers[i].offset+= (Math.random()-0.5)*1.2; if(tumblers[i].offset>Math.PI) tumblers[i].offset-=Math.PI*2; if(tumblers[i].offset<-Math.PI) tumblers[i].offset+=Math.PI*2; }
+        if(modeEl) modeEl.textContent='RE-LOCKED';
+        if(readout) readout.textContent='vault re-locked · spin to align';
+      }
+    }
+    // check for BREACH trigger
+    if(!breaching && checkAligned()){
+      triggerBreach();
+    }
+    // draw
+    ctx.save();
+    ctx.scale(dpr,dpr);
+    ctx.clearRect(0,0,cssW,cssH);
+    // bg
+    ctx.fillStyle='#05070a';
+    ctx.fillRect(0,0,cssW,cssH);
+    // subtle vignette
+    const vg=ctx.createRadialGradient(cssW*0.5,cssH*0.5,0,cssW*0.5,cssH*0.5,Math.max(cssW,cssH)*0.9);
+    vg.addColorStop(0,'rgba(14,20,28,0.52)');
+    vg.addColorStop(0.58,'rgba(8,12,18,0)');
+    vg.addColorStop(1,'rgba(0,0,0,0.62)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,cssW,cssH);
+    // vault door geometry
+    const cx=cssW*0.5, cy=cssH*0.5;
+    const doorR=Math.min(68 + breath*8, cssH*0.44 + 6);
+    const ringW=14;
+    const outerR=doorR+ringW;
+    // outer steel ring with brushed highlight
+    const ringG=ctx.createRadialGradient(cx,cy, doorR, cx,cy, outerR);
+    ringG.addColorStop(0,'#1a1f24');
+    ringG.addColorStop(0.45,'#2a3440');
+    ringG.addColorStop(0.68,'#3b4a5a');
+    ringG.addColorStop(0.82,'#1e252e');
+    ringG.addColorStop(1,'#0c0f12');
+    ctx.fillStyle=ringG;
+    ctx.beginPath(); ctx.arc(cx,cy,outerR,0,Math.PI*2); ctx.arc(cx,cy,doorR,0,Math.PI*2,true); ctx.fill();
+    // bolts
+    const boltN=12;
+    for(let i=0;i<boltN;i++){
+      const a=i*(Math.PI*2/boltN) + dial*0.08;
+      const bx=cx+Math.cos(a)*(doorR+ringW*0.52), by=cy+Math.sin(a)*(doorR+ringW*0.52);
+      const bg=ctx.createRadialGradient(bx-1.2,by-1.2,0,bx,by,3.8);
+      bg.addColorStop(0,'#d8dde2'); bg.addColorStop(0.42,'#8a94a2'); bg.addColorStop(1,'#1a1f24');
+      ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(bx,by,3.2,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=0.7; ctx.stroke();
+      // tick when aligned glint
+      const alignedCount=tumblers.filter((tm)=>Math.abs(normAngle(dial*tm.speed+tm.offset))<0.28).length;
+      if(alignedCount===tumblers.length){
+        ctx.fillStyle='rgba(232,179,75,0.55)'; ctx.beginPath(); ctx.arc(bx,by,1.1,0,Math.PI*2); ctx.fill();
+      }
+    }
+    // door disk — deep steel with radial brushed
+    const doorG=ctx.createRadialGradient(cx- doorR*0.22, cy- doorR*0.28, doorR*0.12, cx, cy, doorR);
+    doorG.addColorStop(0,'#1e2a36');
+    doorG.addColorStop(0.32,'#121a24');
+    doorG.addColorStop(0.62,'#0c131c');
+    doorG.addColorStop(1,'#06080c');
+    ctx.fillStyle=doorG;
+    ctx.beginPath(); ctx.arc(cx,cy,doorR,0,Math.PI*2); ctx.fill();
+    // iris displacement when breaching — growing hole
+    if(breaching){
+      const ir=Math.min(doorR*0.96, irisR*0.38);
+      ctx.save();
+      ctx.globalCompositeOperation='destination-out';
+      ctx.beginPath(); ctx.arc(cx,cy,ir,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+      // inner glow
+      const ig=ctx.createRadialGradient(cx,cy, ir*0.2, cx,cy, ir);
+      ig.addColorStop(0,'rgba(232,179,75,0.22)'); ig.addColorStop(0.55,'rgba(232,179,75,0.06)'); ig.addColorStop(1,'rgba(232,179,75,0)');
+      ctx.fillStyle=ig; ctx.beginPath(); ctx.arc(cx,cy,ir,0,Math.PI*2); ctx.fill();
+      // shockwave ring
+      ctx.strokeStyle='rgba(232,179,75,'+Math.max(0,0.42 - breachT*0.004).toFixed(3)+')';
+      ctx.lineWidth= 2.2 + breachT*0.04;
+      ctx.beginPath(); ctx.arc(cx,cy, shockR*0.52, 0, Math.PI*2); ctx.stroke();
+      ctx.strokeStyle='rgba(110,198,255,'+Math.max(0,0.22 - breachT*0.003).toFixed(3)+')';
+      ctx.lineWidth=1; ctx.beginPath(); ctx.arc(cx,cy, shockR*0.58, 0, Math.PI*2); ctx.stroke();
+    }
+    // tumbler depth rings — each provider is a notch ring at different depth
+    const baseRi=doorR*0.22;
+    const step= (doorR*0.62)/tumblers.length;
+    // sort by depth for painter
+    const sorted=[...tumblers].sort((a,b)=>a.depth-b.depth);
+    for(let i=0;i<sorted.length;i++){
+      const tm=sorted[i];
+      const ri=baseRi + i*step;
+      const ro=ri + step*0.72;
+      const parallaxX= dial* tm.depth*3.2;
+      const parallaxY= dial* tm.depth*1.1;
+      const eff=normAngle(dial*tm.speed + tm.offset);
+      const aligned=Math.abs(eff)<0.28;
+      // ring track
+      ctx.strokeStyle= aligned? 'rgba(232,179,75,0.42)' : 'rgba(120,135,150,0.18)';
+      ctx.lineWidth= ro-ri;
+      ctx.beginPath(); ctx.arc(cx+parallaxX*0.12, cy+parallaxY*0.12, (ri+ro)/2, 0, Math.PI*2); ctx.stroke();
+      // inner highlight
+      ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=0.7;
+      ctx.beginPath(); ctx.arc(cx+parallaxX*0.12, cy+parallaxY*0.12, ri+0.6, 0, Math.PI*2); ctx.stroke();
+      // notch — tumbler gate
+      const notchA= eff; // 0 is aligned up
+      const nx=cx+parallaxX*0.12 + Math.cos(notchA - Math.PI/2)*(ri+ro)/2;
+      const ny=cy+parallaxY*0.12 + Math.sin(notchA - Math.PI/2)*(ri+ro)/2;
+      // chromatic aberration: draw notch 3x with rgb shift
+      const shifts=[{dx:-0.9,col:'rgba(255,80,80,0.55)'},{dx:0,col:tm.col},{dx:0.9,col:'rgba(80,180,255,0.55)'}];
+      for(let s=0;s<shifts.length;s++){
+        const sh=shifts[s];
+        const csh= s===1 ? (aligned?'rgba(232,179,75,0.95)':'rgba(232,220,200,0.92)') : sh.col;
+        ctx.fillStyle=s===1 ? csh : sh.col;
+        ctx.shadowColor= aligned? 'rgba(232,179,75,0.7)':'rgba(0,0,0,0)';
+        ctx.shadowBlur= s===1 && aligned? 7:0;
+        // notch shape: small chevron/tri
+        ctx.save();
+        ctx.translate(nx+sh.dx, ny);
+        ctx.rotate(notchA);
+        ctx.beginPath();
+        // diamond
+        ctx.moveTo(0,-5); ctx.lineTo(3.2,0); ctx.lineTo(0,5); ctx.lineTo(-3.2,0); ctx.closePath();
+        ctx.globalAlpha= s===1 ? 0.96 : 0.42;
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.shadowBlur=0; ctx.globalAlpha=1;
+      // alignment tick at top (12 o'clock) — shows where gate must meet
+      ctx.fillStyle= aligned? 'rgba(232,179,75,0.92)' : 'rgba(232,220,200,0.22)';
+      const tx2=cx+parallaxX*0.12, ty2=cy+parallaxY*0.12 - (ri+ro)/2;
+      ctx.fillRect(tx2-0.6, ty2-1.2, 1.2, 3.2);
+      // label
+      ctx.fillStyle= aligned? 'rgba(232,220,200,0.92)' : 'rgba(180,190,200,0.62)';
+      ctx.font='600 7px ui-monospace,monospace';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      const labelAng= Math.PI/2 + i*0.12; // slight fan
+      const lx=cx+parallaxX*0.12 + Math.cos(labelAng)*(ro+9);
+      const ly=cy+parallaxY*0.12 + Math.sin(labelAng)*(ro+9);
+      // keep labels readable only when not fullscreen overwhelming — skip if crowded
+      if(cssW>520){
+        ctx.fillText(tm.id.slice(0,7).toUpperCase(), lx, ly);
+      }
+      // depth haze
+      if(tm.depth>0.45){
+        ctx.fillStyle='rgba(5,7,10,'+(tm.depth*0.18).toFixed(2)+')';
+        ctx.beginPath(); ctx.arc(cx+parallaxX*0.12, cy+parallaxY*0.12, (ri+ro)/2, 0, Math.PI*2); ctx.fill();
+      }
+    }
+    // volumetric light shafts — from center through gaps between tumblers
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    for(let i=0;i<6;i++){
+      const a= dial*0.55 + i*(Math.PI*2/6) + breath*0.6;
+      const inner= doorR*0.18, outer= outerR+ 22;
+      // shaft width breathes
+      const w= 2.2 + Math.sin(t*0.02 + i)*0.7 + breath*1.2;
+      const gShaft=ctx.createLinearGradient(cx+Math.cos(a)*inner, cy+Math.sin(a)*inner, cx+Math.cos(a)*outer, cy+Math.sin(a)*outer);
+      gShaft.addColorStop(0,'rgba(232,179,75,0.00)');
+      gShaft.addColorStop(0.22,'rgba(232,179,75,0.10)');
+      gShaft.addColorStop(0.55,'rgba(110,198,255,0.07)');
+      gShaft.addColorStop(1,'rgba(232,179,75,0)');
+      ctx.strokeStyle=gShaft;
+      ctx.lineWidth=w;
+      ctx.beginPath();
+      ctx.moveTo(cx+Math.cos(a)*inner, cy+Math.sin(a)*inner);
+      ctx.lineTo(cx+Math.cos(a)*outer, cy+Math.sin(a)*outer);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // SDF torus-knot keyhole — center, breathing scale + displacement
+    const knotScale= 18 + breath*2.2;
+    const knotRot= dial*0.92;
+    const segs= 92;
+    const tubeR= 3.2 + breath*0.6;
+    // depth-sort segments by z
+    let pts=[];
+    for(let i=0;i<segs;i++){
+      const u=i/segs * Math.PI*2;
+      const p=knotPoint(u, knotRot, knotScale, cx, cy);
+      // displacement wiggle along normal
+      const disp= Math.sin(u*3 + t*0.06)*0.9*breath*3 + Math.cos(u*5 - t*0.04)*0.5;
+      pts.push({x:p.x, y:p.y, z:p.z + disp, u:u});
+    }
+    // sort back-to-front
+    pts.sort((a,b)=>a.z-b.z);
+    for(let i=0;i<pts.length;i++){
+      const p=pts[i];
+      const nidx=(pts.indexOf(p)+1)%pts.length;
+      // find neighbor in sorted order? Instead draw segment to next along u order, but z-sorted draw still okay with line
+      // Use u-order neighbor for segment
+    }
+    // draw knot as thick tube segments in u-order but with depth shading
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    for(let i=0;i<segs;i++){
+      const u0=i/segs*Math.PI*2, u1=((i+1)%segs)/segs*Math.PI*2;
+      const a=knotPoint(u0,knotRot,knotScale,cx,cy);
+      const b=knotPoint(u1,knotRot,knotScale,cx,cy);
+      const mz=(a.z+b.z)/2;
+      const depthT=(mz + knotScale*0.22)/(knotScale*0.44); // 0..1
+      const dnorm=Math.max(0,Math.min(1,depthT));
+      // color lerp: deeper = dimmer steel, front = warm brass highlight
+      const r= 18 + dnorm*42 + (breaching? 22:0);
+      const g= 22 + dnorm*28;
+      const bcol= 32 + dnorm*18;
+      // tube thickness varies with depth (perspective)
+      const w= tubeR * (0.72 + dnorm*0.62);
+      // chromatic aberration on front-facing segments
+      const isFront=dnorm>0.62;
+      if(isFront){
+        ctx.strokeStyle='rgba(255,70,70,0.32)'; ctx.lineWidth=w*0.55;
+        ctx.beginPath(); ctx.moveTo(a.x-0.7,a.y); ctx.lineTo(b.x-0.7,b.y); ctx.stroke();
+        ctx.strokeStyle='rgba(70,160,255,0.32)'; ctx.lineWidth=w*0.55;
+        ctx.beginPath(); ctx.moveTo(a.x+0.7,a.y); ctx.lineTo(b.x+0.7,b.y); ctx.stroke();
+      }
+      ctx.strokeStyle='rgb('+ (r|0)+','+ (g|0)+','+ (bcol|0)+')';
+      ctx.lineWidth=w;
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      // specular highlight on front
+      if(dnorm>0.72){
+        ctx.strokeStyle='rgba(232,220,200,'+(0.22 + dnorm*0.18).toFixed(2)+')';
+        ctx.lineWidth=w*0.32;
+        ctx.beginPath(); ctx.moveTo(a.x,a.y-0.6); ctx.lineTo(b.x,b.y-0.6); ctx.stroke();
+      }
+    }
+    // center pin
+    const pinG=ctx.createRadialGradient(cx-1.2,cy-1.4,0,cx,cy,4.2);
+    pinG.addColorStop(0,'#e8dcc8'); pinG.addColorStop(0.5,'#b8a88a'); pinG.addColorStop(1,'#1a1f24');
+    ctx.fillStyle=pinG; ctx.beginPath(); ctx.arc(cx,cy,3.8,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=0.7; ctx.stroke();
+    // drag handle hint
+    if(!dragging && !breaching){
+      ctx.strokeStyle='rgba(232,220,200,0.14)'; ctx.setLineDash([3,4]); ctx.lineWidth=0.8;
+      ctx.beginPath(); ctx.arc(cx,cy, doorR+9, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+      // small arrow indicating drag
+      ctx.fillStyle='rgba(232,220,200,0.32)';
+      ctx.beginPath(); ctx.moveTo(cx+doorR+13, cy-3); ctx.lineTo(cx+doorR+18, cy); ctx.lineTo(cx+doorR+13, cy+3); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cx-doorR-13, cy-3); ctx.lineTo(cx-doorR-18, cy); ctx.lineTo(cx-doorR-13, cy+3); ctx.fill();
+    }
+    ctx.restore();
+    // readouts
+    if(t%4===0){
+      const aligned=tumblers.filter(tm=>Math.abs(normAngle(dial*tm.speed+tm.offset))<0.28).length;
+      const total=tumblers.length;
+      if(breaching){
+        if(modeEl) modeEl.textContent='BREACH '+Math.round((breachT/140)*100)+'%';
+        if(readout) readout.textContent='iris '+Math.round(irisR)+' · shock '+Math.round(shockR)+' · shards '+shards.filter(s=>s.life<68).length;
+      } else if(aligned===total){
+        if(modeEl) modeEl.textContent='ALIGNED → BREACH';
+        if(readout) readout.textContent=' '+aligned+'/'+total+' tumblers · threshold 16°';
+      } else {
+        if(modeEl) modeEl.textContent= aligned+'/'+total+' aligned · '+(total-aligned)+' to go';
+        // show dial deg
+        const deg=((dial*180/Math.PI)%360).toFixed(0);
+        if(readout) readout.textContent='dial '+deg+'° · drag/tilt knot · chromatic '+ (dragging?'drag':'breathing');
+      }
+    }
+    raf=requestAnimationFrame(loop);
+  }
+  // interaction
+  wrap.addEventListener('pointerdown', e=>{
+    dragging=true; wrap.classList.add('dragging');
+    dragStartX=e.clientX; dragStartDial=targetDial;
+    try{ wrap.setPointerCapture(e.pointerId);}catch(_){}
+    e.preventDefault();
+  });
+  wrap.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const dx=e.clientX - dragStartX;
+    targetDial= dragStartDial + dx*0.0092;
+  });
+  function endDrag(e){
+    if(!dragging) return;
+    dragging=false; wrap.classList.remove('dragging');
+    try{ wrap.releasePointerCapture(e.pointerId);}catch(_){}
+    // fling based on velocity
+    const dx=e.clientX - dragStartX;
+    targetDial+= dx*0.0012;
+  }
+  wrap.addEventListener('pointerup', endDrag);
+  wrap.addEventListener('pointercancel', endDrag);
+  wrap.addEventListener('pointerleave', e=>{ if(dragging) endDrag(e); });
+  wrap.addEventListener('wheel', e=>{
+    if(sec.hidden) return;
+    e.preventDefault();
+    targetDial+= -e.deltaY*0.0018;
+  }, {passive:false});
+  cv.tabIndex=0;
+  cv.addEventListener('keydown', e=>{
+    if(e.key==='ArrowLeft'){ targetDial-=0.28; e.preventDefault(); }
+    else if(e.key==='ArrowRight'){ targetDial+=0.28; e.preventDefault(); }
+    else if(e.key===' '||e.key==='Enter'){ targetDial+= Math.PI*0.42; e.preventDefault(); }
+    else if(e.key==='Escape'){
+      if(sec.classList.contains('is-fullscreen')){ sec.classList.remove('is-fullscreen'); if(fsBtn) fsBtn.textContent='⤢ fullscreen'; resize(); }
+      else setVault(false);
+      e.preventDefault();
+    } else if(e.key==='f'||e.key==='F'){
+      if(!sec.hidden){ sec.classList.toggle('is-fullscreen'); if(fsBtn) fsBtn.textContent=sec.classList.contains('is-fullscreen')?'⤢ exit':'⤢ fullscreen'; resize(); }
+    }
+  });
+  btn.addEventListener('click', ()=> setVault(sec.hidden));
+  closeBtn.addEventListener('click', ()=> setVault(false));
+  if(fsBtn) fsBtn.addEventListener('click', ()=>{
+    if(sec.hidden) return;
+    const on=!sec.classList.contains('is-fullscreen');
+    sec.classList.toggle('is-fullscreen', on);
+    fsBtn.textContent=on?'⤢ exit':'⤢ fullscreen';
+    resize();
+  });
+  document.addEventListener('keydown', e=>{
+    if((e.key==='Escape'||e.key==='Esc')){
+      if(sec.classList.contains('is-fullscreen')){ sec.classList.remove('is-fullscreen'); if(fsBtn) fsBtn.textContent='⤢ fullscreen'; resize(); e.preventDefault(); return; }
+      if(!sec.hidden) setVault(false);
+    }
+  });
+  // quad→penta: close vault when other heroes open
+  if(altarBtn) altarBtn.addEventListener('click', ()=> setTimeout(()=>{ if(altarSec&&!altarSec.hidden&&!sec.hidden) setVault(false); updateMonsoon(); },0));
+  if(ferroBtn) ferroBtn.addEventListener('click', ()=> setTimeout(()=>{ if(ferroSec&&!ferroSec.hidden&&!sec.hidden) setVault(false); updateMonsoon(); },0));
+  if(horizonBtn) horizonBtn.addEventListener('click', ()=> setTimeout(()=>{ if(horizonSec&&!horizonSec.hidden&&!sec.hidden) setVault(false); updateMonsoon(); },0));
+  window.addEventListener('resize', ()=>{ if(!sec.hidden) resize(); });
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) return; if(!sec.hidden&&!running) start(); });
+  // MutationObserver keeps monsoon correct
+  try{
+    const obs=new MutationObserver(()=>updateMonsoon());
+    if(altarSec) obs.observe(altarSec,{attributes:true,attributeFilter:['hidden']});
+    if(ferroSec) obs.observe(ferroSec,{attributes:true,attributeFilter:['hidden']});
+    if(horizonSec) obs.observe(horizonSec,{attributes:true,attributeFilter:['hidden']});
+    obs.observe(sec,{attributes:true,attributeFilter:['hidden','class']});
+  }catch(_){}
+  // patch horizon/altar/ferro programmatic openers to close vault
+  try{
+    if(window.__altar && window.__altar.open){ const _a=window.__altar.open.bind(window.__altar); window.__altar.open=()=>{ setVault(false); updateMonsoon(); return _a(); }; }
+    if(window.__ferro && window.__ferro.open){ const _f=window.__ferro.open.bind(window.__ferro); window.__ferro.open=()=>{ setVault(false); updateMonsoon(); return _f(); }; }
+    if(window.__horizon && window.__horizon.open){ const _h=window.__horizon.open.bind(window.__horizon); window.__horizon.open=()=>{ setVault(false); updateMonsoon(); return _h(); }; }
+  }catch(_){}
+  window.__vault={open:()=>setVault(true), close:()=>setVault(false), _stop:stop, _start:start, get dial(){return dial}, get breaching(){return breaching}};
 })();
 </script>
 <!-- IMPL: Signal Ghost — 10k WebGPU-compute boids faked with JS spatial hash, 60fps, hunt + vortex + cursor + GHOST -->
