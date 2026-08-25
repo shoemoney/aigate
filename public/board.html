@@ -210,6 +210,23 @@
   .flightclone.done{background:linear-gradient(135deg,#22c98a,#2fd6b0);--fg:rgba(34,201,138,.6)}
   .flightclone.error{background:linear-gradient(135deg,#ff5d6c,#ff7a54);--fg:rgba(255,93,108,.6)}
 
+  /* <!-- IMPL: Aperture Iris Reveal --> */
+  .iris-wrap{position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:14px;z-index:6}
+  .iris{position:absolute;left:var(--ix,50%);top:var(--iy,50%);width:0;height:0;transform:translate(-50%,-50%);will-change:transform}
+  .iris-blade{position:absolute;left:-130px;top:-130px;width:260px;height:260px;background:linear-gradient(180deg,var(--panel2),var(--bg2));
+    border:1px solid rgba(255,255,255,.06);clip-path:polygon(50% 50%,100% 36.6%,100% 63.4%);
+    transform-origin:50% 50%;transform:rotate(var(--a)) scale(var(--s,0)) rotate(var(--tw, -18deg));
+    will-change:transform,opacity;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+  .iris-blade.shut{transition:transform 90ms cubic-bezier(.4,0,.7,1)}
+  .iris-blade.open{transition:transform 90ms cubic-bezier(.16,1,.3,1)}
+  .card.irising{overflow:hidden}
+  .card.irising .thread{opacity:0}
+  .card.iris-reveal .thread{animation:irisContent .22s ease .06s both}
+  @keyframes irisContent{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion: reduce){
+    .iris-wrap{display:none!important}
+    .card.iris-reveal .thread{animation:none;opacity:1}
+  }
   /* <!-- IMPL: Board Deck Tilt --> ============ Deck Tilt — parallax glare (board) ============ */
   .card{transform-style:preserve-3d;will-change:transform}
   .card.tilt{transition:transform .6s cubic-bezier(.16,1,.3,1),box-shadow .6s cubic-bezier(.16,1,.3,1)}
@@ -357,8 +374,8 @@
              @dragstart="col.key==='todo'&&dragStart(c,$event)" @dragend="dragEnd($event)"
              @dragover="col.key==='todo'&&dragOver(c,$event)" @drop="col.key==='todo'&&drop(c,$event)"
              @pointermove="onTilt" @pointerleave="offTilt" @pointercancel="offTilt"
-             @click="col.key==='todo'&&($event.shiftKey||$event.ctrlKey||$event.metaKey) ? toggleSelect(c,$event) : expand(c)"
-             @keydown.enter.self.prevent="expand(c)" @keydown.space.self.prevent="expand(c)"
+             @click="col.key==='todo'&&($event.shiftKey||$event.ctrlKey||$event.metaKey) ? toggleSelect(c,$event) : expand(c,$event)"
+             @keydown.enter.self.prevent="expand(c,$event)" @keydown.space.self.prevent="expand(c,$event)"
              @keydown.alt.up.prevent="col.key==='todo'&&moveCard(c,-1)" @keydown.alt.down.prevent="col.key==='todo'&&moveCard(c,1)">
           <div class="glare" aria-hidden="true"></div>
           <span v-if="flashing[c.id]" class="sheen" aria-hidden="true"></span>
@@ -680,7 +697,49 @@ createApp({
       ids.splice(j,0,ids.splice(i,1)[0]); this.settle(c.id); await this.reorder(ids);
     },
     async load(){ try{ this.ingest(await (await api('/api/board')).json()); if(this.announce==='Board load failed')this.announce=''; }catch(e){ this.announce='Board load failed'; } },
-    expand(c){ this.opened = this.opened===c.id ? null : c.id; },
+    expand(c,e){
+      if(this._irisBusy) return;
+      const opening = this.opened!==c.id;
+      const reduce = typeof matchMedia!=='undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if(reduce || !opening || !e || !e.clientX){
+        this.opened = this.opened===c.id ? null : c.id;
+        return;
+      }
+      const card = e.currentTarget && e.currentTarget.closest ? e.currentTarget.closest('.card') : document.querySelector('.card[data-id="'+c.id+'"]');
+      if(!card){ this.opened=c.id; return; }
+      this._irisBusy=true;
+      card.classList.add('irising');
+      const r=card.getBoundingClientRect();
+      const ix = ((e.clientX - r.left)/r.width*100).toFixed(1)+'%';
+      const iy = ((e.clientY - r.top)/r.height*100).toFixed(1)+'%';
+      const wrap=document.createElement('div'); wrap.className='iris-wrap';
+      const iris=document.createElement('div'); iris.className='iris';
+      iris.style.setProperty('--ix',ix); iris.style.setProperty('--iy',iy);
+      for(let i=0;i<12;i++){
+        const b=document.createElement('div'); b.className='iris-blade';
+        b.style.setProperty('--a',(i*30)+'deg');
+        b.style.setProperty('--s','0.18');
+        b.style.setProperty('--tw','-22deg');
+        b.style.transitionDelay=(i*7)+'ms';
+        iris.appendChild(b);
+      }
+      wrap.appendChild(iris); card.appendChild(wrap);
+      // force layout
+      void wrap.offsetWidth;
+      const blades=[...iris.children];
+      blades.forEach(b=>{ b.classList.add('shut'); b.style.setProperty('--s','1'); b.style.setProperty('--tw','0deg'); });
+      // at 90ms: reveal content through opening iris
+      setTimeout(()=>{
+        this.opened=c.id;
+        this.$nextTick(()=>{
+          card.classList.add('iris-reveal');
+          blades.forEach(b=>{ b.classList.remove('shut'); b.classList.add('open'); b.style.setProperty('--s','1.9'); b.style.setProperty('--tw','14deg'); b.style.opacity='0'; });
+        });
+      },90);
+      setTimeout(()=>{
+        wrap.remove(); card.classList.remove('irising','iris-reveal'); this._irisBusy=false;
+      },190);
+    },
     async loadHosts(){ try{ this.hosts=await (await api('/api/board/hosts')).json(); }catch{} },
     async loadWorkers(){
       try{
