@@ -309,10 +309,26 @@ header,main,footer{position:relative}
 .seismo-wrap:hover .seismo-hint{color:rgba(60,45,15,.62)}
 @keyframes seismo-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-2px) rotate(-.18deg)}30%{transform:translateX(3px) rotate(.22deg)}45%{transform:translateX(-3px) rotate(-.15deg)}60%{transform:translateX(2px)}75%{transform:translateX(-1px)}}
 main.shake{animation:seismo-shake .38s ease}
+/* <!-- IMPL: Chladni Altar --> — black steel + bone powder; 160px hero, exclusive with Monsoon */
+#altar-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #1e1e22;border-radius:6px;overflow:hidden;background:#0a0a0c;box-shadow:0 4px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.06)}
+.altar-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#141418 0%,#0f1110 55%,#0a0a0c 100%);border-bottom:1px solid #1e1e22}
+.altar-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:var(--accent)}
+.altar-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.altar-head .altar-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.altar-head .altar-note b{color:#e8dcc8;font-weight:600}
+.altar-canvas-wrap{position:relative;height:160px;background:#0a0a0c;overflow:hidden;cursor:grab;touch-action:none}
+.altar-canvas-wrap.dragging{cursor:grabbing}
+#chladni{display:block;width:100%;height:100%;pointer-events:auto}
+.altar-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0f1110;border-top:1px solid #1e1e22;font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.altar-meta .mode{color:#e8dcc8}
+.altar-meta .hint{opacity:.75}
+.altar-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(232,220,200,.55);background:rgba(10,10,12,.55);border:1px solid rgba(232,220,200,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
   .spark svg polyline{stroke-dashoffset:0}   /* draw-in cut → show the full line, not a blank one */
   #monsoon{display:none}
   #seismo,.seismo-wrap{display:none}
+  #altar-sec{display:none!important}
+  #chladni{display:none!important}
   .card{transform:none!important;box-shadow:none!important}
   .card .glare{display:none}
 }
@@ -346,6 +362,8 @@ main.shake{animation:seismo-shake .38s ease}
     <div class="rollup">{{ rollupText }}<template v-if="polledText"> · polled <span>{{ polledText }}</span></template></div>
     <div class="clock num" aria-hidden="true">{{ clockText }}</div>
     <a class="btn" href="/board.html" title="task board">🗂 board</a>
+    <!-- IMPL: Chladni Altar — exclusive with Monsoon -->
+    <button id="altar-toggle" class="btn" type="button" aria-pressed="false" title="Chladni Altar — black steel, bone powder (drag to sweep)">◈ altar</button>
     <button class="btn" @click="paletteOpen=true" title="command palette (⌘K)">⌘K</button>
     <button class="btn" @click="toggleBell" :aria-pressed="String(notifyOn)"
             :aria-label="notifyOn?'disable browser notifications':'enable browser notifications'"
@@ -392,6 +410,23 @@ main.shake{animation:seismo-shake .38s ease}
   <dashboard-body>
    <!-- MUST stay a <main> element (main{} CSS selector). No id — #app already owns the Vue mount point. -->
    <main v-if="authed">
+
+    <!-- IMPL: Chladni Altar — 00 hero (160px, exclusive with Monsoon) -->
+    <section id="altar-sec" class="altar-sec" hidden aria-label="Chladni Altar">
+      <div class="altar-head">
+        <span class="sec-num">00</span><h2>Chladni Altar</h2>
+        <span class="altar-note">drag plate · <b id="altar-mode">4.2 × 3.8</b> · wheel = density</span>
+        <button id="altar-close" class="btn sm" type="button" aria-label="close Chladni Altar">✕</button>
+      </div>
+      <div class="altar-canvas-wrap" id="altar-wrap">
+        <canvas id="chladni" width="1200" height="160" aria-label="Chladni steel plate — drag to sweep frequency" role="img"></canvas>
+        <span class="altar-spec">◈ nodes = powder · antinodes = steel</span>
+      </div>
+      <div class="altar-meta">
+        <span class="mode">▸ <span id="altar-readout">n 4.2 · m 3.8 · ε 0.12</span></span>
+        <span class="hint">pure SDF interference · sin(nπx)sin(mπy) ± sin(mπx)sin(nπy)</span>
+      </div>
+    </section>
 
     <!-- 01 · action-required inbox — section:first-child{border-top:0} still applies; v-if REMOVES the node when empty -->
     <section v-if="inbox.length">
@@ -1701,6 +1736,268 @@ function startMonsoon(){
   draw();
   // hook visibility
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden && !raf) draw(); });
+})();
+</script>
+<!-- IMPL: Chladni Altar — SDF interference · black steel #0a0a0c · bone powder #e8dcc8 -->
+<script>
+/* <!-- IMPL: Chladni Altar --> — pure canvas 2D SDF, no deps, DPR≤2, stride 2, exclusive with Monsoon */
+(function(){
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('altar-sec');
+  const wrap=document.getElementById('altar-wrap');
+  const cv=document.getElementById('chladni');
+  const btn=document.getElementById('altar-toggle');
+  const closeBtn=document.getElementById('altar-close');
+  const modeEl=document.getElementById('altar-mode');
+  const readout=document.getElementById('altar-readout');
+  const monsoon=document.getElementById('monsoon');
+  if(!sec||!wrap||!cv||!btn) return;
+  const ctx=cv.getContext('2d');
+  if(!ctx) return;
+
+  let dpr=Math.min(window.devicePixelRatio||1,2);
+  let W=0,H=0, raf=0, t=0, running=false;
+  let n=4.2, m=3.7, tN=n, tM=m;
+  let eps=0.12;
+  let spring=0, springV=0;
+  let dragging=false, lastPN=n, lastPM=m;
+  let img=null;
+
+  function isHidden(){ return sec.hidden || sec.style.display==='none' || document.hidden; }
+
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const rect=wrap.getBoundingClientRect();
+    const cssW=Math.max(1,Math.floor(rect.width));
+    const cssH=160;
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+    W=cv.width; H=cv.height;
+    img=ctx.createImageData(W,H);
+  }
+
+  function setAltar(open){
+    sec.hidden=!open;
+    btn.setAttribute('aria-pressed', String(open));
+    btn.textContent=open?'◈ close':'◈ altar';
+    if(monsoon) monsoon.style.display=open?'none':'';
+    if(open){
+      resize();
+      if(!running) start();
+      // nudge spring to shiver on open
+      springV+=0.9;
+      wrap.scrollIntoView({behavior:'smooth', block:'nearest'});
+    } else {
+      stop();
+    }
+  }
+
+  function start(){
+    if(running) return;
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    running=true;
+    cancelAnimationFrame(raf);
+    loop();
+  }
+  function stop(){
+    running=false;
+    cancelAnimationFrame(raf);
+    raf=0;
+  }
+
+  function updateFromPointer(e){
+    const r=wrap.getBoundingClientRect();
+    if(!r.width||!r.height) return;
+    const x=Math.max(0,Math.min(r.width, e.clientX - r.left));
+    const y=Math.max(0,Math.min(r.height, e.clientY - r.top));
+    tN=2 + (x / r.width)*6;
+    tM=2 + (y / r.height)*6;
+    tN=Math.max(2,Math.min(8,tN));
+    tM=Math.max(2,Math.min(8,tM));
+  }
+
+  function loop(){
+    if(!running) return;
+    if(isHidden()){
+      raf=requestAnimationFrame(loop);
+      return;
+    }
+    t++;
+
+    // smooth chase + shiver spring
+    const dn=tN-n, dm=tM-m;
+    const vel=Math.hypot(dn, dm);
+    // spring physics for shiver
+    const k=0.18, d=0.84;
+    springV=(springV + (vel*1.2 - spring)*k)*d;
+    spring+=springV;
+
+    n+=(tN-n)*0.11;
+    m+=(tM-m)*0.11;
+
+    // snap easing when close to integer on release (subtle)
+    if(!dragging){
+      // no snap — keep float for organic morph, but gently tug toward integer when nearly there
+      const snapN=Math.round(n), snapM=Math.round(m);
+      if(Math.abs(n-snapN)<0.06) n+=(snapN-n)*0.02;
+      if(Math.abs(m-snapM)<0.06) m+=(snapM-m)*0.02;
+    }
+
+    // epsilon effective includes shiver
+    const shiver=spring*0.045*Math.sin(t*0.68);
+    const epsEff=Math.max(0.04, Math.min(0.24, eps + shiver));
+    const invW=1/W, invH=1/H;
+    const nPI=n*Math.PI, mPI=m*Math.PI;
+    const data=img.data;
+    // precompute time shimmer factor phase
+    const shimmerPhase=t*0.018;
+
+    // stride 2 sampling: evaluate once per 2x2 block, fill block
+    const stride=2;
+    for(let y=0;y<H;y+=stride){
+      const v=y*invH;
+      const mPIv=mPI*v;
+      const nPIv=nPI*v;
+      const sinMv=Math.sin(mPIv);
+      const sinNv=Math.sin(nPIv);
+      for(let x=0;x<W;x+=stride){
+        const u=x*invW;
+        const a=Math.sin(nPI*u)*sinMv;
+        const b=Math.sin(mPI*u)*sinNv;
+        let F=Math.abs(a + b);
+        // time shimmer: lerp amplitude slightly
+        F*=0.94 + 0.06*Math.sin(shimmerPhase + u*2.3 + v*1.7);
+        const isPowder=F < epsEff;
+
+        // deterministic jitter for powder grain — avoids per-frame random flicker
+        let rr,gg,bb,aa;
+        if(isPowder){
+          // hash from x,y
+          const hsh=Math.sin(x*12.9898 + y*78.233 + t*0.001)*43758.5453;
+          const jitter=(hsh - Math.floor(hsh) - 0.5)*10; // -5..5
+          // powder variants
+          const pick=((x*73856093 ^ y*19349663)>>>0) % 7;
+          if(pick===0){ rr=240; gg=232; bb=216; }
+          else if(pick===1){ rr=212; gg=196; bb=168; }
+          else { rr=232; gg=220; bb=200; }
+          rr=Math.max(0,Math.min(255, rr+jitter));
+          gg=Math.max(0,Math.min(255, gg+jitter));
+          bb=Math.max(0,Math.min(255, bb+jitter));
+          // edge feather when near threshold
+          const near=(epsEff - F)/epsEff; // 0..1
+          aa= near > 0.5 ? 255 : Math.floor(180 + 75*(near*2));
+        } else {
+          // steel — brushed grain: faint horizontal interference
+          const grain=Math.sin(u*260 + v*6 + Math.sin(u*14)*2)*2.2 + Math.sin(v*340)*1.1;
+          const vign=Math.hypot(u-0.5, (v-0.5)*0.9)*0.9;
+          const base=10 - vign*10;
+          rr=Math.max(0,Math.min(255, base + 4 + grain));
+          gg=Math.max(0,Math.min(255, base + 4 + grain*0.9));
+          bb=Math.max(0,Math.min(255, base + 12 + grain*0.7));
+          // subtle specular highlight center-top
+          const spec=Math.exp(-((u-0.52)*(u-0.52)/0.08 + (v-0.32)*(v-0.32)/0.06))*6;
+          rr=Math.min(255, rr+spec);
+          gg=Math.min(255, gg+spec);
+          bb=Math.min(255, bb+spec*1.05);
+          aa=255;
+        }
+        // fill stride×stride block
+        for(let dy=0; dy<stride; dy++){
+          if(y+dy>=H) break;
+          for(let dx=0; dx<stride; dx++){
+            if(x+dx>=W) break;
+            const idx=((y+dy)*W + (x+dx))*4;
+            data[idx]=rr; data[idx+1]=gg; data[idx+2]=bb; data[idx+3]=aa;
+          }
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+
+    // thin vignette + steel sheen overlay (cheap, after putImageData)
+    ctx.save();
+    ctx.globalCompositeOperation='overlay';
+    const g=ctx.createRadialGradient(W*0.52,H*0.34,0,W*0.52,H*0.34,Math.max(W,H)*0.9);
+    g.addColorStop(0,'rgba(255,255,255,0.06)');
+    g.addColorStop(0.55,'rgba(255,255,255,0)');
+    g.addColorStop(1,'rgba(0,0,0,0.55)');
+    ctx.fillStyle=g;
+    ctx.fillRect(0,0,W,H);
+    ctx.restore();
+
+    // readouts throttled every 3 frames
+    if(t%3===0){
+      const rn=n.toFixed(1), rm=m.toFixed(1), re=epsEff.toFixed(2);
+      if(modeEl) modeEl.textContent=rn+' × '+rm;
+      if(readout) readout.textContent='n '+rn+' · m '+rm+' · ε '+re;
+    }
+
+    // decay spring
+    spring*=0.985;
+
+    raf=requestAnimationFrame(loop);
+  }
+
+  // interaction
+  wrap.addEventListener('pointerdown', e=>{
+    dragging=true;
+    wrap.classList.add('dragging');
+    wrap.setPointerCapture(e.pointerId);
+    updateFromPointer(e);
+    e.preventDefault();
+  });
+  wrap.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    updateFromPointer(e);
+  });
+  const endDrag=e=>{
+    if(!dragging) return;
+    dragging=false;
+    wrap.classList.remove('dragging');
+    try{ wrap.releasePointerCapture(e.pointerId); }catch(_){ }
+  };
+  wrap.addEventListener('pointerup', endDrag);
+  wrap.addEventListener('pointercancel', endDrag);
+  wrap.addEventListener('pointerleave', e=>{ if(dragging) endDrag(e); });
+
+  wrap.addEventListener('wheel', e=>{
+    if(sec.hidden) return;
+    e.preventDefault();
+    eps=Math.max(0.04, Math.min(0.24, eps - e.deltaY*0.00018));
+    springV+=Math.abs(e.deltaY)*0.0006;
+  }, {passive:false});
+
+  // keyboard: drag with arrows when focused, wheel already handles density
+  cv.tabIndex=0;
+  cv.addEventListener('keydown', e=>{
+    if(e.key==='ArrowLeft'){ tN=Math.max(2,tN-0.18); e.preventDefault(); }
+    else if(e.key==='ArrowRight'){ tN=Math.min(8,tN+0.18); e.preventDefault(); }
+    else if(e.key==='ArrowUp'){ tM=Math.max(2,tM-0.18); e.preventDefault(); }
+    else if(e.key==='ArrowDown'){ tM=Math.min(8,tM+0.18); e.preventDefault(); }
+    else if(e.key==='Escape'){ setAltar(false); e.preventDefault(); }
+  });
+
+  btn.addEventListener('click', ()=> setAltar(sec.hidden));
+  closeBtn.addEventListener('click', ()=> setAltar(false));
+
+  document.addEventListener('keydown', e=>{
+    if((e.key==='Escape' || e.key==='Esc') && !sec.hidden){ setAltar(false); }
+  });
+
+  window.addEventListener('resize', ()=>{
+    if(!sec.hidden) resize();
+  });
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden) return;
+    if(!sec.hidden && !running) start();
+  });
+
+  // expose for debugging / toggle probing
+  window.__altar={open:()=>setAltar(true), close:()=>setAltar(false), get n(){return n}, get m(){return m}};
+
+  // auto-pause at boot (hidden), no loop until opened
 })();
 </script>
 </body>
