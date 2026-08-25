@@ -593,6 +593,21 @@
     </div>
   </div>
 
+  <!-- IMPL: Ectoplasm Audit Bath -->
+  <div id="ectoplasm-wrap" aria-hidden="true">
+    <canvas id="ectoplasm-fishtank"></canvas>
+    <div id="ectoplasm-hud">
+      <div class="ecto-title">◉ ectoplasm bath <span class="ecto-sub">audit → dye · cursor stirs · vorticity sings</span><span id="ecto-gpu" class="ecto-gpu"></span></div>
+      <div class="ecto-controls">
+        <button id="ecto-pause" class="ecto-btn" type="button" title="pause / resume fluid">⏸</button>
+        <button id="ecto-clear" class="ecto-btn" type="button" title="bleach tank">⌫</button>
+        <button id="ecto-sonify" class="ecto-btn on" type="button" title="theremin on/off">♪</button>
+        <button id="ecto-spawn" class="ecto-btn" type="button" title="spawn demo blob">＋</button>
+        <span id="ecto-stats" class="ecto-stats">—</span>
+      </div>
+    </div>
+    <div id="ectoplasm-legend" aria-hidden="true"></div>
+  </div>
   <!-- live worker activity panel -->
   <div class="workerbar">
     <div class="wrail">
@@ -674,6 +689,584 @@
 
   <div class="sr" aria-live="polite">{{announce}}</div>
 </div>
+<style id="ectoplasm-style">
+  #ectoplasm-wrap{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:1;overflow:hidden;background:
+      radial-gradient(900px 600px at 50% 88%,rgba(107,124,255,.10),transparent 65%),
+      radial-gradient(700px 420px at 78% 22%,rgba(162,107,255,.09),transparent 62%),
+      radial-gradient(600px 380px at 18% 18%,rgba(53,214,229,.07),transparent 62%)}
+  #ectoplasm-fishtank{position:absolute;inset:0;width:100%;height:100%;display:block;filter:contrast(1.08) saturate(1.18)}
+  #ectoplasm-hud{position:absolute;left:14px;right:14px;top:68px;display:flex;align-items:center;justify-content:space-between;gap:10px;pointer-events:auto;
+    background:linear-gradient(180deg,rgba(19,27,40,.88),rgba(10,14,20,.78));border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:8px 10px 8px 12px;
+    box-shadow:0 8px 28px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px) saturate(1.2);max-width:780px;margin:0 auto}
+  #ectoplasm-hud .ecto-title{font:800 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  #ectoplasm-hud .ecto-sub{font:600 10px/1 ui-sans-serif;letter-spacing:.04em;text-transform:none;color:var(--dim);opacity:.9}
+  #ectoplasm-hud .ecto-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .ecto-btn{width:28px;height:28px;border-radius:9px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:var(--ink);font:700 13px/1 var(--mono);cursor:pointer;display:grid;place-items:center;transition:.15s transform,.15s background,.15s border-color}
+  .ecto-btn:hover{transform:translateY(-1px);background:rgba(107,124,255,.18);border-color:rgba(107,124,255,.35)}
+  .ecto-btn:active{transform:scale(.96)}
+  .ecto-btn.on{background:linear-gradient(135deg,rgba(107,124,255,.95),rgba(162,107,255,.9));border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(107,124,255,.4)}
+  .ecto-stats{font:10px/1 var(--mono);color:var(--faint);letter-spacing:.06em;min-width:96px;text-align:right}
+  .ecto-gpu{font:700 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--cyan);border:1px solid rgba(53,214,229,.28);background:rgba(53,214,229,.10);border-radius:20px;padding:3px 7px;margin-left:2px}
+  .ecto-gpu.webgpu{color:#88f0c4;border-color:rgba(34,201,138,.35);background:rgba(34,201,138,.12)}
+  #ectoplasm-legend{position:absolute;left:14px;bottom:74px;pointer-events:auto;display:flex;gap:6px;flex-wrap:wrap;max-width:min(92vw,760px)}
+  .ecto-legend-item{font:10px/1 var(--mono);letter-spacing:.06em;color:var(--dim);background:rgba(10,14,20,.68);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:5px 8px;display:inline-flex;align-items:center;gap:6px;backdrop-filter:blur(8px)}
+  .ecto-legend-item i{width:9px;height:9px;border-radius:50%;display:inline-block;box-shadow:0 0 8px currentColor}
+  /* lift board above bath so cards stay readable while bath glows through gaps */
+  .board{position:relative;z-index:1}
+  header{position:sticky;z-index:6}
+  .workerbar{position:sticky;z-index:5}
+  @media(max-width:640px){#ectoplasm-hud{top:62px;flex-direction:column;align-items:stretch} #ectoplasm-hud .ecto-controls{justify-content:space-between} #ectoplasm-legend{bottom:118px}}
+  @media (prefers-reduced-motion: reduce){#ectoplasm-wrap{display:none!important}}
+  </style>
+  <script id="ectoplasm-script">
+  ;(()=>{ // Ectoplasm Audit Bath — Navier-Stokes fishtank (Stable Fluids + PIC/FLIP + SPH-ish particles + Web Audio)
+  const wrap=document.getElementById('ectoplasm-wrap');
+  const canvas=document.getElementById('ectoplasm-fishtank');
+  if(!canvas||!wrap) return;
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){ wrap.style.display='none'; return; }
+  const hudPause=document.getElementById('ecto-pause');
+  const hudClear=document.getElementById('ecto-clear');
+  const hudSonify=document.getElementById('ecto-sonify');
+  const hudSpawn=document.getElementById('ecto-spawn');
+  const hudStats=document.getElementById('ecto-stats');
+  const hudGpu=document.getElementById('ecto-gpu');
+  const legendEl=document.getElementById('ectoplasm-legend');
+
+  const hasWebGPU=!!navigator.gpu;
+  if(hudGpu) { hudGpu.textContent = hasWebGPU ? '⚡ webgpu' : '▦ canvas2d'; hudGpu.classList.toggle('webgpu', hasWebGPU); hudGpu.title = hasWebGPU ? 'WebGPU present — compute path available (fishtank uses Canvas2D fallback for widest compat)' : 'Canvas2D fallback — all dyes still swirl'; }
+
+  let W=0,H=0,dpr=Math.min(2, window.devicePixelRatio||1);
+  const ctx=canvas.getContext('2d', {alpha:true});
+  if(!ctx){ wrap.style.display='none'; return; }
+
+  // --- fluid grid (Stable Fluids, Jos Stam) ---
+  let GW=0, GH=0, GS=0; // grid dims + cell size
+  let u,v,u0,v0, densR,densG,densB, densR0,densG0,densB0, p, div;
+  function allocGrid(){
+    const scale = Math.max(5, Math.min(9, Math.round(Math.min(W,H)/78)));
+    GS=scale;
+    GW=Math.max(48, Math.ceil(W/scale));
+    GH=Math.max(32, Math.ceil(H/scale));
+    const N=GW*GH;
+    u=new Float32Array(N); v=new Float32Array(N); u0=new Float32Array(N); v0=new Float32Array(N);
+    densR=new Float32Array(N); densG=new Float32Array(N); densB=new Float32Array(N);
+    densR0=new Float32Array(N); densG0=new Float32Array(N); densB0=new Float32Array(N);
+    p=new Float32Array(N); div=new Float32Array(N);
+  }
+  function idx(x,y){ return y*GW+x; }
+  function clamp(v, lo, hi){ return v<lo?lo:v>hi?hi:v; }
+
+  // hash host → hue (stable)
+  function hostHue(host){
+    let h=0; for(let i=0;i<host.length;i++) h=(h*31 + host.charCodeAt(i))>>>0;
+    return h % 360;
+  }
+  function hslToRgb(h,s,l){
+    h/=360; let r,g,b;
+    if(s===0){ r=g=b=l; } else {
+      const q=l<0.5? l*(1+s): l+s - l*s; const p2=2*l - q;
+      const hue2rgb=(p,q2,t)=>{ if(t<0) t+=1; if(t>1) t-=1; if(t<1/6) return p + (q2-p)*6*t; if(t<1/2) return q2; if(t<2/3) return p + (q2-p)*(2/3 - t)*6; return p; };
+      r=hue2rgb(p2,q,h+1/3); g=hue2rgb(p2,q,h); b=hue2rgb(p2,q,h-1/3);
+    }
+    return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+  }
+  function hostColor(host, alphaMul){
+    const hue=hostHue(host||'unknown');
+    const sat = 86, lig = 62;
+    const rgb=hslToRgb(hue,sat/100,lig/100);
+    return rgb;
+  }
+
+  // particle system — SPH-ish blobs with PIC advection + color mixing / ghost-apart
+  const particles=[];
+  const MAXP=560;
+  let paused=false, sonifyOn=true;
+  let vorticityAvg=0;
+  let lastT=performance.now();
+  let frameId=0;
+
+  function addParticleGroup(host, ok, colorRgb, count, opts){
+    opts=opts||{};
+    const cx = opts.x!=null ? opts.x : (Math.random()*0.55+0.22)*W;
+    const cy = opts.y!=null ? opts.y : (Math.random()*0.55+0.18)*H;
+    const viscos = ok===false ? 0.92 : ok===true ? 0.22 : 0.45; // failure = thick
+    const radius = ok===false ? 5.2 : 3.6;
+    const speed = ok===false ? 0.38 : 1.15;
+    const n = clamp(count|| (ok===false? 18: 12), 6, 22);
+    const hueShift = (Math.random()-0.5)*10;
+    for(let i=0;i<n;i++){
+      if(particles.length>=MAXP) particles.shift();
+      const ang=Math.random()*Math.PI*2, rad=Math.pow(Math.random(),0.7)* (ok===false? 18: 26);
+      const pr = colorRgb[0] + (Math.random()-0.5)*18, pg=colorRgb[1]+(Math.random()-0.5)*18, pb=colorRgb[2]+(Math.random()-0.5)*18;
+      particles.push({
+        x: cx + Math.cos(ang)*rad, y: cy + Math.sin(ang)*rad,
+        vx: Math.cos(ang+Math.PI/2)*speed* (0.6+Math.random()*0.8) + (Math.random()-0.5)*0.7,
+        vy: Math.sin(ang+Math.PI/2)*speed* (0.6+Math.random()*0.8) + (Math.random()-0.5)*0.7,
+        r: clamp(pr,0,255), g:clamp(pg,0,255), b:clamp(pb,0,255),
+        host:host||'unknown', ok: ok, viscos:viscos, radius: radius*(0.82+Math.random()*0.42),
+        life: 1, age: Math.random()*0.15, swirl: (Math.random()-0.5)*0.9,
+        ghost: 0 // when colors mix, ghost pushes them apart
+      });
+    }
+    // also splat dye into fluid grid for Navier-Stokes swirl advection
+    const gx=Math.floor(cx/GS), gy=Math.floor(cy/GS);
+    splatDye(gx,gy,colorRgb, ok===false? 1.55: 1.0);
+    // nudge legend
+    refreshLegend(host, ok, colorRgb);
+  }
+  function splatDye(gx,gy,rgb,strength){
+    const rad= hasWebGPU? 3: 4;
+    for(let dy=-rad;dy<=rad;dy++) for(let dx=-rad;dx<=rad;dx++){
+      const x=gx+dx, y=gy+dy; if(x<0||x>=GW||y<0||y>=GH) continue;
+      const d2=dx*dx+dy*dy; if(d2>rad*rad+1) continue;
+      const k=Math.exp(-d2/(rad*0.9))* 22 * (strength||1);
+      const j=idx(x,y);
+      densR[j]+= (rgb[0]/255)*k; densG[j]+= (rgb[1]/255)*k; densB[j]+= (rgb[2]/255)*k;
+    }
+  }
+  function splatVelocity(gx,gy, du,dv, rad){
+    rad=rad||3;
+    for(let dy=-rad;dy<=rad;dy++) for(let dx=-rad;dx<=rad;dx++){
+      const x=gx+dx,y=gy+dy; if(x<0||x>=GW||y<0||y>=GH) continue;
+      const d2=dx*dx+dy*dy; if(d2>rad*rad) continue;
+      const k=Math.exp(-d2/2)*0.85;
+      const j=idx(x,y); u[j]+=du*k; v[j]+=dv*k;
+    }
+  }
+
+  // Stable Fluids helpers
+  function diffuse(x, x0, diff, dt){
+    const a = dt*diff*GW*GH;
+    for(let k=0;k<4;k++){
+      for(let y=1;y<GH-1;y++) for(let x1=1;x1<GW-1;x1++){
+        const j=idx(x1,y);
+        x[j]=(x0[j] + a*(x[idx(x1+1,y)]+x[idx(x1-1,y)]+x[idx(x1,y+1)]+x[idx(x1,y-1)]))/(1+4*a);
+      }
+      setBnd(0,x); setBnd(1,x0);
+    }
+  }
+  function advect(d, d0, du, dv, dt){
+    const dt0 = dt * Math.min(GW,GH);
+    for(let y=1;y<GH-1;y++) for(let x1=1;x1<GW-1;x1++){
+      const j=idx(x1,y);
+      let px = x1 - dt0*du[j]/GW;
+      let py = y   - dt0*dv[j]/GH;
+      px=clamp(px, 0.5, GW-1.5); py=clamp(py, 0.5, GH-1.5);
+      const x0f=Math.floor(px), y0f=Math.floor(py);
+      const s=px-x0f, t=py-y0f;
+      const j00=idx(x0f,y0f), j10=idx(x0f+1,y0f), j01=idx(x0f,y0f+1), j11=idx(x0f+1,y0f+1);
+      d[j]= (1-s)*((1-t)*d0[j00]+ t*d0[j01]) + s*((1-t)*d0[j10]+ t*d0[j11]);
+    }
+    setBnd(0,d);
+  }
+  function project(uu, vv, pp, divv){
+    for(let y=1;y<GH-1;y++) for(let x1=1;x1<GW-1;x1++){
+      const j=idx(x1,y);
+      divv[j]= -0.5*(uu[idx(x1+1,y)]-uu[idx(x1-1,y)] + vv[idx(x1,y+1)]-vv[idx(x1,y-1)])/Math.max(GW,GH)*0.5;
+      pp[j]=0;
+    }
+    setBnd(0,divv); setBnd(0,pp);
+    for(let k=0;k<4;k++){
+      for(let y=1;y<GH-1;y++) for(let x1=1;x1<GW-1;x1++){
+        const j=idx(x1,y);
+        pp[j]=(divv[j] + pp[idx(x1+1,y)]+pp[idx(x1-1,y)]+pp[idx(x1,y+1)]+pp[idx(x1,y-1)])/4;
+      }
+      setBnd(0,pp);
+    }
+    for(let y=1;y<GH-1;y++) for(let x1=1;x1<GW-1;x1++){
+      const j=idx(x1,y);
+      uu[j]-=0.5*(pp[idx(x1+1,y)]-pp[idx(x1-1,y)])* GW*0.5;
+      vv[j]-=0.5*(pp[idx(x1,y+1)]-pp[idx(x1,y-1)])* GH*0.5;
+    }
+    setBnd(1,uu); setBnd(2,vv);
+  }
+  function setBnd(b, x){
+    for(let y=1;y<GH-1;y++){ x[idx(0,y)] = b===1 ? -x[idx(1,y)] : x[idx(1,y)]; x[idx(GW-1,y)] = b===1 ? -x[idx(GW-2,y)] : x[idx(GW-2,y)]; }
+    for(let x1=1;x1<GW-1;x1++){ x[idx(x1,0)] = b===2 ? -x[idx(x1,1)] : x[idx(x1,1)]; x[idx(x1,GH-1)] = b===2 ? -x[idx(x1,GH-2)] : x[idx(x1,GH-2)]; }
+    x[idx(0,0)]=0.5*(x[idx(1,0)]+x[idx(0,1)]); x[idx(0,GH-1)]=0.5*(x[idx(1,GH-1)]+x[idx(0,GH-2)]);
+    x[idx(GW-1,0)]=0.5*(x[idx(GW-2,0)]+x[idx(GW-1,1)]); x[idx(GW-1,GH-1)]=0.5*(x[idx(GW-2,GH-1)]+x[idx(GW-1,GH-2)]);
+  }
+
+  function stepFluid(dt){
+    // velocity diffusion by viscosity proxy + projection
+    // use light diffusion to keep swirls alive
+    for(let i=0;i<u.length;i++){ u0[i]=u[i]; v0[i]=v[i]; }
+    diffuse(u, u0, 0.0009, dt); diffuse(v, v0, 0.0009, dt);
+    project(u, v, p, div);
+    // advect velocity by itself
+    for(let i=0;i<u.length;i++){ u0[i]=u[i]; v0[i]=v[i]; }
+    advect(u, u0, u0, v0, dt); advect(v, v0, u0, v0, dt);
+    project(u, v, p, div);
+    // advect dye
+    for(let i=0;i<densR.length;i++){ densR0[i]=densR[i]; densG0[i]=densG[i]; densB0[i]=densB[i]; }
+    advect(densR, densR0, u, v, dt*0.92); advect(densG, densG0, u, v, dt*0.92); advect(densB, densB0, u, v, dt*0.92);
+    // gentle decay so colors ghost apart instead of muddling forever
+    for(let i=0;i<densR.length;i++){ densR[i]*=0.9945; densG[i]*=0.9945; densB[i]*=0.9945; }
+    // vorticity measure for theremin
+    let vort=0, cnt=0;
+    for(let y=1;y<GH-1;y++) for(let x1=1;x1<GW-1;x1++){
+      const j=idx(x1,y);
+      const curl = (v[idx(x1+1,y)]-v[idx(x1-1,y)]) - (u[idx(x1,y+1)]-u[idx(x1,y-1)]);
+      vort+=Math.abs(curl); cnt++;
+    }
+    vorticityAvg = vorticityAvg*0.92 + (cnt? (vort/cnt):0)*0.08;
+  }
+
+  // PIC/FLIP-ish particle advection: sample fluid velocity + SPH repulsion + color mixing ghost
+  function sampleVel(px, py){
+    let gx = px/GS, gy = py/GS;
+    gx=clamp(gx, 1, GW-2); gy=clamp(gy, 1, GH-2);
+    const x0=Math.floor(gx), y0=Math.floor(gy); const sx=gx-x0, sy=gy-y0;
+    const j00=idx(x0,y0), j10=idx(x0+1,y0), j01=idx(x0,y0+1), j11=idx(x0+1,y0+1);
+    const ux = (1-sx)*((1-sy)*u[j00]+sy*u[j01]) + sx*((1-sy)*u[j10]+sy*u[j11]);
+    const vy = (1-sx)*((1-sy)*v[j00]+sy*v[j01]) + sx*((1-sy)*v[j10]+sy*v[j11]);
+    return [ux* (W/GW)* 18, vy* (H/GH)* 18];
+  }
+  function stepParticles(dt){
+    // SPH-ish pairwise: O(n^2) with spatial hash-ish bucket (cheap for ~400)
+    const bucket = new Map();
+    const B= 28;
+    for(let i=0;i<particles.length;i++){ const p2=particles[i]; const k=((p2.x/B|0)*73856093 ^ (p2.y/B|0)*19349663)>>>0; const list=bucket.get(k)||[]; list.push(i); bucket.set(k,list); }
+    let collisions=0;
+    for(let i=0;i<particles.length;i++){
+      const a=particles[i];
+      // sample fluid
+      const sv=sampleVel(a.x, a.y);
+      // PIC: blend particle vel toward fluid + keep inertia (FLIP fraction)
+      const flip= a.ok===false ? 0.18 : 0.52; // thick blobs keep their own momentum
+      a.vx = a.vx*(1-flip) + sv[0]*flip + a.swirl*0.6;
+      a.vy = a.vy*(1-flip) + sv[1]*flip;
+      // age/ghost decay
+      a.age += dt*0.14; a.life = Math.max(0, 1 - a.age*0.11);
+      if(a.ghost>0) a.ghost = Math.max(0, a.ghost - dt*1.8);
+    }
+    // repulsion + color mixing
+    for(let i=0;i<particles.length;i++){
+      const a=particles[i];
+      const bx=(a.x/B|0), by=(a.y/B|0);
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+        const k=((bx+dx)*73856093 ^ (by+dy)*19349663)>>>0;
+        const list=bucket.get(k); if(!list) continue;
+        for(const j of list){
+          if(j<=i) continue;
+          const b=particles[j];
+          const dxp=a.x-b.x, dyp=a.y-b.y; const d2=dxp*dxp+dyp*dyp; const md=(a.radius+b.radius);
+          if(d2< md*md && d2>0.01){
+            const d=Math.sqrt(d2)||1; const nx=dxp/d, ny=dyp/d;
+            const overlap=(md - d)/md;
+            // push apart (SPH pressure proxy)
+            const push= overlap* 1.9 * (a.ok===false||b.ok===false? 0.55: 1.1);
+            a.vx += nx*push* 38*dt*60; a.vy += ny*push* 38*dt*60;
+            b.vx -= nx*push* 38*dt*60; b.vy -= ny*push* 38*dt*60;
+            // color mix then ghost apart: blend toward each other then trigger ghost timer
+            const mix = overlap*0.09;
+            const ar=a.r, ag=a.g, ab=a.b;
+            a.r += (b.r - a.r)*mix; a.g += (b.g - a.g)*mix; a.b += (b.b - a.b)*mix;
+            b.r += (ar - b.r)*mix; b.g += (ag - b.g)*mix; b.b += (ab - b.b)*mix;
+            if(overlap>0.45){ a.ghost=1; b.ghost=1; }
+            if(overlap>0.62) collisions++;
+          }
+        }
+      }
+    }
+    if(collisions>0 && sonifyOn) schedulePings(collisions);
+
+    for(const p of particles){
+      // ghost apart extra impulse outward from center of mass of mixed region
+      if(p.ghost>0){ p.vx += (Math.random()-0.5)* p.ghost* 32*dt*60; p.vy += (Math.random()-0.5)* p.ghost* 32*dt*60; }
+      p.x += p.vx * dt*60 * 0.92;
+      p.y += p.vy * dt*60 * 0.92;
+      // damping by viscosity
+      const damp = p.ok===false ? 0.94 : 0.985;
+      p.vx *= damp; p.vy *= damp;
+      // soft walls with swirl
+      if(p.x<6){ p.x=6; p.vx=Math.abs(p.vx)*0.6; }
+      if(p.x>W-6){ p.x=W-6; p.vx=-Math.abs(p.vx)*0.6; }
+      if(p.y<6){ p.y=6; p.vy=Math.abs(p.vy)*0.6; }
+      if(p.y>H-6){ p.y=H-6; p.vy=-Math.abs(p.vy)*0.6; }
+      // add slight orbital swirl around center for lava-lamp feel
+      const cx=W*0.5, cy=H*0.5; const dx=p.x-cx, dy=p.y-cy; const r=Math.sqrt(dx*dx+dy*dy)||1;
+      p.vx += (-dy/r)* p.swirl * dt* 18; p.vy += (dx/r)* p.swirl * dt*18;
+    }
+  }
+
+  // --- Web Audio: vorticity → theremin drone, collisions → glass pings ---
+  let audioCtx=null, droneOsc=null, droneGain=null, droneFilter=null, droneLfo=null, lfoGain=null;
+  function ensureAudio(){
+    if(audioCtx) return audioCtx;
+    try{
+      audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+      droneOsc=audioCtx.createOscillator(); droneOsc.type='sawtooth'; droneOsc.frequency.value=86;
+      droneFilter=audioCtx.createBiquadFilter(); droneFilter.type='lowpass'; droneFilter.frequency.value=720; droneFilter.Q.value=1.2;
+      droneGain=audioCtx.createGain(); droneGain.gain.value=0.0;
+      droneLfo=audioCtx.createOscillator(); droneLfo.type='sine'; droneLfo.frequency.value=0.31;
+      lfoGain=audioCtx.createGain(); lfoGain.gain.value=7;
+      droneLfo.connect(lfoGain); lfoGain.connect(droneOsc.frequency);
+      droneOsc.connect(droneFilter); droneFilter.connect(droneGain); droneGain.connect(audioCtx.destination);
+      droneOsc.start(); droneLfo.start();
+    }catch(e){ audioCtx=null; }
+    return audioCtx;
+  }
+  function updateDrone(){
+    if(!sonifyOn || paused || !audioCtx || !droneOsc) return;
+    if(audioCtx.state==='suspended') audioCtx.resume().catch(()=>{});
+    const vortClamped = clamp(vorticityAvg* 260, 0, 1);
+    const base = 72 + vortClamped* 180 + Math.sin(performance.now()*0.0007)* 6;
+    const now=audioCtx.currentTime;
+    droneOsc.frequency.linearRampToValueAtTime(base, now+0.22);
+    droneFilter.frequency.linearRampToValueAtTime(420 + vortClamped*1600, now+0.18);
+    const targetGain = 0.018 + vortClamped*0.038;
+    droneGain.gain.linearRampToValueAtTime(targetGain, now+0.18);
+  }
+  let pingBudget=0;
+  function schedulePings(n){
+    if(!sonifyOn) return;
+    ensureAudio(); if(!audioCtx) return;
+    if(audioCtx.state==='suspended') audioCtx.resume().catch(()=>{});
+    pingBudget=Math.min(4, pingBudget + Math.min(n,3));
+    if(pingBudget<=0) return;
+    // debounce to avoid spam
+    if(schedulePings._t) return;
+    schedulePings._t=setTimeout(()=>{
+      schedulePings._t=null;
+      const count=Math.min(pingBudget, 2); pingBudget=Math.max(0, pingBudget-count);
+      for(let i=0;i<count;i++) setTimeout(()=> doPing(880 + Math.random()*900, 0.11+Math.random()*0.08), i*70);
+    }, 90);
+  }
+  function doPing(freq, dur){
+    if(!audioCtx) return;
+    const o=audioCtx.createOscillator(), g=audioCtx.createGain(), f=audioCtx.createBiquadFilter();
+    o.type='sine'; o.frequency.value=freq; o.frequency.exponentialRampToValueAtTime(freq*0.62, audioCtx.currentTime+dur);
+    f.type='bandpass'; f.frequency.value= freq; f.Q.value=0.9;
+    g.gain.value=0.0; g.gain.linearRampToValueAtTime(0.09, audioCtx.currentTime+0.008); g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime+dur);
+    o.connect(f); f.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime+dur+0.04);
+  }
+
+  // --- rendering: dye field + glowing dye blobs ---
+  function render(){
+    ctx.clearRect(0,0,W,H);
+    // vignette: dye field as soft smoked glass
+    if(densR){
+      const imgW=GW, imgH=GH;
+      const tmp=document.createElement('canvas'); tmp.width=imgW; tmp.height=imgH;
+      const tctx=tmp.getContext('2d'); const id=tctx.createImageData(imgW, imgH);
+      for(let y=0;y<GH;y++) for(let x=0;x<GW;x++){
+        const j=idx(x,y); const o=(y*imgW+x)*4;
+        // boost and gamma for glow
+        let r=Math.pow(clamp(densR[j]*0.085,0,1), 0.82);
+        let g=Math.pow(clamp(densG[j]*0.085,0,1), 0.82);
+        let b=Math.pow(clamp(densB[j]*0.085,0,1), 0.82);
+        const m=Math.max(r,g,b);
+        // desaturate a bit at low density for smoky ghost
+        id.data[o]= (r*255)|0; id.data[o+1]=(g*255)|0; id.data[o+2]=(b*255)|0; id.data[o+3]= (m* 88 + Math.pow(m,1.6)*170) |0;
+      }
+      tctx.putImageData(id,0,0);
+      ctx.imageSmoothingEnabled=true;
+      // draw dye with additive-ish blending
+      ctx.globalAlpha=1; ctx.globalCompositeOperation='lighter';
+      ctx.drawImage(tmp, 0,0, W, H);
+      ctx.globalCompositeOperation='source-over';
+      // second pass: soft bloom edge
+      ctx.globalAlpha=0.22; ctx.filter='blur(10px)'; ctx.drawImage(tmp, 0,0, W, H); ctx.filter='none'; ctx.globalAlpha=1;
+    }
+    // particles — glowing blobs with inner hot core + outer ectoplasm halo
+    ctx.globalCompositeOperation='lighter';
+    for(const p of particles){
+      const a = p.life * (0.72 + p.ghost*0.28);
+      if(a<=0.01) continue;
+      const rr=p.radius;
+      // outer halo
+      const grd=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y, rr*3.4);
+      grd.addColorStop(0, `rgba(${p.r|0},${p.g|0},${p.b|0},${(a*0.42).toFixed(3)})`);
+      grd.addColorStop(0.38, `rgba(${p.r|0},${p.g|0},${p.b|0},${(a*0.16).toFixed(3)})`);
+      grd.addColorStop(1, `rgba(${p.r|0},${p.g|0},${p.b|0},0)`);
+      ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(p.x,p.y, rr*3.4, 0, Math.PI*2); ctx.fill();
+      // inner core
+      const grd2=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y, rr*1.2);
+      grd2.addColorStop(0, `rgba(255,255,255,${(a*0.55).toFixed(3)})`);
+      grd2.addColorStop(0.35, `rgba(${p.r|0},${p.g|0},${p.b|0},${(a*0.9).toFixed(3)})`);
+      grd2.addColorStop(1, `rgba(${p.r|0},${p.g|0},${p.b|0},0)`);
+      ctx.fillStyle=grd2; ctx.beginPath(); ctx.arc(p.x,p.y, rr*1.35, 0, Math.PI*2); ctx.fill();
+      // viscosity ring: failures get a thick outline
+      if(p.ok===false){
+        ctx.strokeStyle=`rgba(255,220,180,${(a*0.18).toFixed(3)})`;
+        ctx.lineWidth=1.2; ctx.beginPath(); ctx.arc(p.x,p.y, rr*1.9, 0, Math.PI*2); ctx.stroke();
+      }
+    }
+    ctx.globalCompositeOperation='source-over';
+    // subtle tank glass shading at edges
+    const vg=ctx.createRadialGradient(W*0.5,H*0.5, Math.min(W,H)*0.3, W*0.5,H*0.5, Math.max(W,H)*0.85);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,.26)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+    // scanline glass
+    ctx.fillStyle='rgba(255,255,255,.015)'; for(let y=0;y<H;y+=4) ctx.fillRect(0,y,W,1);
+  }
+
+  // --- cursor stir ---
+  const pointer={x:W*0.5,y:H*0.5, px:W*0.5, py:H*0.5, down:false, active:false};
+  window.addEventListener('pointermove', e=>{
+    const rect=canvas.getBoundingClientRect();
+    const nx = e.clientX - rect.left, ny = e.clientY - rect.top;
+    if(nx< -40|| nx> W+40 || ny< -40|| ny> H+40) { pointer.active=false; return; }
+    pointer.px=pointer.x; pointer.py=pointer.y;
+    pointer.x = clamp(nx,0,W); pointer.y=clamp(ny,0,H);
+    pointer.active=true;
+    const dx=pointer.x-pointer.px, dy=pointer.y-pointer.py;
+    const sp=Math.sqrt(dx*dx+dy*dy);
+    if(sp>0.2 && GW){
+      const gx=Math.floor(pointer.x/GS), gy=Math.floor(pointer.y/GS);
+      const force = pointer.down? 1.35: 0.85;
+      splatVelocity(gx,gy, dx*0.62*force, dy*0.62*force, pointer.down?5:3);
+      // also directly nudge nearby particles for immediate poke feel
+      for(const p of particles){
+        const ddx=p.x-pointer.x, ddy=p.y-pointer.y; const d2=ddx*ddx+ddy*ddy;
+        const rad= pointer.down? 92: 68; if(d2<rad*rad){
+          const d=Math.sqrt(d2)||1; const k=(1 - d/rad)*0.9;
+          p.vx += dx*k*0.42; p.vy += dy*k*0.42;
+        }
+      }
+      if(sonifyOn && sp>1.2){ ensureAudio(); if(audioCtx && audioCtx.state==='suspended') audioCtx.resume().catch(()=>{}); }
+      if(pointer.down && Math.random()<0.04) { const c=hostColor('cursor-'+((pointer.x|0)%5),1); addParticleGroup('cursor', true, c, 2, {x:pointer.x, y:pointer.y}); }
+    }
+  }, {passive:true});
+  window.addEventListener('pointerdown', e=>{ pointer.down=true; if(sonifyOn) ensureAudio(); const rect=canvas.getBoundingClientRect(); const x=e.clientX-rect.left, y=e.clientY-rect.top; if(x>=0&&x<W&&y>=0&&y<H) doPing(1200+Math.random()*500, 0.09); });
+  window.addEventListener('pointerup', ()=> pointer.down=false);
+  canvas.addEventListener('pointerdown', e=>{ if(sonifyOn) ensureAudio(); });
+
+  // --- audit → blobs: poll /api/access and synthesize from board WS ---
+  const seenAudit=new Set();
+  const hostLegend=new Map(); // host → {color, count, lastOk}
+  function refreshLegend(host, ok, rgb){
+    if(!host || host==='cursor') return;
+    const prev=hostLegend.get(host)||{color:rgb, count:0, ok:ok};
+    prev.count=(prev.count||0)+1; prev.ok=ok; prev.color=rgb;
+    hostLegend.set(host, prev);
+    if(legendEl){
+      const items=[...hostLegend.entries()].sort((a,b)=>b[1].count-a[1].count).slice(0,6);
+      legendEl.innerHTML=items.map(([h,v])=> `<span class="ecto-legend-item"><i style="background:rgb(${v.color[0]|0},${v.color[1]|0},${v.color[2]|0});color:rgb(${v.color[0]|0},${v.color[1]|0},${v.color[2]|0})"></i>${h}<span style="opacity:.7">${v.ok===false?'✕':v.ok===true?'✓':'·'} ×${v.count}</span></span>`).join('');
+    }
+  }
+  async function pollAudit(){
+    try{
+      const token = localStorage.getItem('aigate_token')||'';
+      const headers= token? {authorization:'Bearer '+token}: {};
+      const r=await fetch('/api/access?limit=48', {headers});
+      if(!r.ok) throw 0;
+      const rows=await r.json();
+      const list=Array.isArray(rows)? rows : (rows.data||rows.rows||[]);
+      for(const row of list){
+        const host=row.host || row.hostname || row.account || row.provider || 'unknown';
+        const key=(row.ts||row.time||'')+'|'+host+'|'+(row.action||'')+'|'+(row.result||row.status||'');
+        if(seenAudit.has(key)) continue;
+        seenAudit.add(key);
+        if(seenAudit.size>220) { const first=seenAudit.values().next().value; seenAudit.delete(first); }
+        const res=String(row.result||row.status||'').toLowerCase();
+        const ok = res.includes('ok')||res.includes('success')||res==='200'||res.includes('working') ? true : (res.includes('fail')||res.includes('error')||res.includes('403')||res.includes('401')||res.includes('denied') ? false : null);
+        const rgb=hostColor(host);
+        addParticleGroup(host, ok, rgb, ok===false? 16: 11);
+      }
+    }catch(e){ /* keep swimming */ }
+  }
+  // also observe board WS via monkey? simpler: poll audit + synthesize from visible DOM mutations? We'll also spawn on fetch fail via demo.
+  let demoT=0;
+  function demoSpawnIfEmpty(dt){
+    demoT+=dt;
+    if(particles.length<14 && demoT>1.2){
+      demoT=0;
+      const hosts=['worker-11','worker-12','worker-13','aigate','shoemoney'];
+      const h=hosts[Math.floor(Math.random()*hosts.length)];
+      const ok = Math.random()<0.72;
+      addParticleGroup(h, ok, hostColor(h), ok?10:15);
+      if(Math.random()<0.35){
+        const h2=hosts[Math.floor(Math.random()*hosts.length)];
+        const ok2=Math.random()<0.5? false:true;
+        addParticleGroup(h2, ok2, hostColor(h2), 9);
+      }
+    }
+  }
+
+  // --- sizing ---
+  function resize(){
+    dpr=Math.min(2, window.devicePixelRatio||1);
+    W=Math.max(320, window.innerWidth); H=Math.max(280, window.innerHeight);
+    canvas.width= Math.floor(W*dpr); canvas.height=Math.floor(H*dpr);
+    canvas.style.width=W+'px'; canvas.style.height=H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    allocGrid();
+    // keep existing particles within bounds
+    for(const p of particles){ p.x=clamp(p.x, 4, W-4); p.y=clamp(p.y, 4, H-4); }
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // --- HUD ---
+  if(hudPause) hudPause.addEventListener('click', ()=>{
+    paused=!paused; hudPause.textContent= paused?'▶':'⏸'; hudPause.title= paused?'resume fluid':'pause fluid';
+    if(!paused) lastT=performance.now();
+    if(paused && droneGain) { try{ droneGain.gain.linearRampToValueAtTime(0, audioCtx?audioCtx.currentTime+0.12:0); }catch{} }
+    else if(sonifyOn) { ensureAudio(); if(audioCtx && audioCtx.state==='suspended') audioCtx.resume().catch(()=>{}); }
+  });
+  if(hudClear) hudClear.addEventListener('click', ()=>{
+    for(let i=0;i<densR.length;i++) densR[i]=densG[i]=densB[i]=0;
+    particles.length=0; hostLegend.clear(); if(legendEl) legendEl.innerHTML='';
+    for(let k=0;k<2;k++) { const h=['bleach','ecto'][k]; addParticleGroup(h, true, hostColor(h), 8); }
+  });
+  if(hudSonify) hudSonify.addEventListener('click', ()=>{
+    sonifyOn=!sonifyOn; hudSonify.classList.toggle('on', sonifyOn); hudSonify.title= sonifyOn?'theremin on — click to mute':'theremin muted — click to sing';
+    if(sonifyOn){ ensureAudio(); if(audioCtx && audioCtx.state==='suspended') audioCtx.resume().catch(()=>{}); hudSonify.textContent='♪'; }
+    else { hudSonify.textContent='♪̸'; if(droneGain && audioCtx) try{ droneGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime+0.08);}catch{} }
+  });
+  if(hudSpawn) hudSpawn.addEventListener('click', ()=>{
+    ensureAudio();
+    const h='spawn-'+Math.floor(Math.random()*999); const ok=Math.random()<0.55? false:true;
+    addParticleGroup(h, ok, hostColor(h), ok===false?16:12, {x: W*(0.3+Math.random()*0.4), y:H*(0.3+Math.random()*0.4)});
+    doPing(1000+Math.random()*700, 0.13);
+  });
+
+  // gently drift fluid even without cursor
+  let driftT=0;
+  function addDrift(dt){
+    driftT+=dt*0.3;
+    const cx=Math.floor(GW*0.5), cy=Math.floor(GH*0.5);
+    splatVelocity(cx, cy, Math.sin(driftT*0.9)*0.55, Math.cos(driftT*0.7)*0.42, 6);
+    splatVelocity(Math.floor(GW*0.28), Math.floor(GH*0.62), Math.cos(driftT*0.6)*0.38, Math.sin(driftT*1.1)*0.34, 5);
+    splatVelocity(Math.floor(GW*0.72), Math.floor(GH*0.34), Math.sin(driftT*1.2)*0.34, Math.cos(driftT*0.5)*0.33, 5);
+  }
+
+  // main loop
+  function frame(now){
+    frameId=requestAnimationFrame(frame);
+    const dt=Math.min(0.033, (now-lastT)/1000); lastT=now;
+    if(paused){ render(); return; }
+    // physics
+    addDrift(dt);
+    stepFluid(dt);
+    stepParticles(dt);
+    demoSpawnIfEmpty(dt);
+    updateDrone();
+    render();
+    if(hudStats){
+      const vortPct=Math.round(clamp(vorticityAvg*260,0,1)*100);
+      hudStats.textContent= `${particles.length} blobs · vort ${vortPct}% · ${GW}×${GH}${hasWebGPU?' ·⚡':''}`;
+    }
+  }
+  frameId=requestAnimationFrame(frame);
+
+  // initial dye
+  for(let i=0;i<3;i++){ const h=['aigate','worker-11','worker-12'][i]; const ok=i===2?false:true; addParticleGroup(h, ok, hostColor(h), ok?13:17, {x:W*(0.22+i*0.28), y:H*(0.38+ (i%2)*0.18)}); }
+  pollAudit(); setInterval(pollAudit, 4200);
+  setInterval(()=>{ if(!paused && particles.length) updateDrone(); }, 160);
+
+  // expose for e2e sanity: window.__ectoplasm
+  window.__ectoplasm={ particles, get vort(){return vorticityAvg;}, pause(v){paused=!!v;}, spawn(host, ok){ addParticleGroup(host||'test', ok!=null?!!ok:true, hostColor(host||'test'), 12); } };
+
+  // allow first user gesture to unlock audio
+  window.addEventListener('pointerdown', ()=>{ if(sonifyOn) ensureAudio(); }, {once:true});
+  })();
+  </script>
+
+  
 
 <script src="/vue.global.prod.js"></script>
 <script>
