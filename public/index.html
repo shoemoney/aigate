@@ -563,11 +563,24 @@ td.r,th.r{text-align:right}
 footer{border-top:1px solid var(--line)}
 footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var(--mono);font-size:12.5px;color:var(--dim)}
 
+/* <!-- IMPL: Flux Lattice --> — living card field: spring FLIP (k350/d32) + featherweight affinity canvas at 12% opacity · data-bound topology not ambient hero · drag-to-reorder free */
+.lattice-wrap{position:relative}
+#flux-lattice{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;opacity:.12;z-index:0;border-radius:8px}
+.lattice-wrap .grid{position:relative;z-index:1}
+.lattice-wrap .card{will-change:transform;transition:border-color .15s,box-shadow .18s}
+.lattice-wrap .card.flux-dragging{opacity:.92;z-index:5;box-shadow:0 12px 32px rgba(0,0,0,.42),0 0 0 1px rgba(232,179,75,.22);cursor:grabbing;will-change:transform}
+.lattice-wrap .card.flux-grab{cursor:grab}
+.lattice-wrap .card.flux-affinity{box-shadow:0 0 0 1px rgba(232,179,75,.14),0 2px 10px rgba(232,179,75,.08)}
+@media (prefers-reduced-motion:reduce){
+  #flux-lattice{display:none!important}
+  .lattice-wrap .card{will-change:auto!important;transition:border-color .15s!important;transform:none!important}
+  .card-move{transition:none!important}
+}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 
 /* ---------- Vue transitions / skeleton (new — build-contract §5.2) ---------- */
 [v-cloak]{display:none}
-.card-move{transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
+.card-move{transition:transform .42s cubic-bezier(.34,1.56,.64,1)}
 .card-enter-active{transition:opacity .3s ease,transform .3s cubic-bezier(.34,1.56,.64,1)}
 .card-leave-active{transition:opacity .18s ease,transform .18s ease;position:absolute}
 .card-enter-from{opacity:0;transform:translateY(10px) scale(.97)}
@@ -1913,10 +1926,13 @@ main.shake{animation:seismo-shake .38s ease}
     </Teleport>
 
     <!-- 02 · account cards -->
+    <!-- IMPL: Flux Lattice -->
     <section>
       <div class="sec-head"><span class="sec-num">02</span><h2>Accounts — live usage</h2>
         <span class="sec-note">hero = worst window · sorted by severity · cutoff 95</span></div>
 
+      <div class="lattice-wrap" id="lattice-wrap">
+        <canvas id="flux-lattice" aria-hidden="true"></canvas>
       <TransitionGroup name="card" tag="div" class="grid">
         <!-- jury r1 (5/5 models, unanimous): .card is display:flex;flex-direction:column;gap:15px, so bare
              text nodes + inline <span> chips each became a separate flex item and the sentence shattered
@@ -2011,6 +2027,7 @@ main.shake{animation:seismo-shake .38s ease}
           </div>
         </article>
       </TransitionGroup>
+      </div>
     </section>
 
     <!-- 03 · activity -->
@@ -4379,6 +4396,339 @@ const app=Vue.createApp({
 });
 app.component('dashboard-body',DashboardBody);
 app.mount('#app');
+
+// <!-- IMPL: Flux Lattice --> — living card field: spring FLIP (k350/d32) + affinity canvas at 12% opacity + drag-to-reorder free · single file, no deps, Vapor-fake via rAF batching
+(()=>{ 'use strict';
+  const RM=()=>{ try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(_){ return false; } };
+  const wrap=document.getElementById('lattice-wrap');
+  const cv=document.getElementById('flux-lattice');
+  if(!wrap||!cv) return;
+  const ctx=cv.getContext('2d');
+  if(!ctx) return;
+  let dpr=Math.min(devicePixelRatio||1,2), W=0,H=0, raf=0, needsDraw=false;
+  let prevOrder=[], springAnims=new Map();
+  // spring params: stiffness 350 damping 32 mass 1
+  const K=350, D=32, DT=1/60;
+
+  function resize(){
+    const r=wrap.getBoundingClientRect();
+    W=Math.max(1,Math.round(r.width*dpr));
+    H=Math.max(1,Math.round(r.height*dpr));
+    cv.width=W; cv.height=H;
+    cv.style.width=r.width+'px'; cv.style.height=r.height+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    schedule();
+  }
+  function schedule(){ if(!needsDraw){ needsDraw=true; requestAnimationFrame(draw); } }
+
+  function cardEls(){ return [...wrap.querySelectorAll('.grid .card')]; }
+  function cardData(el){
+    const nameEl=el.querySelector('.acct');
+    const chip=el.querySelector('.chip');
+    const worstEl=el.querySelector('.hero-num');
+    const name=nameEl? nameEl.textContent.trim(): el.getAttribute('data-account')||'';
+    const cls=chip? (chip.className.match(/c-(ok|warn|crit|dim)/)||[])[1]||'dim':'dim';
+    let worst=0; if(worstEl){ const m=worstEl.textContent.match(/(\d+)/); if(m) worst=+m[1]; }
+    if(!worst){ const m=el.textContent.match(/(\d+)%/); if(m) worst=+m[1]; }
+    const labelEl=el.querySelector('.alabel');
+    const label=labelEl? labelEl.textContent.trim(): '';
+    return {name,cls,worst,label,el};
+  }
+  function affinity(a,b){
+    if(!a.name||!b.name||a.name===b.name) return 0;
+    // data-bound topology: same severity is strongest, then nearby worst% (within 12), then label token overlap
+    if(a.cls===b.cls) return 0.92;
+    if(a.cls==='crit' && b.cls==='warn') return 0.62;
+    if(a.cls==='warn' && b.cls==='crit') return 0.62;
+    if(Math.abs(a.worst-b.worst)<=8) return 0.54;
+    if(Math.abs(a.worst-b.worst)<=14) return 0.34;
+    if(a.label && b.label){
+      const ta=a.label.toLowerCase().split(/\W+/).filter(Boolean);
+      const tb=new Set(b.label.toLowerCase().split(/\W+/).filter(Boolean));
+      if(ta.some(t=> tb.has(t) && t.length>=3)) return 0.48;
+    }
+    return 0;
+  }
+  function draw(){
+    needsDraw=false;
+    if(RM()){ ctx.clearRect(0,0,W/dpr,H/dpr); return; }
+    const wr=wrap.getBoundingClientRect();
+    const cards=cardEls().map(cardData).filter(c=> c.name);
+    if(!cards.length){ ctx.clearRect(0,0,W/dpr,H/dpr); return; }
+    ctx.clearRect(0,0,W/dpr,H/dpr);
+    // subtle field: batch lines by affinity, thin strokes at canvas 12% parent opacity (effective ~ per-line 0.18*0.12)
+    const centers=cards.map(c=>{
+      const r=c.el.getBoundingClientRect();
+      return {x:(r.left+r.width/2 - wr.left), y:(r.top+r.height/2 - wr.top), d:c};
+    });
+    // draw affinity lines — curved bezier for organic lattice
+    for(let i=0;i<centers.length;i++){
+      for(let j=i+1;j<centers.length;j++){
+        const aff=affinity(centers[i].d, centers[j].d);
+        if(aff<0.3) continue;
+        const a=centers[i], b=centers[j];
+        const dist=Math.hypot(b.x-a.x,b.y-a.y);
+        if(dist> 520) continue;
+        // distance fade
+        const fade=Math.max(0,1 - dist/520);
+        const alpha= (aff*0.42*fade);
+        if(alpha<0.04) continue;
+        const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+        // perpendicular offset for gentle arc — consistent per pair
+        const hash=(a.d.name.charCodeAt(0)+b.d.name.charCodeAt(0))%7;
+        const off=(hash-3)* (Math.min(38, dist*0.14));
+        const nx=-(b.y-a.y)/ (dist||1), ny=(b.x-a.x)/(dist||1);
+        const cx=mx + nx*off, cy=my + ny*off;
+        ctx.beginPath();
+        ctx.moveTo(a.x,a.y);
+        ctx.quadraticCurveTo(cx,cy,b.x,b.y);
+        // color by affinity tier
+        let col='232,179,75';
+        if(a.d.cls==='crit' || b.d.cls==='crit') col='224,93,68';
+        else if(a.d.cls==='warn' || b.d.cls==='warn') col='217,154,61';
+        else if(a.d.cls==='ok') col='95,174,122';
+        ctx.strokeStyle='rgba('+col+','+alpha.toFixed(3)+')';
+        ctx.lineWidth= (aff>0.7?1.35: aff>0.5?1.0:0.75);
+        ctx.lineCap='round';
+        ctx.stroke();
+        // faint glow for strong affinities
+        if(aff>0.7){
+          ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.quadraticCurveTo(cx,cy,b.x,b.y);
+          ctx.strokeStyle='rgba('+col+',0.07)'; ctx.lineWidth=4.5; ctx.stroke();
+        }
+      }
+    }
+    // nodes — tiny dots at centers
+    for(const c of centers){
+      const col= c.d.cls==='crit'?'224,93,68': c.d.cls==='warn'?'217,154,61': c.d.cls==='ok'?'95,174,122':'232,179,75';
+      ctx.beginPath(); ctx.arc(c.x,c.y,1.9,0,Math.PI*2);
+      ctx.fillStyle='rgba('+col+',0.22)'; ctx.fill();
+      ctx.beginPath(); ctx.arc(c.x,c.y,0.9,0,Math.PI*2);
+      ctx.fillStyle='rgba('+col+',0.42)'; ctx.fill();
+    }
+  }
+
+  // spring FLIP: stiffness 350 damping 32 mass 1 — explicit Euler, 60fps, zero VDOM diff
+  function springFLIP(prevRects, nextEls){
+    if(RM()) return;
+    const nextMap=new Map();
+    nextEls.forEach(el=>{
+      const k=el.getAttribute('data-flux-key')||el.querySelector('.acct')?.textContent.trim()||'';
+      if(k) nextMap.set(k, el.getBoundingClientRect());
+    });
+    for(const [key, prev] of prevRects){
+      const el=[...nextEls].find(e=> (e.getAttribute('data-flux-key')||e.querySelector('.acct')?.textContent.trim())===key);
+      if(!el) continue;
+      const next=nextMap.get(key);
+      if(!next) continue;
+      const dx=prev.left-next.left, dy=prev.top-next.top;
+      if(Math.abs(dx)<0.5 && Math.abs(dy)<0.5) continue;
+      // cancel previous anim
+      const prior=springAnims.get(key);
+      if(prior) cancelAnimationFrame(prior.raf);
+      let x=dx, y=dy, vx=0, vy=0;
+      el.style.willChange='transform';
+      function step(){
+        // spring force F=-kx - Dv
+        const ax=(-K*x - D*vx);
+        const ay=(-K*y - D*vy);
+        vx+=ax*DT; vy+=ay*DT;
+        x+=vx*DT; y+=vy*DT;
+        const done=Math.abs(x)<0.18 && Math.abs(y)<0.18 && Math.abs(vx)<8 && Math.abs(vy)<8;
+        el.style.transform= done? '':'translate3d('+x.toFixed(2)+'px,'+y.toFixed(2)+'px,0)';
+        if(done){
+          el.style.transform=''; el.style.willChange='';
+          springAnims.delete(key);
+          schedule();
+        } else {
+          const id=requestAnimationFrame(step);
+          springAnims.set(key,{raf:id});
+        }
+      }
+      // start from displaced position (invert)
+      el.style.transform='translate3d('+dx.toFixed(2)+'px,'+dy.toFixed(2)+'px,0)';
+      // next frame play to 0 with spring
+      requestAnimationFrame(()=> requestAnimationFrame(step));
+    }
+  }
+
+  function snapshotOrder(){
+    const els=cardEls();
+    const m=new Map();
+    for(const el of els){
+      const k=el.querySelector('.acct')?.textContent.trim()||el.textContent.slice(0,24);
+      if(k) m.set(k, el.getBoundingClientRect());
+      el.setAttribute('data-flux-key', k);
+      el.classList.add('flux-grab');
+    }
+    return m;
+  }
+
+  // observe grid mutations (Vue TransitionGroup reorders)
+  let obs=null, moDebounce=0;
+  function onGridChange(){
+    clearTimeout(moDebounce);
+    // capture prev before Vue patches? we store prevOrder on next tick diff
+    const prev=new Map(prevOrder);
+    moDebounce=setTimeout(()=>{
+      const cur=cardEls();
+      if(!cur.length){ prevOrder=[]; schedule(); return; }
+      // only FLIP when order actually changed
+      const prevKeys=[...prev.keys()], curKeys=cur.map(e=> e.getAttribute('data-flux-key')||e.querySelector('.acct')?.textContent.trim());
+      const orderChanged= prevKeys.length && (prevKeys.join('|')!==curKeys.join('|'));
+      if(orderChanged && prev.size){
+        springFLIP(prev, cur);
+      }
+      prevOrder=[...snapshotOrder().entries()];
+      schedule();
+    }, 24);
+  }
+
+  // drag-to-reorder: free once layoutId (data-flux-key) is present — pointer drag swaps DOM order with spring
+  let drag=null;
+  function closestCardIndex(x,y){
+    const els=cardEls();
+    let best=-1, bestD=Infinity;
+    for(let i=0;i<els.length;i++){
+      const r=els[i].getBoundingClientRect();
+      const cx=r.left+r.width/2, cy=r.top+r.height/2;
+      const d=Math.hypot(x-cx, y-cy);
+      if(d<bestD){ bestD=d; best=i; }
+    }
+    return best;
+  }
+  function onPointerDown(e){
+    if(RM()) return;
+    const card=e.target.closest('.card');
+    if(!card || !wrap.contains(card)) return;
+    if(e.target.closest('button') || e.target.closest('input') || e.target.closest('a')) return;
+    if(e.button!==0 && e.pointerType==='mouse') return;
+    drag={el:card, sx:e.clientX, sy:e.clientY, moved:false, startIdx: cardEls().indexOf(card)};
+    card.setPointerCapture(e.pointerId);
+    card.addEventListener('pointermove', onPointerMove);
+    card.addEventListener('pointerup', onPointerUp);
+    card.addEventListener('pointercancel', onPointerUp);
+  }
+  function onPointerMove(e){
+    if(!drag) return;
+    const dx=e.clientX - drag.sx, dy=e.clientY - drag.sy;
+    if(!drag.moved && Math.hypot(dx,dy)<7) return;
+    if(!drag.moved){
+      drag.moved=true;
+      drag.el.classList.add('flux-dragging');
+      drag.el.style.zIndex='5';
+      // snapshot for FLIP siblings
+      drag.prev=new Map(snapshotOrder());
+    }
+    // follow pointer with translate, but keep in flow for siblings (transform only)
+    drag.el.style.transform='translate3d('+dx+'px,'+dy+'px,0) rotate('+(dx*0.02).toFixed(2)+'deg)';
+    // live reorder preview: swap with closest
+    const over=closestCardIndex(e.clientX,e.clientY);
+    const els=cardEls();
+    const curIdx=els.indexOf(drag.el);
+    if(over!==-1 && over!==curIdx){
+      const grid=wrap.querySelector('.grid');
+      if(!grid) return;
+      // capture sibling positions before DOM move
+      const before=new Map(snapshotOrder());
+      if(over < curIdx) grid.insertBefore(drag.el, els[over]);
+      else {
+        const ref=els[over].nextSibling;
+        if(ref) grid.insertBefore(drag.el, ref); else grid.appendChild(drag.el);
+      }
+      const after=cardEls();
+      // FLIP siblings (excluding dragged)
+      const siblings=after.filter(el=> el!==drag.el);
+      const beforeSiblings=new Map([...before.entries()].filter(([k])=> k!==drag.el.getAttribute('data-flux-key')));
+      if(beforeSiblings.size) springFLIP(beforeSiblings, siblings);
+      schedule();
+    }
+  }
+  function onPointerUp(e){
+    if(!drag) return;
+    const el=drag.el;
+    const moved=drag.moved;
+    el.releasePointerCapture && el.releasePointerCapture(e.pointerId);
+    el.removeEventListener('pointermove', onPointerMove);
+    el.removeEventListener('pointerup', onPointerUp);
+    el.removeEventListener('pointercancel', onPointerUp);
+    el.classList.remove('flux-dragging');
+    el.style.zIndex=''; el.style.transform='';
+    drag=null;
+    if(moved){
+      el.style.transition='transform .18s cubic-bezier(.16,1,.3,1)';
+      setTimeout(()=>{ el.style.transition=''; }, 220);
+      // finalize order snapshot
+      prevOrder=[...snapshotOrder().entries()];
+      schedule();
+    } else {
+      // tap → affinity highlight
+      el.classList.add('flux-affinity');
+      setTimeout(()=> el.classList.remove('flux-affinity'), 900);
+      schedule();
+    }
+  }
+  wrap.addEventListener('pointerdown', onPointerDown);
+
+  // hover affinity: highlight related cards + thicken their field line via redraw
+  let hoverKey='';
+  wrap.addEventListener('pointermove', (e)=>{
+    if(RM()||drag) return;
+    const card=e.target.closest('.card');
+    const k=card? (card.getAttribute('data-flux-key')||card.querySelector('.acct')?.textContent.trim()):'';
+    if(k===hoverKey) return;
+    hoverKey=k;
+    const all=cardEls();
+    if(!k){ all.forEach(el=> el.classList.remove('flux-affinity')); schedule(); return; }
+    const src=all.find(el=> (el.getAttribute('data-flux-key')||el.querySelector('.acct')?.textContent.trim())===k);
+    if(!src){ all.forEach(el=> el.classList.remove('flux-affinity')); return; }
+    const sd=cardData(src);
+    for(const el of all){
+      if(el===src){ el.classList.remove('flux-affinity'); continue; }
+      const d=cardData(el);
+      el.classList.toggle('flux-affinity', affinity(sd,d) >= 0.48);
+    }
+    schedule();
+  });
+  wrap.addEventListener('pointerleave', ()=>{
+    hoverKey='';
+    cardEls().forEach(el=> el.classList.remove('flux-affinity'));
+    schedule();
+  });
+
+  // mutation observer for Vue reorders / filter / sort / search
+  obs=new MutationObserver(onGridChange);
+  const grid=wrap.querySelector('.grid');
+  if(grid) obs.observe(grid, {childList:true});
+  // also hook Vue reactivity: poll sortedAccounts via window.__vue check + resize
+  let lastCount=-1;
+  setInterval(()=>{
+    const n=cardEls().length;
+    if(n!==lastCount){ lastCount=n; onGridChange(); }
+  }, 420);
+  window.addEventListener('resize', resize);
+  // init
+  requestAnimationFrame(()=>{
+    resize();
+    prevOrder=[...snapshotOrder().entries()];
+    schedule();
+  });
+  // Watch Vue app for sortedAccounts changes (Vapor-fake: efficient computed via polling props not VDOM)
+  try{
+    const appEl=document.getElementById('app');
+    const prox=appEl && appEl.__vue_app__ && appEl.__vue_app__._instance && appEl.__vue_app__._instance.proxy;
+    if(prox){
+      let lastSig='';
+      setInterval(()=>{
+        try{
+          const arr=prox.sortedAccounts || prox.accounts || [];
+          const sig=arr.map(a=> a.account+':'+(a.five_hour_pct||0)+':'+(a.seven_day_pct||0)+':'+(a.disabled?'1':'0')).join('|');
+          if(sig!==lastSig){ lastSig=sig; schedule(); onGridChange(); }
+        }catch(_){}
+      }, 300);
+    }
+  }catch(_){}
+})();
 
 // ── Curl Monsoon — generative flow field (iteration 1) — ~90 lines, no deps ──
 function startMonsoon(){
