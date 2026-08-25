@@ -560,6 +560,24 @@ main.shake{animation:seismo-shake .38s ease}
 #vault-sec.is-fullscreen{position:fixed;inset:0;z-index:46;margin:0;border-radius:0;border:0;display:flex;flex-direction:column;background:#05070a}
 #vault-sec.is-fullscreen .vault-canvas-wrap{flex:1;height:auto;min-height:0}
 #vault-sec.is-fullscreen .vault-head{border-radius:0}
+/* <!-- IMPL: ASCII Abyss --> — raymarched glyph tunnel, falling through Matrix source */
+#abyss-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #1a2e1e;border-radius:6px;overflow:hidden;background:#040a06;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
+.abyss-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#0e1a12 0%,#08120a 55%,#040a06 100%);border-bottom:1px solid #1a2e1e}
+.abyss-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#3de68a}
+.abyss-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.abyss-head .abyss-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.abyss-head .abyss-note b{color:#c8f0d8;font-weight:600}
+.abyss-head .abyss-actions{display:flex;align-items:center;gap:6px}
+.abyss-canvas-wrap{position:relative;height:160px;background:#020804;overflow:hidden;cursor:grab;touch-action:none}
+.abyss-canvas-wrap.dragging{cursor:grabbing}
+#abyss{display:block;width:100%;height:100%;pointer-events:auto}
+.abyss-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#08120a;border-top:1px solid #1a2e1e;font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.abyss-meta .mode{color:#c8f0d8}
+.abyss-meta .hint{opacity:.75}
+.abyss-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(61,230,138,.55);background:rgba(2,8,4,.55);border:1px solid rgba(61,230,138,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+#abyss-sec.is-fullscreen{position:fixed;inset:0;z-index:47;margin:0;border-radius:0;border:0;display:flex;flex-direction:column;background:#020804}
+#abyss-sec.is-fullscreen .abyss-canvas-wrap{flex:1;height:auto;min-height:0}
+#abyss-sec.is-fullscreen .abyss-head{border-radius:0}
 .vault-shock{position:absolute;inset:0;pointer-events:none;opacity:0}
 .vault-shard{position:absolute;width:8px;height:8px;background:linear-gradient(135deg,#e8dcc8 0%,#e8b34b 55%,#8a6b1e 100%);border:1px solid rgba(232,179,75,.5);border-radius:1px;box-shadow:0 1px 6px rgba(0,0,0,.4),0 0 10px rgba(232,179,75,.25);will-change:transform,opacity}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
@@ -579,6 +597,8 @@ main.shake{animation:seismo-shake .38s ease}
   #metablob{display:none!important}
   #vault-sec{display:none!important}
   #vault{display:none!important}
+  #abyss-sec{display:none!important}
+  #abyss{display:none!important}
   .card{transform:none!important;box-shadow:none!important}
   .card .glare{display:none}
 }
@@ -782,6 +802,8 @@ main.shake{animation:seismo-shake .38s ease}
     <button id="horizon-toggle" class="btn" type="button" aria-pressed="false" title="Event Horizon — drag the black hole, bend starlight (◐ photon ring)">◆ horizon</button>
     <!-- IMPL: Spectral Vault — SDF vault door, torus-knot keyhole, tumblers, BREACH -->
     <button id="vault-toggle" class="btn" type="button" aria-pressed="false" title="Spectral Vault — spin torus-knot to align tumblers → BREACH">⬡ vault</button>
+    <!-- IMPL: ASCII Abyss — hexa-state with monsoon/chladni/ferro/horizon/vault; Binary Rain sequel -->
+    <button id="abyss-toggle" class="btn" type="button" aria-pressed="false" title="ASCII Abyss — fall through the Matrix source, SDF glyph tunnel">▓ abyss</button>
     <!-- IMPL: Mercury Blob Toggle -->
     <button id="mercury-toggle" class="mercury-blob" type="button" role="switch" aria-checked="false" aria-label="Mercury blob — drag thumb to stretch, click to toggle" title="Mercury Blob — drag to liquefy"><span class="mercury-label" aria-hidden="true">◉ mercury</span><span class="mercury-track" aria-hidden="true"><span class="mercury-goo"><i class="mercury-dot"></i><i class="mercury-thumb"></i></span></span></button>
     <button class="btn" @click="paletteOpen=true" title="command palette (⌘K)">⌘K</button>
@@ -934,6 +956,25 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="vault-meta">
         <span class="mode">▸ <span id="vault-readout">idle · breathing</span></span>
         <span class="hint">100% shader · zero DOM · align 3 tumblers → BREACH</span>
+      </div>
+    </section>
+    <!-- IMPL: ASCII Abyss — hexa-state hero alternate (160px, monsoon | altar | ferro | horizon | vault | abyss), glyph tunnel -->
+    <section id="abyss-sec" class="abyss-sec" hidden aria-label="ASCII Abyss">
+      <div class="abyss-head">
+        <span class="sec-num">00</span><h2>ASCII Abyss</h2>
+        <span class="abyss-note">falling · <b id="abyss-mode">T 1.2</b> · wheel = speed · drag = twist</span>
+        <span class="abyss-actions">
+          <button id="abyss-fs" class="btn sm" type="button" aria-label="toggle fullscreen">⤢ fullscreen</button>
+          <button id="abyss-close" class="btn sm" type="button" aria-label="close ASCII Abyss">✕</button>
+        </span>
+      </div>
+      <div class="abyss-canvas-wrap" id="abyss-wrap">
+        <canvas id="abyss" width="1200" height="160" aria-label="ASCII Abyss — raymarched glyph tunnel, falling through Matrix source" role="img"></canvas>
+        <span class="abyss-spec">▓ SDF twisted torus · sine displacement · glyph raymarch</span>
+      </div>
+      <div class="abyss-meta">
+        <span class="mode">▸ <span id="abyss-readout">twist 0.62 · 32 steps · Binary Rain sequel</span></span>
+        <span class="hint">pure SDF · 100% Canvas2D glyphs · DPR≤2</span>
       </div>
     </section>
     <!-- IMPL: Ferrofabric — standalone 160px fabric below hero, above seismo — single canvas, no physics engine -->
@@ -3129,8 +3170,15 @@ function startMonsoon(){
     if(open){
       if(ferro&&!ferro.hidden){ ferro.hidden=true; if(ferroBtn) ferroBtn.setAttribute('aria-pressed','false'); if(window.__ferro) window.__ferro._stop(); }
       if(ferroBtn) ferroBtn.textContent='⬢ séance';
+      const horizon=document.getElementById('horizon-sec'); const horizonBtn2=document.getElementById('horizon-toggle');
+      if(horizon&&!horizon.hidden){ horizon.hidden=true; if(horizonBtn2) {horizonBtn2.setAttribute('aria-pressed','false'); horizonBtn2.textContent='◆ horizon';} if(window.__horizon) try{window.__horizon._stop();}catch(_){} }
+      const vault=document.getElementById('vault-sec'); const vaultBtn2=document.getElementById('vault-toggle');
+      if(vault&&!vault.hidden){ vault.hidden=true; if(vaultBtn2) {vaultBtn2.setAttribute('aria-pressed','false'); vaultBtn2.textContent='⬡ vault';} if(window.__vault) try{window.__vault._stop();}catch(_){} }
+      const abyss=document.getElementById('abyss-sec'); const abyssBtn2=document.getElementById('abyss-toggle');
+      if(abyss&&!abyss.hidden){ abyss.hidden=true; if(abyssBtn2) {abyssBtn2.setAttribute('aria-pressed','false'); abyssBtn2.textContent='▓ abyss';} if(window.__abyss) try{window.__abyss._stop();}catch(_){} }
     }
-    if(monsoon) monsoon.style.display=open?'none':(ferro&&!ferro.hidden?'none':'');
+    const horizonA=document.getElementById('horizon-sec'); const vaultA=document.getElementById('vault-sec'); const abyssA=document.getElementById('abyss-sec');
+    if(monsoon) monsoon.style.display=open?'none':((ferro&&!ferro.hidden)||(horizonA&&!horizonA.hidden)||(vaultA&&!vaultA.hidden)||(abyssA&&!abyssA.hidden)?'none':'');
     if(open){
       resize();
       if(!running) start();
@@ -3139,7 +3187,8 @@ function startMonsoon(){
       wrap.scrollIntoView({behavior:'smooth', block:'nearest'});
     } else {
       stop();
-      if(ferro&&ferro.hidden && monsoon) monsoon.style.display='';
+      const hA=document.getElementById('horizon-sec'); const vA=document.getElementById('vault-sec'); const abA=document.getElementById('abyss-sec');
+      if(ferro&&ferro.hidden && hA&&hA.hidden && vA&&vA.hidden && abA&&abA.hidden && monsoon) monsoon.style.display='';
     }
   }
 
@@ -3422,10 +3471,17 @@ function startMonsoon(){
       if(altarSec&&!altarSec.hidden){
         altarSec.hidden=true;
         if(altarBtn){ altarBtn.setAttribute('aria-pressed','false'); altarBtn.textContent='\u25c8 altar'; }
-        if(window.__altar) window.__altar._stop();
+        if(window.__altar) try{window.__altar._stop();}catch(_){}
       }
+      const horizonF2=document.getElementById('horizon-sec'); const horizonBtnF=document.getElementById('horizon-toggle');
+      if(horizonF2&&!horizonF2.hidden){ horizonF2.hidden=true; if(horizonBtnF){horizonBtnF.setAttribute('aria-pressed','false'); horizonBtnF.textContent='\u25c6 horizon';} if(window.__horizon) try{window.__horizon._stop();}catch(_){} }
+      const vaultF2=document.getElementById('vault-sec'); const vaultBtnF=document.getElementById('vault-toggle');
+      if(vaultF2&&!vaultF2.hidden){ vaultF2.hidden=true; if(vaultBtnF){vaultBtnF.setAttribute('aria-pressed','false'); vaultBtnF.textContent='\u2b21 vault';} if(window.__vault) try{window.__vault._stop();}catch(_){} }
+      const abyssF2=document.getElementById('abyss-sec'); const abyssBtnF=document.getElementById('abyss-toggle');
+      if(abyssF2&&!abyssF2.hidden){ abyssF2.hidden=true; if(abyssBtnF){abyssBtnF.setAttribute('aria-pressed','false'); abyssBtnF.textContent='\u2593 abyss';} if(window.__abyss) try{window.__abyss._stop();}catch(_){} }
     }
-    if(monsoon) monsoon.style.display=open?'none':(altarSec&&!altarSec.hidden?'none':'');
+    const horizonF=document.getElementById('horizon-sec'); const vaultF=document.getElementById('vault-sec'); const abyssF=document.getElementById('abyss-sec');
+    if(monsoon) monsoon.style.display=open?'none':((altarSec&&!altarSec.hidden)||(horizonF&&!horizonF.hidden)||(vaultF&&!vaultF.hidden)||(abyssF&&!abyssF.hidden)?'none':'');
     if(open){
       resize();
       if(!running) start();
@@ -3434,7 +3490,8 @@ function startMonsoon(){
       wrap.scrollIntoView({behavior:'smooth', block:'nearest'});
     } else {
       stop();
-      if(altarSec&&altarSec.hidden && monsoon) monsoon.style.display='';
+      const hF=document.getElementById('horizon-sec'); const vF=document.getElementById('vault-sec'); const abF=document.getElementById('abyss-sec');
+      if(altarSec&&altarSec.hidden && hF&&hF.hidden && vF&&vF.hidden && abF&&abF.hidden && monsoon) monsoon.style.display='';
     }
   }
   function start(){
@@ -3886,7 +3943,11 @@ function startMonsoon(){
     const anyAlt = altarSec && !altarSec.hidden;
     const anyFer = ferroSec && !ferroSec.hidden;
     const anyHor = !sec.hidden;
-    if(monsoon) monsoon.style.display=(anyAlt||anyFer||anyHor)?'none':'';
+    const vaultSec=document.getElementById('vault-sec');
+    const abyssSec=document.getElementById('abyss-sec');
+    const anyVault=vaultSec&&!vaultSec.hidden;
+    const anyAbyss=abyssSec&&!abyssSec.hidden;
+    if(monsoon) monsoon.style.display=(anyAlt||anyFer||anyHor||anyVault||anyAbyss)?'none':'';
   }
 
   function setHorizon(open){
@@ -3906,6 +3967,10 @@ function startMonsoon(){
         if(ferroBtn){ ferroBtn.setAttribute('aria-pressed','false'); ferroBtn.textContent='⬢ séance'; }
         if(window.__ferro) try{window.__ferro._stop();}catch(_){}
       }
+      const vaultH=document.getElementById('vault-sec'); const vaultBtnH=document.getElementById('vault-toggle');
+      if(vaultH&&!vaultH.hidden){ vaultH.hidden=true; if(vaultBtnH){vaultBtnH.setAttribute('aria-pressed','false'); vaultBtnH.textContent='⬡ vault';} if(window.__vault) try{window.__vault._stop();}catch(_){} }
+      const abyssH=document.getElementById('abyss-sec'); const abyssBtnH=document.getElementById('abyss-toggle');
+      if(abyssH&&!abyssH.hidden){ abyssH.hidden=true; if(abyssBtnH){abyssBtnH.setAttribute('aria-pressed','false'); abyssBtnH.textContent='▓ abyss';} if(window.__abyss) try{window.__abyss._stop();}catch(_){} }
       updateMonsoon();
       resize();
       if(!running) start();
@@ -4745,7 +4810,9 @@ function startMonsoon(){
     const anyFer=ferroSec&&!ferroSec.hidden;
     const anyHor=horizonSec&&!horizonSec.hidden;
     const anyVault=!sec.hidden;
-    if(monsoon) monsoon.style.display=(anyAlt||anyFer||anyHor||anyVault)?'none':'';
+    const abyssSec=document.getElementById('abyss-sec');
+    const anyAbyss=abyssSec&&!abyssSec.hidden;
+    if(monsoon) monsoon.style.display=(anyAlt||anyFer||anyHor||anyVault||anyAbyss)?'none':'';
   }
   function setVault(open){
     const wasOpen=!sec.hidden;
@@ -4757,6 +4824,8 @@ function startMonsoon(){
       if(altarSec&&!altarSec.hidden){ altarSec.hidden=true; if(altarBtn){altarBtn.setAttribute('aria-pressed','false'); altarBtn.textContent='◈ altar';} if(window.__altar) try{window.__altar._stop();}catch(_){} }
       if(ferroSec&&!ferroSec.hidden){ ferroSec.hidden=true; if(ferroBtn){ferroBtn.setAttribute('aria-pressed','false'); ferroBtn.textContent='⬢ séance';} if(window.__ferro) try{window.__ferro._stop();}catch(_){} }
       if(horizonSec&&!horizonSec.hidden){ horizonSec.hidden=true; if(horizonBtn){horizonBtn.setAttribute('aria-pressed','false'); horizonBtn.textContent='◆ horizon';} if(window.__horizon) try{window.__horizon._stop();}catch(_){} }
+      const abyssVA=document.getElementById('abyss-sec'); const abyssBtnV=document.getElementById('abyss-toggle');
+      if(abyssVA&&!abyssVA.hidden){ abyssVA.hidden=true; if(abyssBtnV){abyssBtnV.setAttribute('aria-pressed','false'); abyssBtnV.textContent='▓ abyss';} if(window.__abyss) try{window.__abyss._stop();}catch(_){} }
       updateMonsoon();
       resize();
       if(!running) start();
@@ -5224,6 +5293,317 @@ function startMonsoon(){
     if(window.__horizon && window.__horizon.open){ const _h=window.__horizon.open.bind(window.__horizon); window.__horizon.open=()=>{ setVault(false); updateMonsoon(); return _h(); }; }
   }catch(_){}
   window.__vault={open:()=>setVault(true), close:()=>setVault(false), _stop:stop, _start:start, get dial(){return dial}, get breaching(){return breaching}};
+})();
+</script>
+<!-- IMPL: ASCII Abyss -->
+<script>
+/* <!-- IMPL: ASCII Abyss --> — Raymarched Glyph Tunnel: twisted torus + sine displacement, glyph brightness = 1 - hitDist/maxDist, Matrix sequel (Canvas2D, DPR≤2) */
+(function(){
+  const sec=document.getElementById('abyss-sec');
+  const wrap=document.getElementById('abyss-wrap');
+  const cv=document.getElementById('abyss');
+  const btn=document.getElementById('abyss-toggle');
+  const closeBtn=document.getElementById('abyss-close');
+  const fsBtn=document.getElementById('abyss-fs');
+  const modeEl=document.getElementById('abyss-mode');
+  const readout=document.getElementById('abyss-readout');
+  const monsoon=document.getElementById('monsoon');
+  const altarSec=document.getElementById('altar-sec');
+  const ferroSec=document.getElementById('ferro-sec');
+  const horizonSec=document.getElementById('horizon-sec');
+  const vaultSec=document.getElementById('vault-sec');
+  const altarBtn=document.getElementById('altar-toggle');
+  const ferroBtn=document.getElementById('ferro-toggle');
+  const horizonBtn=document.getElementById('horizon-toggle');
+  const vaultBtn=document.getElementById('vault-toggle');
+  if(!sec||!wrap||!cv||!btn) return;
+  const ctx=cv.getContext('2d'); if(!ctx) return;
+  let dpr=Math.min(window.devicePixelRatio||1,2);
+  let W=0,H=0,cssW=0,cssH=160,raf=0,running=false,t=0;
+  let speed=1.15, targetSpeed=1.15;
+  let twist=0.62, targetTwist=0.62;
+  let dragging=false, dragStartX=0, dragStartTwist=0;
+  let camZ=0;
+
+  // SDF helpers
+  function sdTwistedTorus(p, R, r, twistK, tm){
+    const ang = p[1]*twistK + tm*0.018;
+    const c=Math.cos(ang), s=Math.sin(ang);
+    const x2=c*p[0]-s*p[2];
+    const z2=s*p[0]+c*p[2];
+    const qx=Math.sqrt(x2*x2+z2*z2)-R;
+    const qy=p[1];
+    let d=Math.sqrt(qx*qx+qy*qy)-r;
+    // sine displacement — surface ripple
+    const disp = Math.sin(p[0]*3.4 + tm*0.022)*0.065 + Math.sin(p[1]*4.6 + p[2]*2.9)*0.045 + Math.sin(p[2]*5.1 - tm*0.019)*0.038;
+    const twistDisp = Math.sin(p[1]*6.7)*0.018*twistK;
+    return d + disp + twistDisp;
+  }
+  function sdScene(p, tm){
+    // endless tunnel: repeat twisted torus along Z every 7 units
+    const rep=7.0;
+    let pz=p[2];
+    pz = ((pz % rep)+rep)%rep - rep*0.5;
+    const pp=[p[0], p[1], pz];
+    return sdTwistedTorus(pp, 1.45, 0.42, twist*0.9+0.32, tm);
+  }
+  function isHidden(){ return sec.hidden||sec.style.display==='none'||document.hidden; }
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const r=wrap.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(r.width));
+    cssH=sec.classList.contains('is-fullscreen') ? Math.max(1,Math.floor(r.height)) : 160;
+    if(!sec.classList.contains('is-fullscreen')) cssH=160;
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+    W=cv.width; H=cv.height;
+  }
+  function updateMonsoon(){
+    const anyAlt=altarSec&&!altarSec.hidden;
+    const anyFer=ferroSec&&!ferroSec.hidden;
+    const anyHor=horizonSec&&!horizonSec.hidden;
+    const anyVault=vaultSec&&!vaultSec.hidden;
+    const anyAbyss=!sec.hidden;
+    if(monsoon) monsoon.style.display=(anyAlt||anyFer||anyHor||anyVault||anyAbyss)?'none':'';
+  }
+  function setAbyss(open){
+    const wasOpen=!sec.hidden;
+    if(open===wasOpen) return;
+    sec.hidden=!open;
+    btn.setAttribute('aria-pressed', String(open));
+    btn.textContent=open?'▓ close':'▓ abyss';
+    if(open){
+      if(altarSec&&!altarSec.hidden){ altarSec.hidden=true; if(altarBtn){altarBtn.setAttribute('aria-pressed','false'); altarBtn.textContent='◈ altar';} if(window.__altar) try{window.__altar._stop();}catch(_){} }
+      if(ferroSec&&!ferroSec.hidden){ ferroSec.hidden=true; if(ferroBtn){ferroBtn.setAttribute('aria-pressed','false'); ferroBtn.textContent='⬢ séance';} if(window.__ferro) try{window.__ferro._stop();}catch(_){} }
+      if(horizonSec&&!horizonSec.hidden){ horizonSec.hidden=true; if(horizonBtn){horizonBtn.setAttribute('aria-pressed','false'); horizonBtn.textContent='◆ horizon';} if(window.__horizon) try{window.__horizon._stop();}catch(_){} }
+      if(vaultSec&&!vaultSec.hidden){ vaultSec.hidden=true; if(vaultBtn){vaultBtn.setAttribute('aria-pressed','false'); vaultBtn.textContent='⬡ vault';} if(window.__vault) try{window.__vault._stop();}catch(_){} }
+      updateMonsoon();
+      resize();
+      if(!running) start();
+      if(!sec.classList.contains('is-fullscreen')) wrap.scrollIntoView({behavior:'smooth',block:'nearest'});
+    } else {
+      stop();
+      sec.classList.remove('is-fullscreen');
+      if(fsBtn) fsBtn.textContent='⤢ fullscreen';
+      updateMonsoon();
+    }
+  }
+  function start(){ if(running) return; if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; running=true; cancelAnimationFrame(raf); t=0; loop(); }
+  function stop(){ running=false; cancelAnimationFrame(raf); raf=0; }
+
+  const GLYPHS="  ·:;+*%#@0123456789ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜｦﾝ";
+  const MAX_STEPS=32;
+  const MAX_DIST=8;
+  const EPS=0.001;
+
+  function raymarch(ro, rd){
+    let dist=0;
+    for(let i=0;i<MAX_STEPS;i++){
+      const p=[ro[0]+rd[0]*dist, ro[1]+rd[1]*dist, ro[2]+rd[2]*dist];
+      const d=sdScene(p, t);
+      if(d < EPS) return {hit:true, dist:dist, p:p};
+      if(dist > MAX_DIST) break;
+      dist += d*0.92;
+      if(dist < 0.002) dist += 0.012;
+    }
+    return {hit:false, dist:Math.min(dist, MAX_DIST)};
+  }
+
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    t++;
+    // lerp twist/speed
+    twist += (targetTwist - twist)*0.09;
+    speed += (targetSpeed - speed)*0.08;
+    // autonomous drift when not dragging
+    if(!dragging){
+      targetTwist += Math.sin(t*0.004)*0.0006;
+      targetTwist = Math.max(0.18, Math.min(1.35, targetTwist));
+    }
+    camZ += 0.042 * speed;
+
+    ctx.save();
+    ctx.scale(dpr,dpr);
+    ctx.fillStyle='#020804';
+    ctx.fillRect(0,0,cssW,cssH);
+    // subtle vignette
+    const vg=ctx.createRadialGradient(cssW*0.5,cssH*0.5,0,cssW*0.5,cssH*0.5,Math.max(cssW,cssH)*0.9);
+    vg.addColorStop(0,'rgba(61,230,138,0.06)');
+    vg.addColorStop(0.55,'rgba(0,0,0,0)');
+    vg.addColorStop(1,'rgba(0,0,0,0.62)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,cssW,cssH);
+
+    // glyph grid
+    const cellW=9, cellH=12;
+    const cols=Math.max(1, Math.floor(cssW / cellW));
+    const rows=Math.max(1, Math.floor(cssH / cellH));
+    const offsetX=(cssW - cols*cellW)*0.5;
+    const offsetY=(cssH - rows*cellH)*0.5;
+    const aspect=cssW/cssH;
+    // camera origin with gentle sway
+    const ro=[ Math.sin(t*0.009)*0.18, Math.cos(t*0.007)*0.12, camZ ];
+    // flicker for Binary Rain feel
+    const flicker = 0.92 + 0.08*Math.sin(t*0.07);
+
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    ctx.font='700 11px ui-monospace, "Cascadia Code", Menlo, monospace';
+
+    for(let y=0;y<rows;y++){
+      for(let x=0;x<cols;x++){
+        const u=(x+0.5)/cols;
+        const v=(y+0.5)/rows;
+        // ndc -1..1 with aspect
+        const sx=(u*2-1)*aspect*0.92;
+        const sy=(1 - v*2)*0.62;
+        const rdLen=Math.sqrt(sx*sx+sy*sy+1);
+        const rd=[sx/rdLen, sy/rdLen, 1/rdLen];
+        const res=raymarch(ro, rd);
+        let bri=0, chIdx=0;
+        if(res.hit){
+          const hitDist=res.dist;
+          bri = 1 - (hitDist / MAX_DIST);
+          // distance fog + slight center boost
+          const centerFall=1 - Math.hypot(u-0.5, v-0.5)*0.55;
+          bri = bri*0.82 + centerFall*0.18;
+          // simple diffuse via normal (cheap 2 extra evals for y only to save cost — skip full normal)
+          // keep brightness in 0..1
+          bri = Math.max(0, Math.min(1, bri * flicker));
+          // occasional scanline dim
+          if((y%3)===0) bri *= 0.92;
+        } else {
+          // miss: faint tunnel haze near center
+          const dCenter=Math.hypot(u-0.5, v-0.5);
+          bri = (1 - dCenter*1.2)*0.07;
+          bri = Math.max(0, bri);
+        }
+        if(bri < 0.03) continue;
+        const idx=Math.min(GLYPHS.length-1, Math.floor(bri * (GLYPHS.length-1)));
+        const ch=GLYPHS[idx];
+        if(ch===' '||ch==='') continue;
+        const alpha=0.42 + bri*0.58;
+        // Matrix green: hsl 142 76% 50% -> rgb ~ 31, 200, 80 — use hsla for spec compliance
+        // switch to amber on bright outliers for variety
+        let col;
+        if(bri > 0.92 && (x+y)%7===0){
+          col='hsla(38, 92%, 60%, '+alpha.toFixed(3)+')';
+        } else {
+          col='hsla(142, 76%, 50%, '+alpha.toFixed(3)+')';
+        }
+        ctx.fillStyle=col;
+        // slight glow for dense chars
+        if(bri > 0.78){
+          ctx.shadowColor=col;
+          ctx.shadowBlur=3;
+        } else {
+          ctx.shadowBlur=0;
+        }
+        const px=offsetX + x*cellW + cellW*0.5;
+        const py=offsetY + y*cellH + cellH*0.5;
+        // tiny jitter for analog feel
+        const jx=(Math.sin(x*12.9898 + y*78.233 + t*0.04)*0.5);
+        ctx.fillText(ch, px+jx, py);
+        ctx.shadowBlur=0;
+      }
+    }
+
+    // center depth shaft
+    ctx.globalCompositeOperation='lighter';
+    const shaftGrad=ctx.createRadialGradient(cssW*0.5, cssH*0.5, 2, cssW*0.5, cssH*0.5, Math.min(cssW,cssH)*0.42);
+    shaftGrad.addColorStop(0,'rgba(61,230,138,'+(0.08+Math.sin(t*0.05)*0.02).toFixed(3)+')');
+    shaftGrad.addColorStop(0.45,'rgba(61,230,138,0.02)');
+    shaftGrad.addColorStop(1,'rgba(61,230,138,0)');
+    ctx.fillStyle=shaftGrad;
+    ctx.beginPath(); ctx.arc(cssW*0.5, cssH*0.5, Math.min(cssW,cssH)*0.42, 0, Math.PI*2); ctx.fill();
+    ctx.globalCompositeOperation='source-over';
+    ctx.restore();
+
+    if(t%6===0){
+      if(modeEl) modeEl.textContent='T '+ (speed).toFixed(2)+' · twist '+twist.toFixed(2);
+      if(readout) readout.textContent='twist '+twist.toFixed(2)+' · steps '+MAX_STEPS+' · falling '+Math.floor(camZ%100)+'m · drag=twist wheel=speed';
+    }
+    raf=requestAnimationFrame(loop);
+  }
+
+  // interaction
+  wrap.addEventListener('pointerdown', e=>{
+    dragging=true; wrap.classList.add('dragging');
+    dragStartX=e.clientX; dragStartTwist=targetTwist;
+    try{ wrap.setPointerCapture(e.pointerId);}catch(_){}
+    e.preventDefault();
+  });
+  wrap.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const dx=e.clientX - dragStartX;
+    targetTwist = Math.max(0.18, Math.min(1.35, dragStartTwist + dx*0.0042));
+  });
+  function endDrag(e){
+    if(!dragging) return;
+    dragging=false; wrap.classList.remove('dragging');
+    try{ wrap.releasePointerCapture(e.pointerId);}catch(_){}
+  }
+  wrap.addEventListener('pointerup', endDrag);
+  wrap.addEventListener('pointercancel', endDrag);
+  wrap.addEventListener('pointerleave', e=>{ if(dragging) endDrag(e); });
+  wrap.addEventListener('wheel', e=>{
+    if(sec.hidden) return;
+    e.preventDefault();
+    targetSpeed = Math.max(0.25, Math.min(3.2, targetSpeed - e.deltaY*0.0018));
+  }, {passive:false});
+  cv.tabIndex=0;
+  cv.addEventListener('keydown', e=>{
+    if(e.key==='ArrowLeft'){ targetTwist=Math.max(0.18,targetTwist-0.07); e.preventDefault(); }
+    else if(e.key==='ArrowRight'){ targetTwist=Math.min(1.35,targetTwist+0.07); e.preventDefault(); }
+    else if(e.key==='ArrowUp'){ targetSpeed=Math.min(3.2,targetSpeed+0.18); e.preventDefault(); }
+    else if(e.key==='ArrowDown'){ targetSpeed=Math.max(0.25,targetSpeed-0.18); e.preventDefault(); }
+    else if(e.key==='Escape'){
+      if(sec.classList.contains('is-fullscreen')){ sec.classList.remove('is-fullscreen'); if(fsBtn) fsBtn.textContent='⤢ fullscreen'; resize(); }
+      else setAbyss(false);
+      e.preventDefault();
+    } else if(e.key==='f'||e.key==='F'){
+      if(!sec.hidden){ sec.classList.toggle('is-fullscreen'); if(fsBtn) fsBtn.textContent=sec.classList.contains('is-fullscreen')?'⤢ exit':'⤢ fullscreen'; resize(); }
+    }
+  });
+  btn.addEventListener('click', ()=> setAbyss(sec.hidden));
+  closeBtn.addEventListener('click', ()=> setAbyss(false));
+  if(fsBtn) fsBtn.addEventListener('click', ()=>{
+    if(sec.hidden) return;
+    const on=!sec.classList.contains('is-fullscreen');
+    sec.classList.toggle('is-fullscreen', on);
+    fsBtn.textContent=on?'⤢ exit':'⤢ fullscreen';
+    resize();
+  });
+  document.addEventListener('keydown', e=>{
+    if((e.key==='Escape'||e.key==='Esc')){
+      if(sec.classList.contains('is-fullscreen')){ sec.classList.remove('is-fullscreen'); if(fsBtn) fsBtn.textContent='⤢ fullscreen'; resize(); e.preventDefault(); return; }
+      if(!sec.hidden) setAbyss(false);
+    }
+  });
+  // reciprocal close when other heroes open
+  if(altarBtn) altarBtn.addEventListener('click', ()=> setTimeout(()=>{ if(altarSec&&!altarSec.hidden&&!sec.hidden) setAbyss(false); updateMonsoon(); },0));
+  if(ferroBtn) ferroBtn.addEventListener('click', ()=> setTimeout(()=>{ if(ferroSec&&!ferroSec.hidden&&!sec.hidden) setAbyss(false); updateMonsoon(); },0));
+  if(horizonBtn) horizonBtn.addEventListener('click', ()=> setTimeout(()=>{ if(horizonSec&&!horizonSec.hidden&&!sec.hidden) setAbyss(false); updateMonsoon(); },0));
+  if(vaultBtn) vaultBtn.addEventListener('click', ()=> setTimeout(()=>{ if(vaultSec&&!vaultSec.hidden&&!sec.hidden) setAbyss(false); updateMonsoon(); },0));
+  window.addEventListener('resize', ()=>{ if(!sec.hidden) resize(); });
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) return; if(!sec.hidden&&!running) start(); });
+  try{
+    const obs=new MutationObserver(()=>updateMonsoon());
+    if(altarSec) obs.observe(altarSec,{attributes:true,attributeFilter:['hidden']});
+    if(ferroSec) obs.observe(ferroSec,{attributes:true,attributeFilter:['hidden']});
+    if(horizonSec) obs.observe(horizonSec,{attributes:true,attributeFilter:['hidden']});
+    if(vaultSec) obs.observe(vaultSec,{attributes:true,attributeFilter:['hidden']});
+    obs.observe(sec,{attributes:true,attributeFilter:['hidden','class']});
+  }catch(_){}
+  try{
+    if(window.__altar && window.__altar.open){ const _a=window.__altar.open.bind(window.__altar); window.__altar.open=()=>{ setAbyss(false); updateMonsoon(); return _a(); }; }
+    if(window.__ferro && window.__ferro.open){ const _f=window.__ferro.open.bind(window.__ferro); window.__ferro.open=()=>{ setAbyss(false); updateMonsoon(); return _f(); }; }
+    if(window.__horizon && window.__horizon.open){ const _h=window.__horizon.open.bind(window.__horizon); window.__horizon.open=()=>{ setAbyss(false); updateMonsoon(); return _h(); }; }
+    if(window.__vault && window.__vault.open){ const _v=window.__vault.open.bind(window.__vault); window.__vault.open=()=>{ setAbyss(false); updateMonsoon(); return _v(); }; }
+  }catch(_){}
+  window.__abyss={open:()=>setAbyss(true), close:()=>setAbyss(false), _stop:stop, _start:start, get twist(){return twist}, get speed(){return speed}};
 })();
 </script>
 <!-- IMPL: Signal Ghost — 10k WebGPU-compute boids faked with JS spatial hash, 60fps, hunt + vortex + cursor + GHOST -->
