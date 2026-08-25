@@ -1468,6 +1468,33 @@ main.shake{animation:seismo-shake .38s ease}
   .keys-table.beading,.addform.spinodal-surge{animation:none!important}
 }
 </style>
+
+<!-- IMPL: Shutter-Breath Nav -->
+<link rel="stylesheet" href="/assets/view-transitions.css">
+<style id="shutter-breath-inline">
+/* Shutter-Breath Nav — inline self-contained 2-line + shared-element iris, 220ms */
+@view-transition { navigation: auto; }
+.vault-emblem{view-transition-name:vault-emblem;contain:paint}
+.vault-cards{view-transition-name:vault-cards;contain:layout paint}
+::view-transition-group(vault-emblem){animation-duration:220ms;animation-timing-function:cubic-bezier(.32,1,.68,1)}
+::view-transition-group(vault-cards){animation-duration:220ms;animation-timing-function:cubic-bezier(.16,1,.3,1)}
+::view-transition-old(vault-emblem){animation:220ms cubic-bezier(.32,1,.68,1) both shutter-iris-out}
+::view-transition-new(vault-emblem){animation:220ms cubic-bezier(.32,1,.68,1) both shutter-iris-in}
+::view-transition-old(vault-cards){animation:220ms cubic-bezier(.16,1,.3,1) both shutter-cards-out}
+::view-transition-new(vault-cards){animation:220ms cubic-bezier(.16,1,.3,1) both shutter-cards-in}
+::view-transition-old(root){animation:220ms ease both shutter-root-out}
+::view-transition-new(root){animation:220ms ease both shutter-root-in}
+@keyframes shutter-iris-in{from{clip-path:circle(0% at 50% 50%);filter:brightness(1.35);opacity:0;transform:scale(.88)}to{clip-path:circle(72% at 50% 50%);filter:brightness(1);opacity:1;transform:scale(1)}}
+@keyframes shutter-iris-out{from{clip-path:circle(72% at 50% 50%);opacity:1;transform:scale(1)}to{clip-path:circle(0% at 50% 50%);filter:brightness(.9);opacity:0;transform:scale(1.04)}}
+@keyframes shutter-cards-in{from{opacity:0;transform:translateY(10px) scale(.985);filter:blur(8px)}to{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
+@keyframes shutter-cards-out{from{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}to{opacity:0;transform:translateY(-8px) scale(.985);filter:blur(6px)}}
+@keyframes shutter-root-in{from{opacity:0}to{opacity:1}}
+@keyframes shutter-root-out{from{opacity:1}to{opacity:0}}
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+  .vault-emblem,.vault-cards{view-transition-name:none!important}
+}
+</style>
 </head>
 <body>
 <!-- IMPL: Mercury Blob Toggle -->
@@ -1539,7 +1566,7 @@ main.shake{animation:seismo-shake .38s ease}
 <!-- ============ header — MUST stay a <header> element (header{} CSS selector keys off the tag) ============ -->
 <header ref="hdr" tabindex="-1" v-if="authed">
   <div class="hwrap">
-    <div class="logo"><span>🛡</span>AIGATE</div>
+    <div class="logo vault-emblem"><span>🛡</span>AIGATE</div>
     <div class="live" :class="{off:!live}" role="status"><i></i><span>{{ liveLabel }}</span></div>
     <div class="rollup">{{ rollupText }}<template v-if="polledText"> · polled <span>{{ polledText }}</span></template></div>
     <div class="clock num" aria-hidden="true">{{ clockText }}</div>
@@ -1964,7 +1991,7 @@ main.shake{animation:seismo-shake .38s ease}
 
       <div class="lattice-wrap" id="lattice-wrap">
         <canvas id="flux-lattice" aria-hidden="true"></canvas>
-      <TransitionGroup name="card" tag="div" class="grid">
+      <TransitionGroup name="card" tag="div" class="grid vault-cards">
         <!-- jury r1 (5/5 models, unanimous): .card is display:flex;flex-direction:column;gap:15px, so bare
              text nodes + inline <span> chips each became a separate flex item and the sentence shattered
              across 7 gap-separated lines. Pre-existing bug inherited from the vanilla original. One <p>
@@ -14273,5 +14300,6 @@ function startRhizome(){
   setTimeout(start, 700);
 })();
 </script>
+<script src="/shutter-breath.js"></script>
 </body>
 </html>

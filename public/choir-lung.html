@@ -87,10 +87,35 @@ a{color:inherit}
   .btn{transition:none}
 }
 </style>
+<!-- IMPL: Shutter-Breath Nav -->
+<link rel="stylesheet" href="/assets/view-transitions.css">
+<style id="shutter-breath-inline">
+@view-transition { navigation: auto; }
+.vault-emblem{view-transition-name:vault-emblem;contain:paint}
+.vault-cards{view-transition-name:vault-cards;contain:layout paint}
+::view-transition-group(vault-emblem){animation-duration:220ms;animation-timing-function:cubic-bezier(.32,1,.68,1)}
+::view-transition-group(vault-cards){animation-duration:220ms;animation-timing-function:cubic-bezier(.16,1,.3,1)}
+::view-transition-old(vault-emblem){animation:220ms cubic-bezier(.32,1,.68,1) both shutter-iris-out}
+::view-transition-new(vault-emblem){animation:220ms cubic-bezier(.32,1,.68,1) both shutter-iris-in}
+::view-transition-old(vault-cards){animation:220ms cubic-bezier(.16,1,.3,1) both shutter-cards-out}
+::view-transition-new(vault-cards){animation:220ms cubic-bezier(.16,1,.3,1) both shutter-cards-in}
+::view-transition-old(root){animation:220ms ease both shutter-root-out}
+::view-transition-new(root){animation:220ms ease both shutter-root-in}
+@keyframes shutter-iris-in{from{clip-path:circle(0% at 50% 50%);filter:brightness(1.35);opacity:0;transform:scale(.88)}to{clip-path:circle(72% at 50% 50%);filter:brightness(1);opacity:1;transform:scale(1)}}
+@keyframes shutter-iris-out{from{clip-path:circle(72% at 50% 50%);opacity:1;transform:scale(1)}to{clip-path:circle(0% at 50% 50%);filter:brightness(.9);opacity:0;transform:scale(1.04)}}
+@keyframes shutter-cards-in{from{opacity:0;transform:translateY(10px) scale(.985);filter:blur(8px)}to{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
+@keyframes shutter-cards-out{from{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}to{opacity:0;transform:translateY(-8px) scale(.985);filter:blur(6px)}}
+@keyframes shutter-root-in{from{opacity:0}to{opacity:1}}
+@keyframes shutter-root-out{from{opacity:1}to{opacity:0}}
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+  .vault-emblem,.vault-cards{view-transition-name:none!important}
+}
+</style>
 </head>
 <body>
 <header class="sitehdr">
-  <a class="brand" href="/index.html" title="back to AIGATE">AIGATE <em>· CHOIR LUNG</em></a>
+  <a class="brand vault-emblem" href="/index.html" title="back to AIGATE">AIGATE <em>· CHOIR LUNG</em></a>
   <nav>
     <a href="/index.html">← dashboard</a>
     <a href="/board.html">🗂 board</a>
@@ -123,7 +148,7 @@ a{color:inherit}
     </div>
   </section>
 
-  <div class="grid">
+  <div class="grid vault-cards">
     <section class="card">
       <div class="card-h"><b>◈ Ribbon — WebGL2</b> <span style="margin-left:auto">pitch = sway · distortion = fray · breath = swell</span></div>
       <div class="card-b">
@@ -695,5 +720,6 @@ draw();
 log("tip: enable mic for true breath, or just hover the vault and type — both are first-class breath.");
 })();
 </script>
+<script src="/shutter-breath.js"></script>
 </body>
 </html>

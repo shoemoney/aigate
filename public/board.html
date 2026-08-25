@@ -415,6 +415,31 @@
   .ink-spark path{stroke-dashoffset:0 !important}
 }
 </style>
+<!-- IMPL: Shutter-Breath Nav -->
+<link rel="stylesheet" href="/assets/view-transitions.css">
+<style id="shutter-breath-inline">
+@view-transition { navigation: auto; }
+.vault-emblem{view-transition-name:vault-emblem;contain:paint}
+.vault-cards{view-transition-name:vault-cards;contain:layout paint}
+::view-transition-group(vault-emblem){animation-duration:220ms;animation-timing-function:cubic-bezier(.32,1,.68,1)}
+::view-transition-group(vault-cards){animation-duration:220ms;animation-timing-function:cubic-bezier(.16,1,.3,1)}
+::view-transition-old(vault-emblem){animation:220ms cubic-bezier(.32,1,.68,1) both shutter-iris-out}
+::view-transition-new(vault-emblem){animation:220ms cubic-bezier(.32,1,.68,1) both shutter-iris-in}
+::view-transition-old(vault-cards){animation:220ms cubic-bezier(.16,1,.3,1) both shutter-cards-out}
+::view-transition-new(vault-cards){animation:220ms cubic-bezier(.16,1,.3,1) both shutter-cards-in}
+::view-transition-old(root){animation:220ms ease both shutter-root-out}
+::view-transition-new(root){animation:220ms ease both shutter-root-in}
+@keyframes shutter-iris-in{from{clip-path:circle(0% at 50% 50%);filter:brightness(1.35);opacity:0;transform:scale(.88)}to{clip-path:circle(72% at 50% 50%);filter:brightness(1);opacity:1;transform:scale(1)}}
+@keyframes shutter-iris-out{from{clip-path:circle(72% at 50% 50%);opacity:1;transform:scale(1)}to{clip-path:circle(0% at 50% 50%);filter:brightness(.9);opacity:0;transform:scale(1.04)}}
+@keyframes shutter-cards-in{from{opacity:0;transform:translateY(10px) scale(.985);filter:blur(8px)}to{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
+@keyframes shutter-cards-out{from{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}to{opacity:0;transform:translateY(-8px) scale(.985);filter:blur(6px)}}
+@keyframes shutter-root-in{from{opacity:0}to{opacity:1}}
+@keyframes shutter-root-out{from{opacity:1}to{opacity:0}}
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+  .vault-emblem,.vault-cards{view-transition-name:none!important}
+}
+</style>
 </head>
 <body>
 <!-- shared goo filter — one instance for all blots -->
@@ -473,7 +498,7 @@
   </transition>
 
   <header>
-    <div class="brand" @dblclick="glitchActive=true" title="double-click for Glitch Tape"><span class="dot" :class="{off:!live}"></span> aigate <span style="color:var(--dim);font-weight:600">board</span></div>
+    <div class="brand vault-emblem" @dblclick="glitchActive=true" title="double-click for Glitch Tape"><span class="dot" :class="{off:!live}"></span> aigate <span style="color:var(--dim);font-weight:600">board</span></div>
     <span class="livemeta" :class="{off:!live}">{{liveLabel()}}</span>
     <span v-if="catchup" class="catchup" role="status" @click="catchup=''" title="dismiss">{{catchup}} ✕</span>
     <input class="filter" ref="filter" v-model="filter" placeholder="filter by id, title, dir, prompt… ( / )" aria-label="filter cards" @keydown.escape="filter=''">
@@ -491,7 +516,7 @@
       <div class="ac-seal">✓ ALL CLEAR</div>
     </div>
   </transition>
-  <div class="board" :class="{dragging:dragId!=null,reading:opened!=null}">
+  <div class="board vault-cards" :class="{dragging:dragId!=null,reading:opened!=null}">
     <div v-for="col in columns" :key="col.key" class="col" :class="[col.key,{hot: col.key==='running' && cards('running').length>0}]">
       <h2><span class="glyph">{{col.glyph}}</span>{{col.label}}
         <span class="count ink-blot-host" :class="['ct-'+col.key,{alarm: col.key==='error' && cards('error').length>0}]" :data-col="col.key"><transition name="roll"><span class="roll" :key="cards(col.key).length">{{cards(col.key).length}}</span></transition><span class="ink-dot" aria-hidden="true"></span><svg class="ink-spark" width="36" height="14" viewBox="0 0 36 14" aria-hidden="true"><path :d="col.key==='todo'?'M0 10 L6 7 L12 9 L18 3 L24 6 L30 2 L36 8':col.key==='running'?'M0 8 L6 11 L12 4 L18 9 L24 2 L30 7 L36 3':col.key==='done'?'M0 11 L6 9 L12 6 L18 8 L24 4 L30 5 L36 1':'M0 6 L6 10 L12 7 L18 11 L24 8 L30 12 L36 9'" pathLength="1"/></svg></span>
@@ -1198,5 +1223,6 @@ createApp({
 })();
 </script>
 <style>[v-cloak]{display:none}</style>
+<script src="/shutter-breath.js"></script>
 </body>
 </html>
