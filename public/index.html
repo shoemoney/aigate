@@ -834,6 +834,29 @@ main.shake{animation:seismo-shake .38s ease}
 @keyframes mercury-jiggle{0%{transform:translateY(0) scale(1,1)}28%{transform:translateY(0) scale(1.24,.76)}48%{transform:translateY(0) scale(.86,1.14)}68%{transform:translateY(0) scale(1.1,.90)}85%{transform:translateY(0) scale(.97,1.03)}100%{transform:translateY(0) scale(1,1)}}
 @keyframes mercury-jiggle-dot{0%{transform:scale(1,1)}28%{transform:scale(1.18,.82)}48%{transform:scale(.90,1.10)}100%{transform:scale(1,1)}}
 @media (prefers-reduced-motion:reduce){.mercury-goo{filter:none!important}.mercury-thumb,.mercury-dot{transition:none!important;animation:none!important}.mercury-blob.jiggle .mercury-thumb,.mercury-blob.jiggle .mercury-dot{animation:none!important}}
+<!-- IMPL: Shake Snow Globe -->
+.snowglobe{position:relative;display:inline-flex;flex-direction:column;align-items:center;gap:0;flex:none;user-select:none;-webkit-user-select:none;touch-action:none;cursor:grab}
+.snowglobe:active{cursor:grabbing}
+.snowglobe[aria-pressed="true"] .snowglobe-glass{box-shadow:0 0 0 1px rgba(232,179,75,.35),0 6px 22px rgba(0,0,0,.45),0 0 18px rgba(232,179,75,.14),inset 0 1px 1px rgba(255,255,255,.9)}
+.snowglobe-glass{position:relative;width:64px;height:64px;border-radius:50%;background:radial-gradient(ellipse 74% 64% at 30% 24%,rgba(255,255,255,.95) 0%,rgba(245,242,232,.9) 18%,rgba(212,212,208,.55) 36%,rgba(0,0,0,.06) 62%,transparent 72%),linear-gradient(180deg,#f6f3e8 0%,#e8e6df 100%);border:1px solid rgba(255,255,255,.72);box-shadow:0 0 0 1px rgba(16,18,17,.18),0 4px 16px rgba(0,0,0,.38),0 1px 0 rgba(255,255,255,.85) inset,0 0 14px rgba(232,179,75,.08);overflow:hidden;flex:none;transform:translateZ(0)}
+.snowglobe-glass::after{content:'';position:absolute;inset:0;border-radius:50%;pointer-events:none;background:radial-gradient(ellipse 92% 58% at 50% 102%,rgba(0,0,0,.14) 0%,transparent 58%);mix-blend-mode:multiply}
+.snowglobe-glass canvas{display:block;width:64px;height:64px;border-radius:50%}
+.snowglobe-highlight{position:absolute;left:7px;top:8px;width:22px;height:19px;border-radius:50%;background:radial-gradient(ellipse 100% 100% at 50% 50%,rgba(255,255,255,.92) 0%,rgba(255,255,255,.55) 32%,transparent 68%);filter:blur(.4px);pointer-events:none;opacity:.92;mix-blend-mode:screen}
+.snowglobe-base{position:relative;margin-top:-7px;width:38px;height:16px;border-radius:3px 3px 6px 6px;background:linear-gradient(180deg,#2a2c2a 0%,#1a1c1a 55%,#101211 100%);border:1px solid rgba(255,255,255,.08);border-top:1px solid rgba(255,255,255,.14);box-shadow:0 2px 8px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.snowglobe-base::before{content:'';position:absolute;inset:1px 0 0 0;height:1px;background:linear-gradient(90deg,transparent,rgba(232,179,75,.28),transparent)}
+.snowglobe-label{font:8px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:rgba(232,179,75,.92);font-weight:700;white-space:nowrap;text-shadow:0 0 6px rgba(232,179,75,.45);pointer-events:none;line-height:1}
+.snowglobe.storm .snowglobe-glass{animation:snowglobe-rattle .42s ease}
+@keyframes snowglobe-rattle{0%{transform:translateX(0)}18%{transform:translateX(-1.6px) rotate(-.7deg)}36%{transform:translateX(1.5px) rotate(.6deg)}54%{transform:translateX(-1.1px) rotate(-.4deg)}72%{transform:translateX(.9px) rotate(.3deg)}100%{transform:translateX(0) rotate(0)}}
+.snowglobe-pop{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;background:rgba(16,18,17,.94);border:1px solid rgba(232,179,75,.22);border-radius:20px;padding:4px 8px;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);box-shadow:0 6px 18px rgba(0,0,0,.35);opacity:0;transition:opacity .18s,transform .18s;white-space:nowrap;z-index:2}
+.snowglobe-pop.on{opacity:1;transform:translate(-50%,-54%)}
+.snowglobe-menu{position:absolute;left:50%;top:calc(100% + 9px);transform:translateX(-50%);min-width:156px;background:rgba(22,24,23,.98);border:1px solid rgba(232,179,75,.18);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.52),0 0 0 1px rgba(255,255,255,.04) inset;backdrop-filter:blur(10px);padding:6px;z-index:40;display:flex;flex-direction:column;gap:2px}
+.snowglobe-menu[hidden]{display:none!important}
+.snowglobe-menu button{width:100%;text-align:left;padding:7px 9px;border-radius:7px;font:12px var(--mono);letter-spacing:.06em;color:var(--dim);display:flex;align-items:center;justify-content:space-between;gap:8px;transition:background .14s,color .14s,border-color .14s;border:1px solid transparent}
+.snowglobe-menu button:hover{background:rgba(232,179,75,.08);color:var(--fg);border-color:rgba(232,179,75,.12)}
+.snowglobe-menu button[aria-checked="true"]{background:rgba(232,179,75,.12);color:var(--accent);border-color:rgba(232,179,75,.22)}
+.snowglobe-menu button small{font-size:10px;opacity:.65;letter-spacing:.08em}
+.snowglobe-menu .sg-hint{font:9px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);opacity:.7;padding:4px 6px 2px;text-align:center}
+@media (prefers-reduced-motion:reduce){.snowglobe.storm .snowglobe-glass{animation:none!important}.snowglobe-glass canvas{filter:none!important}}
 @media (max-width:980px){.act-grid{grid-template-columns:1fr}}
 @media (max-width:760px){.rollup{display:none}.hwrap{gap:12px;padding-top:8px;padding-bottom:8px}}
 @media (max-width:420px){main{padding:0 14px}.hwrap{padding:0 14px}.hero-num{font-size:34px}.spark{width:100px}}
@@ -1047,6 +1070,21 @@ main.shake{animation:seismo-shake .38s ease}
     <button id="lung-toggle" class="btn" type="button" aria-pressed="false" title="THE LUNG — volumetric breath field (drag clip, wheel=breath, scroll=history)">◎ lung</button>
     <!-- IMPL: Mercury Blob Toggle -->
     <button id="mercury-toggle" class="mercury-blob" type="button" role="switch" aria-checked="false" aria-label="Mercury blob — drag thumb to stretch, click to toggle" title="Mercury Blob — drag to liquefy"><span class="mercury-label" aria-hidden="true">◉ mercury</span><span class="mercury-track" aria-hidden="true"><span class="mercury-goo"><i class="mercury-dot"></i><i class="mercury-thumb"></i></span></span></button>
+    <!-- IMPL: Shake Snow Globe -->
+    <div class="snowglobe" id="snowglobe-wrap" style="position:relative">
+      <button id="snowglobe-btn" class="snowglobe" type="button" aria-label="Shake Snow Globe — tap to thunk, drag to swirl, heavy traffic = storm" title="Shake Snow Globe — shake mouse / tilt phone, tap to thunk · active model floats">
+        <span class="snowglobe-glass" aria-hidden="true"><canvas id="snowglobe" width="128" height="128" aria-label="Shake Snow Globe — model selector, shake to swirl, tap to thunk"></canvas><span class="snowglobe-highlight"></span><span id="snowglobe-pop" class="snowglobe-pop" aria-hidden="true"></span></span>
+        <span class="snowglobe-base" aria-hidden="true"><span class="snowglobe-label" id="snowglobe-label">opus</span></span>
+      </button>
+      <div id="snowglobe-menu" class="snowglobe-menu" hidden role="menu" aria-label="model picker">
+        <div class="sg-hint">tap globe to thunk · drag to swirl</div>
+        <button type="button" role="menuitemradio" data-model="claude-opus-5" aria-checked="false">opus <small>floats · oil</small></button>
+        <button type="button" role="menuitemradio" data-model="claude-sonnet-5" aria-checked="false">sonnet <small>mid · silk</small></button>
+        <button type="button" role="menuitemradio" data-model="claude-fable-5" aria-checked="false">fable <small>drift · mist</small></button>
+        <button type="button" role="menuitemradio" data-model="claude-haiku-4-5" aria-checked="false">haiku <small>sinks · quicksilver</small></button>
+        <button type="button" role="menuitemradio" data-model="" aria-checked="false">default <small>neutral</small></button>
+      </div>
+    </div>
     <button class="btn" @click="paletteOpen=true" title="command palette (⌘K)">⌘K</button>
     <button class="btn" @click="toggleBlackBox" title="Black Box terminal (~)">~</button>
     <button class="btn" @click="toggleBell" :aria-pressed="String(notifyOn)"
@@ -9516,6 +9554,533 @@ function startMonsoon(){
     pour:(a,b,c)=>spawnPour(a,b,c),
     get visc(){ return reservoirs.length? reservoirs.reduce((s,r)=>s+r.visc,0)/reservoirs.length : 0.5; }
   };
+})();
+</script>
+<!-- IMPL: Shake Snow Globe -->
+<script>
+(()=>{ try{
+  const cv=document.getElementById('snowglobe');
+  const btn=document.getElementById('snowglobe-btn');
+  const wrap=document.getElementById('snowglobe-wrap');
+  const menu=document.getElementById('snowglobe-menu');
+  const labelEl=document.getElementById('snowglobe-label');
+  const popEl=document.getElementById('snowglobe-pop');
+  if(!cv||!btn) return;
+  const MODELS={
+    'claude-opus-5':   {short:'opus',   buoy:0.22, tint:[232,179,75],  name:'OPUS',  desc:'floats · oil'},
+    'claude-sonnet-5': {short:'sonnet', buoy:0.42, tint:[142,207,216], name:'SONNET',desc:'mid · silk'},
+    'claude-fable-5':  {short:'fable',  buoy:0.53, tint:[168,148,255], name:'FABLE', desc:'drift · mist'},
+    'claude-haiku-4-5':{short:'haiku',  buoy:0.80, tint:[210,212,214], name:'HAIKU', desc:'sinks · quicksilver'},
+    '':                {short:'default',buoy:0.48, tint:[185,183,171], name:'DEFAULT',desc:'neutral'}
+  };
+  const MODEL_ORDER=['claude-opus-5','claude-sonnet-5','claude-fable-5','claude-haiku-4-5',''];
+  const LS_KEY='snowglobe_model';
+  let activeId=null;
+  try{ activeId=localStorage.getItem(LS_KEY); }catch(_){}
+  if(!(activeId in MODELS)) activeId='claude-opus-5';
+  let active=MODELS[activeId];
+  if(labelEl) labelEl.textContent=active.short;
+
+  const W=128,H=128,cx=64,cy=58,R=54;
+  const ctx=cv.getContext('2d',{alpha:true});
+  if(!ctx) return;
+
+  const N=136;
+  const particles=[];
+  let storm=0, stormShake=0, tiltX=0, tiltY=0;
+  let sloshX=0, sloshY=0, sloshXTgt=0, sloshYTgt=0;
+  let lastT=performance.now();
+  let running=true, raf=0, settled=0;
+  let wasMoving=false;
+  const rnd=(a,b)=>a+Math.random()*(b-a);
+
+  function seedParticles(){
+    particles.length=0;
+    const buoy=active.buoy;
+    for(let i=0;i<N;i++){
+      const ang=Math.random()*Math.PI*2;
+      const rr=Math.pow(Math.random(),0.62)* (R-9);
+      const bx=cx+Math.cos(ang)*rr;
+      const targetY=cy + (buoy-0.5)*R*0.72;
+      // spread but bias toward active band for 70% of particles
+      let y;
+      if(i < N*0.74){
+        y= targetY + rnd(-14,14) + (Math.random()<0.5? rnd(-R*0.18,R*0.18):0);
+      }else{
+        y= cy + rnd(-R*0.72,R*0.72);
+      }
+      let x=bx + rnd(-4,4);
+      const dx=x-cx, dy=y-cy;
+      const d=Math.hypot(dx,dy);
+      if(d>R-7){ const s=(R-7)/d; x=cx+dx*s; y=cy+dy*s; }
+      const baseBuoy= (i<N*0.74) ? buoy + rnd(-0.12,0.12) : rnd(0.18,0.86);
+      particles.push({x,y,vx:rnd(-.4,.4),vy:rnd(-.4,.4),r: rnd(3.2,6.8), bu: Math.max(0.08,Math.min(0.92,baseBuoy)), hueJ:rnd(-6,6)});
+    }
+  }
+  seedParticles();
+
+  function setActive(id){
+    if(!(id in MODELS)) id='';
+    activeId=id; active=MODELS[id];
+    try{ localStorage.setItem(LS_KEY,id);}catch(_){}
+    if(labelEl) labelEl.textContent=active.short;
+    // rebias buoy of existing particles toward new target (keep motion)
+    const nb=active.buoy;
+    for(let i=0;i<particles.length;i++){
+      const p=particles[i];
+      if(i < particles.length*0.74) p.bu=Math.max(0.08,Math.min(0.92, nb + rnd(-0.12,0.12)));
+      else p.bu= rnd(0.18,0.86);
+    }
+    syncMenu();
+    thunk(true);
+    // dispatch event so other widgets could listen if desired
+    try{ window.dispatchEvent(new CustomEvent('snowglobe:model',{detail:{model:id}})); }catch(_){}
+  }
+  function syncMenu(){
+    if(!menu) return;
+    menu.querySelectorAll('[data-model]').forEach(b=>{
+      const on=b.getAttribute('data-model')===activeId;
+      b.setAttribute('aria-checked', String(on));
+    });
+  }
+  syncMenu();
+
+  // thunk sound + shake
+  let actx=null;
+  function ensureCtx(){
+    try{
+      if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
+      if(actx.state==='suspended') actx.resume().catch(()=>{});
+      return actx;
+    }catch(_){ return null; }
+  }
+  function playThunk(heavy){
+    const ac=ensureCtx(); if(!ac) return;
+    try{
+      const t=ac.currentTime;
+      // low thunk: membrane hit
+      const o=ac.createOscillator(); const g=ac.createGain();
+      o.type='sine'; o.frequency.setValueAtTime(heavy?140:180,t);
+      o.frequency.exponentialRampToValueAtTime(38,t+0.14);
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.linearRampToValueAtTime(heavy?0.42:0.28,t+0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
+      const lp=ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=420;
+      o.connect(lp); lp.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+0.24);
+      // glass tick
+      const o2=ac.createOscillator(); const g2=ac.createGain();
+      o2.type='sine'; o2.frequency.setValueAtTime(1800,t+0.01); o2.frequency.exponentialRampToValueAtTime(900,t+0.12);
+      g2.gain.setValueAtTime(0.0001,t+0.01); g2.gain.linearRampToValueAtTime(0.09,t+0.018); g2.gain.exponentialRampToValueAtTime(0.0001,t+0.16);
+      o2.connect(g2); g2.connect(ac.destination); o2.start(t+0.01); o2.stop(t+0.18);
+      // tiny noise burst
+      const len=Math.floor(ac.sampleRate*0.06); const buf=ac.createBuffer(1,len,ac.sampleRate);
+      const ch=buf.getChannelData(0); for(let i=0;i<len;i++) ch[i]=(Math.random()*2-1)*Math.pow(1-i/len,2)*0.6;
+      const src=ac.createBufferSource(); src.buffer=buf;
+      const gn=ac.createGain(); gn.gain.setValueAtTime(0.10,t); gn.gain.exponentialRampToValueAtTime(0.0001,t+0.08);
+      const hp=ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1200;
+      src.connect(hp); hp.connect(gn); gn.connect(ac.destination); src.start(t);
+    }catch(_){}
+  }
+
+  let popT=0;
+  function showPop(txt){
+    if(!popEl) return;
+    popEl.textContent=txt; popEl.classList.add('on');
+    clearTimeout(popT); popT=setTimeout(()=>popEl.classList.remove('on'), 900);
+  }
+
+  function thunk(isProgrammatic){
+    // random slosh burst + storm puff
+    sloshXTgt += rnd(-7,7); sloshYTgt += rnd(-5,2);
+    stormShake = isProgrammatic ? 0.35 : 0.9;
+    // add to particles directly for instant swirl
+    for(let i=0;i<particles.length;i++){
+      const p=particles[i];
+      p.vx += rnd(-3.2,3.2) + sloshXTgt*0.22;
+      p.vy += rnd(-2.4,1.2) + sloshYTgt*0.18;
+    }
+    const heavy = storm>0.5;
+    playThunk(heavy);
+    btn.classList.remove('storm'); void btn.offsetWidth; btn.classList.add('storm');
+    setTimeout(()=>btn.classList.remove('storm'), 620);
+    showPop(active.short);
+    try{ if(navigator.vibrate) navigator.vibrate(18); }catch(_){}
+  }
+
+  // pointer shake & menu
+  let dragging=false, lastX=0, lastY=0, dragPx=0, downT=0, downX=0, downY=0;
+  let menuOpen=false;
+  function openMenu(){ if(!menu) return; menu.hidden=false; menuOpen=true; }
+  function closeMenu(){ if(!menu) return; menu.hidden=true; menuOpen=false; }
+  btn.addEventListener('pointerdown', e=>{
+    dragging=true; dragPx=0; downT=performance.now(); downX=e.clientX; downY=e.clientY;
+    lastX=e.clientX; lastY=e.clientY;
+    try{ btn.setPointerCapture(e.pointerId);}catch(_){}
+    e.preventDefault();
+  });
+  btn.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const dx=e.clientX-lastX, dy=e.clientY-lastY;
+    lastX=e.clientX; lastY=e.clientY;
+    dragPx+=Math.hypot(dx,dy);
+    sloshXTgt += dx*0.28; sloshYTgt += dy*0.20;
+    // keep within bounds
+    sloshXTgt=Math.max(-18,Math.min(18,sloshXTgt));
+    sloshYTgt=Math.max(-14,Math.min(14,sloshYTgt));
+    for(let i=0;i<particles.length;i++){
+      const p=particles[i];
+      p.vx += dx*0.06 + rnd(-.4,.4);
+      p.vy += dy*0.05 + rnd(-.4,.4);
+    }
+    // slight visual drag
+    cv.style.transform='translate('+(dx*0.06)+'px,'+(dy*0.05)+'px)';
+  });
+  function endPointer(e){
+    if(!dragging) return;
+    dragging=false;
+    cv.style.transform='';
+    try{ btn.releasePointerCapture(e.pointerId);}catch(_){}
+    const upX=e.clientX, upY=e.clientY;
+    const dt=performance.now()-downT;
+    const dist=Math.hypot(upX-downX, upY-downY);
+    const isTap = dist<8 && dt<420 && dragPx<10;
+    if(isTap){
+      thunk(false);
+      // toggle menu on tap
+      if(menuOpen) closeMenu(); else openMenu();
+    }else if(dragPx>14){
+      // drag swirl already applied
+      stormShake=Math.min(1, stormShake+0.5);
+    }
+  }
+  btn.addEventListener('pointerup', endPointer);
+  btn.addEventListener('pointercancel', endPointer);
+  btn.addEventListener('click', e=>{
+    // fallback for keyboard / synthetic; pointerup already handles mouse
+    if(e.detail===0) return; // keyboard
+  });
+  btn.addEventListener('keydown', e=>{
+    if(e.key==='Enter' || e.key===' '){ e.preventDefault(); thunk(false); if(menuOpen) closeMenu(); else openMenu(); }
+    if(e.key==='Escape' && menuOpen){ e.preventDefault(); closeMenu(); btn.focus(); }
+  });
+  // tilt via deviceorientation (only when permission granted)
+  let tiltEnabled=false;
+  function onOrient(e){
+    if(!tiltEnabled) return;
+    const gx = e.gamma||0, gy=(e.beta||0)-45;
+    const nx=Math.max(-1,Math.min(1,gx/30)), ny=Math.max(-1,Math.min(1,gy/30));
+    tiltX=nx*1.6; tiltY=ny*1.2;
+    sloshXTgt += nx*0.55; sloshYTgt += ny*0.45;
+  }
+  try{ window.addEventListener('deviceorientation', onOrient, {passive:true}); }catch(_){}
+  // click outside to close menu
+  document.addEventListener('click', e=>{
+    if(!menuOpen) return;
+    if(wrap&&wrap.contains(e.target)) return;
+    closeMenu();
+  });
+  if(menu){
+    menu.addEventListener('click', e=>{
+      const b=e.target.closest('[data-model]'); if(!b) return;
+      setActive(b.getAttribute('data-model')||'');
+      closeMenu();
+      try{ btn.focus(); }catch(_){}
+    });
+  }
+  // global mouse shake when hovering globe — subtle
+  let lastMove=0;
+  wrap&&wrap.addEventListener('mousemove', e=>{
+    const now=performance.now(); if(now-lastMove<18) return; lastMove=now;
+    const dx=(e.movementX||0), dy=(e.movementY||0);
+    if(Math.abs(dx)+Math.abs(dy) < 0.5) return;
+    sloshXTgt += dx*0.08; sloshYTgt += dy*0.06;
+  });
+
+  // API load → storm
+  function applyStormFromCount(cnt){
+    const target=Math.max(0, Math.min(1, cnt/18))*0.92;
+    storm = storm*0.88 + target*0.12;
+  }
+  let pollTimer=0;
+  async function pollAccess(){
+    try{
+      const tok=localStorage.getItem('aigate_token')||'';
+      const hdr=tok?{authorization:'Bearer '+tok}:{};
+      const r=await fetch('/api/access?limit=60',{headers:hdr, credentials:'same-origin'});
+      if(!r.ok) throw 0;
+      const rows=await r.json();
+      const now=Date.now();
+      let cnt=0;
+      for(let i=0;i<rows.length;i++){
+        const ts=rows[i].ts? new Date(rows[i].ts).getTime():0;
+        if(ts && (now-ts) < 60000) cnt++;
+        else if(!ts) cnt+=0.2;
+      }
+      applyStormFromCount(cnt);
+      if(cnt>=14){ stormShake=Math.min(1, stormShake+0.18); if(Math.random()<0.22) showPop('storm '+cnt+'/min'); }
+    }catch(_){}
+    pollTimer=setTimeout(pollAccess, 7000+Math.random()*2200);
+  }
+  pollAccess();
+  // fetch hook for live bumps
+  try{
+    const orig=window.fetch;
+    if(orig && !orig.__snowHooked){
+      window.fetch=function(input,init){
+        const p=orig.apply(this,arguments);
+        p.then(res=>{
+          try{
+            const url= typeof input==='string'?input:(input&&input.url)||'';
+            if(url.includes('/api/access')||url.includes('/api/stats')||url.includes('/api/board')){
+              storm = Math.min(1, storm+0.06); stormShake=Math.min(1, stormShake+0.08);
+            }
+            if(res && res.status===429){ storm=Math.min(1,storm+0.22); stormShake=1; }
+          }catch(_){}
+        }).catch(()=>{});
+        return p;
+      };
+      window.fetch.__snowHooked=true;
+    }
+  }catch(_){}
+
+  // reduced motion
+  let prefersReduced=false;
+  try{ prefersReduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(_){}
+
+  function draw(){
+    const now=performance.now();
+    const dt=Math.min(32, now-lastT); lastT=now;
+    const t=now*0.001;
+    if(prefersReduced){
+      ctx.clearRect(0,0,W,H);
+      ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.clip();
+      ctx.fillStyle='#0a0c0b'; ctx.fillRect(0,0,W,H);
+      // static mercury puddle
+      const grd=ctx.createRadialGradient(cx-10,cy-12, 8, cx,cy,R);
+      grd.addColorStop(0,'#fffdf2'); grd.addColorStop(0.28,'#e8d8a6'); grd.addColorStop(0.55,'#b8b6b0'); grd.addColorStop(1,'#2a2c2a');
+      ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(cx,cy,R-1.5,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='rgba(16,18,17,.92)'; ctx.font='700 12px ui-monospace,monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(active.name, cx, cy+2);
+      ctx.restore();
+      // glass edge
+      ctx.strokeStyle='rgba(255,255,255,.34)'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
+      return;
+    }
+
+    // spring slosh
+    sloshX += (sloshXTgt + tiltX*3.2 - sloshX)*0.09;
+    sloshY += (sloshYTgt + tiltY*2.6 - sloshY)*0.09;
+    sloshXTgt *= 0.92; sloshYTgt *= 0.92;
+    tiltX*=0.97; tiltY*=0.97;
+    stormShake*=0.94; if(stormShake<0.01) stormShake=0;
+    storm*=0.998; if(storm<0.02) storm*=0.98;
+    // breathing
+    const breathe=Math.sin(t*0.78)*0.22 + Math.sin(t*1.31)*0.12;
+    const stormAdd = storm*2.2 + stormShake*1.4;
+
+    let sumV=0;
+    for(let i=0;i<particles.length;i++){
+      const p=particles[i];
+      const targetY= cy + (p.bu - 0.5)* R*0.78 + breathe* (p.bu<0.35? -2: p.bu>0.70? 2.5: 0);
+      const ay = (targetY - p.y)*0.026*(0.55+storm*0.7);
+      const ax = (cx - p.x)*0.004*(1 - Math.abs(p.bu-0.5));
+      p.vx += ax + sloshX*0.13*(0.7+Math.random()*0.6) + stormAdd*rnd(-0.22,0.22) + breathe*0.04;
+      p.vy += ay + sloshY*0.12*(0.7+Math.random()*0.6) + stormAdd*rnd(-0.18,0.18);
+      // viscosity: storm = thinner, settled = thicker
+      const damp = 0.965 - storm*0.012 - stormShake*0.02;
+      p.vx*=damp; p.vy*=damp;
+      p.x+=p.vx; p.y+=p.vy;
+      // circle constraint + gentle bounce
+      const dx=p.x-cx, dy=p.y-cy;
+      const d=Math.hypot(dx,dy);
+      const lim=R - p.r - 0.5;
+      if(d>lim){
+        const s=lim/d;
+        p.x=cx+dx*s; p.y=cy+dy*s;
+        // reflect velocity inward
+        const nx=dx/d, ny=dy/d;
+        const dot=p.vx*nx + p.vy*ny;
+        if(dot>0){ p.vx -= dot*nx*1.25; p.vy -= dot*ny*1.25; }
+        p.vx*=0.52; p.vy*=0.52;
+      }
+      sumV+=Math.hypot(p.vx,p.vy);
+    }
+    // cheap inter-particle push every other frame
+    if((now|0)%32<16){
+      for(let i=0;i<particles.length;i++){
+        const a=particles[i];
+        for(let j=i+1;j<particles.length;j++){
+          const b=particles[j];
+          const dx=b.x-a.x, dy=b.y-a.y;
+          const d=Math.hypot(dx,dy);
+          const minD=(a.r+b.r)*0.72;
+          if(d && d<minD){
+            const push=(minD-d)*0.18/d;
+            const px=dx*push, py=dy*push;
+            a.x-=px; a.y-=py; b.x+=px; b.y+=py;
+            // also nudge velocities apart
+            a.vx -= px*0.06; a.vy -= py*0.06;
+            b.vx += px*0.06; b.vy += py*0.06;
+          }
+        }
+      }
+    }
+    const avgV=sumV/particles.length;
+    wasMoving = avgV>0.55 || storm>0.34 || stormShake>0.12;
+    if(wasMoving) settled=0; else settled=Math.min(1, settled+dt*0.0018);
+    const settledK=Math.max(0,Math.min(1,(settled-0.35)/0.65));
+
+    // ---- render ----
+    ctx.clearRect(0,0,W,H);
+    // outer glass shadow
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.clip();
+    // fluid cavity backing
+    ctx.fillStyle='#080a09'; ctx.fillRect(0,0,W,H);
+    // subtle greenish fluid tint under mercury
+    const bgG=ctx.createRadialGradient(cx,cy+8,R*0.2,cx,cy,R*1.2);
+    bgG.addColorStop(0,'rgba(232,211,140,.06)'); bgG.addColorStop(0.55,'rgba(14,18,16,.9)'); bgG.addColorStop(1,'rgba(6,8,7,1)');
+    ctx.fillStyle=bgG; ctx.fillRect(0,0,W,H);
+
+    // draw mercury particles as glossy blobs
+    // first pass: soft bloom
+    ctx.globalCompositeOperation='lighter';
+    for(let i=0;i<particles.length;i++){
+      const p=particles[i];
+      const grd=ctx.createRadialGradient(p.x - p.r*0.34, p.y - p.r*0.42, p.r*0.18, p.x, p.y, p.r*1.35);
+      // tint slightly toward active model's tint
+      const tr=active.tint[0], tg=active.tint[1], tb=active.tint[2];
+      const mix = 0.14 + settledK*0.06;
+      const r=Math.round(248*(1-mix)+tr*mix), g=Math.round(248*(1-mix)+tg*mix), b=Math.round(238*(1-mix)+tb*mix);
+      grd.addColorStop(0,'rgba(255,255,252,0.98)');
+      grd.addColorStop(0.20,'rgba('+r+','+g+','+b+',0.96)');
+      grd.addColorStop(0.42,'rgba('+(180+(tr-180)*0.18|0)+','+(180+(tg-180)*0.18|0)+','+(178+(tb-178)*0.18|0)+',0.92)');
+      grd.addColorStop(0.68,'rgba(92,94,94,0.52)');
+      grd.addColorStop(1,'rgba(32,34,34,0)');
+      ctx.fillStyle=grd;
+      ctx.shadowColor='rgba(255,250,220,.18)'; ctx.shadowBlur=6;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r*1.05,0,Math.PI*2); ctx.fill();
+      ctx.shadowBlur=0;
+    }
+    // second pass: crisp highlight core
+    ctx.globalCompositeOperation='source-over';
+    for(let i=0;i<particles.length;i++){
+      const p=particles[i];
+      const hl=ctx.createRadialGradient(p.x - p.r*0.28, p.y - p.r*0.38, 0, p.x - p.r*0.28, p.y - p.r*0.38, p.r*0.62);
+      hl.addColorStop(0,'rgba(255,255,255,0.92)'); hl.addColorStop(0.45,'rgba(255,255,255,0.0)');
+      ctx.fillStyle=hl; ctx.beginPath(); ctx.arc(p.x - p.r*0.18, p.y - p.r*0.22, p.r*0.55, 0, Math.PI*2); ctx.fill();
+    }
+    // fluid surface line hint when sloshing sideways
+    if(Math.abs(sloshX)>0.9){
+      ctx.strokeStyle='rgba(255,248,220,.14)'; ctx.lineWidth=0.9;
+      ctx.beginPath();
+      const tilt = sloshX*0.018;
+      ctx.moveTo(cx-R, cy+ tilt*(-R)); ctx.lineTo(cx+R, cy+ tilt*(R));
+      ctx.stroke();
+    }
+    // model label reveal when settled
+    if(settledK>0.12){
+      const a=Math.min(1,(settledK-0.12)/0.55);
+      ctx.save();
+      ctx.globalAlpha=a*0.96;
+      // pill backing
+      const tw=active.name.length*7.2 + 16;
+      const th=18, rx=9;
+      const x=cx - tw/2, y=cy - th/2 + (1-a)*4;
+      ctx.fillStyle='rgba(16,18,17,'+(0.72+ a*0.22)+')';
+      ctx.strokeStyle='rgba(232,179,75,'+(0.18+ a*0.22)+')';
+      ctx.lineWidth=1;
+      // rounded rect
+      ctx.beginPath();
+      ctx.moveTo(x+rx,y); ctx.arcTo(x+tw,y,x+tw,y+th,rx); ctx.arcTo(x+tw,y+th,x,y+th,rx); ctx.arcTo(x,y+th,x,y,rx); ctx.arcTo(x,y,x+tw,y,rx);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle='rgba(232,179,75,'+(0.88+ a*0.12)+')';
+      ctx.font='700 11px ui-monospace,monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.shadowColor='rgba(232,179,75,.55)'; ctx.shadowBlur=6;
+      ctx.fillText(active.name, cx, y+th/2+0.5);
+      ctx.shadowBlur=0;
+      // micro descriptor
+      if(a>0.62){
+        ctx.globalAlpha=(a-0.62)/0.38*0.72;
+        ctx.fillStyle='rgba(255,255,255,.62)';
+        ctx.font='7px ui-monospace,monospace'; ctx.fillText(active.desc, cx, y+th+8);
+      }
+      ctx.restore();
+    } else {
+      // when shaking, show turbulence streaks
+      if(storm>0.22 || stormShake>0.18){
+        ctx.strokeStyle='rgba(232,179,75,'+(0.04+storm*0.05+stormShake*0.04)+')';
+        ctx.lineWidth=0.7;
+        for(let i=0;i<3;i++){
+          const yy=cy + rnd(-R*0.55,R*0.55);
+          ctx.beginPath(); ctx.moveTo(cx-R*0.92, yy+sloshY*0.6); ctx.bezierCurveTo(cx-R*0.2, yy-sloshX*1.2, cx+R*0.2, yy+sloshX*1.1, cx+R*0.92, yy-sloshY*0.7); ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+    // glass rim + specular
+    ctx.strokeStyle='rgba(255,255,255,.38)'; ctx.lineWidth=1.35; ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,.14)'; ctx.lineWidth=0.9; ctx.beginPath(); ctx.arc(cx,cy,R-0.9, -Math.PI*0.92, Math.PI*0.18); ctx.stroke();
+    // inner glass shine sweep when sloshing
+    if(avgV>1.0){
+      ctx.strokeStyle='rgba(255,255,255,'+(0.06+Math.min(0.10,avgV*0.02))+')';
+      ctx.lineWidth=1; ctx.beginPath(); ctx.arc(cx-1.5,cy-1.2,R-6, -Math.PI*0.85, -Math.PI*0.15); ctx.stroke();
+    }
+  }
+
+  function loop(){
+    if(!running) return;
+    draw();
+    raf=requestAnimationFrame(loop);
+  }
+  function start(){ if(!running){ running=true; lastT=performance.now(); loop(); } }
+  function stop(){ running=false; if(raf) cancelAnimationFrame(raf); }
+
+  // expose for debug / testing
+  window.__snowglobe={
+    get model(){return activeId}, set model(v){ setActive(v); },
+    get storm(){return storm}, set storm(v){ storm=Math.max(0,Math.min(1,v)); },
+    thunk, setActive, get particles(){return particles},
+    start, stop, get running(){return running},
+    seed:seedParticles
+  };
+
+  // init
+  if(prefersReduced){
+    draw();
+  }else{
+    lastT=performance.now(); loop();
+  }
+  // visibility
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) stop(); else if(!prefersReduced) start(); });
+  try{
+    const mq=window.matchMedia('(prefers-reduced-motion: reduce)');
+    mq.addEventListener('change', e=>{
+      prefersReduced=e.matches;
+      if(prefersReduced){ stop(); draw(); } else { start(); }
+    });
+  }catch(_){}
+  // click touch tilt permission prompt for iOS
+  let tiltAsked=false;
+  function askTilt(){
+    if(tiltAsked) return; tiltAsked=true;
+    try{
+      if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+        DeviceOrientationEvent.requestPermission().then(s=>{ if(s==='granted') tiltEnabled=true; }).catch(()=>{});
+      }else{
+        tiltEnabled=true;
+      }
+    }catch(_){ tiltEnabled=true; }
+  }
+  btn.addEventListener('touchstart', askTilt, {once:true, passive:true});
+  btn.addEventListener('pointerdown', askTilt, {once:true});
+
+  // keyboard hint: press 'g' to thunk when focused elsewhere? keep minimal
+  document.addEventListener('keydown', e=>{
+    if(e.key==='g' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); thunk(false); }
+  });
+
+}catch(e){ try{ console.warn('snowglobe',e);}catch(_){} }
 })();
 </script>
 
