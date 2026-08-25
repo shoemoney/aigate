@@ -696,7 +696,7 @@ header,main,footer{position:relative}
              radial-gradient(260px 200px at var(--gx,50%) var(--gy,50%),rgba(232,179,75,.10),transparent 70%)}
 
 /* ============ IMPL: Seismograph Audit Drum — endless paper under a fixed spring needle ============ */
-.seismo-wrap{position:relative;margin:0 0 18px;z-index:1;height:112px;border-radius:3px;overflow:hidden;
+.seismo-wrap{position:relative;margin:0 0 18px;z-index:1;height:220px;border-radius:3px;overflow:hidden;
   background:
     radial-gradient(ellipse 180px 120px at 18% 42%,rgba(120,85,40,.09) 0%, transparent 68%),
     radial-gradient(ellipse 140px 90px at 74% 68%,rgba(110,75,30,.07) 0%, transparent 62%),
@@ -739,6 +739,53 @@ header,main,footer{position:relative}
 .seismo-wrap:hover .seismo-hint{color:rgba(60,45,15,.62)}
 @keyframes seismo-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-2px) rotate(-.18deg)}30%{transform:translateX(3px) rotate(.22deg)}45%{transform:translateX(-3px) rotate(-.15deg)}60%{transform:translateX(2px)}75%{transform:translateX(-1px)}}
 main.shake{animation:seismo-shake .38s ease}
+/* <!-- IMPL: Seismo Scope --> — 220px audit oscilloscope: instrument not altar, bound to /api/access, needle kick + sine decay, view() stagger + FLIP, toolbar scrubs history parallax */
+.seismo-wrap{height:220px !important}
+#seismo{height:220px}
+.seismo-wrap::after{box-shadow:0 0 8px rgba(0,0,0,.32), 1px 0 0 rgba(255,255,255,.55), -1px 0 0 rgba(0,0,0,.14), 0 0 0 1px rgba(232,179,75,.08)}
+.seismo-wrap .seismo-graticule{position:absolute;inset:0;pointer-events:none;z-index:1;opacity:.42;
+  background:
+    repeating-linear-gradient(90deg, rgba(60,45,15,.08) 0 1px, transparent 1px 28px),
+    repeating-linear-gradient(0deg, rgba(60,45,15,.06) 0 1px, transparent 1px 22px),
+    linear-gradient(90deg, transparent 49.75%, rgba(60,45,15,.18) 49.9%, rgba(60,45,15,.22) 50%, rgba(60,45,15,.18) 50.1%, transparent 50.25%),
+    linear-gradient(0deg, transparent 49.6%, rgba(60,45,15,.14) 50%, transparent 50.4%);
+}
+.seismo-wrap .seismo-vignette{position:absolute;inset:0;pointer-events:none;z-index:2;opacity:.55;
+  background:radial-gradient(ellipse 82% 72% at 50% 50%, transparent 58%, rgba(60,45,15,.08) 82%, rgba(20,14,0,.14) 100%);
+}
+.seismo-scope-meta{position:absolute;top:6px;right:20px;z-index:3;display:flex;gap:8px;align-items:center;pointer-events:none}
+.seismo-scope-meta .scope-readout{font:10px var(--mono);letter-spacing:.08em;color:rgba(60,45,15,.52);background:rgba(255,255,255,.42);border:1px solid rgba(60,45,15,.14);border-radius:20px;padding:2px 7px;backdrop-filter:blur(4px)}
+.seismo-scope-meta .scope-readout b{color:rgba(60,45,15,.88);font-weight:600}
+.seismo-scope-meta .scope-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 6px rgba(95,174,122,.55);opacity:.92}
+.seismo-scope-meta .scope-dot.is-idle{background:#d9a23a;box-shadow:0 0 6px rgba(232,179,75,.5)}
+.seismo-needle.scope-kick{animation:scope-kick .38s cubic-bezier(.34,1.56,.64,1)}
+@keyframes scope-kick{0%{transform:translate(-50%,-50%) scale(1) rotate(0)}18%{transform:translate(-50%,-50%) scale(1.22) rotate(-14deg)}42%{transform:translate(-50%,-50%) scale(1.08) rotate(9deg)}72%{transform:translate(-50%,-50%) scale(1.04) rotate(-5deg)}100%{transform:translate(-50%,-50%) scale(1) rotate(0)}}
+.seismo-tick{position:absolute;left:50%;top:0;bottom:0;width:1px;transform:translateX(-50%);pointer-events:none;z-index:1;opacity:.22;
+  background:repeating-linear-gradient(0deg, rgba(60,45,15,.28) 0 6px, transparent 6px 14px)}
+/* Scope — distinct from 160px hero altars #monsoon/#chladni/#ferro: instrument border + inner phosphor, no hero chrome */
+.seismo-wrap.is-scope{border-color:#c9bc96;box-shadow:inset 0 1px 0 rgba(255,255,255,.92), inset 0 -10px 18px rgba(60,45,15,.12), inset 0 0 0 1px rgba(232,179,75,.14), 0 3px 14px rgba(0,0,0,.2), 0 8px 28px rgba(0,0,0,.16)}
+/* Keys table — view() stagger (0kb JS) + FLIP (TransitionGroup) — coherent instrument with drum + addform */
+@keyframes vault-scope-enter{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+.vault-slat{--stagger:0ms}
+@supports (animation-timeline: view()){
+  .vault-slat{animation:vault-scope-enter .42s cubic-bezier(.16,1,.3,1) both;animation-timeline:view();animation-range:entry 0% cover 22%;animation-delay:calc(var(--i,0)*28ms)}
+}
+.vault-move{transition:transform 420ms cubic-bezier(.16,1,.3,1), opacity 320ms ease}
+.vault-enter-active{transition:opacity 320ms cubic-bezier(.16,1,.3,1), transform 420ms cubic-bezier(.34,1.56,.64,1)}
+.vault-leave-active{transition:opacity 240ms ease, transform 260ms ease;position:absolute;pointer-events:none}
+.vault-enter-from{opacity:0;transform:translateY(14px) scale(.96)}
+.vault-leave-to{opacity:0;transform:translateY(-8px) scale(.96)}
+.vault-slat{will-change:transform}
+.toolbar.scrubbing{box-shadow:0 0 0 1px rgba(232,179,75,.18), 0 2px 12px rgba(232,179,75,.12)}
+.toolbar .fchip.scrub-on{outline:1px solid rgba(232,179,75,.42);outline-offset:1px}
+.addform.scope-linked{border-top-color:rgba(232,179,75,.18);background:linear-gradient(180deg, rgba(232,179,75,.04), transparent);border-radius:0 0 6px 6px;margin-top:12px;padding-top:14px}
+@media (prefers-reduced-motion:reduce){
+  .seismo-needle.scope-kick{animation:none!important}
+  .seismo-needle.wobble{animation:none!important}
+  .vault-slat{animation:none!important;transition:none!important;transform:none!important}
+  .vault-move,.vault-enter-active,.vault-leave-active{transition:none!important}
+  .seismo-wrap .seismo-graticule,.seismo-wrap .seismo-vignette{opacity:.18}
+}
 /* <!-- IMPL: Chladni Altar --> — black steel + bone powder; 160px hero, exclusive with Monsoon */
 #altar-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #1e1e22;border-radius:6px;overflow:hidden;background:#0a0a0c;box-shadow:0 4px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.06)}
 .altar-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#141418 0%,#0f1110 55%,#0a0a0c 100%);border-bottom:1px solid #1e1e22}
@@ -1861,12 +1908,17 @@ main.shake{animation:seismo-shake .38s ease}
         <span class="sec-note">{{ feedNote }}</span></div>
 
       <!-- IMPL: Seismograph Audit Drum -->
-      <div id="seismo-wrap" class="seismo-wrap" aria-hidden="true">
-        <span class="seismo-label">▸ audit drum <b id="seismo-stat">flatline · dust</b></span>
-        <span class="seismo-hint">hover to scrub paper</span>
+      <!-- IMPL: Seismo Scope -->
+      <div id="seismo-wrap" class="seismo-wrap is-scope" aria-hidden="true" aria-label="Seismo Scope — 220px audit oscilloscope bound to /api/access, needle kicks on key fetch, idle sine">
+        <span class="seismo-label">▸ audit scope <b id="seismo-stat">flatline · dust</b></span>
+        <span class="seismo-hint">hover to scrub · filter scrubs history</span>
         <div class="seismo-sprocket left"></div>
         <div class="seismo-sprocket right"></div>
-        <canvas id="seismo" width="1200" height="112"></canvas>
+        <div class="seismo-graticule" aria-hidden="true"></div>
+        <div class="seismo-vignette" aria-hidden="true"></div>
+        <div class="seismo-tick" aria-hidden="true"></div>
+        <span class="seismo-scope-meta" aria-hidden="true"><i class="scope-dot" id="scope-dot"></i><span class="scope-readout" id="scope-readout"><b id="scope-kick-count">0</b> fetches · <span id="scope-idle">sine</span></span></span>
+        <canvas id="seismo" width="1200" height="220"></canvas>
         <i class="seismo-needle" id="seismo-needle"></i>
       </div>
 
@@ -2034,9 +2086,9 @@ main.shake{animation:seismo-shake .38s ease}
             </div>
             <div class="keys-wrap vault-wrap"><table class="vault-table">
               <thead><tr><th>provider</th><th>label</th><th>key</th><th>status</th><th>added</th><th>last used</th><th>verified</th><th></th></tr></thead>
-              <tbody>
-                <tr v-if="!keyRows.length"><td colspan="8" class="dim" style="text-align:center;padding:18px;border:1px dashed #2e332b;border-radius:5px;background:rgba(255,255,255,.012)">no slats yet — add a key below to vault it</td></tr>
-                <tr v-for="(k,i) in keyRows" :key="k.id" class="vault-slat" :class="['st-'+(k.status||'unknown'), shutterOpenId===k.id ? 'is-open' : '']" :style="'--vt-name: shutter-'+k.id+'; view-transition-name: shutter-'+k.id" @click="openShutter(k,$event)" @keydown.enter.prevent="openShutter(k,$event)" @keydown.space.prevent="openShutter(k,$event)" tabindex="0" role="button" :aria-label="k.provider+(k.label?' '+k.label:'')+' '+k.status+' — open shutter vault'">
+              <TransitionGroup name="vault" tag="tbody">
+                <tr v-if="!keyRows.length" key="vault-empty"><td colspan="8" class="dim" style="text-align:center;padding:18px;border:1px dashed #2e332b;border-radius:5px;background:rgba(255,255,255,.012)">no slats yet — add a key below to vault it</td></tr>
+                <tr v-for="(k,i) in keyRows" :key="k.id" class="vault-slat" :class="['st-'+(k.status||'unknown'), shutterOpenId===k.id ? 'is-open' : '']" :style="'--i:'+i+';--vt-name: shutter-'+k.id+'; view-transition-name: shutter-'+k.id" @click="openShutter(k,$event)" @keydown.enter.prevent="openShutter(k,$event)" @keydown.space.prevent="openShutter(k,$event)" tabindex="0" role="button" :aria-label="k.provider+(k.label?' '+k.label:'')+' '+k.status+' — open shutter vault'">
                   <td colspan="8" class="vault-slat-td">
                     <div class="vault-slat-inner">
                       <div class="vault-row-grid">
@@ -2062,7 +2114,7 @@ main.shake{animation:seismo-shake .38s ease}
                     </div>
                   </td>
                 </tr>
-              </tbody>
+              </TransitionGroup>
             </table></div>
           </div>
           <!-- Shutter Vault inspector — View Transitions FLIP with light-leak -->
@@ -2097,7 +2149,7 @@ main.shake{animation:seismo-shake .38s ease}
             </div>
           </Transition>
           <div class="kmsg" role="status" :style="{color:kmsgColor}">{{ kmsg }}</div>
-          <form class="addform" @submit.prevent="addKey">
+          <form class="addform scope-linked" @submit.prevent="addKey">
             <input class="p" v-model="kprov" list="provlist" placeholder="provider" aria-label="provider" autocomplete="off">
             <datalist id="provlist"><option v-for="p in providers" :key="p.id" :value="p.id" :label="p.name"></option></datalist>
             <input class="l" v-model="klabel" placeholder="label" aria-label="label" autocomplete="off">
@@ -4768,7 +4820,7 @@ function startRhizome(){
     const cap=Math.min(wrap.clientWidth, MAX_W_CSS);
     // keep canvas at wrapper's actual width so needle stays centered visually,
     // but internal trace logically caps at MAX_W_CSS worth of samples
-    const cssW=wrap.clientWidth, cssH=112;
+    const cssW=wrap.clientWidth, cssH=220;
     cv.width=Math.floor(cssW*dpr); cv.height=Math.floor(cssH*dpr);
     cv.style.width=cssW+'px'; cv.style.height=cssH+'px';
     W=cssW; H=cssH; midY=cssH/2;
@@ -4997,6 +5049,148 @@ function startRhizome(){
   draw();
   // hook visibility
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden && !raf) draw(); });
+})();
+// <!-- IMPL: Seismo Scope --> — needle kick + sine decay + /api/access binding + toolbar scrub parallax (instrument, not hero)
+(function SeismoScope(){
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const wrap=document.getElementById('seismo-wrap');
+  const needle=document.getElementById('seismo-needle');
+  const dot=document.getElementById('scope-dot');
+  const kickCountEl=document.getElementById('scope-kick-count');
+  const idleEl=document.getElementById('scope-idle');
+  const statEl=document.getElementById('seismo-stat');
+  if(!wrap||!needle) return;
+  let kicks=0, lastKick=performance.now(), idleRaf=0;
+  function kick(kind){
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    kicks++;
+    lastKick=performance.now();
+    if(kickCountEl) kickCountEl.textContent=String(kicks);
+    if(idleEl) idleEl.textContent= kind==='fail' ? 'tremor' : 'kick';
+    if(dot){ dot.classList.remove('is-idle'); dot.style.background= kind==='fail' ? '#E05D44' : '#E8B34B'; }
+    if(statEl) statEl.textContent= (kind==='fail'?'tremor':'p-wave')+' · '+new Date().toLocaleTimeString();
+    needle.classList.remove('wobble','scope-kick'); void needle.offsetWidth;
+    needle.classList.add('scope-kick');
+    setTimeout(()=>{ needle.classList.remove('scope-kick'); }, 420);
+    // pulse addform coherence
+    const addform=document.querySelector('.addform');
+    if(addform){ addform.classList.add('scope-linked'); setTimeout(()=>addform.classList.remove('scope-linked'), 420); }
+    // also trigger paper shake via main.shake if fail
+    if(kind==='fail'){ const main=document.querySelector('main'); if(main){ main.classList.remove('shake'); void main.offsetWidth; main.classList.add('shake'); setTimeout(()=>main.classList.remove('shake'),420); } }
+  }
+  function idleSine(){
+    const idle=performance.now()-lastKick;
+    if(idle>2200){
+      if(idleEl) idleEl.textContent='sine';
+      if(dot){ dot.classList.add('is-idle'); dot.style.background=''; }
+      if(statEl && idle>3200 && performance.now()%1400<20) statEl.textContent='flatline · dust';
+    }
+    idleRaf=requestAnimationFrame(idleSine);
+  }
+  idleSine();
+  // bind to real /api/access rows — fetch history then hook live
+  let accessHooked=false;
+  function bindAccessHistory(){
+    try{
+      const token=(localStorage.getItem('aigate_token')||'').trim();
+      const hdr=token?{Authorization:'Bearer '+token}:{};
+      fetch('/api/access?limit=60',{headers:hdr, credentials:'same-origin'}).then(r=>r.ok?r.json():[]).then(rows=>{
+        if(!Array.isArray(rows)||!rows.length) return;
+        // kick for recent rows (last 8) as a demo trace seed — spread as timed kicks
+        const recent=rows.slice(0,8).reverse();
+        recent.forEach((row,i)=>{
+          const fail=row.result && row.result!=='ok';
+          setTimeout(()=>kick(fail?'fail':'p'), i*180);
+        });
+      }).catch(()=>{});
+    }catch(_){}
+  }
+  bindAccessHistory();
+  // hook Vue live feed — access rows are kind==='access'
+  let tries=0;
+  const hookInt=setInterval(()=>{
+    try{
+      const proxy=(typeof app!=='undefined' && app._instance && app._instance.proxy)? app._instance.proxy : null;
+      if(proxy && proxy.addRows && !accessHooked){
+        const origAdd=proxy.addRows.bind(proxy);
+        proxy.addRows=function(rows){
+          for(const r of rows){ if(r.kind==='access') kick(r.fail?'fail':'p'); }
+          return origAdd(rows);
+        };
+        const origFeed=proxy.feedEvent?proxy.feedEvent.bind(proxy):null;
+        if(origFeed){
+          proxy.feedEvent=function(d,kind){
+            if(kind==='access') kick(d.result && d.result!=='ok' ? 'fail' : 'p');
+            return origFeed(d,kind);
+          };
+        }
+        accessHooked=true; clearInterval(hookInt);
+      }
+    }catch(_){}
+    if(++tries>50) clearInterval(hookInt);
+  },200);
+  // also snoop fetch for /api/keys POST/GET that trigger access log — any successful vault write kicks
+  const origFetch=window.fetch;
+  if(origFetch){
+    window.fetch=function(input,init){
+      const url=typeof input==='string'? input : (input&&input.url)||'';
+      const isVault=url.includes('/api/keys')||url.includes('/api/access');
+      return origFetch.apply(this, arguments).then(res=>{
+        if(isVault && res && res.ok){
+          const method=(init&&init.method)||'GET';
+          if(method==='POST' || url.includes('/api/access')) kick('p');
+        }
+        return res;
+      });
+    };
+  }
+  // toolbar filter scrubs history parallax — filter chips drive paper offset
+  function scrubParallax(){
+    const toolbar=document.querySelector('.toolbar');
+    const fchips=document.querySelectorAll('.toolbar .fchip');
+    if(!toolbar) return;
+    let scrubTimer=0;
+    function onFilter(){
+      try{
+        const proxy=(typeof app!=='undefined' && app._instance && app._instance.proxy)? app._instance.proxy : null;
+        if(!proxy) return;
+        const any=proxy.anyFilter;
+        const n=proxy.feedRows?proxy.feedRows.length:0;
+        const tot=proxy.feed?proxy.feed.length:0;
+        const ratio=tot? (n/tot):1;
+        // parallax: translate paper proportional to filter ratio
+        const off=(1-ratio)*42;
+        wrap.style.setProperty('--scope-scrub', off.toFixed(1)+'px');
+        wrap.style.transform='translateX('+ (off*0.12).toFixed(1)+'px)';
+        toolbar.classList.add('scrubbing');
+        fchips.forEach(c=>{ if(c.classList.contains('on')) c.classList.add('scrub-on'); else c.classList.remove('scrub-on'); });
+        clearTimeout(scrubTimer);
+        scrubTimer=setTimeout(()=>{ toolbar.classList.remove('scrubbing'); wrap.style.transform=''; }, 520);
+      }catch(_){}
+    }
+    // hook Vue toggleChip/clearChips/togglePause if available
+    let vtries=0;
+    const vInt=setInterval(()=>{
+      try{
+        const proxy=(typeof app!=='undefined' && app._instance && app._instance.proxy)? app._instance.proxy : null;
+        if(proxy && proxy.toggleChip){
+          const origChip=proxy.toggleChip.bind(proxy);
+          proxy.toggleChip=function(k,v){ const r=origChip(k,v); setTimeout(onFilter, 30); return r; };
+          if(proxy.clearChips){
+            const origClear=proxy.clearChips.bind(proxy);
+            proxy.clearChips=function(){ const r=origClear(); setTimeout(onFilter,30); return r; };
+          }
+          clearInterval(vInt);
+        }
+      }catch(_){}
+      if(++vtries>60) clearInterval(vInt);
+    },300);
+    // also click listener as fallback
+    toolbar.addEventListener('click', e=>{
+      if(e.target.classList.contains('fchip')) setTimeout(onFilter, 40);
+    });
+  }
+  scrubParallax();
 })();
 </script>
 <!-- IMPL: Chladni Altar — SDF interference · black steel #0a0a0c · bone powder #e8dcc8 -->
