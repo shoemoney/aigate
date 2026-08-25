@@ -765,7 +765,32 @@ main.shake{animation:seismo-shake .38s ease}
   #turing{display:none!important}
   #voronoi-sec{display:none!important}
   #voronoi{display:none!important}
+  #flux-sec{display:none!important}
+  #flux{display:none!important}
 }
+/* <!-- IMPL: Vault Flux --> — SPH honey Sankey: glass reservoirs, viscous pour, splash, rate-limit viscosity, burst on reauth. 2D canvas fake of WebGPU WGSL SPH/PIC-FLIP (3-8k @60fps target), zero server. */
+#flux-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #2a2418;border-radius:6px;overflow:hidden;background:#060507;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
+.flux-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#14110e 0%,#0d0b0a 55%,#060507 100%);border-bottom:1px solid #2a2418;flex-wrap:wrap}
+.flux-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#e8b34b}
+.flux-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.flux-head .flux-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.flux-head .flux-note b{color:#f0d8a0;font-weight:600}
+.flux-head .flux-actions{display:flex;align-items:center;gap:6px}
+.flux-canvas-wrap{position:relative;height:220px;background:
+  radial-gradient(ellipse 620px 140px at 50% 0%,rgba(232,179,75,.07),transparent 68%),
+  radial-gradient(ellipse 420px 120px at 82% 88%,rgba(232,179,75,.04),transparent 70%),
+  radial-gradient(ellipse 360px 90px at 18% 78%,rgba(190,140,30,.05),transparent 70%),
+  linear-gradient(180deg,#070608 0%,#050507 100%);overflow:hidden;cursor:crosshair;touch-action:none}
+#flux{display:block;width:100%;height:100%;pointer-events:auto}
+.flux-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0a0908;border-top:1px solid #2a2418;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);flex-wrap:wrap}
+.flux-meta .mode{color:#f0d8a0}
+.flux-meta .hint{opacity:.75}
+.flux-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(232,179,75,.52);background:rgba(6,5,7,.55);border:1px solid rgba(232,179,75,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+.flux-pulse{position:absolute;right:12px;top:10px;pointer-events:none;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(240,216,160,.62);background:rgba(6,5,7,.55);border:1px solid rgba(232,179,75,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px}
+.flux-pulse i{width:7px;height:7px;border-radius:50%;background:#e8b34b;box-shadow:0 0 8px rgba(232,179,75,.6);animation:flux-breathe 2.2s ease-in-out infinite}
+@keyframes flux-breathe{0%,100%{transform:scale(.88);opacity:.72}50%{transform:scale(1.2);opacity:1}}
+.flux-legend{display:flex;align-items:center;gap:8px;font:10px var(--mono);letter-spacing:.06em;color:var(--dim)}
+.flux-legend i{width:10px;height:10px;border-radius:50%;display:inline-block;vertical-align:middle;border:1px solid rgba(255,255,255,.12)}
 /* <!-- IMPL: Mercury Blob Toggle --> — single SVG goo filter + surface-tension necking + spring jiggle; respects reduced-motion */
 .mercury-blob{display:inline-flex;align-items:center;gap:8px;padding:5px 10px 5px 8px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--dim);font:12px var(--mono);letter-spacing:.08em;text-transform:uppercase;transition:border-color .18s,color .18s,background .18s;user-select:none;-webkit-user-select:none;touch-action:none}
 .mercury-blob:hover{color:var(--fg);border-color:var(--dim)}
@@ -1596,6 +1621,27 @@ main.shake{animation:seismo-shake .38s ease}
           </form>
         </div>
       </Transition>
+    </section>
+    <!-- IMPL: Vault Flux — SPH honey Sankey: 3-8k particles @60fps, glass reservoirs, viscosity=rate-limit, reauth burst. 2D canvas honey pour (WebGPU WGSL SPH/PIC-FLIP fake for L-tier). -->
+    <section id="flux-sec" aria-label="Vault Flux — Honey Sankey">
+      <div class="flux-head">
+        <span class="sec-num">05</span><h2>Vault Flux</h2>
+        <span class="flux-note"><b id="flux-count">4 reservoirs</b> · <b id="flux-mode">honey</b> · viscosity <b id="flux-visc">1.00×</b> · click jar to burst · drag to tilt</span>
+        <span class="flux-actions">
+          <button id="flux-burst" class="btn sm" type="button" aria-label="burst a random vessel">✦ burst</button>
+          <button id="flux-pour" class="btn sm" type="button" aria-label="pour honey">＋ pour</button>
+        </span>
+      </div>
+      <div class="flux-canvas-wrap" id="flux-wrap">
+        <canvas id="flux" width="1200" height="220" aria-label="Vault Flux — honey Sankey: glass reservoirs, viscous pour between providers, splash on arrival. Viscosity is rate-limit health; reauth bursts vessel." role="img"></canvas>
+        <span class="flux-spec">⬢ SPH honey · glass reservoirs · splash · 3-8k @60fps target · zero server</span>
+        <span class="flux-pulse" id="flux-pulse" aria-hidden="true"><i></i><span id="flux-pulse-label">flux 0.72×</span></span>
+      </div>
+      <div class="flux-meta">
+        <span class="mode">▸ <span id="flux-readout">4 jars · thin honey · pouring</span></span>
+        <span class="flux-legend" aria-hidden="true"><i style="background:#e8b34b"></i> thin <i style="background:#8a6b1e"></i> thick <i style="background:#c94a3a;box-shadow:0 0 6px rgba(201,74,58,.5)"></i> burst</span>
+        <span class="hint">pure 2D honey pour · zero WebGPU required · DPR≤2 · prefers-reduced-motion hidden</span>
+      </div>
     </section>
 
    </main>
@@ -8368,6 +8414,699 @@ function startMonsoon(){
   frame(performance.now());
   // expose for debug
   window.__fleet={MY_ID, peers, get count(){return peers.size+1}, ping:(x,y)=>spawnPing(x||W*0.5,y||H*0.5,true)};
+})();
+</script>
+<!-- IMPL: Vault Flux — SPH honey Sankey: 2D canvas honey pour fake of WebGPU WGSL SPH/PIC-FLIP, 3-8k target @60fps, zero server, glass reservoirs, viscosity=health, burst on reauth -->
+<script>
+/* <!-- IMPL: Vault Flux --> — first true fluid data-viz: honey as data. Providers as glass reservoirs, token volume as viscous honey pouring/splashing between them. Viscosity = rate-limit health (thin fast vs thick slow), reauth = vessel burst/crack. Merged SPH Honey Pour + Axolotl Jar. 2D canvas fake of WebGPU WGSL SPH/PIC-FLIP (3-8k particles @60fps target), zero server. */
+(function(){
+  'use strict';
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('flux-sec');
+  const wrap=document.getElementById('flux-wrap');
+  const cv=document.getElementById('flux');
+  if(!sec||!wrap||!cv) return;
+  const ctx=cv.getContext('2d',{alpha:false});
+  if(!ctx) return;
+  // WebGPU probe — L-tier ships with 2D fake, but log capability for future WGSL upgrade
+  try{
+    if(navigator.gpu){
+      navigator.gpu.requestAdapter().then(a=>{
+        if(a) sec.setAttribute('data-webgpu','available');
+        else sec.setAttribute('data-webgpu','unavailable');
+      }).catch(()=>{});
+    } else sec.setAttribute('data-webgpu','unavailable');
+  }catch(_){}
+
+  let dpr=Math.min(window.devicePixelRatio||1,2);
+  let cssW=0, cssH=220, raf=0, running=false, t=0;
+  let tilt=0, tiltTgt=0, shake=0, shakeT=0;
+  let lastPour=0;
+
+  // reservoirs derived from live keys or synthetic fallback
+  const FALLBACK_PROVIDERS=[
+    {id:'openai', label:'Main', status:'working'},
+    {id:'anthropic', label:'Claude', status:'working'},
+    {id:'google', label:'Gemini', status:'dead'},
+    {id:'groq', label:'Groq', status:'reauth_needed'},
+    {id:'openrouter', label:'Router', status:'working'},
+  ];
+  let reservoirs=[]; // {id,label,status,health,x,y,w,h,fluid,fluidTgt,visc,shake,phase,surface:[],burst}
+  let particles=[];  // {x,y,vx,vy,r,age,life,col,visc,src,dst,st}
+  let splashes=[];   // {x,y,vx,vy,r,age,life,col}
+  let pourQueue=0;
+
+  function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+  function lerp(a,b,t){return a+(b-a)*t;}
+  function rand(a,b){return a+Math.random()*(b-a);}
+
+  function healthOf(status){
+    if(status==='working') return rand(0.78,0.96);
+    if(status==='dead') return rand(0.12,0.28);
+    if(status==='reauth_needed'||status==='reauth') return rand(0.04,0.14);
+    return rand(0.45,0.62);
+  }
+  function viscOf(h){ // 0 thick → 1 thin
+    // invert: h high = thin low visc
+    return lerp(0.78, 0.14, clamp(h,0,1));
+  }
+  function honeyCol(status, visc){
+    if(status==='reauth_needed'||status==='reauth') return '201,74,58'; // burst red-amber
+    if(status==='dead') return '138,107,30'; // molasses
+    // thin vs thick amber
+    const thin=[232,179,75], thick=[168,122,22];
+    const u=clamp(1-visc,0,1); // thick=1
+    const r=(thin[0]*(1-u)+thick[0]*u)|0;
+    const g=(thin[1]*(1-u)+thick[1]*u)|0;
+    const b=(thin[2]*(1-u)+thick[2]*u)|0;
+    return r+','+g+','+b;
+  }
+  function buildReservoirs(list){
+    reservoirs.length=0;
+    const n=Math.max(3,Math.min(6, list.length||4));
+    for(let i=0;i<n;i++){
+      const src=list[i%list.length] || FALLBACK_PROVIDERS[i%FALLBACK_PROVIDERS.length];
+      const h=healthOf(src.status);
+      const v=viscOf(h);
+      reservoirs.push({
+        id: src.id||('prov-'+i),
+        label: src.label||src.id||('P'+(i+1)),
+        status: src.status||'working',
+        health:h,
+        visc:v,
+        fluid: 0.38 + Math.random()*0.34,
+        fluidTgt: 0.42 + Math.random()*0.28,
+        phase: Math.random()*Math.PI*2,
+        shake:0,
+        burst:0,
+        surf: new Float32Array(28),
+        tiltPhase: rand(0,6.28),
+      });
+    }
+    layout();
+  }
+  function layout(){
+    const n=reservoirs.length; if(!n) return;
+    const pad=38, gap=16;
+    const avail=cssW - pad*2;
+    const maxW=Math.min(176, Math.max(92, (avail - gap*(n-1))/n));
+    const w=maxW, h=92;
+    const total=n*w+gap*(n-1);
+    const start=(cssW-total)*0.5;
+    const baseY=cssH*0.42;
+    for(let i=0;i<n;i++){
+      const r=reservoirs[i];
+      r.w=w; r.h=h;
+      r.x=start+i*(w+gap);
+      r.y=baseY;
+      if(!r.surf || r.surf.length!==Math.ceil(w/6)) r.surf=new Float32Array(Math.ceil(w/6));
+    }
+  }
+  function snapshotProviders(){
+    // try live Vue keys, else fallback
+    let live=null;
+    try{
+      const vueApp=window.app || document.getElementById('app')?.__vue_app__ || null;
+      const proxy=vueApp && vueApp._instance && vueApp._instance.proxy;
+      if(proxy && Array.isArray(proxy.keys) && proxy.keys.length){
+        live=proxy.keys.slice(0,6).map(k=>({id:k.provider||k.id, label:k.label||'', status:k.status||'unknown'}));
+      } else if(proxy && Array.isArray(proxy.keyRows) && proxy.keyRows.length){
+        live=proxy.keyRows.slice(0,6).map(k=>({id:k.provider||k.id, label:k.label||'', status:k.status||'unknown'}));
+      }
+      if(!live || !live.length){
+        // DOM fallback: read jar tags
+        const jars=document.querySelectorAll('.jar .jar-tag b');
+        if(jars.length){
+          live=[...jars].slice(0,6).map((el,i)=>{
+            const stEl=el.closest('.jar');
+            let st='working';
+            if(stEl){
+              if(stEl.classList.contains('st-dead')) st='dead';
+              else if(stEl.classList.contains('st-reauth_needed')||stEl.classList.contains('st-reauth')) st='reauth_needed';
+              else if(stEl.classList.contains('st-working')) st='working';
+              else st='unknown';
+            }
+            return {id:(el.textContent.trim()||'prov-'+i), label:'', status:st};
+          });
+        }
+      }
+    }catch(_){}
+    if(live && live.length>=2) return live;
+    return FALLBACK_PROVIDERS.slice(0, 4 + (t%3===0?1:0));
+  }
+  function syncReservoirs(){
+    const snap=snapshotProviders();
+    const n=Math.max(3,Math.min(6, snap.length));
+    if(reservoirs.length!==n){
+      buildReservoirs(snap);
+      return;
+    }
+    // update statuses/healths smoothly
+    for(let i=0;i<n;i++){
+      const r=reservoirs[i]; const s=snap[i%snap.length];
+      const targetStatus=s.status||'working';
+      if(r.status!==targetStatus){
+        r.status=targetStatus;
+        if(targetStatus==='reauth_needed' || targetStatus==='reauth'){
+          r.burst=1; r.shake=1; shakeT=1;
+        }
+      }
+      const th=healthOf(targetStatus);
+      r.health += (th - r.health)*0.06;
+      r.visc += (viscOf(r.health) - r.visc)*0.08;
+      // fluid target drifts with health (healthy thin = lower, thick = higher slosh)
+      r.fluidTgt = clamp(0.32 + r.health*0.34 + Math.sin(t*0.012+r.phase)*0.03, 0.22, 0.78);
+    }
+  }
+
+  function spawnPour(fromIdx, toIdx, count){
+    const src=reservoirs[fromIdx], dst=reservoirs[toIdx];
+    if(!src||!dst) return;
+    const sx=src.x+src.w*0.5 + rand(-6,6);
+    const sy=src.y+src.h*0.78;
+    const visc=src.visc;
+    const speed=lerp(2.8, 7.2, 1-visc*0.85);
+    const thick=lerp(6.2, 2.6, 1-visc);
+    const col=honeyCol(src.status, visc);
+    for(let i=0;i<count;i++){
+      // stagger slightly behind
+      const stagger=i* (visc>0.5? 3.5: 1.8);
+      const ang= Math.atan2(dst.x+dst.w*0.5 - sx, (dst.y -8) - sy) + rand(-0.10,0.10)*(0.4+visc*0.6);
+      const sp=speed*rand(0.82,1.14);
+      particles.push({
+        x:sx + rand(-3,3),
+        y:sy + rand(-2,2) - stagger*0.35,
+        vx: Math.sin(ang)*sp*0.42 + rand(-0.4,0.4),
+        vy: Math.cos(ang)*sp + rand(-0.6,0.6),
+        r: lerp(thick*0.42, thick*0.62, Math.random())+ rand(-0.3,0.3),
+        life: 1, age:0,
+        col, visc, src:fromIdx, dst:toIdx,
+        trail: visc>0.5? Math.floor(rand(6,10)) : Math.floor(rand(2,4))
+      });
+      if(particles.length>1100) particles.shift();
+    }
+    src.fluid = Math.max(0.08, src.fluid - count*0.006);
+    pourQueue+=count;
+  }
+  function burstReservoir(idx, strength=1){
+    const r=reservoirs[idx]; if(!r) return;
+    r.burst=1; r.shake=1; shake=1; shakeT=1;
+    const cx=r.x+r.w*0.5, cy=r.y+r.h*0.5;
+    const n=Math.floor(28 + strength*18);
+    for(let i=0;i<n;i++){
+      const ang=rand(0,Math.PI*2), sp=rand(2.2, 7.5)*strength;
+      splashes.push({
+        x:cx+rand(-r.w*0.22,r.w*0.22), y:cy+rand(-r.h*0.18,r.h*0.18),
+        vx: Math.cos(ang)*sp*0.9 + rand(-1,1),
+        vy: Math.sin(ang)*sp*0.9 + rand(-2,0) - Math.random()*2,
+        r: rand(1.8,4.6), life:1, age:0, col: honeyCol(r.status, r.visc)
+      });
+    }
+    // also pour burst outward
+    for(let k=0;k<3;k++){
+      const to=(idx+1+k)%reservoirs.length;
+      if(to!==idx) spawnPour(idx,to, Math.floor(5+strength*4));
+    }
+  }
+
+  function updatePhysics(){
+    // spawn continuous pours
+    if(t%2===0){
+      for(let i=0;i<reservoirs.length;i++){
+        const r=reservoirs[i];
+        if(r.status==='dead' && Math.random()<0.62) continue;
+        // rate inversely proportional to viscosity (thin fast)
+        const rate = lerp(0.22, 0.92, 1 - r.visc*0.9);
+        if(Math.random()< rate*0.42){
+          const dst=(i+1)%reservoirs.length;
+          // occasionally pour to sink (random other)
+          const toDst = Math.random()<0.78 ? dst : (Math.floor(Math.random()*reservoirs.length));
+          const cnt = r.visc>0.52 ? Math.floor(rand(1,2)) : Math.floor(rand(2,4));
+          if(toDst!==i) spawnPour(i, toDst, cnt);
+        }
+        // drips even when not pouring
+        if(r.status!=='dead' && Math.random()<0.06){
+          const dst=(i+1)%reservoirs.length;
+          spawnPour(i,dst,1);
+        }
+      }
+    }
+    // integrate honey particles
+    const g=0.22;
+    for(let i=particles.length-1;i>=0;i--){
+      const p=particles[i];
+      p.age+=1; p.life-=0.0035;
+      // viscosity drag
+      const drag= 0.02 + p.visc*0.055;
+      p.vx *= (1-drag*0.42);
+      p.vx += Math.sin(p.y*0.012 + t*0.02 + p.src*1.1)*0.04*(1-p.visc*0.4);
+      p.vy += g*(1 - p.visc*0.32);
+      p.vy *= 0.996;
+      p.x += p.vx*(0.62 + (1-p.visc)*0.38);
+      p.y += p.vy*(0.62 + (1-p.visc)*0.38);
+      // trail stretch
+      p.r *= 0.9992;
+      const dst=reservoirs[p.dst];
+      if(dst){
+        const top=dst.y+8, bottom=dst.y+dst.h-6;
+        const left=dst.x+6, right=dst.x+dst.w-6;
+        const inX=p.x>left && p.x<right;
+        const nearY=p.y> (top + dst.fluid*dst.h*0.1) && p.y< bottom+6;
+        if(inX && nearY && p.vy>0){
+          // splash lightly, add to fluid
+          dst.fluid = clamp(dst.fluid + 0.008, 0, 0.92);
+          // surface impulse
+          const si= clamp(Math.floor((p.x-left)/6),0,dst.surf.length-1);
+          dst.surf[si]+= (p.r*0.18 + p.vy*0.04);
+          // spawn micro splash
+          const sc=Math.floor(rand(2,4));
+          for(let k=0;k<sc;k++){
+            splashes.push({x:p.x, y:dst.y+12, vx: rand(-2.2,2.2), vy: rand(-3.8,-0.8), r: rand(1.1,2.4), life:1, age:0, col:p.col});
+          }
+          particles.splice(i,1);
+          continue;
+        }
+        // floor miss — still absorb if low
+        if(p.y>cssH+18 || p.life<=0 || p.age>420){
+          particles.splice(i,1); continue;
+        }
+      } else if(p.life<=0) particles.splice(i,1);
+    }
+    // splashes
+    for(let i=splashes.length-1;i>=0;i--){
+      const s=splashes[i];
+      s.age+=1; s.life-=0.018;
+      s.vy+=0.22; s.vx*=0.992;
+      s.x+=s.vx; s.y+=s.vy;
+      if(s.y>cssH+12 || s.life<=0) splashes.splice(i,1);
+    }
+    // reservoir fluid + surface waves
+    for(let i=0;i<reservoirs.length;i++){
+      const r=reservoirs[i];
+      r.fluid += (r.fluidTgt - r.fluid)*0.04;
+      r.phase += 0.006 + (1-r.visc)*0.004;
+      // wave spring
+      for(let j=0;j<r.surf.length;j++){
+        const left=j>0?r.surf[j-1]:0, right=j<r.surf.length-1?r.surf[j+1]:0;
+        const spring=-r.surf[j]*0.18;
+        const spread=(left+right-2*r.surf[j])*0.08;
+        r.surf[j]+= spring + spread;
+        r.surf[j]*=0.86;
+      }
+      r.shake*=0.88; r.burst*=0.93;
+      if(r.shake<0.02) r.shake=0;
+    }
+    shake*=0.86; shakeT*=0.92;
+    tilt += (tiltTgt - tilt)*0.08;
+  }
+
+  function draw(){
+    // clear
+    ctx.fillStyle='#060507';
+    ctx.fillRect(0,0,cssW,cssH);
+    // subtle honeycomb grid
+    ctx.save();
+    ctx.globalAlpha=0.035;
+    ctx.strokeStyle='rgba(232,179,75,0.9)';
+    ctx.lineWidth=0.6;
+    const grid=28;
+    for(let y=12;y<cssH;y+=grid*0.86){
+      for(let x=14;x<cssW;x+=grid){
+        const ox=(y/grid%2)* (grid*0.5);
+        ctx.beginPath();
+        for(let k=0;k<6;k++){
+          const ang=(Math.PI/3)*k - Math.PI/6;
+          const px=x+ox + Math.cos(ang)*grid*0.46;
+          const py=y + Math.sin(ang)*grid*0.46;
+          if(k===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+        }
+        ctx.closePath(); ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // troughs between reservoirs
+    ctx.save();
+    for(let i=0;i<reservoirs.length;i++){
+      const a=reservoirs[i], b=reservoirs[(i+1)%reservoirs.length];
+      if(Math.abs(b.x - a.x)> cssW*0.9) continue; // skip wrap far edge
+      const ax=a.x+a.w*0.5, ay=a.y+a.h+4;
+      const bx=b.x+b.w*0.5, by=b.y-8;
+      const mx=(ax+bx)*0.5, my=(ay+by)*0.5 + 14 + Math.sin(t*0.012 + i)*6;
+      // outer trough shadow
+      ctx.strokeStyle='rgba(0,0,0,0.38)'; ctx.lineWidth=10; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(ax,ay); ctx.quadraticCurveTo(mx,my,bx,by); ctx.stroke();
+      // inner honey channel
+      const grd=ctx.createLinearGradient(ax,ay,bx,by);
+      const av=(a.visc+b.visc)*0.5;
+      const honeyA='rgba('+honeyCol(a.status,a.visc)+',0.95)', honeyB='rgba('+honeyCol(b.status,b.visc)+',0.62)';
+      grd.addColorStop(0,honeyA); grd.addColorStop(1,honeyB);
+      ctx.strokeStyle=grd; ctx.lineWidth= lerp(2.2,5.2, 1-av)*dpr*0.6 + 2.2;
+      ctx.globalAlpha=0.92; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(ax,ay); ctx.quadraticCurveTo(mx,my,bx,by); ctx.stroke();
+      // inner gloss
+      ctx.strokeStyle='rgba(255,255,255,0.14)'; ctx.lineWidth=1; ctx.globalAlpha=0.9;
+      ctx.beginPath(); ctx.moveTo(ax,ay); ctx.quadraticCurveTo(mx,my,bx,by); ctx.stroke();
+    }
+    ctx.restore();
+
+    // reservoirs (glass)
+    for(let i=0;i<reservoirs.length;i++){
+      const r=reservoirs[i];
+      const wob = r.shake*6*Math.sin(t*0.42+i*1.3);
+      const bur = r.burst;
+      ctx.save();
+      ctx.translate(r.x + r.w*0.5 + wob + tilt*2.2, r.y + r.h*0.5 + Math.sin(t*0.016+r.tiltPhase)*0.6* (1-r.visc));
+      if(bur>0.12){
+        const s=1+bur*0.08; ctx.scale(s,s);
+        ctx.shadowColor='rgba(201,74,58,'+(bur*0.5).toFixed(2)+')'; ctx.shadowBlur=18*bur;
+      }
+      const x=-r.w*0.5, y=-r.h*0.5, w=r.w, h=r.h, rad=8;
+      // glass body
+      ctx.fillStyle='rgba(255,255,255,0.045)';
+      ctx.strokeStyle='rgba(255,255,255,'+(0.16+bur*0.18).toFixed(2)+')';
+      ctx.lineWidth=1;
+      roundRect(ctx,x,y,w,h,rad); ctx.fill(); ctx.stroke();
+      // inner bevel
+      ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1;
+      roundRect(ctx,x+1,y+1,w-2,h-2,rad-1); ctx.stroke();
+      // fluid
+      const fluidH=h*clamp(r.fluid,0.06,0.92);
+      const fy=y+h-fluidH;
+      ctx.save();
+      ctx.beginPath(); roundRect(ctx,x+1,fy,w-2,fluidH, [0,0,6,6]); ctx.clip();
+      // honey fill gradient
+      const col=honeyCol(r.status,r.visc);
+      const fg=ctx.createLinearGradient(0,fy,0,y+h);
+      fg.addColorStop(0,'rgba('+col+',0.92)');
+      fg.addColorStop(0.55,'rgba('+col+',0.72)');
+      fg.addColorStop(1,'rgba('+col+',0.48)');
+      ctx.fillStyle=fg; ctx.fillRect(x+1,fy,w-2,fluidH);
+      // surface wave
+      ctx.fillStyle='rgba(255,255,255,'+(0.10+ (1-r.visc)*0.08).toFixed(2)+')';
+      ctx.beginPath();
+      ctx.moveTo(x+1, fy+6);
+      for(let j=0;j<r.surf.length;j++){
+        const px=x+1 + j*6 +3;
+        const wy=fy + r.surf[j]*10 - Math.sin(j*0.55 + t*0.08)* (1.2 + (1-r.visc)*0.8);
+        if(j===0) ctx.lineTo(px, wy);
+        else ctx.lineTo(px, wy);
+      }
+      ctx.lineTo(x+w-1, fy+6); ctx.lineTo(x+w-1, fy); ctx.lineTo(x+1, fy); ctx.closePath();
+      ctx.fill();
+      // meniscus highlight
+      ctx.fillStyle='rgba(255,255,255,0.22)';
+      ctx.beginPath(); ctx.ellipse(x+w*0.5, fy+2, w*0.38, 5.5, 0, 0, Math.PI*2); ctx.fill();
+      // internal bubbles for working (thick honey = fewer)
+      if(r.status==='working'){
+        ctx.fillStyle='rgba(255,255,255,0.45)';
+        const bcnt= r.visc>0.5?2:4;
+        for(let b=0;b<bcnt;b++){
+          const bx=x+w*(0.18+b*0.22)+ Math.sin(t*0.02+b)*4;
+          const by=fy+ 12 + b*14 + Math.sin(t*0.018+b*1.7)*3;
+          const br= r.visc>0.5?1.1:1.7;
+          ctx.beginPath(); ctx.arc(bx,by,br,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle='rgba(255,255,255,0.18)';
+          ctx.beginPath(); ctx.arc(bx-0.6,by-0.7,br*0.45,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle='rgba(255,255,255,0.45)';
+        }
+      }
+      // crack overlay for reauth
+      if(r.status==='reauth_needed'||r.status==='reauth'){
+        ctx.strokeStyle='rgba(255,255,255,'+(0.14+bur*0.12).toFixed(2)+')'; ctx.lineWidth=1.1;
+        ctx.beginPath();
+        ctx.moveTo(x+w*0.22, y+h*0.18); ctx.lineTo(x+w*0.48, y+h*0.42); ctx.lineTo(x+w*0.34, y+h*0.62); ctx.lineTo(x+w*0.62, y+h*0.78);
+        ctx.moveTo(x+w*0.58, y+h*0.14); ctx.lineTo(x+w*0.72, y+h*0.38); ctx.lineTo(x+w*0.54, y+h*0.56);
+        ctx.stroke();
+        ctx.strokeStyle='rgba(201,74,58,'+(0.42+bur*0.3).toFixed(2)+')'; ctx.lineWidth=1.6; ctx.globalAlpha=0.9;
+        ctx.strokeRect(x-1,y-1,w+2,h+2);
+        ctx.globalAlpha=1;
+      }
+      // dead = cloudy sunk
+      if(r.status==='dead'){
+        ctx.fillStyle='rgba(20,12,4,0.22)'; ctx.fillRect(x+1,fy,w-2,fluidH);
+      }
+      ctx.restore();
+      // glass highlight left
+      ctx.fillStyle='rgba(255,255,255,0.11)';
+      ctx.fillRect(x+7, y+8, 2.2, h*0.62);
+      ctx.fillStyle='rgba(255,255,255,0.06)';
+      ctx.fillRect(x+12, y+12, 1, h*0.44);
+      // label plate on glass
+      ctx.fillStyle='rgba(241,234,214,0.94)';
+      ctx.strokeStyle='rgba(214,205,177,0.9)'; ctx.lineWidth=0.8;
+      const tagW=Math.min(w-10, 92), tagH=18, tx=-tagW*0.5, ty=h*0.5-11;
+      ctx.beginPath(); roundRect(ctx,tx,ty,tagW,tagH,3); ctx.fill(); ctx.stroke();
+      ctx.fillStyle='#1a1206'; ctx.font='600 10px ui-monospace, SFMono-Regular, monospace';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText((r.label||r.id).slice(0,12), 0, ty+tagH*0.5+0.5);
+      // status dot
+      const dotCol = r.status==='working'?'#5fae7a': r.status==='dead'?'#e05d44':'#c94a3a';
+      ctx.fillStyle=dotCol; ctx.beginPath(); ctx.arc(tagW*0.5-7, ty+5, 3, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=0.6; ctx.stroke();
+      // visc indicator
+      ctx.fillStyle='rgba(0,0,0,0.52)'; ctx.font='8px ui-monospace, monospace';
+      const viscLabel = r.visc>0.58?'THICK': r.visc>0.34?'HONEY':'THIN';
+      ctx.fillText(viscLabel, 0, ty+tagH+9);
+      ctx.restore();
+    }
+
+    // honey particles (behind glass gloss but above troughs — already drawn before glass so under glass edge)
+    // draw particles with honey sheen
+    for(let i=0;i<particles.length;i++){
+      const p=particles[i];
+      const alpha= clamp(p.life*0.92,0,1);
+      // drop shadow
+      ctx.fillStyle='rgba(0,0,0,'+(alpha*0.22).toFixed(2)+')';
+      ctx.beginPath(); ctx.ellipse(p.x+1.2, p.y+1.8, p.r*0.72, p.r*0.46, 0, 0, Math.PI*2); ctx.fill();
+      // body
+      ctx.fillStyle='rgba('+p.col+','+alpha.toFixed(2)+')';
+      ctx.beginPath();
+      // stretch along velocity
+      const ang=Math.atan2(p.vy,p.vx);
+      const stretch= clamp(Math.hypot(p.vx,p.vy)*0.14, 0, p.r*0.9);
+      ctx.ellipse(p.x, p.y, p.r+stretch*0.45, p.r*0.72, ang, 0, Math.PI*2);
+      ctx.fill();
+      // specular
+      ctx.fillStyle='rgba(255,255,255,'+(alpha*0.42).toFixed(2)+')';
+      ctx.beginPath(); ctx.ellipse(p.x-p.r*0.18, p.y-p.r*0.22, p.r*0.28, p.r*0.18, ang, 0, Math.PI*2); ctx.fill();
+    }
+    // splashes
+    for(let i=0;i<splashes.length;i++){
+      const s=splashes[i];
+      const a=clamp(s.life,0,1);
+      ctx.fillStyle='rgba('+s.col+','+(a*0.88).toFixed(2)+')';
+      ctx.beginPath(); ctx.arc(s.x,s.y,s.r*a,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,'+(a*0.32).toFixed(2)+')';
+      ctx.beginPath(); ctx.arc(s.x-0.6,s.y-0.6,s.r*a*0.42,0,Math.PI*2); ctx.fill();
+    }
+
+    // shake overlay flash on burst
+    if(shake>0.12){
+      ctx.fillStyle='rgba(201,74,58,'+(shake*0.06).toFixed(3)+')';
+      ctx.fillRect(0,0,cssW,cssH);
+    }
+  }
+
+  function roundRect(ctx,x,y,w,h,r){
+    if(Array.isArray(r)){
+      const [tl,tr,br,bl]=r;
+      ctx.beginPath();
+      ctx.moveTo(x+tl,y); ctx.lineTo(x+w-tr,y); ctx.quadraticCurveTo(x+w,y,x+w,y+tr);
+      ctx.lineTo(x+w,y+h-br); ctx.quadraticCurveTo(x+w,y+h,x+w-br,y+h);
+      ctx.lineTo(x+bl,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-bl);
+      ctx.lineTo(x,y+tl); ctx.quadraticCurveTo(x,y,x+tl,y); ctx.closePath();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+      ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+      ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+      ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+    }
+  }
+
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const r=wrap.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(r.width)); cssH=220;
+    cv.width=Math.floor(cssW*dpr); cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px'; cv.style.height=cssH+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    layout();
+  }
+  function isHidden(){
+    if(sec.hidden) return true;
+    if(sec.style.display==='none') return true;
+    if(document.hidden) return true;
+    const rr=sec.getBoundingClientRect();
+    if(rr.bottom<0||rr.top>innerHeight+180) return true;
+    return false;
+  }
+  function start(){ if(running) return; if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; running=true; cancelAnimationFrame(raf); loop(); }
+  function stop(){ running=false; cancelAnimationFrame(raf); raf=0; }
+
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    t++;
+    if(t%18===0) syncReservoirs();
+    updatePhysics();
+    // draw with shake offset
+    let shx=0, shy=0;
+    if(shake>0.08){
+      shx=(Math.random()-0.5)*shake*8;
+      shy=(Math.random()-0.5)*shake*4;
+      ctx.save(); ctx.translate(shx,shy);
+      draw();
+      ctx.restore();
+    } else draw();
+    if(t%12===0){
+      const thinCnt=reservoirs.filter(r=>r.visc<0.34).length;
+      const thickCnt=reservoirs.filter(r=>r.visc>0.58).length;
+      const burstCnt=reservoirs.filter(r=>r.status==='reauth_needed'||r.status==='reauth').length;
+      const avgVisc= reservoirs.length? reservoirs.reduce((s,r)=>s+r.visc,0)/reservoirs.length : 0.5;
+      const vlabel= avgVisc>0.58?'THICK': avgVisc>0.34?'honey':'THIN';
+      const modeEl=document.getElementById('flux-mode');
+      const cntEl=document.getElementById('flux-count');
+      const viscEl=document.getElementById('flux-visc');
+      const readEl=document.getElementById('flux-readout');
+      const pulseEl=document.getElementById('flux-pulse-label');
+      if(modeEl) modeEl.textContent= burstCnt?'BURST': (thickCnt>thinCnt?'molasses': vlabel);
+      if(cntEl) cntEl.textContent=reservoirs.length+' reservoirs';
+      if(viscEl) viscEl.textContent=(avgVisc*1.6+0.42).toFixed(2)+'×';
+      if(readEl) readEl.textContent=reservoirs.length+' jars · '+(particles.length+splashes.length)+' honey · '+(burstCnt?'burst!': thinCnt>thickCnt?'thin · pouring':'thick · oozing');
+      if(pulseEl) pulseEl.textContent='flux '+(clamp(1-avgVisc,0,1)*0.9+0.18).toFixed(2)+'×';
+    }
+    raf=requestAnimationFrame(loop);
+  }
+
+  // interactions
+  function pos01(e){
+    const r=cv.getBoundingClientRect();
+    const x=(e.clientX - r.left)/r.width;
+    const y=(e.clientY - r.top)/r.height;
+    return [x,y];
+  }
+  cv.addEventListener('click', (e)=>{
+    const r=cv.getBoundingClientRect();
+    const x=(e.clientX - r.left)/r.width*cssW;
+    const y=(e.clientY - r.top)/r.height*cssH;
+    // hit test reservoirs
+    for(let i=0;i<reservoirs.length;i++){
+      const rr=reservoirs[i];
+      if(x>=rr.x && x<=rr.x+rr.w && y>=rr.y && y<=rr.y+rr.h){
+        burstReservoir(i, 1.2);
+        cv.style.filter='brightness(1.14)'; setTimeout(()=>cv.style.filter='',160);
+        return;
+      }
+    }
+    // otherwise pour from random to random
+    const a=Math.floor(Math.random()*reservoirs.length);
+    let b=Math.floor(Math.random()*reservoirs.length);
+    if(b===a) b=(b+1)%reservoirs.length;
+    spawnPour(a,b, rand(4,7)|0);
+  });
+  let dragging=false, dragX=0;
+  cv.addEventListener('pointerdown', e=>{
+    dragging=true; dragX=e.clientX;
+    try{cv.setPointerCapture(e.pointerId);}catch(_){}
+  });
+  cv.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const dx=(e.clientX - dragX)/cssW;
+    tiltTgt=clamp(dx*12, -8, 8);
+  });
+  cv.addEventListener('pointerup', e=>{
+    dragging=false; tiltTgt=0;
+    try{cv.releasePointerCapture(e.pointerId);}catch(_){}
+  });
+  cv.addEventListener('pointercancel', ()=>{ dragging=false; tiltTgt=0; });
+  document.getElementById('flux-burst')?.addEventListener('click', ()=>{
+    const idx=Math.floor(Math.random()*reservoirs.length);
+    const r=reservoirs[idx];
+    if(r && (r.status==='reauth_needed'||r.status==='reauth')) burstReservoir(idx,1.4);
+    else burstReservoir(idx,1);
+  });
+  document.getElementById('flux-pour')?.addEventListener('click', ()=>{
+    for(let k=0;k<3;k++){
+      const a=Math.floor(Math.random()*reservoirs.length);
+      let b=Math.floor(Math.random()*reservoirs.length);
+      if(b===a) b=(b+1)%reservoirs.length;
+      setTimeout(()=>spawnPour(a,b, rand(3,6)|0), k*70);
+    }
+  });
+  // tilt on device motion not needed
+  // keyboard
+  sec.addEventListener('keydown', e=>{
+    if(e.key==='Enter' || e.key===' '){
+      e.preventDefault();
+      const idx=Math.floor(Math.random()*reservoirs.length);
+      burstReservoir(idx,1);
+    }
+  });
+  // fetch / WS hooks for live health → viscosity + burst
+  (function hookFetch(){
+    const orig=window.fetch;
+    if(!orig||orig.__fluxHooked) return;
+    window.fetch=function(input,init){
+      const p=orig.apply(this,arguments);
+      p.then(res=>{
+        try{
+          const url= typeof input==='string'?input:(input&&input.url)||'';
+          if(res && res.status===401){
+            // burst a random reauth-ish reservoir or any
+            const cand=reservoirs.findIndex(r=>r.status==='reauth_needed'||r.status==='reauth');
+            const idx=cand>=0?cand: Math.floor(Math.random()*Math.max(1,reservoirs.length));
+            if(reservoirs[idx]) burstReservoir(idx,1.2);
+            shake=1; shakeT=1;
+          }
+          if(url.includes('/api/keys') && res && res.ok){
+            setTimeout(syncReservoirs, 120);
+            // small pour pulse on successful key verify
+            setTimeout(()=>{
+              const a=Math.floor(Math.random()*reservoirs.length);
+              let b=Math.floor(Math.random()*reservoirs.length);
+              if(b===a) b=(b+1)%reservoirs.length;
+              spawnPour(a,b,3);
+            },180);
+          }
+        }catch(_){}
+      }).catch(()=>{});
+      return p;
+    };
+    window.fetch.__fluxHooked=true;
+  })();
+
+  // init
+  resize(); buildReservoirs(snapshotProviders());
+  // initial pour cascade for wow
+  setTimeout(()=>{
+    for(let i=0;i<reservoirs.length;i++){
+      const nxt=(i+1)%reservoirs.length;
+      spawnPour(i,nxt, i%2===0?5:3);
+    }
+  }, 260);
+  start();
+  window.addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) return; if(!running) start(); });
+  try{
+    const mq=window.matchMedia('(prefers-reduced-motion: reduce)');
+    mq.addEventListener('change', e=>{ if(e.matches) stop(); else start(); });
+  }catch(_){}
+  try{
+    const io=new IntersectionObserver((ents)=>{
+      for(const en of ents) if(en.target===sec && en.isIntersecting) start();
+    },{threshold:0});
+    io.observe(sec);
+  }catch(_){}
+  window.__flux={
+    start, stop, get running(){return running},
+    get reservoirs(){return reservoirs},
+    get particles(){return particles},
+    burst:burstReservoir,
+    pour:(a,b,c)=>spawnPour(a,b,c),
+    get visc(){ return reservoirs.length? reservoirs.reduce((s,r)=>s+r.visc,0)/reservoirs.length : 0.5; }
+  };
 })();
 </script>
 
