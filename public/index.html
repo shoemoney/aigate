@@ -11724,6 +11724,380 @@ function startRhizome(){
 }catch(e){ try{ console.warn('snowglobe',e);}catch(_){} }
 })();
 </script>
+<!-- IMPL: Seismo Pet Graveyard -->
+<style>
+/* Seismo Pet Graveyard — Tamagotchi graveyard for dead keys · drum creatures + footer ghosts */
+.sg-drum{position:absolute;inset:0;z-index:2;pointer-events:none;overflow:hidden;border-radius:3px}
+.sg-pet{position:absolute;bottom:7px;display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:auto;cursor:pointer;user-select:none;-webkit-user-select:none;transform:translateX(-50%);transition:transform .22s cubic-bezier(.34,1.56,.64,1),filter .2s,opacity .2s}
+.sg-pet:hover{transform:translateX(-50%) translateY(-4px) scale(1.08);filter:drop-shadow(0 6px 14px rgba(0,0,0,.22))}
+.sg-pet:active{transform:translateX(-50%) scale(.92)}
+.sg-pet canvas{width:32px;height:32px;image-rendering:pixelated;image-rendering:crisp-edges;border-radius:5px;background:rgba(255,255,255,.58);border:1px solid rgba(60,45,15,.14);box-shadow:0 1px 5px rgba(0,0,0,.14),inset 0 1px 0 rgba(255,255,255,.9);display:block}
+.sg-pet.dead canvas{filter:grayscale(.08) brightness(.98)}
+.sg-pet .sg-tag{font:8.5px var(--mono);letter-spacing:.06em;color:rgba(60,45,15,.68);background:rgba(255,255,255,.78);border:1px solid rgba(60,45,15,.14);border-radius:999px;padding:1px 6px;max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.4}
+.sg-pet .sg-ecg{width:40px;height:10px;display:block;overflow:visible}
+.sg-pet .sg-ecg polyline{fill:none;stroke:rgba(60,45,15,.55);stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round}
+.sg-pet.dead .sg-ecg polyline{stroke:rgba(160,60,30,.72)}
+.sg-pet.flatline{animation:sg-flatshake .55s ease 1}
+@keyframes sg-flatshake{0%,100%{transform:translateX(-50%)}18%{transform:translateX(calc(-50% - 2px))}36%{transform:translateX(calc(-50% + 2px))}54%{transform:translateX(calc(-50% - 1px))}72%{transform:translateX(calc(-50% + 1px))}}
+.sg-pet .sg-halo{position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:22px;height:6px;border-radius:50%;background:radial-gradient(ellipse at 50% 50%,rgba(255,255,255,.9) 0%,rgba(232,220,200,.55) 38%,transparent 72%);opacity:.0;pointer-events:none;transition:opacity .2s}
+.sg-pet.dead .sg-halo{opacity:.42}
+.sg-ghost-note{position:absolute;left:20px;top:50%;transform:translateY(-50%);z-index:2;font:9px var(--mono);letter-spacing:.10em;text-transform:uppercase;color:rgba(60,45,15,.38);pointer-events:none;background:rgba(255,255,255,.55);border:1px solid rgba(60,45,15,.10);border-radius:999px;padding:3px 7px}
+.sg-empty{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;display:flex;align-items:center;gap:8px;font:11px var(--mono);letter-spacing:.06em;color:rgba(60,45,15,.58);background:rgba(255,255,255,.72);border:1px solid rgba(60,45,15,.12);border-radius:999px;padding:6px 12px 6px 8px;pointer-events:none;white-space:nowrap}
+.sg-empty canvas{width:22px;height:22px;image-rendering:pixelated;border-radius:4px;background:rgba(255,255,255,.6);border:1px solid rgba(60,45,15,.12)}
+/* footer ghosts — ViewTimeline parallax rising as you scroll down */
+.footer-ghosts{display:inline-flex;gap:7px;align-items:center;margin-left:14px;vertical-align:middle;flex-wrap:wrap;max-width:62%;vertical-align:middle}
+.sg-ghost{position:relative;display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);border-radius:999px;font:10px var(--mono);letter-spacing:.04em;color:var(--dim);cursor:pointer;user-select:none;-webkit-user-select:none;animation:sg-ghost-rise linear both;animation-timeline:view();animation-range:cover 0% cover 55%;opacity:.82;transition:opacity .18s,border-color .18s,background .18s,transform .18s;will-change:transform}
+.sg-ghost:hover{opacity:1;border-color:rgba(232,179,75,.26);background:rgba(232,179,75,.10);transform:translateY(-1px)}
+.sg-ghost:active{transform:scale(.96)}
+.sg-ghost canvas{width:20px;height:20px;image-rendering:pixelated;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10);flex:none}
+.sg-ghost .sg-glab{max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sg-ghost .sg-x{opacity:.55;font-size:9px;margin-left:1px}
+@keyframes sg-ghost-rise{from{transform:translateY(14px)}to{transform:translateY(-14px)}}
+@keyframes sg-ghost-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.5px)}}
+.sg-ghost::after{content:'';position:absolute;left:6px;right:6px;bottom:-4px;height:6px;border-radius:50%;background:radial-gradient(ellipse at 50% 50%,rgba(0,0,0,.18),transparent 72%);filter:blur(.4px);opacity:.5;pointer-events:none}
+/* View Transition FLIP — per key_hint */
+::view-transition-group(root){animation-duration:.32s}
+::view-transition-group(*){mix-blend-mode:normal}
+@media (prefers-reduced-motion:reduce){
+  .sg-pet,.sg-pet:hover,.sg-pet.flatline{animation:none!important;transform:translateX(-50%)!important;transition:none!important}
+  .sg-ghost{animation:none!important;transform:none!important;transition:none!important}
+  .sg-ghost::after{display:none}
+}
+</style>
+<script>
+/* <!-- IMPL: Seismo Pet Graveyard --> — drum Tamagotchi (16x16 canvas sprite loop) that flatlines, then haunts footer as ViewTimeline ghost parallax · click to resurrect via View Transitions FLIP */
+(()=>{ 'use strict';
+  const $=(s,el=document)=>el.querySelector(s);
+  const drumWrap=()=>document.getElementById('seismo-wrap');
+  const footerDiv=()=>{ const f=document.querySelector('footer div'); return f||null; };
+  const reduce=()=>{ try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(_){ return false; } };
 
+  // palette per provider (cute)
+  const PAL={
+    openai:{body:'#5ec8a8',belly:'#e8fff6',outline:'#1a3a32',blush:'#ff9bb3',ghost:'rgba(94,200,168,.14)'},
+    anthropic:{body:'#d8a878',belly:'#fff4e6',outline:'#3a2a18',blush:'#ff9bb3',ghost:'rgba(216,168,120,.14)'},
+    google:{body:'#7eb8ff',belly:'#eef4ff',outline:'#1e2e4a',blush:'#ffb3c8',ghost:'rgba(126,184,255,.14)'},
+    fal:{body:'#c8a8ff',belly:'#f4eeff',outline:'#2e1e4a',blush:'#ff9bb3',ghost:'rgba(200,168,255,.14)'},
+    default:{body:'#e8b34b',belly:'#fff6d8',outline:'#3a2e18',blush:'#ff9bb3',ghost:'rgba(232,179,75,.14)'}
+  };
+  const palFor=p=>PAL[(p||'').toLowerCase()]||PAL.default;
+
+  function sanitizeHint(h){
+    return String(h||'').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,18)||'nokey';
+  }
+
+  // 16x16 sprite painter — pixel art Tamagotchi ghostling
+  function drawSprite(canvas, frame, palette, dead){
+    const dpr=Math.max(1, Math.min(2, devicePixelRatio||1));
+    // canvas is 16x16 logical, but backing may be higher DPR — we draw at 16x16 then let CSS scale
+    const ctx=canvas.getContext('2d');
+    if(!ctx) return;
+    const S=16;
+    canvas.width=S; canvas.height=S;
+    ctx.imageSmoothingEnabled=false;
+    ctx.clearRect(0,0,S,S);
+    // subtle bg
+    // body shape — 10x10 blob centered, with ears
+    const body=palette.body, belly=palette.belly, outline=palette.outline, blush=palette.blush;
+    // helper: filled rect pixel
+    function px(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x,y,w,h); }
+    // shadow
+    px(4,13,8,1,'rgba(0,0,0,.10)');
+    px(5,14,6,1,'rgba(0,0,0,.06)');
+    // ears
+    const bob = dead?0: (frame%4===1? -1 : frame%4===3? 1 : 0);
+    const y0 = 2 + bob;
+    // ear left / right
+    px(2,y0,2,3,outline); px(2,y0+1,2,1,body);
+    px(12,y0,2,3,outline); px(12,y0+1,2,1,body);
+    // body outline
+    // body rect 3,3 10x9
+    px(3,3+y0,10,9,outline);
+    px(4,4+y0,8,7,body);
+    // belly
+    px(5,7+y0,6,4,belly);
+    px(6,8+y0,4,2,'rgba(255,255,255,.55)');
+    // eyes
+    if(dead){
+      // X eyes
+      px(5,5+y0,1,1,outline); px(6,6+y0,1,1,outline); px(5,6+y0,1,1,outline); px(6,5+y0,1,1,outline);
+      px(9,5+y0,1,1,outline); px(10,6+y0,1,1,outline); px(9,6+y0,1,1,outline); px(10,5+y0,1,1,outline);
+      // flat mouth
+      px(6,9+y0,4,1,outline);
+      // halo flatline above
+      ctx.fillStyle='rgba(60,45,15,.0)'; // halo handled by CSS
+    }else{
+      const blink = (frame%12===5 || frame%12===6);
+      if(blink){
+        px(5,6+y0,3,1,outline);
+        px(9,6+y0,3,1,outline);
+      }else{
+        // eye white
+        px(5,5+y0,3,3,'#fff'); px(9,5+y0,3,3,'#fff');
+        // pupil
+        const pxEye = frame%8<4? 6:7;
+        px(pxEye,6+y0,1,1,outline); px(pxEye+4,6+y0,1,1,outline);
+        // highlight
+        px(6,5+y0,1,1,'rgba(255,255,255,.9)');
+        px(10,5+y0,1,1,'rgba(255,255,255,.9)');
+      }
+      // mouth (smile or o)
+      if(frame%16===10){ px(7,9+y0,2,1,outline); px(7,9+y0,2,1,'#3a1a18'); } // o
+      else { px(6,9+y0,1,1,outline); px(7,10+y0,2,1,outline); px(9,9+y0,1,1,outline); }
+      // blush
+      px(4,8+y0,1,1,blush); px(11,8+y0,1,1,blush);
+    }
+    // tiny feet
+    px(5,12+y0,2,1,outline); px(9,12+y0,2,1,outline);
+  }
+
+  function ecgPath(dead){
+    // SVG polyline points for tiny ECG inside .sg-ecg (40x10 viewBox 0 0 40 10)
+    if(dead) return '0,5 12,5 14,5 16,5 28,5 40,5';
+    // beating: p-wave, spike, t-wave
+    return '0,5 8,5 10,3 12,7 14,1 16,9 18,5 24,5 26,4 28,6 30,5 40,5';
+  }
+
+  let petsRAF=0, frameTick=0;
+  let lastKeysSig='';
+  let deadCache=[];
+
+  function ensureContainers(){
+    const wrap=drumWrap();
+    if(wrap && !document.getElementById('sg-drum')){
+      const d=document.createElement('div');
+      d.id='sg-drum'; d.className='sg-drum'; d.setAttribute('aria-hidden','true');
+      wrap.appendChild(d);
+    }
+    const fd=footerDiv();
+    if(fd && !document.getElementById('footer-ghosts')){
+      const g=document.createElement('span');
+      g.id='footer-ghosts'; g.className='footer-ghosts'; g.setAttribute('aria-hidden','true');
+      fd.appendChild(g);
+    }
+  }
+
+  function getDeadKeys(){
+    // try Vue app first
+    try{
+      const el=document.querySelector('#app');
+      if(el && el.__vue_app__ && el.__vue_app__._instance){
+        const prox=el.__vue_app__._instance.proxy;
+        if(prox && Array.isArray(prox.keys)) return prox.keys.filter(k=>k.status==='dead');
+        if(prox && prox.$data && Array.isArray(prox.$data.keys)) return prox.$data.keys.filter(k=>k.status==='dead');
+      }
+      // fallback: global expose if available
+      if(window.__aigateKeys && Array.isArray(window.__aigateKeys)) return window.__aigateKeys.filter(k=>k.status==='dead');
+    }catch(_){}
+    return null; // unknown — let fetcher decide
+  }
+
+  async function fetchDeadKeys(){
+    const known=getDeadKeys();
+    if(known!==null) return known;
+    try{
+      const token=localStorage.aigate_token||'';
+      const h={}; if(token) h.authorization='Bearer '+token;
+      const r=await fetch('/api/keys',{credentials:'same-origin',headers:h});
+      if(!r.ok) return [];
+      const j=await r.json().catch(()=>[]);
+      const arr=Array.isArray(j)?j:(j.keys||[]);
+      return arr.filter(k=>k.status==='dead');
+    }catch(_){ return []; }
+  }
+
+  function render(deadKeys){
+    ensureContainers();
+    const drum=document.getElementById('sg-drum');
+    const ghosts=document.getElementById('footer-ghosts');
+    if(!drum) return;
+    const sig=deadKeys.map(k=>k.id+':'+k.key_hint+':'+k.provider).join('|');
+    if(sig===lastKeysSig && drum.children.length===deadKeys.length+ (deadKeys.length?0:1)) { /* still tick sprites */ return; }
+    lastKeysSig=sig;
+    deadCache=deadKeys.slice();
+    drum.innerHTML='';
+    if(ghosts) ghosts.innerHTML='';
+
+    // drum label
+    if(!deadKeys.length){
+      const empty=document.createElement('div');
+      empty.className='sg-empty';
+      const c=document.createElement('canvas'); c.width=16; c.height=16;
+      drawSprite(c, 0, PAL.default, false);
+      empty.appendChild(c);
+      const t=document.createElement('span');
+      t.textContent='all keys purring — graveyard empty · 0 ghosts';
+      empty.appendChild(t);
+      drum.appendChild(empty);
+      // ghost footnote: static faint ghost so footer isn't dead text
+      if(ghosts){
+        const g=document.createElement('span');
+        g.className='sg-ghost'; g.style.opacity='.42'; g.style.pointerEvents='none';
+        const gc=document.createElement('canvas'); gc.width=16; gc.height=16;
+        drawSprite(gc, 0, PAL.default, false);
+        g.appendChild(gc);
+        const lab=document.createElement('span'); lab.className='sg-glab'; lab.textContent='no ghosts — vault is warm';
+        g.appendChild(lab);
+        ghosts.appendChild(g);
+      }
+      return;
+    }
+
+    // note badge
+    const note=document.createElement('div');
+    note.className='sg-ghost-note';
+    note.textContent='† ' + deadKeys.length + ' ghost' + (deadKeys.length===1?'':'s') + ' · click to resurrect';
+    drum.appendChild(note);
+
+    deadKeys.forEach((k,idx)=>{
+      const hint=sanitizeHint(k.key_hint||k.id);
+      const vt='sg-pet-'+hint;
+      const pal=palFor(k.provider);
+      // drum pet
+      const pet=document.createElement('div');
+      pet.className='sg-pet dead flatline';
+      pet.dataset.vt=vt;
+      pet.style.left = ( (idx+0.5) * (100/deadKeys.length) ) + '%';
+      pet.style.viewTransitionName = vt;
+      pet.title='† '+k.provider+(k.label?' · '+k.label:'')+' · '+hint+' — click to resurrect';
+      pet.setAttribute('role','button');
+      pet.setAttribute('tabindex','0');
+      pet.setAttribute('aria-label','ghost '+k.provider+' '+hint+' — click to resurrect via re-vault');
+      const halo=document.createElement('i'); halo.className='sg-halo'; pet.appendChild(halo);
+      const cv=document.createElement('canvas'); cv.width=16; cv.height=16;
+      drawSprite(cv, idx*3, pal, true);
+      pet.appendChild(cv);
+      // ecg line
+      const svgNS='http://www.w3.org/2000/svg';
+      const svg=document.createElementNS(svgNS,'svg');
+      svg.setAttribute('viewBox','0 0 40 10'); svg.setAttribute('class','sg-ecg'); svg.setAttribute('aria-hidden','true');
+      const pl=document.createElementNS(svgNS,'polyline');
+      pl.setAttribute('points', ecgPath(true));
+      svg.appendChild(pl); pet.appendChild(svg);
+      const tag=document.createElement('span'); tag.className='sg-tag';
+      tag.textContent=(k.provider||'key')+' · '+hint;
+      pet.appendChild(tag);
+      // stagger flatline shake
+      if(!reduce()) pet.style.animationDelay=(idx*90)+'ms';
+      pet.addEventListener('click', ()=> resurrect(k, pet));
+      pet.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); resurrect(k, pet); }});
+      drum.appendChild(pet);
+
+      // footer ghost
+      if(ghosts){
+        const gh=document.createElement('span');
+        gh.className='sg-ghost';
+        gh.dataset.vt=vt;
+        gh.style.viewTransitionName = vt;
+        gh.title='haunting · '+k.provider+' '+hint+' — click to resurrect';
+        gh.setAttribute('role','button');
+        gh.setAttribute('tabindex','0');
+        gh.setAttribute('aria-label','haunting ghost '+k.provider+' '+hint+' — click to resurrect');
+        const gcv=document.createElement('canvas'); gcv.width=16; gcv.height=16;
+        drawSprite(gcv, idx*3+2, pal, true);
+        // ghost is translucent — tint via filter
+        gcv.style.opacity='.9';
+        gh.appendChild(gcv);
+        const glab=document.createElement('span'); glab.className='sg-glab';
+        glab.textContent=k.provider+' · '+hint;
+        gh.appendChild(glab);
+        const x=document.createElement('span'); x.className='sg-x'; x.textContent='†'; gh.appendChild(x);
+        gh.addEventListener('click', ()=> resurrect(k, gh));
+        gh.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); resurrect(k, gh); }});
+        ghosts.appendChild(gh);
+      }
+    });
+  }
+
+  async function resurrect(k, el){
+    const hint=sanitizeHint(k.key_hint||k.id);
+    const vt='sg-pet-'+hint;
+    // ensure vt name on clicked el (already set) — use View Transition FLIP
+    const doPrompt=async()=>{
+      const prov=k.provider||'key';
+      let val=window.prompt('Resurrect † '+prov+(k.label?' · '+k.label:'')+' ('+hint+')\nPaste the NEW key value to re-vault (POST /api/keys):');
+      if(val===null) return;
+      val=String(val).trim();
+      if(!val){ alert('empty — cancelled'); return; }
+      if(val.startsWith('export ')||val.includes('=')){
+        const m=val.match(/(?:export\s+)?[A-Z0-9_]+\s*=\s*["\']?(.*?)["\']?\s*$/);
+        if(m) val=m[1];
+      }
+      const token=localStorage.aigate_token||'';
+      const headers={'content-type':'application/json'};
+      if(token) headers.authorization='Bearer '+token;
+      try{
+        const r=await fetch('/api/keys',{method:'POST',credentials:'same-origin',headers,body:JSON.stringify({provider:prov,label:k.label||'',key:val})});
+        const j=await r.json().catch(()=>({}));
+        if(r.ok){
+          // success — briefly celebrate then reload
+          if(el){ el.style.transform='translateX(-50%) scale(1.18)'; el.style.filter='drop-shadow(0 0 14px rgba(94,200,168,.55))'; }
+          const msg=j.key_hint? '✓ re-vaulted '+prov+' · '+j.key_hint : '✓ re-vaulted '+prov;
+          // try to use app toast if available, else alert
+          try{ alert(msg+' — reloading…'); }catch(_){}
+          setTimeout(()=>location.reload(), 420);
+        }else{
+          alert('✗ re-vault failed: '+(j.error||j.message||('HTTP '+r.status)));
+        }
+      }catch(e){
+        alert('✗ network: '+(e&&e.message||e));
+      }
+    };
+    if(!reduce() && document.startViewTransition){
+      document.startViewTransition(()=>{ /* FLIP: keep DOM, just run prompt in transition callback so VT captures old→new */ doPrompt(); });
+    }else{
+      await doPrompt();
+    }
+  }
+
+  function tickSprites(){
+    if(reduce()) return;
+    const drum=document.getElementById('sg-drum');
+    if(!drum) return;
+    const pets=drum.querySelectorAll('.sg-pet canvas');
+    const ghosts=document.querySelectorAll('.sg-ghost canvas');
+    frameTick++;
+    // 6fps sprite loop
+    if(frameTick%10!==0) return;
+    const f=Math.floor(frameTick/10);
+    deadCache.forEach((k,i)=>{
+      const pal=palFor(k.provider);
+      const pc=pets[i]; if(pc) drawSprite(pc, f + i*3, pal, true);
+      const gc=ghosts[i]; if(gc) drawSprite(gc, f + i*3+1, pal, true);
+    });
+    // empty state sprite bob too
+    const emp=drum.querySelector('.sg-empty canvas');
+    if(emp) drawSprite(emp, f, PAL.default, false);
+  }
+
+  let pollTimer=0;
+  async function sync(){
+    const dead=await fetchDeadKeys();
+    render(dead);
+  }
+
+  function start(){
+    ensureContainers();
+    sync();
+    if(petsRAF) cancelAnimationFrame(petsRAF);
+    const loop=()=>{ tickSprites(); petsRAF=requestAnimationFrame(loop); };
+    petsRAF=requestAnimationFrame(loop);
+    // poll dead keys every 4s + on visibility + on Vue key changes
+    clearInterval(pollTimer);
+    pollTimer=setInterval(sync, 4000);
+    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) sync(); });
+    // also watch for Vue key updates via MutationObserver on seismo label
+    window.addEventListener('focus', sync);
+    // expose for manual
+    window.__sgSync=sync;
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+  // also retry shortly after Vue mounts (Vue mounts async after bootGate)
+  setTimeout(start, 900);
+  setTimeout(start, 2500);
+})();
+</script>
 </body>
 </html>
