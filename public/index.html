@@ -522,6 +522,19 @@ main.shake{animation:seismo-shake .38s ease}
 .ferrofabric-meta .mode{color:#e8e0c8}
 .ferrofabric-meta .hint{opacity:.75}
 .ferrofabric-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(232,224,200,.52);background:rgba(8,10,12,.55);border:1px solid rgba(200,196,184,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+/* <!-- IMPL: Metablob Lava Lamp --> — 12 orbiting metaballs → scalar field → marching squares iso-contour, chrome+specular+inner-glow, always-on ambient */
+#metablob-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #1e1a28;border-radius:6px;overflow:hidden;background:#08060c;box-shadow:0 4px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05)}
+.metablob-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#12101a 0%,#0c0a12 55%,#08060c 100%);border-bottom:1px solid #1e1a28}
+.metablob-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#c8b8e8}
+.metablob-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.metablob-head .metablob-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.metablob-head .metablob-note b{color:#e8dff8;font-weight:600}
+.metablob-canvas-wrap{position:relative;height:160px;background:#09080c;overflow:hidden}
+#metablob{display:block;width:100%;height:100%}
+.metablob-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0c0a12;border-top:1px solid #1e1a28;font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.metablob-meta .mode{color:#e8dff8}
+.metablob-meta .hint{opacity:.75}
+.metablob-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(216,200,240,.52);background:rgba(8,6,12,.55);border:1px solid rgba(200,184,232,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
 /* <!-- IMPL: Spectral Vault --> — SDF vault door: torus-knot keyhole, depth tumblers, volumetric shafts, BREACH shockwave */
 #vault-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #23262a;border-radius:6px;overflow:hidden;background:#06090c;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
 .vault-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#13191c 0%,#0c1012 55%,#06090c 100%);border-bottom:1px solid #23262a}
@@ -555,6 +568,8 @@ main.shake{animation:seismo-shake .38s ease}
   #horizon{display:none!important}
   #ferrofabric-sec{display:none!important}
   #ferrofabric{display:none!important}
+  #metablob-sec{display:none!important}
+  #metablob{display:none!important}
   #vault-sec{display:none!important}
   #vault{display:none!important}
   .card{transform:none!important;box-shadow:none!important}
@@ -807,6 +822,21 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="ferrofabric-meta">
         <span class="mode">▸ <span id="ferrofabric-readout">2 400 hair lines · snap → ripple → shatter</span></span>
         <span class="hint">pure vector field · 1 canvas · DPR≤2</span>
+      </div>
+    </section>
+    <!-- IMPL: Metablob Lava Lamp — standalone 160px ambient between ferrofabric and seismo — 12 metaballs → scalar field → marching squares chrome -->
+    <section id="metablob-sec" class="metablob-sec" aria-label="Metablob Lava Lamp">
+      <div class="metablob-head">
+        <span class="sec-num">00</span><h2>Metablob</h2>
+        <span class="metablob-note">12 blobs · marching squares · <b id="metablob-mode">chrome</b></span>
+      </div>
+      <div class="metablob-canvas-wrap" id="metablob-wrap">
+        <canvas id="metablob" width="1200" height="160" aria-label="Metablob lava lamp — hypnotic merging chrome blobs" role="img"></canvas>
+        <span class="metablob-spec">⬢ scalar field · iso-contour · specular+glow</span>
+      </div>
+      <div class="metablob-meta">
+        <span class="mode">▸ <span id="metablob-readout">12 metaballs · 1 field · seamless merge</span></span>
+        <span class="hint">pure 2D marching squares · 1 canvas · DPR≤2</span>
       </div>
     </section>
 
@@ -5175,6 +5205,210 @@ function startMonsoon(){
   try{
     window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', e=>{ if(e.matches) stop(); else start(); });
   }catch(_){}
+})();
+</script>
+<!-- IMPL: Metablob Lava Lamp — 12 orbiting distance-field blobs → scalar field (Gaussian) → marching squares iso-contour, chrome+specular+glow, single canvas 2D, ~200 lines -->
+<script>
+/* <!-- IMPL: Metablob Lava Lamp --> — hypnotic lava lamp tessellation: 12 orbiting metaballs, scalar field + marching squares, chrome blobs */
+(function(){
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('metablob-sec');
+  const wrap=document.getElementById('metablob-wrap');
+  const cv=document.getElementById('metablob');
+  if(!sec||!wrap||!cv) return;
+  const ctx=cv.getContext('2d'); if(!ctx) return;
+  let dpr=Math.min(window.devicePixelRatio||1,2);
+  let cssW=0,cssH=160,raf=0,running=false,t=0;
+  let cols=0,rows=0,step=12,grid=null,threshold=0.95;
+  const N=12;
+  const balls=[];
+  // lerp helper
+  function lerp(a,b,t){return a+(b-a)*t;}
+  function buildBalls(){
+    balls.length=0;
+    for(let i=0;i<N;i++){
+      const col=i%4,row=(i/4)|0;
+      const bx=cssW*(0.14+col*0.22+Math.random()*0.06);
+      const by=cssH*(0.22+row*0.28+Math.random()*0.08);
+      const rx=28+Math.random()*26, ry=14+Math.random()*12;
+      const r=15+Math.random()*13;
+      const sp=0.006+Math.random()*0.011;
+      const ph=Math.random()*Math.PI*2;
+      balls.push({bx,by,rx,ry,r,sp,ph,x:bx,y:by});
+    }
+  }
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const r=wrap.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(r.width)); cssH=160;
+    cv.width=Math.floor(cssW*dpr); cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px'; cv.style.height=cssH+'px';
+    step=Math.max(10,Math.min(14, Math.round(cssW/84)));
+    cols=Math.ceil(cssW/step)+1; rows=Math.ceil(cssH/step)+1;
+    grid=new Float32Array(cols*rows);
+    // re-seed balls to spread across new width, keep phase/speed/r/rx/ry but recenter bx
+    if(!balls.length) buildBalls();
+    else {
+      for(let i=0;i<balls.length;i++){
+        const b=balls[i];
+        const col=i%4,row=(i/4)|0;
+        b.bx=cssW*(0.14+col*0.22)+ (Math.random()-0.5)*8;
+        b.by=cssH*(0.22+row*0.28)+ (Math.random()-0.5)*6;
+      }
+    }
+  }
+  function fieldAt(gx,gy){
+    let s=0;
+    for(let i=0;i<N;i++){
+      const b=balls[i];
+      const dx=gx-b.x, dy=gy-b.y;
+      const d2=dx*dx+dy*dy;
+      const sig=b.r*0.86; s+=Math.exp(-d2/(2*sig*sig));
+    }
+    return s;
+  }
+  function isHidden(){ return sec.hidden||sec.style.display==='none'||document.hidden; }
+  function start(){ if(running) return; if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; running=true; cancelAnimationFrame(raf); loop(); }
+  function stop(){ running=false; cancelAnimationFrame(raf); raf=0; }
+  // marching helpers: interpolate along edge
+  function interp(vA,vB,pA,pB){
+    const tt=(threshold-vA)/(vB-vA);
+    const c=Math.max(0,Math.min(1,tt));
+    return {x:lerp(pA.x,pB.x,c), y:lerp(pA.y,pB.y,c)};
+  }
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    if(document.hidden){ raf=requestAnimationFrame(loop); return; }
+    t++;
+    // update balls orbiting — elliptical + second harmonic for organic
+    for(let i=0;i<N;i++){
+      const b=balls[i];
+      const a=b.ph + t*b.sp;
+      b.x=b.bx + Math.cos(a)*b.rx + Math.sin(a*0.7+b.ph)*6;
+      b.y=b.by + Math.sin(a*0.92+b.ph*1.3)*b.ry + Math.cos(a*0.52)*4;
+      b.x=Math.max(b.r+2, Math.min(cssW-b.r-2, b.x));
+      b.y=Math.max(b.r+2, Math.min(cssH-b.r-2, b.y));
+    }
+    // sample scalar field on grid
+    for(let y=0;y<rows;y++){
+      const gy=y*step;
+      for(let x=0;x<cols;x++){
+        const gx=x*step;
+        let s=0;
+        for(let i=0;i<N;i++){
+          const b=balls[i]; const dx=gx-b.x, dy=gy-b.y; const d2=dx*dx+dy*dy; const sig=b.r*0.86; s+=Math.exp(-d2/(2*sig*sig));
+        }
+        grid[y*cols+x]=s;
+      }
+    }
+    ctx.save(); ctx.scale(dpr,dpr);
+    ctx.clearRect(0,0,cssW,cssH);
+    // bg — deep ink that lets chrome pop
+    ctx.fillStyle='#09080c'; ctx.fillRect(0,0,cssW,cssH);
+    const vg=ctx.createRadialGradient(cssW*0.5,cssH*0.5,0,cssW*0.5,cssH*0.5,Math.max(cssW,cssH)*0.85);
+    vg.addColorStop(0,'rgba(28,22,44,0.38)'); vg.addColorStop(0.58,'rgba(12,10,18,0)'); vg.addColorStop(1,'rgba(0,0,0,0.55)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,cssW,cssH);
+    // chrome base gradient — vertical brushed chrome
+    const chrome=ctx.createLinearGradient(0,0,0,cssH);
+    chrome.addColorStop(0,'#f1ece0'); chrome.addColorStop(0.22,'#c8c4b8'); chrome.addColorStop(0.46,'#e8e0cc'); chrome.addColorStop(0.72,'#9ea2ae'); chrome.addColorStop(1,'#6b6f7a');
+    const contourSegs=[];
+    // fill interior polygons per cell
+    ctx.fillStyle=chrome;
+    for(let y=0;y<rows-1;y++){
+      for(let x=0;x<cols-1;x++){
+        const gx=x*step, gy=y*step;
+        const v0=grid[y*cols+x], v1=grid[y*cols+x+1], v2=grid[(y+1)*cols+x+1], v3=grid[(y+1)*cols+x];
+        const b0=v0>=threshold, b1=v1>=threshold, b2=v2>=threshold, b3=v3>=threshold;
+        if(!b0&&!b1&&!b2&&!b3) continue;
+        if(b0&&b1&&b2&&b3){
+          ctx.fillRect(gx,gy,step,step); continue;
+        }
+        const p0={x:gx,y:gy}, p1={x:gx+step,y:gy}, p2={x:gx+step,y:gy+step}, p3={x:gx,y:gy+step};
+        let pe0=null,pe1=null,pe2=null,pe3=null;
+        if(b0!==b1) pe0=interp(v0,v1,p0,p1);
+        if(b1!==b2) pe1=interp(v1,v2,p1,p2);
+        if(b2!==b3) pe2=interp(v2,v3,p2,p3);
+        if(b3!==b0) pe3=interp(v3,v0,p3,p0);
+        const idx=(b0?8:0)|(b1?4:0)|(b2?2:0)|(b3?1:0);
+        let polys=[];
+        if(idx===5||idx===10){
+          const avg=(v0+v1+v2+v3)/4;
+          const conn=avg>=threshold;
+          if(idx===5){
+            if(conn){ polys=[ [pe0,p1,pe1,p2,pe2,p3,pe3] ]; }
+            else { polys=[ [pe0,p1,pe1], [pe2,p3,pe3] ]; }
+          } else {
+            if(conn){ polys=[ [p0,pe0,pe1,p2,pe2,pe3] ]; }
+            else { polys=[ [p0,pe0,pe3], [pe1,p2,pe2] ]; }
+          }
+        } else {
+          const pts=[];
+          if(b0) pts.push(p0); if(pe0) pts.push(pe0); if(b1) pts.push(p1); if(pe1) pts.push(pe1); if(b2) pts.push(p2); if(pe2) pts.push(pe2); if(b3) pts.push(p3); if(pe3) pts.push(pe3);
+          if(pts.length>=3) polys=[pts];
+        }
+        for(const poly of polys){
+          if(poly.length<3) continue;
+          ctx.beginPath(); ctx.moveTo(poly[0].x,poly[0].y);
+          for(let k=1;k<poly.length;k++) ctx.lineTo(poly[k].x,poly[k].y);
+          ctx.closePath(); ctx.fill();
+        }
+        // collect contour segments for glow stroke
+        const segs=[];
+        if(idx===1) segs.push([pe2,pe3]); else if(idx===2) segs.push([pe1,pe2]); else if(idx===3) segs.push([pe3,pe1]);
+        else if(idx===4) segs.push([pe0,pe1]); else if(idx===6) segs.push([pe0,pe2]); else if(idx===7) segs.push([pe0,pe3]);
+        else if(idx===8) segs.push([pe0,pe3]); else if(idx===9) segs.push([pe0,pe2]); else if(idx===11) segs.push([pe0,pe1]);
+        else if(idx===12) segs.push([pe3,pe1]); else if(idx===13) segs.push([pe1,pe2]); else if(idx===14) segs.push([pe2,pe3]);
+        else if(idx===5){
+          if((v0+v1+v2+v3)/4 >= threshold){ segs.push([pe0,pe3],[pe1,pe2]); } else { segs.push([pe0,pe1],[pe2,pe3]); }
+        } else if(idx===10){
+          if((v0+v1+v2+v3)/4 >= threshold){ segs.push([pe0,pe1],[pe2,pe3]); } else { segs.push([pe0,pe3],[pe1,pe2]); }
+        }
+        for(const s of segs) contourSegs.push(s);
+      }
+    }
+    // inner specular stripe — clipped to blobs via source-atop
+    ctx.save(); ctx.globalCompositeOperation='source-atop';
+    const hg=ctx.createLinearGradient(0,0, cssW*0.42, cssH);
+    hg.addColorStop(0,'rgba(255,255,255,0.42)'); hg.addColorStop(0.28,'rgba(255,255,255,0.06)'); hg.addColorStop(0.5,'rgba(255,255,255,0)'); hg.addColorStop(1,'rgba(0,0,0,0.14)');
+    ctx.fillStyle=hg; ctx.fillRect(0,0,cssW,cssH);
+    // per-blob specular highlight
+    for(let i=0;i<N;i++){
+      const b=balls[i];
+      const hlx=b.x- b.r*0.2, hly=b.y- b.r*0.26;
+      const g=ctx.createRadialGradient(hlx,hly,0, hlx,hly, b.r*0.68);
+      g.addColorStop(0,'rgba(255,255,255,0.96)'); g.addColorStop(0.2,'rgba(255,255,255,0.36)'); g.addColorStop(0.5,'rgba(255,255,255,0)');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(hlx,hly,b.r*0.68,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+    // contour glow — shadowBlur on iso lines
+    if(contourSegs.length){
+      ctx.save(); ctx.shadowColor='rgba(200,184,232,0.38)'; ctx.shadowBlur=9*dpr;
+      ctx.strokeStyle='rgba(255,255,255,0.13)'; ctx.lineWidth=1.05*dpr; ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.beginPath();
+      for(const s of contourSegs){ ctx.moveTo(s[0].x,s[0].y); ctx.lineTo(s[1].x,s[1].y); }
+      ctx.stroke(); ctx.shadowBlur=0;
+      // crisp inner edge
+      ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=0.6*dpr; ctx.beginPath();
+      for(const s of contourSegs){ ctx.moveTo(s[0].x,s[0].y); ctx.lineTo(s[1].x,s[1].y); }
+      ctx.stroke(); ctx.restore();
+    }
+    // soft lamp vignette + glass highlight
+    const hl=ctx.createLinearGradient(0,0,0,cssH);
+    hl.addColorStop(0,'rgba(255,255,255,0.07)'); hl.addColorStop(0.3,'rgba(255,255,255,0.015)'); hl.addColorStop(1,'rgba(0,0,0,0.32)');
+    ctx.fillStyle=hl; ctx.fillRect(0,0,cssW,cssH);
+    ctx.restore();
+    if(t%12===0){
+      const el=document.getElementById('metablob-mode');
+      if(el) el.textContent=threshold.toFixed(2)+' iso';
+    }
+    raf=requestAnimationFrame(loop);
+  }
+  resize(); buildBalls(); start();
+  window.addEventListener('resize',resize);
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden) return; if(!running) start(); });
+  try{ window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',e=>{ if(e.matches) stop(); else start(); }); }catch(_){}
+  window.__metablob={start,stop,get running(){return running},get threshold(){return threshold},set threshold(v){threshold=Math.max(0.4,Math.min(1.8,v));}};
 })();
 </script>
 
