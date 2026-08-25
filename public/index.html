@@ -348,12 +348,35 @@ main.shake{animation:seismo-shake .38s ease}
   .card{transform:none!important;box-shadow:none!important}
   .card .glare{display:none}
 }
+/* <!-- IMPL: Mercury Blob Toggle --> — single SVG goo filter + surface-tension necking + spring jiggle; respects reduced-motion */
+.mercury-blob{display:inline-flex;align-items:center;gap:8px;padding:5px 10px 5px 8px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--dim);font:12px var(--mono);letter-spacing:.08em;text-transform:uppercase;transition:border-color .18s,color .18s,background .18s;user-select:none;-webkit-user-select:none;touch-action:none}
+.mercury-blob:hover{color:var(--fg);border-color:var(--dim)}
+.mercury-blob[aria-checked="true"]{border-color:rgba(232,179,75,.5);color:var(--accent);background:rgba(232,179,75,.07)}
+.mercury-blob:active{transform:scale(.97)}
+.mercury-label{white-space:nowrap}
+.mercury-track{position:relative;width:46px;height:24px;border-radius:999px;background:var(--inset);border:1px solid var(--line);flex:none;overflow:visible;transition:background .22s,border-color .22s}
+.mercury-blob[aria-checked="true"] .mercury-track{background:rgba(232,179,75,.18);border-color:rgba(232,179,75,.35)}
+.mercury-goo{position:absolute;inset:2px;filter:url(#mercury-goo)}
+.mercury-dot{position:absolute;top:50%;left:2px;width:18px;height:18px;margin-top:-9px;border-radius:50%;background:var(--dim);opacity:.38;transition:left .38s cubic-bezier(.34,1.56,.64,1),background .2s,opacity .2s;pointer-events:none}
+.mercury-blob[aria-checked="true"] .mercury-dot{left:22px;background:var(--accent);opacity:.45}
+.mercury-thumb{position:absolute;top:50%;left:2px;width:18px;height:18px;margin-top:-9px;border-radius:50%;background:linear-gradient(180deg,#f0ece2 0%,#d8d2c0 55%,#b8b2a0 100%);box-shadow:0 1px 4px rgba(0,0,0,.35),inset 0 1px 1px rgba(255,255,255,.9),0 0 0 1px rgba(0,0,0,.12);transition:left .38s cubic-bezier(.34,1.56,.64,1),transform .38s cubic-bezier(.34,1.56,.64,1),background .2s,box-shadow .2s;will-change:transform,left;pointer-events:none}
+.mercury-blob[aria-checked="true"] .mercury-thumb{background:radial-gradient(ellipse 70% 60% at 34% 28%,#fff8e6 0%,#f3d68a 38%,#e8b34b 62%,#c9982e 100%);box-shadow:0 1px 6px rgba(232,179,75,.45),inset 0 1px 1px rgba(255,255,255,.85),0 0 0 1px rgba(232,179,75,.35)}
+.mercury-blob[aria-checked="true"] .mercury-thumb{left:22px}
+.mercury-blob.dragging .mercury-goo{filter:url(#mercury-goo)}
+.mercury-blob.dragging .mercury-dot,.mercury-blob.dragging .mercury-thumb{transition:none}
+.mercury-blob.jiggle .mercury-thumb{animation:mercury-jiggle .52s cubic-bezier(.34,1.56,.64,1)}
+.mercury-blob.jiggle .mercury-dot{animation:mercury-jiggle-dot .52s cubic-bezier(.34,1.56,.64,1)}
+@keyframes mercury-jiggle{0%{transform:translateY(0) scale(1,1)}28%{transform:translateY(0) scale(1.24,.76)}48%{transform:translateY(0) scale(.86,1.14)}68%{transform:translateY(0) scale(1.1,.90)}85%{transform:translateY(0) scale(.97,1.03)}100%{transform:translateY(0) scale(1,1)}}
+@keyframes mercury-jiggle-dot{0%{transform:scale(1,1)}28%{transform:scale(1.18,.82)}48%{transform:scale(.90,1.10)}100%{transform:scale(1,1)}}
+@media (prefers-reduced-motion:reduce){.mercury-goo{filter:none!important}.mercury-thumb,.mercury-dot{transition:none!important;animation:none!important}.mercury-blob.jiggle .mercury-thumb,.mercury-blob.jiggle .mercury-dot{animation:none!important}}
 @media (max-width:980px){.act-grid{grid-template-columns:1fr}}
 @media (max-width:760px){.rollup{display:none}.hwrap{gap:12px;padding-top:8px;padding-bottom:8px}}
 @media (max-width:420px){main{padding:0 14px}.hwrap{padding:0 14px}.hero-num{font-size:34px}.spark{width:100px}}
 </style>
 </head>
 <body>
+<!-- IMPL: Mercury Blob Toggle -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><filter id="mercury-goo" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/><feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="goo"/><feComposite in="SourceGraphic" in2="goo" operator="atop"/></filter></svg>
 <canvas id="monsoon" aria-hidden="true"></canvas>
 
 <div id="app" v-cloak>
@@ -382,6 +405,8 @@ main.shake{animation:seismo-shake .38s ease}
     <button id="altar-toggle" class="btn" type="button" aria-pressed="false" title="Chladni Altar — black steel, bone powder (drag to sweep)">◈ altar</button>
     <!-- IMPL: Ferrofluid Séance — exclusive tri-state with Chladni + Monsoon -->
     <button id="ferro-toggle" class="btn" type="button" aria-pressed="false" title="Ferrofluid Séance — oil-black, thorns chase magnet (drag)">⬢ séance</button>
+    <!-- IMPL: Mercury Blob Toggle -->
+    <button id="mercury-toggle" class="mercury-blob" type="button" role="switch" aria-checked="false" aria-label="Mercury blob — drag thumb to stretch, click to toggle" title="Mercury Blob — drag to liquefy"><span class="mercury-label" aria-hidden="true">◉ mercury</span><span class="mercury-track" aria-hidden="true"><span class="mercury-goo"><i class="mercury-dot"></i><i class="mercury-thumb"></i></span></span></button>
     <button class="btn" @click="paletteOpen=true" title="command palette (⌘K)">⌘K</button>
     <button class="btn" @click="toggleBell" :aria-pressed="String(notifyOn)"
             :aria-label="notifyOn?'disable browser notifications':'enable browser notifications'"
@@ -2419,6 +2444,93 @@ function startMonsoon(){
     if(!sec.hidden && !running) start();
   });
   window.__ferro={open:()=>setFerro(true), close:()=>setFerro(false), _stop:stop, get field(){return fieldT}, get visc(){return viscosity}};
+})();
+/* <!-- IMPL: Mercury Blob Toggle --> — liquefying thumb: goo filter + surface-tension necking (scaleX>scaleY) + spring snap jiggle */
+(function(){
+  var btn=document.getElementById('mercury-toggle');
+  if(!btn) return;
+  var thumb=btn.querySelector('.mercury-thumb');
+  var dot=btn.querySelector('.mercury-dot');
+  if(!thumb||!dot) return;
+  var reduce=function(){ try{return window.matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){return false;}};
+  var dragging=false, startX=0, startLeft=2, hasMoved=false, curX=0;
+  function isOn(){ return btn.getAttribute('aria-checked')==='true'; }
+  function setOn(v, jiggle){
+    btn.setAttribute('aria-checked', String(v));
+    thumb.style.left=''; thumb.style.transform='';
+    dot.style.left=''; dot.style.transform='';
+    btn.classList.remove('dragging');
+    if(jiggle && !reduce()){
+      btn.classList.remove('jiggle'); void btn.offsetWidth; btn.classList.add('jiggle');
+      try{ if(navigator.vibrate) navigator.vibrate(12); }catch(e){}
+      setTimeout(function(){ btn.classList.remove('jiggle'); }, 560);
+    }
+  }
+  function clamp(n,a,b){ return Math.max(a,Math.min(b,n)); }
+  btn.addEventListener('click', function(e){
+    if(hasMoved){ e.preventDefault(); return; }
+    if(dragging) return;
+    if(e.detail===0) return; // keyboard click handled separately
+    // mouse click without drag
+    setOn(!isOn(), true);
+  });
+  btn.addEventListener('keydown', function(e){
+    if(e.key===' '||e.key==='Enter'){ e.preventDefault(); setOn(!isOn(), true); }
+  });
+  btn.addEventListener('pointerdown', function(e){
+    if(reduce()) return;
+    dragging=true; hasMoved=false; startX=e.clientX; curX=startX;
+    startLeft=isOn()?22:2;
+    btn.classList.add('dragging');
+    btn.classList.remove('jiggle');
+    try{ btn.setPointerCapture(e.pointerId); }catch(err){}
+    e.preventDefault();
+  });
+  btn.addEventListener('pointermove', function(e){
+    if(!dragging||reduce()) return;
+    curX=e.clientX;
+    var dx=curX-startX;
+    if(Math.abs(dx)>3) hasMoved=true;
+    if(!hasMoved) return;
+    var raw=startLeft+dx;
+    var clamped=clamp(raw, 2, 22);
+    var stretch=clamp(Math.abs(dx)/38*0.62, 0, 0.54);
+    var sx=1+stretch, sy=1-stretch*0.46;
+    thumb.style.left=clamped+'px';
+    thumb.style.transform='scale('+sx.toFixed(3)+','+sy.toFixed(3)+')';
+    // dot stays at origin to form neck via goo merge — slight counter-stretch for surface tension
+    var dsx=1+stretch*0.42, dsy=1-stretch*0.28;
+    dot.style.transform='scale('+dsx.toFixed(3)+','+dsy.toFixed(3)+')';
+  });
+  function endDrag(e){
+    if(!dragging) return;
+    dragging=false;
+    var dx=curX-startX;
+    var wasMoved=hasMoved;
+    hasMoved=false;
+    btn.classList.remove('dragging');
+    try{ btn.releasePointerCapture(e.pointerId); }catch(err){}
+    if(reduce()){ thumb.style.left=''; thumb.style.transform=''; dot.style.transform=''; return; }
+    if(!wasMoved){
+      thumb.style.left=''; thumb.style.transform=''; dot.style.transform='';
+      return; // click handler will toggle
+    }
+    // drag decides state by final thumb position
+    var raw=startLeft+dx;
+    var clamped=clamp(raw, 2, 22);
+    var shouldOn=clamped>12;
+    // clear inline left so CSS transition can spring to target
+    thumb.style.left='';
+    thumb.style.transform='';
+    dot.style.transform='';
+    // force reflow then toggle to trigger spring
+    void thumb.offsetWidth;
+    setOn(shouldOn, true);
+  }
+  btn.addEventListener('pointerup', endDrag);
+  btn.addEventListener('pointercancel', endDrag);
+  // reduced-motion: ensure no goo/filter inline survives
+  if(reduce()){ btn.style.touchAction='auto'; }
 })();
 </script>
 
