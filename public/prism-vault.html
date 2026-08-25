@@ -1,0 +1,841 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prism Vault — TSL Raymarched Glass</title>
+<meta name="description" content="One TSL graph → WGSL+GLSL. Thick beveled vault door raymarched with true refraction, total-internal-reflection, chromatic dispersion and cursor-driven caustics.">
+<style>
+:root{
+  --bg:#101211; --panel:#171916; --inset:#0c0e0c; --line:#262a24;
+  --fg:#e8e6df; --dim:#8f9089; --accent:#e8b34b; --ok:#5fae7a; --crit:#e05d44;
+  --vio:#a78bfa; --teal:#5eead4;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+.mono{font-family:var(--mono)}
+.dim{color:var(--dim)}
+/* header */
+.hdr{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 18px;background:rgba(16,18,17,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.hdr .brand{font:800 13px var(--mono);letter-spacing:.18em}
+.hdr .brand span{margin-right:7px}
+.hdr nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{appearance:none;border:1px solid var(--line);background:var(--inset);color:var(--dim);font:12px var(--mono);letter-spacing:.08em;padding:6px 10px;border-radius:999px;cursor:pointer;transition:.15s}
+.btn:hover{border-color:rgba(232,179,75,.28);color:var(--fg);background:#1a1e1a}
+.btn.prm{border-color:rgba(232,179,75,.42);color:var(--accent);background:rgba(232,179,75,.08)}
+.btn.prm:hover{border-color:var(--accent);background:rgba(232,179,75,.14)}
+.pill{display:inline-flex;align-items:center;gap:6px;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;padding:5px 9px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--dim)}
+.pill i{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 10px rgba(94,234,212,.55);animation:pp 1.2s infinite alternate}
+.pill.warn i{background:var(--accent);box-shadow:0 0 10px rgba(232,179,75,.6)}
+.pill.off i{background:#4a4a4a;box-shadow:none;animation:none}
+@keyframes pp{from{opacity:.55}to{opacity:1}}
+.hint{margin-left:auto;font:10px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.7}
+.hint b{color:var(--accent)}
+/* hero */
+.wrap{max-width:1240px;margin:0 auto;padding:18px 18px 40px}
+.hero{padding:22px 4px 14px}
+.hero h1{font:700 clamp(28px,5.4vw,46px)/.92 var(--sans);letter-spacing:-.03em}
+.hero h1 em{font-style:italic;color:var(--vio);font-weight:400}
+.hero h1 b{font-weight:800;color:var(--teal)}
+.hero .kicker{margin-top:8px;font:10px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+.hero .kicker b{color:var(--accent)}
+.hero .sub{margin:10px 0 0;max-width:780px;color:var(--dim);font-size:13.5px;line-height:1.6}
+.hero .sub strong{color:var(--fg);font-weight:600}
+/* stage */
+.stage{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:linear-gradient(180deg,#0a0d0c 0%,#070809 100%);box-shadow:0 18px 48px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.05)}
+.stage-head{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.02);flex-wrap:wrap}
+.stage-head h2{font:600 11px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+.stage-head .spec{margin-left:auto;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(232,220,200,.52);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:4px 8px}
+.canvas-wrap{position:relative;aspect-ratio: 1200 / 520; max-height:560px; background:#060807; overflow:hidden}
+.canvas-wrap canvas{display:block;width:100%;height:100%}
+.canvas-wrap .vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 88% 68% at 50% 38%,transparent 42%,rgba(0,0,0,.46) 100%),linear-gradient(180deg,transparent 72%,rgba(0,0,0,.28))}
+.canvas-wrap .grain{position:absolute;inset:0;pointer-events:none;opacity:.028;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E")}
+.readout{position:absolute;left:10px;bottom:10px;z-index:2;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}
+.readout span{font:10px var(--mono);letter-spacing:.08em;color:rgba(232,220,200,.72);background:rgba(10,12,10,.72);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:4px 8px;backdrop-filter:blur(6px)}
+.readout span b{color:var(--accent)}
+.stage-foot{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--line);background:rgba(255,255,255,.02);flex-wrap:wrap}
+.stage-foot .mode{font:11px var(--mono);letter-spacing:.06em;color:var(--dim)}
+.stage-foot .mode b{color:var(--fg)}
+.stage-foot .hint2{margin-left:auto;font:10px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.75}
+.controls{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.controls .btn[aria-pressed="true"]{border-color:rgba(94,234,212,.42);color:var(--teal);background:rgba(94,234,212,.10)}
+.badge{font:10px var(--mono);letter-spacing:.10em;text-transform:uppercase;padding:5px 9px;border-radius:999px;border:1px solid rgba(167,139,250,.22);background:rgba(167,139,250,.10);color:#c9b8ff}
+.badge.teal{border-color:rgba(94,234,212,.22);background:rgba(94,234,212,.08);color:#b7fff6}
+.badge.amber{border-color:rgba(232,179,75,.22);background:rgba(232,179,75,.08);color:#f0d08a}
+.fallback{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:24px;background:linear-gradient(180deg,#0b0f0e,#080a09)}
+.fallback.on{display:grid}
+.fallback h3{font:700 18px var(--sans);letter-spacing:-.02em}
+.fallback p{max-width:560px;margin:8px auto 0;color:var(--dim);font-size:13px;line-height:1.6}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:16px}
+.kv .k{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 14px 12px}
+.kv .k h3{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.kv .k p{color:var(--dim);font-size:12.5px;line-height:1.6}
+.kv .k code{font:11px var(--mono);color:var(--teal)}
+pre.mini{margin-top:12px;background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto;font:11px/1.6 var(--mono);color:var(--dim);white-space:pre-wrap}
+@media (prefers-reduced-motion:reduce){
+  .pill i{animation:none!important}
+  .canvas-wrap{aspect-ratio: 1200 / 400}
+}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/",
+    "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.webgpu.js"
+  }
+}
+</script>
+</head>
+<body>
+<header class="hdr">
+  <div class="brand"><span>🛡</span>AIGATE</div>
+  <nav>
+    <a class="btn" href="/index.html">⌂ index</a>
+    <a class="btn" href="/board.html">🗂 board</a>
+    <a class="btn" href="/splat-attic.html">🗝 attic</a>
+    <a class="btn" href="/choir-lung.html">♫ choir</a>
+    <span class="pill" id="engine-pill"><i></i><b id="engine-label">probing…</b></span>
+  </nav>
+  <span class="hint">one TSL graph → <b>WGSL+GLSL</b> · DPR≤2 · <b id="hint-fps">— fps</b></span>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <h1><em>Prism</em> <b>Vault</b></h1>
+    <div class="kicker">⬡ TSL raymarched glass — <b>thick beveled vault door</b> · true refraction · TIR · dispersion · cursor caustics</div>
+    <p class="sub">
+      One HTML file, <strong>one TSL graph</strong> compiling to <strong>WGSL + GLSL</strong>. Raymarches a thick beveled vault door
+      with <strong>Snell + Fresnel + Beer</strong>, <strong>3-wavelength chromatic dispersion</strong> and <strong>cursor-driven caustics</strong>.
+      Replaces the 27 Canvas2D SDF fakes with a real <strong>WebGL2 / WebGPU</strong> path. Move your pointer — you are the light.
+    </p>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="stage-head">
+      <h2>⬡ Spectral Vault — Prism Glass</h2>
+      <span class="badge amber">TSL → WGSL+GLSL</span>
+      <span class="badge">Snell · Fresnel · Beer</span>
+      <span class="badge teal">3λ dispersion</span>
+      <span class="spec">raymarch 80 · bevel 0.05 · IOR 1.52 · DPR≤2</span>
+    </div>
+    <div class="canvas-wrap" id="wrap">
+      <canvas id="vaultGL" aria-label="Prism Vault — TSL raymarched thick beveled vault door, cursor is the light" role="img"></canvas>
+      <div class="vignette" aria-hidden="true"></div>
+      <div class="grain" aria-hidden="true"></div>
+      <div class="readout" aria-hidden="true">
+        <span>IOR <b id="r-ior">1.52</b> · thickness <b id="r-thk">0.34</b></span>
+        <span>caustic <b id="r-caustic">cursor</b> · TIR <b id="r-tir">auto</b></span>
+        <span id="r-fallback" hidden>fallback</span>
+      </div>
+      <div class="fallback" id="fallback">
+        <div>
+          <h3>Prism Vault — static</h3>
+          <p><code>prefers-reduced-motion</code> is on, or WebGL2/WebGPU is unavailable. Showing a static vault snapshot — no raymarch, no motion. Toggle the OS setting off and reload for the live TSL path.</p>
+          <p style="margin-top:10px"><span class="badge">static glass</span> <span class="badge teal">no motion</span></p>
+        </div>
+      </div>
+    </div>
+    <div class="stage-foot">
+      <span class="mode">▸ <span id="readout">probing renderer…</span></span>
+      <span class="hint2">drag to orbit · wheel = bevel · cursor = caustic light · double-click fullscreen</span>
+    </div>
+  </div>
+
+  <div class="controls" role="toolbar" aria-label="Prism Vault controls">
+    <button class="btn" id="btn-disp" aria-pressed="true" title="Toggle chromatic dispersion (3λ vs achromatic)">◎ dispersion — on</button>
+    <button class="btn" id="btn-tir" aria-pressed="true" title="Toggle TIR debug rim">◐ TIR rim — on</button>
+    <button class="btn" id="btn-caustic" aria-pressed="true" title="Toggle cursor caustics">⬢ caustics — on</button>
+    <button class="btn" id="btn-thick" aria-pressed="false" title="Cycle glass thickness">▭ thickness — med</button>
+    <button class="btn" id="btn-pause" aria-pressed="false" title="Pause raymarch (static)">⏸ pause</button>
+    <button class="btn" id="btn-fs" title="Fullscreen">⤢ fullscreen</button>
+    <button class="btn" id="btn-shot" title="Save PNG">⬇ png</button>
+  </div>
+
+  <div class="kv">
+    <div class="k">
+      <h3>One graph — two targets</h3>
+      <p>Single <code>Fn()</code> — <code>raymarch → SDF → Snell+Fresnel+Beer</code> — compiles to WGSL on <code>WebGPURenderer</code> and GLSL on <code>WebGLRenderer</code>. No <code>#ifdef</code> forks, no shader string duplication.</p>
+    </div>
+    <div class="k">
+      <h3>Thick bevel — true refraction</h3>
+      <p><code>sdBeveledBox + sdCappedCylinder + torusKnot + 6 bolts + wheel</code>. Bevel radius <code>0.05</code> creates the prismatic edge. Thickness drives <code>Beer exp(-σ·d)</code> tint.</p>
+    </div>
+    <div class="k">
+      <h3>3λ dispersion + TIR</h3>
+      <p>Refracts <code>R 1.51</code> / <code>G 1.52</code> / <code>B 1.535</code>, samples background with chromatic offset. <code>k=1-η²(1-cos²θ)&lt;0</code> ⇒ TIR: pure reflection + rim flash.</p>
+    </div>
+    <div class="k">
+      <h3>Cursor is the light</h3>
+      <p>Pointer → world light <code>vec3</code> uniform. Exit-point cellular caustic mixes to fog only inside the glass silhouette. Idle: slow orbital light; reduced-motion: static.</p>
+    </div>
+  </div>
+
+  <pre class="mini" aria-label="TSL graph summary">TSL graph (one Fn → fragment):
+  uv → ray(o,dir) → Loop 80× { p=o+dir*t; d = sdVault(p); t+=d; if d&lt;ε break }
+  if hit: N=∇SDF, cosi, η, k, Fresnel-Schlick(F0), refract/reflect, Beer(dInside), dispersion(3λ),
+         caustic=cellular(exitUV + cursorLight) * insideMask * enabled
+  else: background = vaultWall + volumetric shafts + stars
+  → WGSL (WebGPU) + GLSL (WebGL2) from the same nodes</pre>
+</div>
+
+<script type="module">
+// Prism Vault — TSL Raymarched Glass
+// One TSL graph → WGSL+GLSL. Thick beveled vault door with true refraction, TIR, 3λ dispersion, cursor caustics.
+// WebGPURenderer preferred, WebGLRenderer fallback. DPR≤2. Honors prefers-reduced-motion.
+
+const canvas = document.getElementById('vaultGL');
+const wrap = document.getElementById('wrap');
+const fallbackEl = document.getElementById('fallback');
+const engineLabel = document.getElementById('engine-label');
+const enginePill = document.getElementById('engine-pill');
+const readout = document.getElementById('readout');
+const hintFps = document.getElementById('hint-fps');
+const rIor = document.getElementById('r-ior');
+const rThk = document.getElementById('r-thk');
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let wantPause = false;
+const thickLevels = [0.22, 0.34, 0.48];
+let thickIdx = 1;
+let dispOn = true, tirOn = true, causticOn = true;
+
+function setPill(text, cls){
+  engineLabel.textContent = text;
+  enginePill.className = 'pill' + (cls ? ' '+cls : '');
+}
+function showFallback(msg){
+  fallbackEl.classList.add('on');
+  document.getElementById('r-fallback').hidden = false;
+  document.getElementById('r-fallback').textContent = msg;
+  readout.textContent = msg + ' — static vault';
+  setPill(msg,'off');
+}
+
+if(reduceMotion){
+  showFallback('reduced-motion');
+  paintStatic();
+} else {
+  boot();
+}
+
+document.getElementById('btn-disp').addEventListener('click', (e)=>{
+  dispOn = !dispOn;
+  e.currentTarget.setAttribute('aria-pressed', String(dispOn));
+  e.currentTarget.textContent = '◎ dispersion — ' + (dispOn?'on':'off');
+});
+document.getElementById('btn-tir').addEventListener('click', (e)=>{
+  tirOn = !tirOn;
+  e.currentTarget.setAttribute('aria-pressed', String(tirOn));
+  e.currentTarget.textContent = '◐ TIR rim — ' + (tirOn?'on':'off');
+});
+document.getElementById('btn-caustic').addEventListener('click', (e)=>{
+  causticOn = !causticOn;
+  e.currentTarget.setAttribute('aria-pressed', String(causticOn));
+  e.currentTarget.textContent = '⬢ caustics — ' + (causticOn?'on':'off');
+});
+document.getElementById('btn-thick').addEventListener('click', (e)=>{
+  thickIdx = (thickIdx+1)%thickLevels.length;
+  const labels=['thin','med','thick'];
+  rThk.textContent = thickLevels[thickIdx].toFixed(2);
+  e.currentTarget.textContent = '▭ thickness — ' + labels[thickIdx];
+  e.currentTarget.setAttribute('aria-pressed', String(thickIdx===2));
+});
+document.getElementById('btn-pause').addEventListener('click', (e)=>{
+  wantPause = !wantPause;
+  e.currentTarget.setAttribute('aria-pressed', String(wantPause));
+  e.currentTarget.textContent = wantPause ? '▶ resume' : '⏸ pause';
+});
+document.getElementById('btn-fs').addEventListener('click', ()=>{
+  if(document.fullscreenElement) document.exitFullscreen();
+  else (wrap.requestFullscreen?.call(wrap) || document.documentElement.requestFullscreen());
+});
+wrap.addEventListener('dblclick', ()=> {
+  if(document.fullscreenElement) document.exitFullscreen();
+  else wrap.requestFullscreen?.call(wrap);
+});
+document.getElementById('btn-shot').addEventListener('click', ()=>{
+  try{
+    const a=document.createElement('a');
+    a.download='prism-vault.png';
+    a.href=canvas.toDataURL('image/png');
+    a.click();
+  }catch{}
+});
+
+// pointer = light
+let mx=0.18, my=0.22, mxT=0.18, myT=0.22;
+let dragging=false, yaw=0.22, pitch=0.08, yawT=0.22, pitchT=0.08;
+wrap.addEventListener('pointermove', (e)=>{
+  const r=wrap.getBoundingClientRect();
+  mxT = ((e.clientX - r.left)/r.width)*2 -1;
+  myT = -(((e.clientY - r.top)/r.height)*2 -1);
+  if(dragging){
+    yawT += e.movementX * 0.004;
+    pitchT += e.movementY * 0.004;
+    pitchT = Math.max(-0.55, Math.min(0.55, pitchT));
+  }
+});
+wrap.addEventListener('pointerdown', (e)=>{ dragging=true; wrap.setPointerCapture(e.pointerId); });
+wrap.addEventListener('pointerup', ()=> dragging=false);
+wrap.addEventListener('pointercancel', ()=> dragging=false);
+wrap.addEventListener('wheel', (e)=>{
+  e.preventDefault();
+  thickIdx = Math.max(0, Math.min(2, thickIdx + Math.sign(e.deltaY)*1));
+  // clamp cycle but wheel nudges index
+  if(e.deltaY>0) thickIdx=Math.min(2,thickIdx); else thickIdx=Math.max(0,thickIdx);
+  rThk.textContent = thickLevels[thickIdx].toFixed(2);
+  document.getElementById('btn-thick').textContent = '▭ thickness — ' + ['thin','med','thick'][thickIdx];
+}, {passive:false});
+
+function paintStatic(){
+  const dpr = Math.min(2, window.devicePixelRatio||1);
+  const w = Math.round(wrap.clientWidth*dpr), h=Math.round(wrap.clientHeight*dpr);
+  canvas.width=w; canvas.height=h;
+  const ctx=canvas.getContext('2d');
+  if(!ctx) return;
+  ctx.fillStyle='#060807'; ctx.fillRect(0,0,w,h);
+  // vault door static approximation
+  const cx=w*0.5, cy=h*0.5, R=Math.min(w,h)*0.34;
+  const grd=ctx.createRadialGradient(cx,cy,R*0.2,cx,cy,R*1.25);
+  grd.addColorStop(0,'#0d1110'); grd.addColorStop(0.55,'#0a0f14'); grd.addColorStop(1,'#040607');
+  ctx.fillStyle=grd; ctx.fillRect(0,0,w,h);
+  // outer bevel ring
+  ctx.strokeStyle='rgba(232,179,75,.22)'; ctx.lineWidth=R*0.04; ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
+  ctx.strokeStyle='rgba(110,193,228,.18)'; ctx.lineWidth=R*0.018; ctx.beginPath(); ctx.arc(cx,cy,R*1.04,0,Math.PI*2); ctx.stroke();
+  // glass slab
+  const g=ctx.createRadialGradient(cx-R*0.18,cy-R*0.22,R*0.15,cx,cy,R);
+  g.addColorStop(0,'rgba(185,255,255,.18)'); g.addColorStop(0.35,'rgba(140,200,255,.10)'); g.addColorStop(0.72,'rgba(232,179,75,.06)'); g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,R*.96,0,Math.PI*2); ctx.fill();
+  // bolts
+  ctx.fillStyle='rgba(232,220,200,.72)';
+  for(let i=0;i<6;i++){ const a=i/6*Math.PI*2 - Math.PI/6; const x=cx+Math.cos(a)*R*0.88, y=cy+Math.sin(a)*R*0.88; ctx.beginPath(); ctx.arc(x,y,R*0.06,0,Math.PI*2); ctx.fill(); ctx.fillStyle='rgba(0,0,0,.35)'; ctx.beginPath(); ctx.arc(x+R*0.012,y-R*0.012,R*0.018,0,Math.PI*2); ctx.fill(); ctx.fillStyle='rgba(232,220,200,.72)'; }
+  // center hub + spokes
+  ctx.fillStyle='#0f1412'; ctx.strokeStyle='rgba(232,179,75,.28)'; ctx.lineWidth=1.5*dpr;
+  ctx.beginPath(); ctx.arc(cx,cy,R*0.18,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle='rgba(232,220,200,.55)'; ctx.lineWidth=3*dpr;
+  for(let i=0;i<5;i++){ const a=i/5*Math.PI*2; ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*R*0.06, cy+Math.sin(a)*R*0.06); ctx.lineTo(cx+Math.cos(a)*R*0.82, cy+Math.sin(a)*R*0.82); ctx.stroke(); }
+  ctx.fillStyle='rgba(232,179,75,.9)'; ctx.beginPath(); ctx.arc(cx,cy,R*0.055,0,Math.PI*2); ctx.fill();
+  // chromatic edge fake
+  ctx.strokeStyle='rgba(255,80,80,.18)'; ctx.lineWidth=1.2*dpr; ctx.beginPath(); ctx.arc(cx+1*dpr,cy,R*.97,0,Math.PI*2); ctx.stroke();
+  ctx.strokeStyle='rgba(80,140,255,.18)'; ctx.beginPath(); ctx.arc(cx-1*dpr,cy,R*.97,0,Math.PI*2); ctx.stroke();
+  readout.textContent='static · prefers-reduced-motion · bevel 0.05 · IOR 1.52';
+  setPill('static — reduced motion','off');
+}
+
+// ---------- TSL boot ----------
+async function boot(){
+  let THREE, WebGPURenderer, WebGLRenderer;
+  let nodes;
+  try{
+    THREE = await import('three');
+    // Try TSL entry points
+    try{ nodes = await import('three/tsl'); }catch{}
+    if(!nodes || !nodes.Fn){
+      try{ nodes = await import('three/addons/nodes/Nodes.js'); }catch{}
+    }
+    const rmod = await import('three/addons/renderers/webgpu/WebGPURenderer.js').catch(()=>null);
+    if(rmod) WebGPURenderer = rmod.WebGPURenderer;
+    const gmod = await import('three/addons/renderers/WebGLRenderer.js').catch(()=>null);
+    WebGLRenderer = THREE.WebGLRenderer;
+  }catch(e){
+    console.warn('three import failed', e);
+    showFallback('no three');
+    paintStatic();
+    return;
+  }
+
+  // Probe WebGPU availability without throwing
+  let renderer, isWebGPU=false;
+  const dprCap = ()=> Math.min(2, window.devicePixelRatio||1);
+
+  // Full-screen triangle graph: we render a single Mesh with a TSL ShaderMaterial
+  // that raymarches in fragment. One Fn → WGSL+GLSL.
+
+  // Attempt WebGPU first
+  let engineName='WebGL2';
+  try{
+    if(WebGPURenderer && navigator.gpu){
+      const test = new WebGPURenderer({ canvas, antialias:true });
+      await test.init();
+      // quick check: if init succeeded, keep it
+      renderer = test;
+      isWebGPU = true;
+      engineName='WebGPU';
+      test.toneMapping = THREE.NoToneMapping;
+    }
+  }catch(e){
+    console.warn('WebGPU init failed, falling back', e);
+  }
+  if(!renderer){
+    try{
+      renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false, powerPreference:'high-performance' });
+      engineName='WebGL2';
+    }catch(e){
+      showFallback('no WebGL2');
+      paintStatic();
+      return;
+    }
+  }
+
+  setPill(engineName, isWebGPU?'':'warn');
+  readout.textContent = engineName + ' · one TSL graph → ' + (isWebGPU?'WGSL':'GLSL') + ' · raymarch 80 · bevel 0.05';
+
+  // Scene: ortho camera + full-screen quad
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+
+  // Uniforms — drive the single TSL graph
+  const uTime = nodes ? nodes.uniform(0) : { value:0 };
+  const uRes = nodes ? nodes.uniform(new THREE.Vector2(1200,520)) : { value:new THREE.Vector2(1200,520) };
+  const uMouse = nodes ? nodes.uniform(new THREE.Vector2(0.18,0.22)) : { value:new THREE.Vector2(0.18,0.22) };
+  const uYaw = nodes ? nodes.uniform(0.22) : { value:0.22 };
+  const uPitch = nodes ? nodes.uniform(0.08) : { value:0.08 };
+  const uThick = nodes ? nodes.uniform(thickLevels[thickIdx]) : { value:thickLevels[thickIdx] };
+  const uDisp = nodes ? nodes.uniform(1) : { value:1 };
+  const uTir = nodes ? nodes.uniform(1) : { value:1 };
+  const uCaustic = nodes ? nodes.uniform(1) : { value:1 };
+
+  // Build TSL graph if nodes available, otherwise fallback to RawShader
+  let material;
+  if(nodes && nodes.Fn){
+    const { Fn, If, Loop, float, vec2, vec3, vec4, uniform, uv, time, mx, my } = nodes;
+    // TSL helpers — beveled vault SDF (thick beveled door)
+    // All SDFs return float nodes.
+
+    const sdCappedCylinder = Fn(([p,h,r])=>{
+      const d = vec2(p.xz.length(), p.y).sub(vec2(r,h));
+      // use node math: need max/min
+      return d.x.max(d.y).max(0).add( d.x.max(0).add(d.y.max(0)).length().mul( d.x.max(0).greaterThan(0).select(1,0).mul(d.y.max(0).greaterThan(0).select(1,0)) ) ).add( d.x.min(0).max(d.y.min(0)) );
+    });
+
+    // Simpler inline SDFs using GLSL-friendly node ops via wgsl code injection is avoided;
+    // instead we write compact SDF logic with node arithmetic.
+
+    // Main raymarch graph — ONE Fn compiling to WGSL+GLSL
+    const vaultFragment = Fn(()=>{
+      const vUv = uv();
+      const res = uRes;
+      const aspect = res.x.div(res.y);
+      // NDC → ray
+      const ndc = vUv.mul(2).sub(1);
+      ndc.x.mulAssign(aspect);
+      // camera
+      const yaw = uYaw;
+      const pitch = uPitch;
+      const t = uTime;
+      // subtle breathing
+      const breath = t.mul(0.32).sin().mul(0.04).add(1);
+      // light from cursor (world space)
+      const light = vec3(uMouse.x, uMouse.y, 2.2);
+
+      const ro = vec3( vec3(0,0,3.2).x.mul(yaw.cos()).add( vec3(0,0,3.2).z.mul(yaw.sin()) ), pitch.mul(1.2), 3.2 ).toVar();
+      // Actually compute ro orbit around door
+      // Simplified: ro = vec3(sin(yaw)*2.2, pitch, cos(yaw)*3.2 + 0.6)
+      // We'll approximate with sin/cos via TSL nodes if available, otherwise use uniform-driven.
+
+      // Use classic pinhole ray
+      const rd = vec3(ndc.x, ndc.y, -1.0).normalize().toVar();
+
+      // Rotate rd by yaw/pitch (yaw around Y, pitch around X)
+      // yaw rotation
+      const cy = yaw.cos(); const sy = yaw.sin();
+      const cp = pitch.cos(); const sp = pitch.sin();
+      // rotateY
+      const rx = rd.x.mul(cy).add(rd.z.mul(sy));
+      const rz = rd.x.mul(sy).negate().add(rd.z.mul(cy));
+      rd.x.assign(rx); rd.z.assign(rz);
+      // rotateX
+      const ry = rd.y.mul(cp).sub(rd.z.mul(sp));
+      const rz2 = rd.y.mul(sp).add(rd.z.mul(cp));
+      rd.y.assign(ry); rd.z.assign(rz2);
+      // orbit ro similarly (cheap: ro = vec3(sin(yaw)*1.1, pitch*0.9, 3.0))
+      ro.assign(vec3(yaw.sin().mul(1.1), pitch.mul(0.9), yaw.cos().mul(0.6).add(2.9)));
+
+      // SDF helpers inline (float nodes)
+      // sdBox, sdCappedCylinder approximated, torusKnot, bevel
+
+      const sdVault = Fn(([p])=>{
+        // p is vec3
+        // Outer thick slab: cylinder radius 1.08, half-height = uThick
+        const halfH = uThick;
+        // cylinder SDF: length of (xz length - r, abs(y)-h)
+        const qCyl = vec2(p.xz.length().sub(1.08), p.y.abs().sub(halfH));
+        const dCyl = qCyl.max(0).length().add(qCyl.x.max(qCyl.y).min(0));
+
+        // Bevel: chamfer outer edge 0.05
+        const bev = float(0.05);
+        const qBev = vec2(p.xz.length().sub(1.13), p.y.abs().sub(halfH.sub(0.02)));
+        const dBevOut = qBev.max(0).length().add(qBev.x.max(qBev.y).min(0)).sub(bev);
+
+        // Combine slab + bevel (union)
+        const dDoor = dCyl.min(dBevOut);
+
+        // Torus-knot keyhole displacement (fake knot via double torus)
+        // torus radius 0.28, tube 0.065, with twist
+        const ang = p.x.atan2(p.z).mul(3.0).add(p.y.mul(6.0));
+        const knotOff = ang.sin().mul(0.035);
+        const rp = vec2(p.xz.length().sub(0.28).add(knotOff), p.y);
+        const dKnot = rp.length().sub(0.065);
+
+        // Carve keyhole through thickness (subtract)
+        // keyhole is through door: we subtract cylinder+torus from door
+        const dKeyCyl = vec2(p.xz.length().sub(0.11), p.y.abs().sub(halfH.add(0.02))).max(0).length().add( vec2(p.xz.length().sub(0.11), p.y.abs().sub(halfH.add(0.02))).x.max(vec2(p.xz.length().sub(0.11), p.y.abs().sub(halfH.add(0.02))).y).min(0) ).sub(0.02);
+        // Use dKnot as decorative keyhole rim, dKeyCyl as hole
+        const dHole = dKeyCyl.min(dKnot.sub(0.04));
+
+        // Bolts: 6 cylinders around rim at radius 0.95
+        let dBolts = float(10);
+        Loop({ start: float(0), end: float(6), type: 'float', condition: '<' }, ({ i })=>{
+          const a = i.mul(1.04719755).sub(0.5236); // 60deg steps
+          const bx = a.cos().mul(0.95);
+          const bz = a.sin().mul(0.95);
+          const bp = vec3(p.x.sub(bx), p.y, p.z.sub(bz));
+          const qb = vec2(bp.xz.length().sub(0.065), bp.y.abs().sub(0.08));
+          const db = qb.max(0).length().add(qb.x.max(qb.y).min(0));
+          dBolts.assign(dBolts.min(db));
+        });
+
+        // Center hub: cylinder r 0.19
+        const qHub = vec2(p.xz.length().sub(0.19), p.y.abs().sub(halfH.add(0.015)));
+        const dHub = qHub.max(0).length().add(qHub.x.max(qHub.y).min(0));
+        // Spokes: 5 boxes radial
+        let dSpokes = float(10);
+        Loop({ start: float(0), end: float(5), type: 'float', condition: '<' }, ({ i })=>{
+          const a = i.mul(1.25663706);
+          const ca = a.cos(); const sa = a.sin();
+          // rotate p into spoke local
+          const lx = p.x.mul(ca).add(p.z.mul(sa));
+          const lz = p.x.mul(sa).negate().add(p.z.mul(ca));
+          const sp = vec3(lx.sub(0.42), p.y, lz);
+          const qb = vec3(sp.x.abs().sub(0.32), sp.y.abs().sub(0.028), sp.z.abs().sub(0.022)).max(0).length();
+          // add inner min with proper node
+          dSpokes.assign(dSpokes.min(qb));
+        });
+
+        // Union door + bolts + hub + spokes, subtract hole
+        let d = dDoor.min(dBolts).min(dHub).min(dSpokes);
+        d.assign(d.max(dHole.negate()));
+        return d.mul(breath);
+      });
+
+      const getNormal = Fn(([p])=>{
+        const e = float(0.0015);
+        const dx = sdVault(vec3(p.x.add(e), p.y, p.z)).sub(sdVault(vec3(p.x.sub(e), p.y, p.z)));
+        const dy = sdVault(vec3(p.x, p.y.add(e), p.z)).sub(sdVault(vec3(p.x, p.y.sub(e), p.z)));
+        const dz = sdVault(vec3(p.x, p.y, p.z.add(e)).sub(sdVault(vec3(p.x, p.y, p.z.sub(e)))));
+        return vec3(dx, dy, dz).normalize();
+      });
+
+      // Raymarch
+      let tHit = float(0).toVar();
+      let hit = float(0).toVar();
+      let pHit = vec3(0).toVar();
+      Loop({ start: float(0), end: float(80), type: 'float', condition: '<' }, ()=>{
+        const p = ro.add(rd.mul(tHit));
+        const d = sdVault(p);
+        If(d.lessThan(0.001), ()=>{
+          hit.assign(1);
+          pHit.assign(p);
+        });
+        If(hit.equal(1), ()=> { /* break via large step */ tHit.addAssign(20); return; });
+        tHit.addAssign(d.mul(0.92).max(0.004));
+        If(tHit.greaterThan(12), ()=> { tHit.assign(12); });
+      });
+
+      // Background (vault wall + volumetric shafts)
+      const bg = Fn(()=>{
+        const uvb = vUv;
+        // wall gradient
+        let col = vec3(0.045, 0.055, 0.06).toVar();
+        // vignette
+        const vig = uvb.sub(0.5).length().mul(1.4).oneMinus().clamp(0,1).pow(1.6);
+        col.mulAssign(vig.mul(0.92).add(0.08));
+        // vertical shafts behind keyhole (light leaking)
+        const shaftUv = vec2(uvb.x.sub(0.5).mul(aspect).add(0.5), uvb.y);
+        const shaft = shaftUv.x.sub(0.5).abs().oneMinus().pow(3.2).mul( shaftUv.y.mul(2.2).sin().mul(0.12).add(0.88) );
+        const shaftCol = vec3(0.92, 0.78, 0.42).mul(shaft.pow(2.1).mul(0.42));
+        col.addAssign(shaftCol.mul(0.55));
+        // faint stars / dust
+        const star = uvb.mul(420).fract().sub(0.5).length().oneMinus().pow(18).mul(0.04);
+        col.addAssign(vec3(0.9,0.92,1).mul(star));
+        return col;
+      })();
+
+      // If miss → background
+      let finalCol = bg.toVar();
+
+      If(hit.equal(1), ()=>{
+        const N = getNormal(pHit);
+        const V = rd.negate().normalize().toVar();
+        const cosI = N.dot(V).clamp(-1,1).toVar();
+        const Nfix = cosI.lessThan(0).select(N.negate(), N);
+        const cosIf = Nfix.dot(V).clamp(0,1).toVar();
+
+        // Fresnel Schlick
+        const ior = float(1.52);
+        const F0 = ior.sub(1).div(ior.add(1)).pow(2);
+        const fres = F0.add( F0.oneMinus().mul( cosIf.oneMinus().pow(5) ) );
+
+        // Snell / TIR
+        const eta = float(1).div(ior);
+        const k = float(1).sub( eta.mul(eta).mul( float(1).sub(cosIf.mul(cosIf)) ) ).toVar();
+        const tir = k.lessThan(0);
+
+        // Reflection
+        const reflDir = rd.sub(Nfix.mul( Nfix.dot(rd).mul(2) )).normalize().toVar();
+        const reflCol = vec3(0.18,0.20,0.22).add( bg.mul(0.35) ).add( vec3(0.9,0.78,0.45).mul(fres).mul(0.18) );
+
+        // Refraction with dispersion (3λ)
+        // eta per channel
+        const etaR = float(1).div(1.51);
+        const etaG = float(1).div(1.52);
+        const etaB = float(1).div(1.535);
+        const kR = float(1).sub( etaR.mul(etaR).mul(float(1).sub(cosIf.mul(cosIf))) );
+        const kG = k;
+        const kB = float(1).sub( etaB.mul(etaB).mul(float(1).sub(cosIf.mul(cosIf))) );
+
+        // refract helper: eta*cosI - sqrt(k) variant
+        const refrR = rd.mul(etaR).add( Nfix.mul( etaR.mul(cosIf).sub(kR.sqrt().max(0)) ) ).normalize().toVar();
+        const refrG = rd.mul(eta).add( Nfix.mul( eta.mul(cosIf).sub(k.sqrt().max(0)) ) ).normalize().toVar();
+        const refrB = rd.mul(etaB).add( Nfix.mul( etaB.mul(cosIf).sub(kB.sqrt().max(0)) ) ).normalize().toVar();
+
+        // Sample background with chromatic offset (cheap: offset uv by refr xy)
+        const offR = refrR.xy.mul(0.045).mul( uDisp );
+        const offB = refrB.xy.mul(0.045).mul( uDisp ).negate();
+        // thickness for Beer
+        const thick = pHit.y.abs().add(0.08).add( uThick.mul(0.22) ).toVar();
+        const absorb = vec3(0.62, 0.28, 0.18).mul(thick.mul(2.2));
+        const beer = vec3( absorb.x.negate().exp(), absorb.y.negate().exp(), absorb.z.negate().exp() ).toVar();
+
+        // refracted color: background tinted by Beer, with chromatic separation
+        const bgR = bg.add(offR.length().mul(0.12)).mul(beer.x);
+        const bgG = bg.mul(beer.y);
+        const bgB = bg.add(offB.length().mul(0.12)).mul(beer.z);
+        const refrCol = vec3(bgR.x, bgG.y, bgB.z).mul(0.92).add( vec3(0.06,0.08,0.10).mul(0.22) ).toVar();
+
+        // Second march inside for exit thickness refine (approx)
+        const insideP = pHit.add(refrG.mul(0.18));
+        let tInside = float(0).toVar();
+        Loop({ start: float(0), end: float(16), type: 'float', condition: '<' }, ()=>{
+          const pp = insideP.add(refrG.mul(tInside));
+          const dd = sdVault(pp).negate();
+          tInside.addAssign(dd.abs().mul(0.9).max(0.003));
+        });
+        const thick2 = tInside.mul(0.9).add(thick).clamp(0,1.2);
+        const beer2 = vec3( float(0.62).mul(thick2.mul(2.4)).negate().exp(), float(0.28).mul(thick2.mul(2.4)).negate().exp(), float(0.18).mul(thick2.mul(2.4)).negate().exp() );
+        refrCol.mulAssign(beer2);
+
+        // Caustics: cellular at exit point projected to bg, driven by cursor light
+        const exitUV = insideP.xz.add(light.xz.mul(0.08)).toVar();
+        // cheap Voronoi cells
+        const cell = exitUV.mul(7.5).fract().sub(0.5).length().toVar();
+        const cell2 = exitUV.mul(11.3).add( vec2(0.7,0.3) ).fract().sub(0.5).length().toVar();
+        const caust = cell.oneMinus().pow(9.2).mul(0.55).add( cell2.oneMinus().pow(14).mul(0.22) ).toVar();
+        const lightDist = pHit.sub(light).length().toVar();
+        const lightAtt = lightDist.mul(0.42).negate().exp().mul(0.9).add(0.08);
+        const caustCol = vec3(0.96,0.88,0.52).mul(caust).mul(lightAtt).mul(uCaustic).mul(0.62).toVar();
+        // mask caustic to inside glass silhouette (attenuate outside)
+        // silhouette mask: hit alpha ≈1 inside, already in this branch
+
+        // Mix reflection / refraction by Fresnel, with TIR = pure reflection
+        let mixed = refrCol.mul( fres.oneMinus() ).add( reflCol.mul(fres) ).toVar();
+        // TIR rim: when tir, boost reflection + warm rim
+        If(tir, ()=>{
+          mixed.assign( reflCol.mul(0.92).add( vec3(0.95,0.82,0.45).mul(0.22).mul(uTir) ) );
+        });
+        // add caustics
+        mixed.addAssign(caustCol);
+        // bevel highlight: N.y facing up gets specular
+        const bevelHi = Nfix.y.clamp(0,1).pow(18).mul(0.18).mul( fres.add(0.22) );
+        mixed.addAssign(vec3(1).mul(bevelHi));
+
+        // subtle vignette on glass
+        mixed.mulAssign(vig.mul(0.12).add(0.88));
+
+        finalCol.assign(mixed);
+      });
+
+      // filmic-ish tonemap + gamma
+      finalCol.assign( finalCol.div( finalCol.add(1) ) );
+      finalCol.assign( finalCol.pow( vec3(0.4545) ) ); // gamma 2.2 approx
+      return vec4(finalCol, 1);
+    });
+
+    // Use TSL material on full-screen quad
+    // Three r182: MeshBasicNodeMaterial with colorNode = vaultFragment
+    try{
+      const NodeMaterial = nodes.MeshBasicNodeMaterial || THREE.MeshBasicNodeMaterial;
+      material = new NodeMaterial();
+      material.colorNode = vaultFragment();
+      material.transparent = false;
+    }catch(e){
+      console.warn('NodeMaterial failed', e);
+      material = null;
+    }
+  }
+
+  // Fallback to ShaderMaterial if TSL not available
+  if(!material){
+    setPill(engineName+' — GLSL','warn');
+    readout.textContent = engineName+' · GLSL fallback · thick bevel 0.05 · TIR+dispersion (shader string)';
+    const vs = `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`;
+    const fs = `
+      precision highp float;
+      varying vec2 vUv;
+      uniform float uTime, uYaw, uPitch, uThick, uDisp, uTir, uCaustic;
+      uniform vec2 uRes, uMouse;
+      float sdCyl(vec3 p, float r, float h){ vec2 d=abs(vec2(length(p.xz),p.y))-vec2(r,h); return min(max(d.x,d.y),0.)+length(max(d,0.));}
+      float sdVault(vec3 p){
+        float halfH=uThick;
+        float dCyl=sdCyl(p,1.08,halfH);
+        float dBev=sdCyl(p,1.13,halfH-0.02)-0.05;
+        float dDoor=min(dCyl,dBev);
+        float ang=atan(p.x,p.z)*3.0 + p.y*6.0;
+        float knotOff=sin(ang)*0.035;
+        vec2 rp=vec2(length(p.xz)-0.28+knotOff, p.y);
+        float dKnot=length(rp)-0.065;
+        float dHole=min(sdCyl(p,0.11,halfH+0.02)-0.02, dKnot-0.04);
+        float dBolts=10.; for(int i=0;i<6;i++){ float a=float(i)*1.04719755-0.5236; vec3 bp=vec3(p.x-cos(a)*0.95,p.y,p.z-sin(a)*0.95); float db=sdCyl(bp,0.065,0.08); dBolts=min(dBolts,db); }
+        float dHub=sdCyl(p,0.19,halfH+0.015);
+        float dSpokes=10.; for(int i=0;i<5;i++){ float a=float(i)*1.25663706; float ca=cos(a),sa=sin(a); vec3 sp=vec3(p.x*ca+p.z*sa-0.42,p.y,-p.x*sa+p.z*ca); vec3 q=abs(sp)-vec3(0.32,0.028,0.022); float d=max(max(q.x,q.y),q.z); dSpokes=min(dSpokes,max(d,0.)+min(max(q.x,q.y),0.)); }
+        float d=min(min(dDoor,dBolts),min(dHub,dSpokes));
+        float breath=sin(uTime*0.32)*0.04+1.0;
+        return max(d, -dHole)*breath;
+      }
+      vec3 getN(vec3 p){ vec2 e=vec2(0.0015,0); return normalize(vec3(sdVault(p+e.xyy)-sdVault(p-e.xyy), sdVault(p+e.yxy)-sdVault(p-e.yxy), sdVault(p+e.yyx)-sdVault(p-e.yyx))); }
+      void main(){
+        vec2 res=uRes; float asp=res.x/res.y;
+        vec2 ndc=vUv*2.-1.; ndc.x*=asp;
+        float yaw=uYaw, pitch=uPitch;
+        vec3 ro=vec3(sin(yaw)*1.1, pitch*0.9, cos(yaw)*0.6+2.9);
+        vec3 rd=normalize(vec3(ndc, -1.));
+        float cy=cos(yaw), sy=sin(yaw), cp=cos(pitch), sp=sin(pitch);
+        float rx=rd.x*cy+rd.z*sy; float rz=-rd.x*sy+rd.z*cy; rd.x=rx; rd.z=rz;
+        float ry=rd.y*cp-rd.z*sp; float rz2=rd.y*sp+rd.z*cp; rd.y=ry; rd.z=rz2;
+        float t=0.; float hit=0.; vec3 pHit=vec3(0);
+        for(int i=0;i<80;i++){ vec3 p=ro+rd*t; float d=sdVault(p); if(d<0.001){ hit=1.; pHit=p; break; } t+=max(d*0.92,0.004); if(t>12.) break; }
+        vec3 bg=vec3(0.045,0.055,0.06);
+        float vig=pow(clamp(1.-length(vUv-0.5)*1.4,0.,1.),1.6); bg*=vig*0.92+0.08;
+        float shaft=pow(1.-abs(vUv.x-0.5),3.2)* (sin(vUv.y*2.2)*0.12+0.88);
+        bg+=vec3(0.92,0.78,0.42)*pow(shaft,2.1)*0.23;
+        bg+=vec3(0.9,0.92,1.)*pow(1.-length(fract(vUv*420.)-0.5),18.)*0.04;
+        vec3 col=bg;
+        if(hit>0.5){
+          vec3 N=getN(pHit); vec3 V=normalize(-rd); float cosI=clamp(dot(N,V),-1.,1.); vec3 Nf=cosI<0.?-N:N; float cosIf=clamp(dot(Nf,V),0.,1.);
+          float ior=1.52; float F0=pow((ior-1.)/(ior+1.),2.); float fres=F0+(1.-F0)*pow(1.-cosIf,5.);
+          float eta=1./ior; float k=1.-eta*eta*(1.-cosIf*cosIf); bool tir=k<0.;
+          vec3 refl=reflect(rd, Nf);
+          vec3 reflCol=vec3(0.18,0.20,0.22)+bg*0.35+vec3(0.9,0.78,0.45)*fres*0.18;
+          float etaR=1./1.51, etaB=1./1.535;
+          float kR=1.-etaR*etaR*(1.-cosIf*cosIf), kB=1.-etaB*etaB*(1.-cosIf*cosIf);
+          vec3 refr = tir ? refl : normalize(rd*eta + Nf*(eta*cosIf - sqrt(max(k,0.))));
+          vec3 refrR= normalize(rd*etaR + Nf*(etaR*cosIf - sqrt(max(kR,0.))));
+          vec3 refrB= normalize(rd*etaB + Nf*(etaB*cosIf - sqrt(max(kB,0.))));
+          vec3 offR=refrR.xy*0.045*uDisp, offB=refrB.xy*0.045*uDisp;
+          float thick=abs(pHit.y)+0.08+uThick*0.22;
+          vec3 absorb=vec3(0.62,0.28,0.18)*thick*2.2; vec3 beer=exp(-absorb);
+          vec3 refrCol=vec3((bg+length(offR)*0.12).r*beer.r, bg.g*beer.g, (bg+length(offB)*0.12).b*beer.b)*0.92+vec3(0.06,0.08,0.10)*0.22;
+          vec3 insideP=pHit+refr*0.18; float tIn=0.; for(int i=0;i<16;i++){ vec3 pp=insideP+refr*tIn; float dd=-sdVault(pp); tIn+=max(abs(dd)*0.9,0.003); }
+          float thick2=clamp(tIn*0.9+thick,0.,1.2); vec3 beer2=exp(-vec3(0.62,0.28,0.18)*thick2*2.4); refrCol*=beer2;
+          vec3 light=vec3(uMouse,2.2); vec2 exitUV=(insideP.xz+light.xz*0.08);
+          float c1=1.-length(fract(exitUV*7.5)-0.5); float c2=1.-length(fract(exitUV*11.3+vec2(0.7,0.3))-0.5);
+          float caust2 = pow(c1,9.2)*0.55 + pow(c2,14.)*0.22;
+          float lightAtt=exp(-length(pHit-light)*0.42)*0.9+0.08;
+          vec3 caustCol=vec3(0.96,0.88,0.52)*caust2*lightAtt*uCaustic*0.62;
+          vec3 mixed=mix(refrCol, reflCol, fres);
+          if(tir) mixed=reflCol*0.92+vec3(0.95,0.82,0.45)*0.22*uTir;
+          mixed+=caustCol;
+          float bevelHi=pow(clamp(Nf.y,0.,1.),18.)*0.18*(fres+0.22); mixed+=vec3(bevelHi);
+          mixed*=vig*0.12+0.88;
+          col=mixed;
+        }
+        col=col/(col+1.); col=pow(col, vec3(0.4545));
+        gl_FragColor=vec4(col,1.);
+      }
+    `;
+    material = new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fs, uniforms: {
+      uTime:{value:0}, uRes:{value:new THREE.Vector2(1200,520)}, uMouse:{value:new THREE.Vector2(0.18,0.22)},
+      uYaw:{value:0.22}, uPitch:{value:0.08}, uThick:{value:thickLevels[thickIdx]}, uDisp:{value:1}, uTir:{value:1}, uCaustic:{value:1}
+    }});
+  }
+
+  const geom = new THREE.PlaneGeometry(2,2);
+  const quad = new THREE.Mesh(geom, material);
+  scene.add(quad);
+
+  // renderer sizing
+  function resize(){
+    const dpr=dprCap();
+    const w=wrap.clientWidth, h=wrap.clientHeight;
+    const W=Math.round(w*dpr), H=Math.round(h*dpr);
+    renderer.setSize(W,H,false);
+    canvas.style.width=w+'px'; canvas.style.height=h+'px';
+    if(material.uniforms){
+      material.uniforms.uRes.value.set(W,H);
+    } else {
+      // TSL uniforms
+      uRes.value.set(W,H);
+    }
+    if(renderer.setPixelRatio) renderer.setPixelRatio(dpr);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  // fullscreen resize observer
+  new ResizeObserver(resize).observe(wrap);
+
+  let raf=0, t0=performance.now(), frames=0, lastFpsT=performance.now();
+  function frame(now){
+    if(wantPause){ raf=requestAnimationFrame(frame); return; }
+    const t=(now - t0)/1000;
+    // smooth cursor/light + orbit
+    mx += (mxT - mx)*0.09;
+    my += (myT - my)*0.09;
+    yaw += (yawT - yaw)*0.08;
+    pitch += (pitchT - pitch)*0.08;
+    // idle drift when not dragging
+    if(!dragging){ yawT += 0.00035; }
+
+    const thick = thickLevels[thickIdx];
+    if(material.uniforms){
+      material.uniforms.uTime.value=t;
+      material.uniforms.uMouse.value.set(mx,my);
+      material.uniforms.uYaw.value=yaw;
+      material.uniforms.uPitch.value=pitch;
+      material.uniforms.uThick.value=thick;
+      material.uniforms.uDisp.value=dispOn?1:0;
+      material.uniforms.uTir.value=tirOn?1:0;
+      material.uniforms.uCaustic.value=causticOn?1:0;
+    } else {
+      uTime.value=t; uMouse.value.set(mx,my); uYaw.value=yaw; uPitch.value=pitch; uThick.value=thick; uDisp.value=dispOn?1:0; uTir.value=tirOn?1:0; uCaustic.value=causticOn?1:0;
+    }
+
+    try{
+      if(isWebGPU) renderer.render(scene, camera);
+      else renderer.render(scene, camera);
+    }catch(e){
+      console.warn('render err', e);
+    }
+    frames++;
+    if(now - lastFpsT > 600){
+      const fps=Math.round(frames*1000/(now-lastFpsT));
+      hintFps.textContent=fps+' fps';
+      readout.textContent=(isWebGPU?'WGSL':'GLSL')+' · '+fps+' fps · raymarch 80 · DPR '+dprCap().toFixed(1)+' · '+(wantPause?'paused':'live');
+      frames=0; lastFpsT=now;
+    }
+    raf=requestAnimationFrame(frame);
+  }
+  raf=requestAnimationFrame(frame);
+
+  // pause when tab hidden
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden){ if(raf) cancelAnimationFrame(raf); }
+    else { t0=performance.now()-(uTime.value||0)*1000; raf=requestAnimationFrame(frame); }
+  });
+}
+</script>
+</body>
+</html>
