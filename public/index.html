@@ -697,6 +697,32 @@ main.shake{animation:seismo-shake .38s ease}
 .lace-pulse i{width:7px;height:7px;border-radius:50%;background:#a88cff;box-shadow:0 0 8px rgba(168,140,255,.6);animation:lace-breathe 3s ease-in-out infinite}
 @keyframes lace-breathe{0%,100%{transform:scale(.88);opacity:.72}50%{transform:scale(1.2);opacity:1}}
 @media (prefers-reduced-motion:reduce){#lace-sec{display:none!important}}
+/* <!-- IMPL: Nebula Trace --> — Velocity-Grid glow streams · 2D fake of WebGPU Yi-Wen Lin volumetric nebula without raymarch · 64×32 velocity grid + glow diffusion · color=provider, brightness=latency, hot-spots=contention */
+#nebula-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #1a2440;border-radius:6px;overflow:hidden;background:#050810;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
+.nebula-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#0e1226 0%,#090c1a 55%,#050810 100%);border-bottom:1px solid #1a2440;flex-wrap:wrap}
+.nebula-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#6ec6ff}
+.nebula-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.nebula-head .nebula-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.nebula-head .nebula-note b{color:#c8e6ff;font-weight:600}
+.nebula-head .nebula-actions{display:flex;align-items:center;gap:6px}
+.nebula-canvas-wrap{position:relative;height:180px;background:
+  radial-gradient(ellipse 640px 140px at 50% 0%,rgba(110,198,255,.08),transparent 68%),
+  radial-gradient(ellipse 460px 120px at 82% 86%,rgba(168,140,255,.06),transparent 70%),
+  radial-gradient(ellipse 380px 100px at 14% 78%,rgba(232,179,75,.05),transparent 70%),
+  linear-gradient(180deg,#050814 0%,#050810 100%);overflow:hidden;cursor:crosshair;touch-action:none}
+#nebula{display:block;width:100%;height:100%;pointer-events:auto}
+.nebula-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#090c1a;border-top:1px solid #1a2440;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);flex-wrap:wrap}
+.nebula-meta .mode{color:#c8e6ff}
+.nebula-meta .hint{opacity:.75}
+.nebula-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(110,198,255,.52);background:rgba(5,8,16,.55);border:1px solid rgba(110,198,255,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+.nebula-pulse{position:absolute;right:12px;top:10px;pointer-events:none;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(110,198,255,.62);background:rgba(5,8,16,.55);border:1px solid rgba(110,198,255,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px}
+.nebula-pulse i{width:7px;height:7px;border-radius:50%;background:#6ec6ff;box-shadow:0 0 8px rgba(110,198,255,.6);animation:nebula-breathe 2.6s ease-in-out infinite}
+@keyframes nebula-breathe{0%,100%{transform:scale(.88);opacity:.72}50%{transform:scale(1.18);opacity:1}}
+.nebula-legend{display:flex;align-items:center;gap:8px;font:10px var(--mono);letter-spacing:.06em;color:var(--dim);flex-wrap:wrap}
+.nebula-legend i{width:10px;height:10px;border-radius:50%;display:inline-block;vertical-align:middle;border:1px solid rgba(255,255,255,.14);box-shadow:0 0 6px currentColor;flex:none}
+.nebula-trailkey{display:flex;align-items:center;gap:6px;font:10px var(--mono);letter-spacing:.06em;color:var(--dim)}
+.nebula-trailkey b{color:var(--fg);font-weight:600}
+@media (prefers-reduced-motion:reduce){#nebula-sec{display:none!important}#nebula{display:none!important}}
 /* <!-- IMPL: Spectral Vault --> — SDF vault door: torus-knot keyhole, depth tumblers, volumetric shafts, BREACH shockwave */
 #vault-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #23262a;border-radius:6px;overflow:hidden;background:#06090c;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
 .vault-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#13191c 0%,#0c1012 55%,#06090c 100%);border-bottom:1px solid #23262a}
@@ -787,6 +813,8 @@ main.shake{animation:seismo-shake .38s ease}
   #turing{display:none!important}
   #voronoi-sec{display:none!important}
   #voronoi{display:none!important}
+  #nebula-sec{display:none!important}
+  #nebula{display:none!important}
   #flux-sec{display:none!important}
   #flux{display:none!important}
 }
@@ -1366,6 +1394,27 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="lace-meta">
         <span class="mode">▸ <span id="lace-readout">14 waves · domain warped · OPD spectral · 132×40 grid</span></span>
         <span class="hint">pure sin/cos · no SDF · no raymarch · 1 canvas · DPR≤2</span>
+      </div>
+    </section>
+    <!-- IMPL: Nebula Trace — Velocity-Grid glow streams · 2D fake of WebGPU Yi-Wen Lin volumetric nebula without raymarch · 64×32 velocity grid + glow diffusion · color=provider brightness=latency hot-spots=contention arteries · Trails ARE the legend -->
+    <section id="nebula-sec" aria-label="Nebula Trace — Velocity-Grid Glow Streams">
+      <div class="nebula-head">
+        <span class="sec-num">00</span><h2>Nebula Trace</h2>
+        <span class="nebula-note"><b id="nebula-count">— requests</b> · <b id="nebula-mode">glow field</b> · 64×32 grid · color=provider · brightness=latency</span>
+        <span class="nebula-actions">
+          <button id="nebula-pause" class="btn sm" type="button" aria-label="pause glow field">❚❚ pause</button>
+          <button id="nebula-clear" class="btn sm" type="button" aria-label="clear contention arteries">✦ clear</button>
+        </span>
+      </div>
+      <div class="nebula-canvas-wrap" id="nebula-wrap">
+        <canvas id="nebula" width="1200" height="180" aria-label="Nebula Trace — velocity-grid glow streams: color is provider, brightness is latency, persistent hot-spots are contention arteries. Trails are the legend." role="img"></canvas>
+        <span class="nebula-spec">◎ 64×32 velocity-grid · Yi-Wen Lin glow · no raymarch · trails = legend</span>
+        <span class="nebula-pulse" id="nebula-pulse" aria-hidden="true"><i></i><span id="nebula-pulse-label">glow 0.72×</span></span>
+      </div>
+      <div class="nebula-meta">
+        <span class="mode">▸ <span id="nebula-readout">0 routes · 0 hot-spots · 64×32 · awaiting traffic</span></span>
+        <span class="nebula-legend" id="nebula-legend" aria-hidden="true"></span>
+        <span class="hint">2D velocity-grid fake of WebGPU glow field · DPR≤2 · prefers-reduced-motion hidden</span>
       </div>
     </section>
 
@@ -8447,6 +8496,480 @@ function startMonsoon(){
     io.observe(sec);
   }catch(_){}
   window.__lace={start,stop,get running(){return running && !frozen}, shuffle:()=>{mkWaves(Math.random()); persist.fill(0);}, get waves(){return waves.length}, get sim(){return {w:simW,h:simH}}};
+})();
+</script>
+<!-- IMPL: Nebula Trace — Velocity-Grid glow streams · 2D fake of WebGPU Yi-Wen Lin volumetric nebula without raymarch -->
+<script>
+/* <!-- IMPL: Nebula Trace --> — Velocity-grid glow streams for live request routing. Each request deposits velocity+color into a 64×32 grid; grid advects, diffuses, and glows via blurred additive splats (Yi-Wen Lin fake volumetrics without raymarch). Color=provider, brightness=latency, persistent hot-spots=contention arteries. Trails ARE the legend. 2D canvas only, 60fps. */
+(function(){
+  'use strict';
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('nebula-sec');
+  const wrap=document.getElementById('nebula-wrap');
+  const cv=document.getElementById('nebula');
+  if(!sec||!wrap||!cv) return;
+  const ctx=cv.getContext('2d',{alpha:false});
+  if(!ctx) return;
+  let dpr=Math.min(window.devicePixelRatio||1,2), cssW=0, cssH=0;
+  let raf=0, running=false, paused=false;
+  // velocity-grid dimensions
+  const GW=64, GH=32, N=GW*GH;
+  let vx=new Float32Array(N), vy=new Float32Array(N);
+  let densR=new Float32Array(N), densG=new Float32Array(N), densB=new Float32Array(N);
+  let heat=new Float32Array(N);
+  // ping-pong advection buffers
+  let nextR=new Float32Array(N), nextG=new Float32Array(N), nextB=new Float32Array(N);
+  // low-res glow buffer for Yi-Wen Lin style volumetric glow without raymarch
+  let glow=document.createElement('canvas'), gctx=null, glowImg=null;
+  function allocGlow(w,h){
+    glow.width=w; glow.height=h;
+    gctx=glow.getContext('2d',{alpha:false});
+    glowImg=gctx.createImageData(w,h);
+  }
+  allocGlow(GW,GH);
+  // provider -> hue
+  const FIXED_HUE={openai:38, anthropic:18, 'claude':18, google:202, gemini:202, groq:28, openrouter:278, perplexity:184, perplex:184, minimax:322, fal:158, replicate:262, mistral:172, cohere:265, azure:208, aws:36, bedrock:36};
+  function hash(s){ let h=0; for(let k=0;k<s.length;k++) h=((h<<5)-h + s.charCodeAt(k))|0; return h>>>0; }
+  function providerColor(p){
+    const key=(p||'unknown').toLowerCase().trim();
+    let hue=FIXED_HUE[key];
+    if(hue==null){
+      const h=hash(key);
+      hue=h%360;
+    }
+    // convert hsl to rgb 0..1 with s 0.86 l 0.58
+    const s=0.86, l=0.58;
+    const c=(1-Math.abs(2*l-1))*s, hp=hue/60, x=c*(1-Math.abs(hp%2-1));
+    let r1=0,g1=0,b1=0;
+    if(hp<1){r1=c;g1=x;} else if(hp<2){r1=x;g1=c;} else if(hp<3){g1=c;b1=x;} else if(hp<4){g1=x;b1=c;} else if(hp<5){r1=x;b1=c;} else {r1=c;b1=x;}
+    const m=l-c/2;
+    return {r:r1+m, g:g1+m, b:b1+m, hue};
+  }
+  function synthLatency(row){
+    if(row && row.fail) return 820 + Math.random()*620;
+    const h=hash((row && (row.host||row.account||''))+'|'+(row && row.model||''));
+    return 28 + (h%1180) + Math.random()*120;
+  }
+  function brightness(lat, fail){
+    let b=0.52 + Math.min(1, lat/950)*0.48;
+    if(fail) b=Math.min(1, b+0.18);
+    // clamp
+    return Math.max(0.35, Math.min(1,b));
+  }
+  let depositCount=0, hotCount=0;
+  let lastFeedLen=0, lastSeenKeys=new Set();
+  let legendProviders=new Map(); // provider -> color
+  function deposit(gx,gy,col,bright,vxD,vyD){
+    const rad=1;
+    for(let dy=-rad; dy<=rad; dy++){
+      for(let dx=-rad; dx<=rad; dx++){
+        const x=gx+dx, y=gy+dy;
+        if(x<0||x>=GW||y<0||y>=GH) continue;
+        const d=Math.hypot(dx,dy);
+        const w=Math.max(0, 1 - d/(rad+1.2));
+        const idx=y*GW+x;
+        const wb=w*bright;
+        densR[idx]=Math.min(1, densR[idx]+ col.r*wb*0.46);
+        densG[idx]=Math.min(1, densG[idx]+ col.g*wb*0.46);
+        densB[idx]=Math.min(1, densB[idx]+ col.b*wb*0.46);
+        // velocity splat: blend towards deposit vel
+        vx[idx]= vx[idx]*0.58 + vxD*w*0.42;
+        vy[idx]= vy[idx]*0.58 + vyD*w*0.42;
+        heat[idx]=Math.min(1, heat[idx]+ wb*0.20);
+      }
+    }
+    depositCount++;
+    // track legend
+    const k=(col.hue|0)+'_'+((col.r*10)|0);
+    // use provider name as key elsewhere
+  }
+  function depositForRow(row){
+    const provRaw=(row.account||row.host||'unknown').toString().toLowerCase().trim()||'unknown';
+    const prov=provRaw.split(/\s+/)[0].slice(0,18);
+    const lat=synthLatency(row);
+    const bright=brightness(lat, !!row.fail);
+    const col=providerColor(prov);
+    if(!legendProviders.has(prov)) legendProviders.set(prov, col);
+    // position: x by provider hash, y by latency/brightness + jitter
+    const ph=hash(prov);
+    const gx= (ph % GW + GW)%GW;
+    // jitter x by +/-2 for spread so same provider not single column
+    let jgx=gx + ((hash(prov+String(depositCount))%5)-2);
+    jgx=(jgx+GW)%GW;
+    const gy=Math.max(0,Math.min(GH-1, Math.floor((1-bright*0.62)*GH + (Math.random()*GH*0.18))));
+    // velocity: angle from provider hue + latitude via latency
+    const ang=(col.hue*Math.PI/180) + (Math.random()-0.5)*0.7 + lat*0.00018;
+    const speed=0.62 + bright*1.18;
+    const vxD=Math.cos(ang)*speed;
+    const vyD=Math.sin(ang)*speed*0.68;
+    deposit(jgx,gy,col,bright,vxD,vyD);
+    // also occasionally deposit a second trail filament for high latency (contention)
+    if(lat>520 && Math.random()<0.42){
+      const gx2=(jgx+1+GW)%GW, gy2=Math.max(0,gy-1);
+      deposit(gx2,gy2,col,bright*0.72, vxD*0.92, vyD*0.92);
+    }
+  }
+  function probeFeed(){
+    try{
+      const vue=(window.app && window.app._instance && window.app._instance.proxy) ? window.app._instance.proxy : null;
+      if(!vue) return false;
+      if(Array.isArray(vue.feed)){
+        const feed=vue.feed;
+        if(feed.length>lastFeedLen){
+          const newN=feed.length-lastFeedLen;
+          const slice=feed.slice(0,newN);
+          for(let i=slice.length-1; i>=0; i--) depositForRow(slice[i]);
+          lastFeedLen=feed.length;
+          return newN>0;
+        } else if(feed.length<lastFeedLen){
+          lastFeedLen=feed.length;
+        }
+      }
+      // also catch keys/hosts changes as synthetic routing events
+      if(Array.isArray(vue.keys)){
+        let changed=false;
+        for(const k of vue.keys){ if(!lastSeenKeys.has(k.id)){ lastSeenKeys.add(k.id); changed=true; const row={account:k.provider, host:k.label||k.provider, fail:k.status==='dead'}; depositForRow(row); }}
+        if(changed) return true;
+      }
+    }catch(_){}
+    return false;
+  }
+  // synthetic traffic when idle: keep nebula alive even with zero feed
+  let synthAcc=0;
+  function synthTick(dt){
+    const vue=(window.app && window.app._instance && window.app._instance.proxy) ? window.app._instance.proxy : null;
+    const hasFeed= vue && Array.isArray(vue.feed) && vue.feed.length>6;
+    const rate= hasFeed? 0.014 : 0.038;
+    synthAcc+= dt*rate;
+    while(synthAcc>=1){
+      synthAcc-=1;
+      const providers=['openai','anthropic','google','groq','openrouter','perplexity','fal','mistral'];
+      const p=providers[(Math.random()*providers.length)|0];
+      const fakeFail=Math.random()<0.06;
+      depositForRow({account:p, host:p, model:'synth', text:'synth routing', fail:fakeFail});
+    }
+  }
+  // physics: diffuse + advect + decay
+  function stepPhysics(dt){
+    // diffuse dens slightly (box blur 1 iter, cheap)
+    // do in-place via temp buffers nextR etc as blur dest then swap
+    for(let y=0;y<GH;y++){
+      for(let x=0;x<GW;x++){
+        const idx=y*GW+x;
+        let sr=densR[idx], sg=densG[idx], sb=densB[idx];
+        let cnt=1;
+        if(x>0){ const j=idx-1; sr+=densR[j]; sg+=densG[j]; sb+=densB[j]; cnt++; }
+        if(x<GW-1){ const j=idx+1; sr+=densR[j]; sg+=densG[j]; sb+=densB[j]; cnt++; }
+        if(y>0){ const j=idx-GW; sr+=densR[j]; sg+=densG[j]; sb+=densB[j]; cnt++; }
+        if(y<GH-1){ const j=idx+GW; sr+=densR[j]; sg+=densG[j]; sb+=densB[j]; cnt++; }
+        // diagon whirl hint: average with slight retention
+        nextR[idx]= sr/cnt*0.92 + densR[idx]*0.08;
+        nextG[idx]= sg/cnt*0.92 + densG[idx]*0.08;
+        nextB[idx]= sb/cnt*0.92 + densB[idx]*0.08;
+      }
+    }
+    // advect: semi-Lagrangian backward trace per cell
+    const scale=0.42;
+    for(let y=0;y<GH;y++){
+      for(let x=0;x<GW;x++){
+        const idx=y*GW+x;
+        const u=vx[idx]*scale, v=vy[idx]*scale;
+        let sx=x - u, sy=y - v;
+        // clamp and bilinear sample from next* (diffused) as source
+        sx=Math.max(0,Math.min(GW-1.0001,sx));
+        sy=Math.max(0,Math.min(GH-1.0001,sy));
+        const x0=sx|0, y0=sy|0, x1=Math.min(GW-1,x0+1), y1=Math.min(GH-1,y0+1);
+        const fx=sx-x0, fy=sy-y0;
+        const i00=y0*GW+x0, i10=y0*GW+x1, i01=y1*GW+x0, i11=y1*GW+x1;
+        const lerp=(a,b,t)=> a + (b-a)*t;
+        densR[idx]= lerp( lerp(nextR[i00], nextR[i10], fx), lerp(nextR[i01], nextR[i11], fx), fy );
+        densG[idx]= lerp( lerp(nextG[i00], nextG[i10], fx), lerp(nextG[i01], nextG[i11], fx), fy );
+        densB[idx]= lerp( lerp(nextB[i00], nextB[i10], fx), lerp(nextB[i01], nextB[i11], fx), fy );
+      }
+    }
+    // velocity diffusion + decay
+    for(let i=0;i<N;i++){
+      // damp velocity
+      vx[i]*=0.985;
+      vy[i]*=0.985;
+      // add slight curl to keep flow alive
+      const x=i%GW, y=(i/GW)|0;
+      const curl= Math.sin(x*0.22 + y*0.14 + performance.now()*0.00031)*0.006;
+      vx[i]+= curl*0.6;
+      vy[i]-= curl*0.38;
+      // dens decay: hot-spots persist (heat slows decay)
+      const h=heat[i];
+      const decay=0.985 - h*0.012; // hot decays slower
+      densR[i]*=decay; densG[i]*=decay; densB[i]*=decay;
+      // heat decays slowly, but pumps where dens high
+      const mag=(densR[i]+densG[i]+densB[i])/3;
+      heat[i]= heat[i]*0.986 + mag*0.014;
+      if(heat[i]>1) heat[i]=1;
+      if(heat[i]<0.0008) heat[i]*=0.92;
+      // clamp tiny to zero for perf
+      if(densR[i]<0.001) densR[i]*=0.88;
+      if(densG[i]<0.001) densG[i]*=0.88;
+      if(densB[i]<0.001) densB[i]*=0.88;
+    }
+    // recompute hotCount
+    let hc=0;
+    for(let i=0;i<N;i++) if(heat[i]>0.42) hc++;
+    hotCount=hc;
+  }
+  function writeGlow(){
+    const d=glowImg.data;
+    for(let i=0;i<N;i++){
+      let r=densR[i], g=densG[i], b=densB[i];
+      const h=heat[i];
+      // volumetric fake: boost where heat high, add white hot-core
+      const core=Math.pow(Math.max(0,h-0.38)/0.62, 1.6)*0.42;
+      r=Math.min(1, r + core*0.92 + h*0.12);
+      g=Math.min(1, g + core*0.98 + h*0.10);
+      b=Math.min(1, b + core*1.00 + h*0.14);
+      // gamma lift so trails visible even faint
+      r=Math.pow(r,0.88); g=Math.pow(g,0.88); b=Math.pow(b,0.88);
+      const j=i*4;
+      d[j]=(r*255)|0; d[j+1]=(g*255)|0; d[j+2]=(b*255)|0; d[j+3]=255;
+    }
+    gctx.putImageData(glowImg,0,0);
+  }
+  function isHidden(){
+    if(sec.hidden) return true;
+    if(sec.style.display==='none') return true;
+    if(document.hidden) return true;
+    const r=sec.getBoundingClientRect();
+    if(r.bottom<0||r.top>innerHeight+140) return true;
+    return false;
+  }
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const r=wrap.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(r.width));
+    cssH=Math.max(1,Math.floor(r.height));
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+  }
+  function start(){ if(running) return; if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; running=true; cancelAnimationFrame(raf); loop(); }
+  function stop(){ running=false; cancelAnimationFrame(raf); raf=0; }
+  let tAcc=0, frame=0;
+  let lastTs=performance.now();
+  function loop(now){
+    if(!running){ raf=requestAnimationFrame(loop); return; }
+    if(isHidden()||paused){ raf=requestAnimationFrame(loop); return; }
+    const ts=now||performance.now();
+    const dt=Math.min(32, ts-lastTs);
+    lastTs=ts;
+    frame++;
+    tAcc+=dt;
+    if(frame%3===0) probeFeed();
+    synthTick(dt);
+    stepPhysics(dt);
+    if(frame%2===0) writeGlow();
+    // draw
+    ctx.save();
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    // fade previous frame for trail persistence at display level (extra smear)
+    ctx.globalCompositeOperation='source-over';
+    ctx.globalAlpha=1;
+    // subtle fade to dark — keeps trails but lets hot-spots persist
+    ctx.fillStyle='rgba(5,8,16,0.085)';
+    ctx.fillRect(0,0,cssW,cssH);
+    // Yi-Wen Lin volumetric glow: blur low-res glow texture additive
+    ctx.globalCompositeOperation='lighter';
+    // first large blur bloom
+    ctx.globalAlpha=0.92;
+    ctx.imageSmoothingEnabled=true;
+    ctx.filter='blur(16px)';
+    ctx.drawImage(glow,0,0,cssW,cssH);
+    ctx.filter='blur(8px)';
+    ctx.globalAlpha=0.62;
+    ctx.drawImage(glow,0,0,cssW,cssH);
+    ctx.filter='none';
+    ctx.globalAlpha=0.95;
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(glow,0,0,cssW,cssH);
+    // hot-spot cores: tiny white additive dots where heat > threshold
+    ctx.imageSmoothingEnabled=true;
+    ctx.globalAlpha=1;
+    for(let i=0;i<N;i++){
+      const h=heat[i];
+      if(h<0.52) continue;
+      const x=(i%GW)/GW*cssW, y=((i/GW)|0)/GH*cssH;
+      const a=Math.min(1,(h-0.52)/0.48)*0.72;
+      const rad= 1.2 + h*2.8;
+      const g=ctx.createRadialGradient(x,y,0,x,y,rad*2.2);
+      const rr=Math.min(255,(densR[i]*255 + 88)|0), gg=Math.min(255,(densG[i]*255 + 88)|0), bb=Math.min(255,(densB[i]*255 + 96)|0);
+      g.addColorStop(0,'rgba(255,255,255,'+a.toFixed(2)+')');
+      g.addColorStop(0.32,'rgba('+rr+','+gg+','+bb+','+(a*0.52).toFixed(2)+')');
+      g.addColorStop(1,'rgba('+rr+','+gg+','+bb+',0)');
+      ctx.fillStyle=g;
+      ctx.beginPath(); ctx.arc(x,y,rad*2.2,0,Math.PI*2); ctx.fill();
+    }
+    // contention artery shimmer: faint horizontal scan where hot rows cluster
+    if(hotCount>10){
+      ctx.globalCompositeOperation='screen';
+      ctx.globalAlpha=0.05+Math.min(0.09, hotCount*0.003);
+      ctx.fillStyle='rgba(110,198,255,0.9)';
+      for(let y=0;y<GH;y++){
+        let rowHot=0; for(let x=0;x<GW;x++) if(heat[y*GW+x]>0.44) rowHot++;
+        if(rowHot> GW*0.22){
+          const yy=y/GH*cssH;
+          ctx.fillRect(0,yy,cssW,1);
+        }
+      }
+    }
+    // vignette
+    ctx.globalCompositeOperation='source-over';
+    ctx.globalAlpha=1;
+    ctx.filter='none';
+    const vg=ctx.createRadialGradient(cssW*0.5,cssH*0.5,0,cssW*0.5,cssH*0.5,Math.max(cssW,cssH)*0.82);
+    vg.addColorStop(0,'rgba(5,8,16,0)');
+    vg.addColorStop(0.68,'rgba(5,8,16,0)');
+    vg.addColorStop(1,'rgba(2,4,10,0.52)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,cssW,cssH);
+    // film grain / scanlines very subtle
+    ctx.globalAlpha=0.018;
+    ctx.fillStyle='rgba(110,198,255,0.9)';
+    for(let y=0;y<cssH;y+=3) ctx.fillRect(0,y,cssW,1);
+    ctx.restore();
+    if(frame%18===0){
+      const countEl=document.getElementById('nebula-count');
+      const modeEl=document.getElementById('nebula-mode');
+      const pulseEl=document.getElementById('nebula-pulse-label');
+      const readEl=document.getElementById('nebula-readout');
+      const total=(depositCount|0);
+      const glowPow=Math.min(1, (hotCount/18)*0.72 + Math.sin(tAcc*0.00042)*0.08 + 0.42);
+      const contention= hotCount>14? 'contention' : hotCount>6? 'warm' : 'clear';
+      if(countEl) countEl.textContent= total+' routes';
+      if(modeEl) modeEl.textContent= contention+' · '+GW+'×'+GH+' grid';
+      if(pulseEl) pulseEl.textContent='glow '+(0.52+glowPow*0.48).toFixed(2)+'×';
+      if(readEl) readEl.textContent= total+' routes · '+hotCount+' hot-spot'+(hotCount===1?'':'s')+' · '+GW+'×'+GH+' · trails = legend';
+      updateLegend();
+    }
+    raf=requestAnimationFrame(loop);
+  }
+  function updateLegend(){
+    const el=document.getElementById('nebula-legend');
+    if(!el) return;
+    const entries=[...legendProviders.entries()].slice(0,6);
+    if(!entries.length){
+      el.innerHTML='<span class="nebula-trailkey">trails = legend · awaiting routes</span>';
+      return;
+    }
+    el.innerHTML=entries.map(([prov,col])=>{
+      const rgb='rgb('+(col.r*255|0)+','+(col.g*255|0)+','+(col.b*255|0)+')';
+      return '<span style="display:inline-flex;align-items:center;gap:5px"><i style="background:'+rgb+';color:'+rgb+'"></i>'+prov.slice(0,10)+'</span>';
+    }).join('') + '<span class="nebula-trailkey" style="margin-left:6px">· brightness = latency · <b>hot</b> = artery</span>';
+  }
+  function clearField(){
+    densR.fill(0); densG.fill(0); densB.fill(0);
+    heat.fill(0); vx.fill(0); vy.fill(0);
+    // fade canvas
+    ctx.save(); ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1;
+    ctx.fillStyle='#050810'; ctx.fillRect(0,0,cssW,cssH);
+    ctx.restore();
+    depositCount=0;
+    hotCount=0;
+    legendProviders.clear();
+    updateLegend();
+    cv.style.filter='brightness(1.18)'; setTimeout(()=>cv.style.filter='',200);
+  }
+  // interactions
+  function pos01(e){
+    const r=cv.getBoundingClientRect();
+    return [Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)), Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))];
+  }
+  let dragging=false, lastPos=null;
+  cv.addEventListener('pointerdown', e=>{
+    dragging=true; cv.setPointerCapture(e.pointerId);
+    const [x,y]=pos01(e);
+    const gx=(x*GW)|0, gy=(y*GH)|0;
+    const col=providerColor('openai');
+    deposit((gx+GW)%GW,(gy+GH)%GH,col,0.92, (Math.random()-0.5)*2.2,(Math.random()-0.5)*1.4);
+    lastPos=[x,y];
+    cv.style.filter='brightness(1.08)'; setTimeout(()=>cv.style.filter='',140);
+  });
+  cv.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const [x,y]=pos01(e);
+    if(lastPos){
+      const dx=x-lastPos[0], dy=y-lastPos[1];
+      const n=Math.max(1, Math.ceil(Math.hypot(dx,dy)*GW*0.7));
+      for(let i=0;i<=n;i++){
+        const u=i/n, ix=lastPos[0]+dx*u, iy=lastPos[1]+dy*u;
+        const gx=(ix*GW)|0, gy=(iy*GH)|0;
+        const hue=(u*120+200)%360;
+        const col=providerColor(String(hue));
+        deposit((gx+GW)%GW,(gy+GH)%GH,col,0.62, dx*GW*1.8, dy*GH*1.1);
+      }
+    }
+    lastPos=[x,y];
+  });
+  cv.addEventListener('pointerup', e=>{ dragging=false; lastPos=null; try{cv.releasePointerCapture(e.pointerId);}catch(_){} });
+  cv.addEventListener('pointercancel', ()=>{ dragging=false; lastPos=null; });
+  cv.addEventListener('pointerleave', ()=>{ if(!dragging) lastPos=null; });
+  wrap.addEventListener('wheel', e=>{
+    e.preventDefault();
+    // wheel nudges velocity field curl for fun
+    const d=Math.sign(e.deltaY);
+    for(let i=0;i<N;i++){ vx[i]+= -d*0.02; vy[i]+= d*0.012; }
+  }, {passive:false});
+  document.getElementById('nebula-pause')?.addEventListener('click', function(){
+    paused=!paused;
+    this.textContent= paused? '▶ resume' : '❚❚ pause';
+    this.setAttribute('aria-label', paused? 'resume glow field' : 'pause glow field');
+    cv.style.filter='brightness(1.08)'; setTimeout(()=>cv.style.filter='',140);
+    if(!paused && !running) start();
+  });
+  document.getElementById('nebula-clear')?.addEventListener('click', clearField);
+  // fetch hook for 401 bursts (contention flash) — chain-safe
+  (function hookFetch(){
+    const orig=window.fetch;
+    if(!orig || orig.__nebulaHooked) return;
+    const hooked=function(input,init){
+      const p=orig.apply(this,arguments);
+      p.then(res=>{
+        try{
+          const url= typeof input==='string'?input:(input&&input.url)||'';
+          if(res && res.status===401){
+            for(let k=0;k<4;k++) setTimeout(()=>{
+              const col=providerColor('contention');
+              const gx=(Math.random()*GW)|0, gy=(Math.random()*GH)|0;
+              deposit(gx,gy,col,1.0, (Math.random()-0.5)*3.2,(Math.random()-0.5)*2.0);
+            }, k*55);
+          }
+          if(url.includes('/api/keys') && res && res.ok){
+            // key checked → small teal puff
+            const col=providerColor('google');
+            const gx=(Math.random()*GW)|0, gy=(Math.random()*GH)|0;
+            deposit(gx,gy,col,0.72, 0.9, -0.4);
+          }
+        }catch(_){}
+      }).catch(()=>{});
+      return p;
+    };
+    hooked.__nebulaHooked=true;
+    try{ window.fetch=hooked; window.fetch.__nebulaHooked=true; }catch(_){}
+  })();
+  // init
+  resize();
+  ctx.fillStyle='#050810'; ctx.fillRect(0,0,cv.width,cv.height);
+  updateLegend();
+  start();
+  window.addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) return; if(!running) start(); });
+  try{
+    const mq=window.matchMedia('(prefers-reduced-motion: reduce)');
+    mq.addEventListener('change', e=>{ if(e.matches) stop(); else start(); });
+  }catch(_){}
+  try{
+    const io=new IntersectionObserver(ents=>{ for(const en of ents) if(en.target===sec && en.isIntersecting) start(); },{threshold:0});
+    io.observe(sec);
+  }catch(_){}
+  window.__nebula={start,stop,get running(){return running && !paused}, clear:clearField, deposit:depositForRow, get grid(){return {w:GW,h:GH}}, get hotSpots(){return hotCount}, get deposits(){return depositCount}, get providers(){return [...legendProviders.keys()]}};
 })();
 </script>
 <!-- IMPL: Ghost Fleet -->
