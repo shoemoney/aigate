@@ -323,12 +323,28 @@ main.shake{animation:seismo-shake .38s ease}
 .altar-meta .mode{color:#e8dcc8}
 .altar-meta .hint{opacity:.75}
 .altar-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(232,220,200,.55);background:rgba(10,10,12,.55);border:1px solid rgba(232,220,200,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+/* <!-- IMPL: Ferrofluid Séance --> — oil-black #0a0a0c on glass, SDF thorns chasing magnet — reuses #altar-sec 160px slot, tri-state exclusive */
+#ferro-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #1e1e22;border-radius:6px;overflow:hidden;background:#06080a;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
+.ferro-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#131416 0%,#0c0e10 55%,#06080a 100%);border-bottom:1px solid #1e1e22}
+.ferro-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#7fb3c0}
+.ferro-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.ferro-head .ferro-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.ferro-head .ferro-note b{color:#b8d0d8;font-weight:600}
+.ferro-canvas-wrap{position:relative;height:160px;background:#0a0a0c;overflow:hidden;cursor:grab;touch-action:none}
+.ferro-canvas-wrap.dragging{cursor:grabbing}
+#ferro{display:block;width:100%;height:100%;pointer-events:auto}
+.ferro-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0c0e10;border-top:1px solid #1e1e22;font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.ferro-meta .mode{color:#b8d0d8}
+.ferro-meta .hint{opacity:.75}
+.ferro-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(184,208,216,.55);background:rgba(6,8,10,.55);border:1px solid rgba(184,208,216,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
   .spark svg polyline{stroke-dashoffset:0}   /* draw-in cut → show the full line, not a blank one */
   #monsoon{display:none}
   #seismo,.seismo-wrap{display:none}
   #altar-sec{display:none!important}
   #chladni{display:none!important}
+  #ferro-sec{display:none!important}
+  #ferro{display:none!important}
   .card{transform:none!important;box-shadow:none!important}
   .card .glare{display:none}
 }
@@ -364,6 +380,8 @@ main.shake{animation:seismo-shake .38s ease}
     <a class="btn" href="/board.html" title="task board">🗂 board</a>
     <!-- IMPL: Chladni Altar — exclusive with Monsoon -->
     <button id="altar-toggle" class="btn" type="button" aria-pressed="false" title="Chladni Altar — black steel, bone powder (drag to sweep)">◈ altar</button>
+    <!-- IMPL: Ferrofluid Séance — exclusive tri-state with Chladni + Monsoon -->
+    <button id="ferro-toggle" class="btn" type="button" aria-pressed="false" title="Ferrofluid Séance — oil-black, thorns chase magnet (drag)">⬢ séance</button>
     <button class="btn" @click="paletteOpen=true" title="command palette (⌘K)">⌘K</button>
     <button class="btn" @click="toggleBell" :aria-pressed="String(notifyOn)"
             :aria-label="notifyOn?'disable browser notifications':'enable browser notifications'"
@@ -425,6 +443,22 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="altar-meta">
         <span class="mode">▸ <span id="altar-readout">n 4.2 · m 3.8 · ε 0.12</span></span>
         <span class="hint">pure SDF interference · sin(nπx)sin(mπy) ± sin(mπx)sin(nπy)</span>
+      </div>
+    </section>
+    <!-- IMPL: Ferrofluid Séance — 00 hero alternate (160px, tri-state: monsoon | chladni | ferro) -->
+    <section id="ferro-sec" class="ferro-sec" hidden aria-label="Ferrofluid Séance">
+      <div class="ferro-head">
+        <span class="sec-num">00</span><h2>Ferrofluid Séance</h2>
+        <span class="ferro-note">drag magnet · <b id="ferro-mode">Φ 0.82 T</b> · wheel = viscosity</span>
+        <button id="ferro-close" class="btn sm" type="button" aria-label="close Ferrofluid Séance">✕</button>
+      </div>
+      <div class="ferro-canvas-wrap" id="ferro-wrap">
+        <canvas id="ferro" width="1200" height="160" aria-label="Ferrofluid pool — drag to move magnet" role="img"></canvas>
+        <span class="ferro-spec">⬢ thorns = SDF · glyphs = merged field</span>
+      </div>
+      <div class="ferro-meta">
+        <span class="mode">▸ <span id="ferro-readout">Φ 0.82 · η 0.18 · 47 thorns</span></span>
+        <span class="hint">pure SDF spikes · 1/(dist+ε) · no fluid sim</span>
       </div>
     </section>
 
@@ -1782,7 +1816,13 @@ function startMonsoon(){
     sec.hidden=!open;
     btn.setAttribute('aria-pressed', String(open));
     btn.textContent=open?'◈ close':'◈ altar';
-    if(monsoon) monsoon.style.display=open?'none':'';
+    const ferro=document.getElementById('ferro-sec');
+    const ferroBtn=document.getElementById('ferro-toggle');
+    if(open){
+      if(ferro&&!ferro.hidden){ ferro.hidden=true; if(ferroBtn) ferroBtn.setAttribute('aria-pressed','false'); if(window.__ferro) window.__ferro._stop(); }
+      if(ferroBtn) ferroBtn.textContent='⬢ séance';
+    }
+    if(monsoon) monsoon.style.display=open?'none':(ferro&&!ferro.hidden?'none':'');
     if(open){
       resize();
       if(!running) start();
@@ -1791,6 +1831,7 @@ function startMonsoon(){
       wrap.scrollIntoView({behavior:'smooth', block:'nearest'});
     } else {
       stop();
+      if(ferro&&ferro.hidden && monsoon) monsoon.style.display='';
     }
   }
 
@@ -1995,10 +2036,391 @@ function startMonsoon(){
   });
 
   // expose for debugging / toggle probing
-  window.__altar={open:()=>setAltar(true), close:()=>setAltar(false), get n(){return n}, get m(){return m}};
+  window.__altar={open:()=>setAltar(true), close:()=>setAltar(false), _stop:stop, get n(){return n}, get m(){return m}};
 
   // auto-pause at boot (hidden), no loop until opened
 })();
+</script><!-- IMPL: Ferrofluid Séance — oil-black ferrofluid #0a0a0c on glass, SDF spikes 1/(dist+ε), magnet lerps to pointer -->
+<script>
+/* <!-- IMPL: Ferrofluid Séance --> — pure canvas 2D, no deps, DPR≤2, single RAF — tri-state exclusive with Chladni+Monsoon */
+(function(){
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('ferro-sec');
+  const wrap=document.getElementById('ferro-wrap');
+  const cv=document.getElementById('ferro');
+  const btn=document.getElementById('ferro-toggle');
+  const closeBtn=document.getElementById('ferro-close');
+  const modeEl=document.getElementById('ferro-mode');
+  const readout=document.getElementById('ferro-readout');
+  const monsoon=document.getElementById('monsoon');
+  const altarSec=document.getElementById('altar-sec');
+  const altarBtn=document.getElementById('altar-toggle');
+  if(!sec||!wrap||!cv||!btn) return;
+  const ctx=cv.getContext('2d');
+  if(!ctx) return;
+  let dpr=Math.min(window.devicePixelRatio||1,2);
+  let W=0,H=0, cssW=0, cssH=160, raf=0, t=0, running=false;
+  let mx=0, my=0, tx=0, ty=0;
+  let hasPointer=false, dragging=false;
+  let viscosity=0.18;
+  let fieldT=0.82;
+  let sites=[];
+  let spikes=[];
+  let glyph=null;
+  let glyphCooldown=0;
+  let spring=0, springV=0;
+  function isHidden(){ return sec.hidden || sec.style.display==='none' || document.hidden; }
+  function buildSites(){
+    sites=[]; spikes=[];
+    const cols=14, rows=5;
+    const padX=28, padY=22;
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const jx=(Math.random()-0.5)*16, jy=(Math.random()-0.5)*12;
+        const x= padX + (cssW - padX*2) * (c+0.5)/cols + jx;
+        const y= padY + (cssH - padY*2) * (r+0.5)/rows + jy;
+        const cx=Math.max(padX, Math.min(cssW-padX, x));
+        const cy=Math.max(padY, Math.min(cssH-padY, y));
+        sites.push({x:cx,y:cy,base:0.82+Math.random()*0.28,phase:Math.random()*Math.PI*2});
+        spikes.push(0);
+      }
+    }
+    for(let i=0;i<6;i++){
+      const x=cssW*0.5 + (Math.random()-0.5)*120;
+      const y=cssH*0.5 + (Math.random()-0.5)*48;
+      sites.push({x,y,base:0.9,phase:Math.random()*Math.PI*2});
+      spikes.push(0);
+    }
+  }
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const rect=wrap.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(rect.width));
+    cssH=160;
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+    W=cv.width; H=cv.height;
+    if(!hasPointer){ tx=cssW*0.62; ty=cssH*0.5; mx=tx; my=ty; }
+    else { tx=Math.max(8, Math.min(cssW-8, tx)); ty=Math.max(8, Math.min(cssH-8, ty)); }
+    buildSites();
+  }
+  function setFerro(open){
+    sec.hidden=!open;
+    btn.setAttribute('aria-pressed', String(open));
+    btn.textContent=open?'\u2b22 close':'\u2b22 s\u00e9ance';
+    if(open){
+      if(altarSec&&!altarSec.hidden){
+        altarSec.hidden=true;
+        if(altarBtn){ altarBtn.setAttribute('aria-pressed','false'); altarBtn.textContent='\u25c8 altar'; }
+        if(window.__altar) window.__altar._stop();
+      }
+    }
+    if(monsoon) monsoon.style.display=open?'none':(altarSec&&!altarSec.hidden?'none':'');
+    if(open){
+      resize();
+      if(!running) start();
+      springV+=1.0;
+      hasPointer=true;
+      wrap.scrollIntoView({behavior:'smooth', block:'nearest'});
+    } else {
+      stop();
+      if(altarSec&&altarSec.hidden && monsoon) monsoon.style.display='';
+    }
+  }
+  function start(){
+    if(running) return;
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    running=true;
+    cancelAnimationFrame(raf);
+    loop();
+  }
+  function stop(){
+    running=false;
+    cancelAnimationFrame(raf);
+    raf=0;
+  }
+  function updatePointer(e){
+    const r=wrap.getBoundingClientRect();
+    if(!r.width||!r.height) return;
+    hasPointer=true;
+    tx=Math.max(6, Math.min(r.width-6, e.clientX - r.left));
+    ty=Math.max(6, Math.min(r.height-6, e.clientY - r.top));
+  }
+  function spikeHeight(dist, base, tLocal){
+    const eps=8 + viscosity*42;
+    const h= 1/(dist*0.018 + eps*0.09 + 0.55) * 7.2 * base;
+    const wob=1 + Math.sin(tLocal*0.06 + base*1.7)*0.07;
+    let v=h*wob;
+    v=Math.max(0, Math.min(1, v*0.52));
+    v*= (1 - viscosity*0.22);
+    return v;
+  }
+  function pickGlyphKind(){
+    const kinds=['tri','eye','hex','sigil'];
+    return kinds[Math.floor(Math.random()*kinds.length)];
+  }
+  function trySpawnGlyph(activeIdx){
+    if(glyph|| glyphCooldown>0) return;
+    if(activeIdx.length<3) return;
+    const avgX= activeIdx.reduce((s,i)=>s+sites[i].x,0)/activeIdx.length;
+    const avgY= activeIdx.reduce((s,i)=>s+sites[i].y,0)/activeIdx.length;
+    const dMag=Math.hypot(avgX - mx, avgY - my);
+    if(dMag>72) return;
+    if(activeIdx.length<4) return;
+    glyph={pts:activeIdx.slice(0, Math.min(6, activeIdx.length)), kind:pickGlyphKind(), born:t, alpha:0};
+    glyphCooldown=90;
+  }
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    t++;
+    if(glyphCooldown>0) glyphCooldown--;
+    const dx=tx-mx, dy=ty-my;
+    const vel=Math.hypot(dx,dy);
+    mx+=(tx-mx)*0.085;
+    my+=(ty-my)*0.085;
+    if(!dragging && vel<0.4){
+      tx+= Math.sin(t*0.008)*0.18 + Math.cos(t*0.011)*0.12;
+      ty+= Math.cos(t*0.009)*0.14;
+      tx=Math.max(10, Math.min(cssW-10, tx));
+      ty=Math.max(10, Math.min(cssH-10, ty));
+    }
+    const k=0.20, d=0.83;
+    springV=(springV + (vel*0.55 - spring)*k)*d;
+    spring+=springV;
+    let sumH=0, tall=0;
+    let activeIdx=[];
+    for(let i=0;i<sites.length;i++){
+      const s=sites[i];
+      const dist=Math.hypot(s.x - mx, s.y - my);
+      const h=spikeHeight(dist, s.base, t + s.phase*18);
+      spikes[i]+= (h - spikes[i])*0.34;
+      sumH+=spikes[i];
+      if(spikes[i]>0.42){ tall++; if(spikes[i]>0.58) activeIdx.push(i); }
+    }
+    const avgH=sumH/sites.length;
+    fieldT=0.42 + avgH*1.05 + Math.abs(spring)*0.08;
+    fieldT=Math.max(0.12, Math.min(1.45, fieldT));
+    if(t%26===0) trySpawnGlyph(activeIdx);
+    ctx.save();
+    ctx.scale(dpr,dpr);
+    ctx.clearRect(0,0,cssW,cssH);
+    ctx.fillStyle='#080a0c';
+    ctx.fillRect(0,0,cssW,cssH);
+    const gTop=ctx.createLinearGradient(0,0,0,cssH);
+    gTop.addColorStop(0,'rgba(255,255,255,0.09)');
+    gTop.addColorStop(0.22,'rgba(255,255,255,0.02)');
+    gTop.addColorStop(0.55,'rgba(255,255,255,0)');
+    gTop.addColorStop(1,'rgba(0,0,0,0.42)');
+    ctx.fillStyle=gTop;
+    ctx.fillRect(0,0,cssW,cssH);
+    const vg=ctx.createRadialGradient(cssW*0.5,cssH*0.5,0,cssW*0.5,cssH*0.5,Math.max(cssW,cssH)*0.78);
+    vg.addColorStop(0,'rgba(0,0,0,0)');
+    vg.addColorStop(0.72,'rgba(0,0,0,0)');
+    vg.addColorStop(1,'rgba(0,0,0,0.55)');
+    ctx.fillStyle=vg;
+    ctx.fillRect(0,0,cssW,cssH);
+    if(avgH>0.18){
+      const halo=ctx.createRadialGradient(mx,my,0,mx,my, 110+avgH*42);
+      halo.addColorStop(0,'rgba(127,179,192,'+(0.09+avgH*0.11).toFixed(3)+')');
+      halo.addColorStop(0.38,'rgba(127,179,192,0.04)');
+      halo.addColorStop(1,'rgba(127,179,192,0)');
+      ctx.fillStyle=halo;
+      ctx.beginPath(); ctx.arc(mx,my,110+avgH*42,0,Math.PI*2); ctx.fill();
+    }
+    ctx.lineCap='round';
+    for(let i=0;i<sites.length;i++){
+      if(spikes[i]<0.38) continue;
+      for(let j=i+1;j<sites.length;j++){
+        if(spikes[j]<0.32) continue;
+        const dx=sites[i].x - sites[j].x, dy=sites[i].y - sites[j].y;
+        const d2=dx*dx+dy*dy;
+        if(d2> 38*38) continue;
+        const a=Math.min(spikes[i], spikes[j])*0.42;
+        if(a<0.16) continue;
+        ctx.strokeStyle='rgba(90,118,128,'+a.toFixed(3)+')';
+        ctx.lineWidth=0.9 + a*1.6;
+        ctx.beginPath();
+        const mxMid=(sites[i].x+sites[j].x)/2 + (mx - (sites[i].x+sites[j].x)/2)*0.08;
+        const myMid=(sites[i].y+sites[j].y)/2 + (my - (sites[i].y+sites[j].y)/2)*0.08;
+        ctx.moveTo(sites[i].x, sites[i].y);
+        ctx.quadraticCurveTo(mxMid, myMid, sites[j].x, sites[j].y);
+        ctx.stroke();
+      }
+    }
+    if(glyph){
+      const age=t - glyph.born;
+      const life=72;
+      let p=age/life;
+      let alpha=0;
+      if(p<0.18) alpha=p/0.18;
+      else if(p<0.62) alpha=1;
+      else alpha=1 - (p-0.62)/0.38;
+      alpha=Math.max(0,Math.min(1,alpha));
+      glyph.alpha=alpha;
+      if(p>=1){ glyph=null; }
+      else if(glyph && glyph.pts.length>=3){
+        const pts=glyph.pts.map(i=>sites[i]);
+        ctx.save();
+        ctx.globalAlpha=alpha*0.72;
+        ctx.strokeStyle='rgba(184,208,216,0.92)';
+        ctx.lineWidth=1.05;
+        ctx.shadowColor='rgba(127,179,192,0.55)'; ctx.shadowBlur=7;
+        if(glyph.kind==='tri'){
+          ctx.beginPath();
+          const a=pts[0], b=pts[1], c=pts[2];
+          ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.lineTo(c.x,c.y); ctx.closePath(); ctx.stroke();
+          const cx=(a.x+b.x+c.x)/3, cy=(a.y+b.y+c.y)/3;
+          ctx.shadowBlur=0; ctx.fillStyle='rgba(184,208,216,'+(alpha*0.9).toFixed(2)+')';
+          ctx.beginPath(); ctx.arc(cx,cy,1.6,0,Math.PI*2); ctx.fill();
+          ctx.strokeStyle='rgba(184,208,216,0.55)'; ctx.lineWidth=0.7; ctx.shadowBlur=0;
+          [a,b,c].forEach(pt=>{
+            const ang=Math.atan2(pt.y-cy, pt.x-cx);
+            ctx.beginPath(); ctx.moveTo(pt.x,pt.y); ctx.lineTo(pt.x+Math.cos(ang)*5, pt.y+Math.sin(ang)*5); ctx.stroke();
+          });
+        } else if(glyph.kind==='eye'){
+          const a=pts[0], b=pts[1];
+          const cx=(a.x+b.x)/2, cy=(a.y+b.y)/2;
+          const rx=Math.hypot(a.x-b.x,a.y-b.y)*0.58+10;
+          const ry=Math.min(18, rx*0.42);
+          ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); ctx.stroke();
+          ctx.shadowBlur=0;
+          ctx.beginPath(); ctx.arc(cx,cy,3.2,0,Math.PI*2); ctx.stroke();
+          ctx.beginPath(); ctx.arc(cx,cy,0.9,0,Math.PI*2); ctx.fillStyle='rgba(184,208,216,'+alpha.toFixed(2)+')'; ctx.fill();
+        } else if(glyph.kind==='hex'){
+          const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length, cy=pts.reduce((s,p)=>s+p.y,0)/pts.length;
+          const r=Math.min(36, Math.max(14, Math.hypot(pts[0].x-cx, pts[0].y-cy)*1.15));
+          ctx.beginPath();
+          for(let k=0;k<6;k++){ const ang=-Math.PI/2 + k*Math.PI/3; const x=cx+Math.cos(ang)*r, y=cy+Math.sin(ang)*r; if(k===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+          ctx.closePath(); ctx.stroke();
+          ctx.globalAlpha=alpha*0.32; ctx.beginPath();
+          for(let k=0;k<6;k++){ const ang=-Math.PI/2 + k*Math.PI/3; const x=cx+Math.cos(ang)*r*0.42, y=cy+Math.sin(ang)*r*0.42; if(k===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+          ctx.closePath(); ctx.stroke();
+        } else {
+          ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+          for(let k=1;k<pts.length;k++) ctx.lineTo(pts[k].x, pts[k].y);
+          ctx.stroke();
+          if(pts.length>3){ ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y); ctx.lineTo(pts[2].x,pts[2].y); ctx.stroke(); }
+          ctx.shadowBlur=0;
+          pts.forEach(p=>{ ctx.beginPath(); ctx.arc(p.x,p.y,1.2,0,Math.PI*2); ctx.stroke(); });
+        }
+        ctx.restore();
+      }
+    }
+    const order=sites.map((_,i)=>i).sort((a,b)=>spikes[a]-spikes[b]);
+    for(const idx of order){
+      const s=sites[idx];
+      const h=spikes[idx];
+      if(h<0.06) continue;
+      const hx=s.x, hy=s.y;
+      const shiver=1 + spring*0.08*Math.sin(t*0.5 + s.phase);
+      const R=(2.1 + h*7.8*shiver);
+      const Hc=(3.5 + h*18*shiver);
+      ctx.fillStyle='rgba(0,0,0,'+(0.18 + h*0.22).toFixed(3)+')';
+      ctx.beginPath(); ctx.ellipse(hx+1.1, hy+1.6, R*0.72, R*0.42, 0,0,Math.PI*2); ctx.fill();
+      const rg=ctx.createRadialGradient(hx- R*0.28, hy- R*0.28, 0, hx, hy, R);
+      const oilL= 10 + h*22;
+      const sheen= 18 + h*28;
+      rg.addColorStop(0,'rgb('+(oilL+sheen)+','+(oilL+sheen+2)+','+(oilL+18)+')');
+      rg.addColorStop(0.32,'rgb('+(oilL+6)+','+(oilL+10)+','+(oilL+16)+')');
+      rg.addColorStop(0.68,'rgb('+ (6+h*6)+','+ (8+h*8)+','+ (12+h*10)+')');
+      rg.addColorStop(1,'rgb(4,6,9)');
+      ctx.fillStyle=rg;
+      ctx.beginPath(); ctx.arc(hx, hy, R, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle='rgba(60,72,84,'+(0.12+h*0.18).toFixed(3)+')';
+      ctx.lineWidth=0.7; ctx.beginPath(); ctx.arc(hx,hy,R-0.6,0,Math.PI*2); ctx.stroke();
+      if(h>0.22){
+        const tipA= h>0.62 ? 0.95 : 0.55 + h*0.55;
+        const ang=Math.atan2(my - hy, mx - hx);
+        const len=Hc*0.42;
+        const tipX= hx + Math.cos(ang)*len*0.18;
+        const tipY= hy + Math.sin(ang)*len*0.18 - Hc*0.28;
+        ctx.fillStyle='rgba(205,218,226,'+(tipA*0.18).toFixed(3)+')';
+        ctx.beginPath();
+        const baseAng=ang+Math.PI/2;
+        const bw=R*0.38;
+        ctx.moveTo(tipX, tipY);
+        ctx.lineTo(hx + Math.cos(baseAng)*bw*0.55, hy + Math.sin(baseAng)*bw*0.22);
+        ctx.lineTo(hx - Math.cos(baseAng)*bw*0.55, hy - Math.sin(baseAng)*bw*0.22);
+        ctx.closePath(); ctx.fill();
+        if(h>0.52){
+          ctx.fillStyle='rgba(236,244,248,'+( (0.52 + (h-0.52)*0.9).toFixed(3) )+')';
+          ctx.shadowColor='rgba(184,208,216,0.9)'; ctx.shadowBlur= h>0.7 ? 6 : 3;
+          ctx.beginPath(); ctx.arc(tipX, tipY, h>0.7?1.35:0.95, 0, Math.PI*2); ctx.fill();
+          ctx.shadowBlur=0;
+          ctx.strokeStyle='rgba(236,244,248,'+(0.35*h).toFixed(3)+')';
+          ctx.lineWidth=0.75; ctx.beginPath(); ctx.moveTo(tipX, tipY); ctx.lineTo(tipX - Math.cos(ang)*3.2, tipY - Math.sin(ang)*1.2); ctx.stroke();
+        }
+      }
+    }
+    if(dragging){
+      ctx.strokeStyle='rgba(184,208,216,0.22)';
+      ctx.lineWidth=0.8;
+      ctx.beginPath(); ctx.moveTo(mx-7,my); ctx.lineTo(mx+7,my); ctx.moveTo(mx,my-7); ctx.lineTo(mx,my+7); ctx.stroke();
+      ctx.strokeStyle='rgba(184,208,216,0.12)'; ctx.beginPath(); ctx.arc(mx,my,9,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+    if(t%4===0){
+      const nt=tall;
+      if(modeEl) modeEl.textContent='\u03a6 '+fieldT.toFixed(2)+' T';
+      if(readout) readout.textContent='\u03a6 '+fieldT.toFixed(2)+' \u00b7 \u03b7 '+viscosity.toFixed(2)+' \u00b7 '+nt+' thorns'+(glyph?' \u00b7 \u25c9 glyph':'');
+    }
+    spring*=0.985;
+    raf=requestAnimationFrame(loop);
+  }
+  wrap.addEventListener('pointerdown', e=>{
+    dragging=true;
+    wrap.classList.add('dragging');
+    wrap.setPointerCapture(e.pointerId);
+    updatePointer(e);
+    e.preventDefault();
+  });
+  wrap.addEventListener('pointermove', e=>{
+    if(dragging) updatePointer(e);
+    else if(!hasPointer){
+      const r=wrap.getBoundingClientRect();
+      tx+=( (e.clientX - r.left) - tx)*0.04;
+      ty+=( (e.clientY - r.top) - ty)*0.04;
+    }
+  });
+  const endDrag=e=>{
+    if(!dragging) return;
+    dragging=false;
+    wrap.classList.remove('dragging');
+    try{ wrap.releasePointerCapture(e.pointerId); }catch(_){}
+  };
+  wrap.addEventListener('pointerup', endDrag);
+  wrap.addEventListener('pointercancel', endDrag);
+  wrap.addEventListener('pointerleave', e=>{ if(dragging) endDrag(e); });
+  wrap.addEventListener('wheel', e=>{
+    if(sec.hidden) return;
+    e.preventDefault();
+    viscosity=Math.max(0.04, Math.min(0.42, viscosity + e.deltaY*0.00016));
+    springV+=Math.abs(e.deltaY)*0.00055;
+  }, {passive:false});
+  cv.tabIndex=0;
+  cv.addEventListener('keydown', e=>{
+    if(e.key==='ArrowLeft'){ tx=Math.max(8,tx-16); e.preventDefault(); hasPointer=true; }
+    else if(e.key==='ArrowRight'){ tx=Math.min(cssW-8,tx+16); e.preventDefault(); hasPointer=true; }
+    else if(e.key==='ArrowUp'){ ty=Math.max(8,ty-12); e.preventDefault(); hasPointer=true; }
+    else if(e.key==='ArrowDown'){ ty=Math.min(cssH-8,ty+12); e.preventDefault(); hasPointer=true; }
+    else if(e.key==='Escape'){ setFerro(false); e.preventDefault(); }
+  });
+  btn.addEventListener('click', ()=> setFerro(sec.hidden));
+  closeBtn.addEventListener('click', ()=> setFerro(false));
+  document.addEventListener('keydown', e=>{
+    if((e.key==='Escape'||e.key==='Esc') && !sec.hidden) setFerro(false);
+  });
+  window.addEventListener('resize', ()=>{ if(!sec.hidden) resize(); });
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden) return;
+    if(!sec.hidden && !running) start();
+  });
+  window.__ferro={open:()=>setFerro(true), close:()=>setFerro(false), _stop:stop, get field(){return fieldT}, get visc(){return viscosity}};
+})();
 </script>
+
 </body>
 </html>
