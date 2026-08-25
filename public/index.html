@@ -778,6 +778,55 @@ main.shake{animation:seismo-shake .38s ease}
 .vault-slat{will-change:transform}
 .toolbar.scrubbing{box-shadow:0 0 0 1px rgba(232,179,75,.18), 0 2px 12px rgba(232,179,75,.12)}
 .toolbar .fchip.scrub-on{outline:1px solid rgba(232,179,75,.42);outline-offset:1px}
+/* <!-- IMPL: Morph Rail --> — single FLIP rail: toolbar chips → count badge via View Transitions, inbox/feed layout spring, warp-mask inspector spring + content fade, login micro-spring, footer view() wipe — native APIs + Vue TransitionGroup FLIP, no deps */
+.morph-count{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--dim);background:rgba(232,179,75,.08);border:1px solid rgba(232,179,75,.22);border-radius:999px;padding:3px 9px;view-transition-name:filter-count;contain:layout}
+.morph-count b{color:var(--accent);font-weight:700}
+.morph-count:empty{display:none}
+.toolbar .fchip{view-transition-class:morph-chip}
+.toolbar .fchip.on.morph-flight{view-transition-name:filter-count}
+::view-transition-group(filter-count){animation-duration:.44s;animation-timing-function:cubic-bezier(.16,1,.3,1)}
+::view-transition-old(filter-count),::view-transition-new(filter-count){animation-duration:.44s;animation-timing-function:cubic-bezier(.16,1,.3,1);mix-blend-mode:normal}
+::view-transition-group(morph-chip){animation-duration:.36s;animation-timing-function:cubic-bezier(.16,1,.3,1)}
+::view-transition-old(morph-chip),::view-transition-new(morph-chip){mix-blend-mode:normal}
+/* inbox + feed FLIP — Vue TransitionGroup move class with spring-ish curve, no Warp clone */
+.inbox-move,.feed-move{transition:transform .42s cubic-bezier(.34,1.56,.64,1), opacity .28s ease}
+.inbox-enter-active,.inbox-leave-active,.feed-enter-active,.feed-leave-active{transition:opacity .28s ease, transform .36s cubic-bezier(.16,1,.3,1)}
+.inbox-enter-from,.feed-enter-from{opacity:0;transform:translateY(8px) scale(.98)}
+.inbox-leave-to,.feed-leave-to{opacity:0;transform:translateY(-6px) scale(.98)}
+.inbox-leave-active,.feed-leave-active{position:absolute;pointer-events:none}
+/* warp-mask inspector — spring height + content fade (height on .warp-drawer, opacity on .warp-body) */
+.warp-drawer{transition:transform .38s cubic-bezier(.16,1,.3,1), height .42s cubic-bezier(.34,1.56,.64,1)}
+.warp-drawer .warp-body{transition:opacity .18s ease}
+.morph-drawer-enter-active .warp-drawer{transition:transform .36s cubic-bezier(.16,1,.3,1)}
+.morph-drawer-leave-active .warp-drawer{transition:transform .24s ease}
+.morph-drawer-enter-from .warp-drawer{transform:translateX(100%)}
+.morph-drawer-leave-to .warp-drawer{transform:translateX(100%)}
+/* login confessional — micro-spring focus morph on #tok + inner inputs */
+#tok{transition:transform .22s cubic-bezier(.34,1.56,.64,1), border-color .18s ease, box-shadow .18s ease}
+#tok:focus{transform:scale(1.03);border-color:rgba(232,179,75,.55);box-shadow:0 0 0 3px rgba(232,179,75,.18), 0 2px 10px rgba(232,179,75,.12)}
+.confessional-type-row:focus-within{transform:scale(1.01);transition:transform .22s cubic-bezier(.34,1.56,.64,1)}
+.confessional-type-row:focus-within #tok{transform:scale(1.02)}
+/* footer mono — view() wipe (clip-path inset + opacity), pure CSS view() no JS */
+@supports (animation-timeline: view()){
+  footer div{animation:morph-footer-wipe linear both;animation-timeline:view();animation-range:entry 0% cover 28%}
+  @keyframes morph-footer-wipe{from{clip-path:inset(0 100% 0 0);opacity:0}to{clip-path:inset(0 0 0 0);opacity:1}}
+}
+@supports not (view-transition-name: filter-count){
+  .morph-count{view-transition-name:none}
+  .toolbar .fchip{view-transition-name:none!important}
+}
+@media (prefers-reduced-motion:reduce){
+  .morph-count{view-transition-name:none!important;animation:none!important}
+  .toolbar .fchip{view-transition-name:none!important;transition:background .15s, border-color .15s!important}
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+  .inbox-move,.feed-move,.inbox-enter-active,.inbox-leave-active,.feed-enter-active,.feed-leave-active{transition:none!important}
+  .warp-drawer{transition:none!important}
+  .warp-drawer .warp-body{transition:none!important}
+  #tok{transition:border-color .15s!important;transform:none!important}
+  #tok:focus{transform:none!important}
+  .confessional-type-row:focus-within{transform:none!important}
+  footer div{animation:none!important;clip-path:none!important;opacity:1!important}
+}
 .addform.scope-linked{border-top-color:rgba(232,179,75,.18);background:linear-gradient(180deg, rgba(232,179,75,.04), transparent);border-radius:0 0 6px 6px;margin-top:12px;padding-top:14px}
 @media (prefers-reduced-motion:reduce){
   .seismo-needle.scope-kick{animation:none!important}
@@ -1997,12 +2046,13 @@ main.shake{animation:seismo-shake .38s ease}
 
       <div class="act-grid">
         <div>
+          <!-- IMPL: Morph Rail -->
           <div class="toolbar">
             <button class="btn sm" @click="togglePause" :class="{accent:paused}" :aria-pressed="String(paused)">{{ paused?'▶ resume':'⏸ pause' }}</button>
-            <span class="lbl">filter</span>
+            <span class="lbl">filter</span><span class="morph-count" style="view-transition-name:filter-count" :style="{display: (feedRows.length||anyFilter)?'inline-flex':'none'}" aria-live="polite"><b>{{ anyFilter ? Object.keys(fAccounts).length+Object.keys(fHosts).length : feedRows.length }}</b> {{ anyFilter ? 'filtered' : 'rows' }}</span>
             <span>
-              <button v-for="a in acctChips" :key="'a-'+a" class="fchip" :class="{on:fAccounts[a]}" :aria-pressed="String(!!fAccounts[a])" @click="toggleChip('a',a)">{{ a }}</button>
-              <button v-for="h in hostChips" :key="'h-'+h" class="fchip" :class="{on:fHosts[h]}" :aria-pressed="String(!!fHosts[h])" @click="toggleChip('h',h)">host · {{ h }}</button>
+              <button v-for="a in acctChips" :key="'a-'+a" class="fchip" :class="{on:fAccounts[a], 'morph-flight': fAccounts[a] && morphFlightId==='a:'+a}" :aria-pressed="String(!!fAccounts[a])" @click="toggleChip('a',a)">{{ a }}</button>
+              <button v-for="h in hostChips" :key="'h-'+h" class="fchip" :class="{on:fHosts[h], 'morph-flight': fHosts[h] && morphFlightId==='h:'+h}" :aria-pressed="String(!!fHosts[h])" @click="toggleChip('h',h)">host · {{ h }}</button>
               <button v-if="anyFilter" class="fchip" @click="clearChips">✕ clear</button>
             </span>
           </div>
@@ -2398,6 +2448,8 @@ const app=Vue.createApp({
     seenHosts:{},                // name -> true   (chip source)
     fAccounts:{},                 // name -> true   (ACTIVE account filter)
     fHosts:{},                     // name -> true   (ACTIVE host filter)
+    morphFlightId:null,           // <!-- IMPL: Morph Rail --> last toggled chip id for filter-count FLIP (cleared 600ms after VT)
+    _morphFlightT:0,
     seeding:false,                  // true during seedFeed() → suppresses pendingLive
     pendingLive:0,
     lastLiveNote:0,
@@ -3538,14 +3590,26 @@ const app=Vue.createApp({
       }
     },
     toggleChip(kind,v){
-      // fAccounts/fHosts are plain objects (build contract §1) — toggling a brand-new key via
-      // delete/assignment is one Vue-tracked mutation, no Vue.set ceremony needed in Vue 3.
-      const set = kind==='a' ? this.fAccounts : this.fHosts;
-      set[v] ? delete set[v] : set[v] = true;
+      const doToggle=()=>{
+        const set = kind==='a' ? this.fAccounts : this.fHosts;
+        set[v] ? delete set[v] : set[v] = true;
+        this.morphFlightId = kind+':'+v;
+        clearTimeout(this._morphFlightT);
+        this._morphFlightT=setTimeout(()=>{ this.morphFlightId=null; }, 600);
+      };
+      if(document.startViewTransition && !this.reducedMotion()){
+        document.startViewTransition(()=>doToggle());
+      } else doToggle();
     },
     clearChips(){
-      this.fAccounts = {};
-      this.fHosts = {};
+      const doClear=()=>{
+        this.fAccounts = {};
+        this.fHosts = {};
+        this.morphFlightId=null;
+      };
+      if(document.startViewTransition && !this.reducedMotion()){
+        document.startViewTransition(()=>doClear());
+      } else doClear();
     },
     // <!-- IMPL: VHS Time Machine --> — shuttle input + velocity-driven artifacts
     onVhsInput(){
