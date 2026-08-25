@@ -397,8 +397,28 @@
     .gt-tear{transition:none}
   }
 </style>
+<!-- IMPL: Ink-Blot Sparkpop -->
+<style>
+/* Ink-Blot Sparkpop — gooey inline sparklines (S wow9 novelty8) */
+.ink-blot-host{position:relative;overflow:visible !important;will-change:transform}
+.ink-blot-host .ink-dot{position:absolute;left:50%;bottom:-3px;width:5px;height:5px;border-radius:50%;background:currentColor;transform:translateX(-50%) scale(1);opacity:.55;will-change:transform;transition:transform .22s var(--spring),opacity .2s,filter .2s;pointer-events:none}
+.ink-blot-host:hover .ink-dot,.ink-blot-host.ink-active .ink-dot,.ink-blot-host:focus-visible .ink-dot{transform:translateX(-50%) scale(2.35);opacity:1}
+.ink-blot-host.ink-active .ink-dot{filter:url(#ink-goo)}
+.ink-spark{position:absolute;left:50%;top:calc(100% + 4px);transform:translateX(-50%);width:36px;height:14px;pointer-events:none;opacity:0;transition:opacity .18s;overflow:visible;will-change:transform,opacity}
+.ink-blot-host:hover .ink-spark,.ink-blot-host.ink-active .ink-spark,.ink-blot-host:focus-within .ink-spark{opacity:1}
+.ink-spark path{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;opacity:.95;vector-effect:non-scaling-stroke}
+.col .count.ink-blot-host{overflow:visible !important}
+/* per-column sparkline tint inherits currentColor via .ct-* */
+@media (prefers-reduced-motion: reduce){
+  .ink-blot-host .ink-dot{filter:none !important;transition:none;transform:translateX(-50%) scale(1) !important}
+  .ink-blot-host .ink-spark{opacity:0 !important;transition:none}
+  .ink-spark path{stroke-dashoffset:0 !important}
+}
+</style>
 </head>
 <body>
+<!-- shared goo filter — one instance for all blots -->
+<svg id="ink-goo-svg" aria-hidden="true" width="0" height="0" style="position:absolute;overflow:hidden"><defs><filter id="ink-goo" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceGraphic" stdDeviation="8" result="b"/><feColorMatrix in="b" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="g"/><feComposite in="SourceGraphic" in2="g" operator="atop"/></filter></defs></svg>
 <div id="app" v-cloak>
   <!-- IMPL: Glitch Tape -->
   <transition name="fade">
@@ -474,7 +494,7 @@
   <div class="board" :class="{dragging:dragId!=null,reading:opened!=null}">
     <div v-for="col in columns" :key="col.key" class="col" :class="[col.key,{hot: col.key==='running' && cards('running').length>0}]">
       <h2><span class="glyph">{{col.glyph}}</span>{{col.label}}
-        <span class="count" :class="['ct-'+col.key,{alarm: col.key==='error' && cards('error').length>0}]"><transition name="roll"><span class="roll" :key="cards(col.key).length">{{cards(col.key).length}}</span></transition></span>
+        <span class="count ink-blot-host" :class="['ct-'+col.key,{alarm: col.key==='error' && cards('error').length>0}]" :data-col="col.key"><transition name="roll"><span class="roll" :key="cards(col.key).length">{{cards(col.key).length}}</span></transition><span class="ink-dot" aria-hidden="true"></span><svg class="ink-spark" width="36" height="14" viewBox="0 0 36 14" aria-hidden="true"><path :d="col.key==='todo'?'M0 10 L6 7 L12 9 L18 3 L24 6 L30 2 L36 8':col.key==='running'?'M0 8 L6 11 L12 4 L18 9 L24 2 L30 7 L36 3':col.key==='done'?'M0 11 L6 9 L12 6 L18 8 L24 4 L30 5 L36 1':'M0 6 L6 10 L12 7 L18 11 L24 8 L30 12 L36 9'" pathLength="1"/></svg></span>
         <span class="meter" :title="'active load: '+meterPct(col.key)+'%'"><i :style="{width:meterPct(col.key)+'%'}"></i></span>
         <span v-if="col.key==='todo'&&selectedIds.length>0" class="selectionbar">{{selectedIds.length}} selected <button type="button" @click="selectedIds=[]">clear</button></span>
       </h2>
@@ -552,12 +572,12 @@
   <div class="workerbar">
     <div class="wrail">
       <div class="wbtitle">workers</div>
-      <div v-if="workers.length" class="wcap" :title="fleet.busy+' of '+fleet.total+' workers busy'">{{fleet.busy}}/{{fleet.total}}</div>
+      <div v-if="workers.length" class="wcap ink-blot-host" :title="fleet.busy+' of '+fleet.total+' workers busy'">{{fleet.busy}}/{{fleet.total}}<span class="ink-dot" aria-hidden="true"></span><svg class="ink-spark" width="36" height="14" viewBox="0 0 36 14" aria-hidden="true"><path d="M0 9 L6 5 L12 11 L18 4 L24 8 L30 3 L36 6" pathLength="1"/></svg></div>
     </div>
     <div class="wboxes">
       <div v-for="g in workerGroups" :key="g.host" class="wbox">
         <div class="whead" :class="{active:filter===g.host}" @click="filterHost(g.host)" title="filter the board to this box">
-          <span class="wdot" :class="{busy:g.busy}"></span>{{g.host}}<span class="wcount">{{g.busy}}/{{g.total}}</span>
+          <span class="wdot" :class="{busy:g.busy}"></span>{{g.host}}<span class="wcount ink-blot-host">{{g.busy}}/{{g.total}}<span class="ink-dot" aria-hidden="true"></span><svg class="ink-spark" width="36" height="14" viewBox="0 0 36 14" aria-hidden="true"><path d="M0 8 L6 11 L12 4 L18 9 L24 2 L30 7 L36 3" pathLength="1"/></svg></span>
         </div>
         <div class="wrow" v-for="w in g.rows" :key="w.worker"
              :class="{idle:w.idle, stalled:w.stalled, linked:!w.idle&&linked===w.cardId, clickable:!w.idle}"
@@ -1073,6 +1093,109 @@ createApp({
   },
   unmounted(){ clearInterval(this._tick); clearInterval(this._wtick); clearInterval(this._gtick); window.removeEventListener('keydown',this.onKey); },
 }).mount('#app');
+</script>
+<!-- IMPL: Ink-Blot Sparkpop -->
+<script>
+(function(){
+  var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  if(mq.matches) return;
+  var K=380, D=14, M=1;
+  var w0=Math.sqrt(K/M);
+  var zeta=D/(2*Math.sqrt(K*M));
+  var wd=w0*Math.sqrt(1 - zeta*zeta);
+  var zetaDiv=Math.sqrt(1 - zeta*zeta);
+  function springFrames(dur, steps){
+    steps=steps||48;
+    var f=[];
+    for(var i=0;i<=steps;i++){
+      var t=(i/steps)*dur/1000;
+      var prog;
+      if(t===0) prog=0;
+      else{
+        var env=Math.exp(-zeta*w0*t);
+        var c=Math.cos(wd*t);
+        var s=Math.sin(wd*t);
+        prog=1 - env*(c + (zeta/zetaDiv)*s);
+      }
+      // clamp slight overshoot for dashoffset: allow -0.08 .. 1
+      var off=1 - prog;
+      if(off<-0.12) off=-0.12;
+      if(off>1) off=1;
+      f.push({strokeDashoffset: String(off), offset: i/steps});
+    }
+    return f;
+  }
+  var FRAMES=springFrames(620,52);
+  var active=null;
+  function rupture(el){
+    if(mq.matches) return;
+    if(active && active!==el) settle(active);
+    active=el;
+    el.classList.add('ink-active');
+    var path=el.querySelector('.ink-spark path');
+    if(!path) return;
+    try{ if(path._inkAnim) path._inkAnim.cancel(); }catch(e){}
+    path.style.strokeDashoffset='1';
+    // force layout
+    void path.getBoundingClientRect();
+    try{
+      path._inkAnim=path.animate(FRAMES,{duration:620,easing:'linear',fill:'forwards'});
+    }catch(e){
+      // fallback: CSS transition
+      path.style.transition='stroke-dashoffset 620ms cubic-bezier(.34,1.56,.64,1)';
+      path.style.strokeDashoffset='0';
+    }
+  }
+  function settle(el){
+    if(active===el) active=null;
+    el.classList.remove('ink-active');
+    var path=el.querySelector('.ink-spark path');
+    if(path){
+      try{ if(path._inkAnim) path._inkAnim.cancel(); }catch(e){}
+      path.style.strokeDashoffset='1';
+      path.style.transition='';
+    }
+  }
+  function isBlot(el){ return el && el.closest && el.closest('.ink-blot-host'); }
+  // delegated mouseover/out (mouseenter emulation)
+  document.addEventListener('mouseover', function(e){
+    var b=isBlot(e.target);
+    if(!b) return;
+    // avoid re-entry when moving inside same blot
+    if(b.contains(e.relatedTarget)) return;
+    rupture(b);
+  });
+  document.addEventListener('mouseout', function(e){
+    var b=isBlot(e.target);
+    if(!b) return;
+    var to=e.relatedTarget;
+    if(to && b.contains(to)) return;
+    // delay settle to allow moving to spark
+    setTimeout(function(){ if(!b.matches(':hover') && b!==document.activeElement) settle(b); }, 40);
+  });
+  document.addEventListener('focusin', function(e){
+    var b=isBlot(e.target);
+    if(b) rupture(b);
+  });
+  document.addEventListener('focusout', function(e){
+    var b=isBlot(e.target);
+    if(b) settle(b);
+  });
+  // tap / touch
+  document.addEventListener('touchstart', function(e){
+    var b=isBlot(e.target);
+    if(!b) return;
+    if(b.classList.contains('ink-active')) settle(b);
+    else rupture(b);
+  }, {passive:true});
+  // escape clears active
+  document.addEventListener('keydown', function(e){
+    if(e.key==='Escape' && active) settle(active);
+  });
+  mq.addEventListener && mq.addEventListener('change', function(e){
+    if(e.matches && active) settle(active);
+  });
+})();
 </script>
 <style>[v-cloak]{display:none}</style>
 </body>
