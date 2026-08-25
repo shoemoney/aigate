@@ -270,6 +270,69 @@ td.r,th.r{text-align:right}
   .jars.shaking{animation:none!important}
   .jar.popping .jar-body,.jar.popping .ripple{animation:none!important}
 }
+<!-- IMPL: Solari Split-Flap -->
+.solari-rail{margin:0 0 14px;padding:14px 14px 14px;background:
+  radial-gradient(ellipse 520px 120px at 30% 8%,rgba(255,255,255,.035),transparent 68%),
+  linear-gradient(180deg,#131614 0%,#0d0f0e 55%,#0a0c0a 100%);
+  border:1px solid #2d302b;border-radius:6px;overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 4px 18px rgba(0,0,0,.32)}
+.solari-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.solari-head-title{font:11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:rgba(232,220,200,.55)}
+.solari-head-title b{color:rgba(232,220,200,.88)}
+.solari-head input{flex:1;min-width:160px;max-width:320px;background:var(--inset);border:1px solid var(--line);border-radius:4px;color:var(--fg);font:12.5px var(--mono);padding:7px 10px}
+.solari-head input::placeholder{color:var(--dim)}
+.solari-head .solari-count{font:11px var(--mono);letter-spacing:.08em;color:var(--dim);white-space:nowrap}
+.solari-head .btn.sm{padding:3px 9px}
+.solari-board{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;min-height:28px}
+.solari-empty{width:100%;padding:16px 14px;text-align:center;font:12.5px var(--mono);color:var(--dim);border:1px dashed #2e332b;border-radius:4px;background:rgba(255,255,255,.012)}
+.solari-tile{position:relative;width:176px;height:86px;display:flex;flex-direction:column;gap:6px;cursor:pointer;user-select:none;-webkit-user-select:none}
+.solari-tile:focus-visible{outline:1px solid var(--accent);outline-offset:2px;border-radius:6px}
+.solari-case{position:relative;width:100%;height:54px;perspective:600px;-webkit-perspective:600px;background:#0e1110;border:1px solid #2a2e29;border-radius:4px;overflow:visible;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 2px 10px rgba(0,0,0,.38);will-change:transform}
+.solari-case::after{content:'';position:absolute;inset:0;border-radius:4px;pointer-events:none;box-shadow:inset 0 -1px 0 rgba(0,0,0,.5)}
+.solari-half{position:absolute;left:0;right:0;height:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:
+  linear-gradient(180deg,#1c201c 0%,#171a17 52%,#121412 100%);border:1px solid #232723}
+.solari-half-top{top:0;border-radius:4px 4px 0 0;border-bottom:1px solid rgba(0,0,0,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.solari-half-bottom{bottom:0;border-radius:0 0 4px 4px;border-top:1px solid rgba(255,255,255,.06);box-shadow:inset 0 -1px 0 rgba(0,0,0,.3)}
+.solari-half-bottom .solari-face{transform:translateY(-50%)}
+.solari-face{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:92%;line-height:1;text-shadow:0 1px 0 rgba(0,0,0,.6)}
+.solari-half-top .solari-face{color:#f0ece2}
+.solari-half-bottom .solari-face{color:var(--accent)}
+.solari-split{position:absolute;left:0;right:0;top:50%;height:1px;transform:translateY(-.5px);background:linear-gradient(90deg,transparent,rgba(0,0,0,.55) 18%,rgba(0,0,0,.7) 50%,rgba(0,0,0,.55) 82%,transparent);z-index:3;pointer-events:none;box-shadow:0 1px 0 rgba(255,255,255,.04)}
+.solari-flap{position:absolute;left:-1px;right:-1px;top:-1px;height:calc(50% + 1px);transform-origin:50% 100%;transform-style:preserve-3d;-webkit-transform-style:preserve-3d;will-change:transform;z-index:4;transition:transform .42s cubic-bezier(.34,1.56,.64,1)}
+.solari-flap-face{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:linear-gradient(180deg,#222722 0%,#1a1e1a 100%);border:1px solid #2a2e29;border-bottom-color:rgba(0,0,0,.6);backface-visibility:hidden;-webkit-backface-visibility:hidden;font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.solari-flap-front{border-radius:4px 4px 0 0;color:#f0ece2;transform:rotateX(0deg)}
+.solari-flap-back{border-radius:0 0 4px 4px;color:var(--accent);transform:rotateX(-180deg);background:linear-gradient(180deg,#171a17 0%,#121412 100%)}
+.solari-flap.flipping{transform:rotateX(-180deg)}
+.solari-tile.st-working .solari-flap{transition-duration:.32s;transition-timing-function:cubic-bezier(.34,1.56,.64,1)}
+.solari-tile.st-working .solari-flap.flipping{filter:drop-shadow(0 2px 6px rgba(232,179,75,.18))}
+.solari-tile.st-reauth_needed .solari-flap,
+.solari-tile.st-reauth .solari-flap{transform:rotateX(62deg);opacity:.92;animation:solari-judder .82s ease-in-out infinite}
+.solari-tile.st-reauth_needed .solari-case,
+.solari-tile.st-reauth .solari-case{border-color:rgba(224,93,68,.45);box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 0 0 1px rgba(224,93,68,.18),0 0 18px rgba(224,93,68,.22)}
+@keyframes solari-judder{0%,100%{transform:rotateX(62deg) translateZ(0)}18%{transform:rotateX(66deg) translateZ(0)}36%{transform:rotateX(58deg) translateZ(0)}54%{transform:rotateX(68deg) translateZ(0)}72%{transform:rotateX(60deg) translateZ(0)}}
+.solari-tile.st-dead .solari-flap{transform:rotateX(28deg);opacity:.62}
+.solari-tile.st-dead .solari-case{opacity:.78;border-color:rgba(232,179,75,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 2px 10px rgba(0,0,0,.3)}
+.solari-tile.st-dead .solari-face{opacity:.72}
+.solari-tile.riffling .solari-flap{animation:solari-riffle .11s steps(2,end) infinite}
+@keyframes solari-riffle{0%{transform:rotateX(0deg)}50%{transform:rotateX(-78deg)}100%{transform:rotateX(0deg)}}
+.solari-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:0 1px}
+.solari-meta .solari-provider{font:11px var(--mono);font-weight:600;letter-spacing:.04em;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:92px}
+.solari-meta .solari-hint{font:10px var(--mono);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:88px}
+.solari-meta .solari-badge{font:9px var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:2px 5px;border-radius:3px;border:1px solid var(--line);color:var(--dim)}
+.solari-meta .solari-badge.ok{color:var(--ok);border-color:rgba(95,174,122,.45)}
+.solari-meta .solari-badge.crit{color:var(--crit);border-color:rgba(224,93,68,.45)}
+.solari-meta .solari-badge.warn{color:var(--warn);border-color:rgba(217,154,61,.45)}
+.solari-actions{margin-left:auto;display:flex;gap:4px}
+.solari-actions button{font:10px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:2px 6px;background:rgba(255,255,255,.02);transition:.12s}
+.solari-actions button:hover{color:var(--fg);border-color:var(--dim);background:var(--inset)}
+.solari-actions button.del:hover{color:var(--crit);border-color:rgba(224,93,68,.35)}
+@media (prefers-reduced-motion:reduce){
+  .solari-flap{transition:none!important;animation:none!important;transform:none!important}
+  .solari-tile.riffling .solari-flap{animation:none!important}
+  .solari-tile.st-reauth_needed .solari-flap{animation:none!important;transform:none!important}
+}
+@media (max-width:520px){.solari-tile{width:128px;height:82px}.solari-case{height:48px}.solari-face{font-size:10px}}
+
 @media (max-width:520px){.jar{width:128px;min-height:212px}.jar-body{height:136px}.jars{gap:14px 12px}}
 
 /* ---------- footer ---------- */
@@ -928,6 +991,39 @@ main.shake{animation:seismo-shake .38s ease}
             </div>
             <div class="shelf-plank" aria-hidden="true"></div>
           </div>
+          <!-- IMPL: Solari Split-Flap -->
+          <div class="solari-rail" role="region" aria-label="Solari departure board — every key is a flap, search riffles the board">
+            <div class="solari-head">
+              <span class="solari-head-title">▸ <b>Solari board</b> · {{ solariRows.length }}/{{ keys.length }} flap{{ solariRows.length===1?'':'s' }}</span>
+              <input v-model="solariQuery" @input="onSolariInput" placeholder="filter — board riffles…" aria-label="filter Solari board" autocomplete="off" spellcheck="false">
+              <span class="solari-count" aria-live="polite">{{ solariStatus }}</span>
+              <button class="btn sm" type="button" @click="solariRiffleAll" title="riffle every flap" aria-label="riffle board">↻ riffle</button>
+              <button class="btn sm" type="button" @click="solariQuery=''; onSolariInput()" v-if="solariQuery" aria-label="clear filter">✕</button>
+            </div>
+            <div class="solari-board" :class="{riffling: solariRiffling}">
+              <div v-if="!solariRows.length" class="solari-empty">no flaps match — try another filter or add a key below</div>
+              <div v-for="k in solariRows" :key="k.id" class="solari-tile" :class="['st-'+(k.status||'unknown'), solariFlipping[k.id]?'is-flipping':'', solariRiffling?'riffling':'']" @click="solariClack(k,$event)" @keydown.enter.prevent="solariClack(k,$event)" @keydown.space.prevent="solariClack(k,$event)" tabindex="0" role="button" :aria-label="k.provider+' '+k.label+' '+k.status+' — click to clack and verify'">
+                <div class="solari-case">
+                  <div class="solari-half solari-half-top"><span class="solari-face">{{ (k.provider||'unknown').slice(0,14) }}</span></div>
+                  <div class="solari-half solari-half-bottom"><span class="solari-face">{{ (k.key_hint||'—').slice(0,16) }}</span></div>
+                  <div class="solari-split" aria-hidden="true"></div>
+                  <div class="solari-flap" :class="{flipping: solariFlipping[k.id]}" aria-hidden="true">
+                    <div class="solari-flap-face solari-flap-front">{{ (solariOld[k.id]||k.provider||'—').slice(0,14) }}</div>
+                    <div class="solari-flap-face solari-flap-back">{{ (k.provider||'—').slice(0,14) }}</div>
+                  </div>
+                </div>
+                <div class="solari-meta">
+                  <span class="solari-provider">{{ k.provider||'—' }}</span>
+                  <span class="solari-hint">{{ k.label||'—' }}</span>
+                  <span class="solari-badge" :class="k.stCls==='st-ok'?'ok':k.stCls==='st-dead'?'crit':'warn'">{{ k.status||'unknown' }}</span>
+                  <span class="solari-actions" @click.stop>
+                    <button @click="refreshKey(k); solariClack(k,$event,true)" title="verify key" :aria-label="'verify '+k.provider">↻</button>
+                    <button @click="delKey(k)" class="del" title="delete" :aria-label="'delete '+k.provider">✕</button>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="scrollx keys-table" aria-hidden="true" style="display:none"><div class="keys-wrap"><table>
             <thead><tr><th>provider</th><th>label</th><th>key</th><th>status</th><th>added</th><th>last used</th><th>verified</th><th></th></tr></thead>
             <tbody>
@@ -1093,6 +1189,14 @@ const app=Vue.createApp({
     shelfShake:false,
     poppingId:null,
     _slosh:0, _sloshV:0, _bob:0, _shelfRaf:0,
+    // <!-- IMPL: Solari Split-Flap -->
+    solariQuery:'',
+    solariFlipping:{},
+    solariOld:{},
+    solariRiffling:false,
+    _solariAudio:null,
+    _solariT:null,
+    _solariRaf:0,
 
     /* ---- palette (iteration 1 — Warp Palette) ---- */
     paletteOpen:false,
@@ -1281,6 +1385,25 @@ const app=Vue.createApp({
         checked:this.relTime(k.last_checked,'—'),
       }));
     },
+    // <!-- IMPL: Solari Split-Flap -->
+    solariRows(){
+      const q=(this.solariQuery||'').toLowerCase().trim();
+      const rows=this.keyRows;
+      if(!q) return rows;
+      return rows.filter(k=>{
+        const hay=(k.provider+' '+(k.label||'')+' '+(k.key_hint||'')+' '+(k.status||'')).toLowerCase();
+        return hay.includes(q);
+      });
+    },
+    solariStatus(){
+      const q=(this.solariQuery||'').trim();
+      if(!q) return this.solariRiffling?'riffle — searching…':'idle';
+      if(this.solariRiffling) return 'riffling…';
+      const n=this.solariRows.length, tot=this.keys.length;
+      if(n===0) return 'no match';
+      if(n===tot) return 'all flaps';
+      return n+' match';
+    },
   },
   watch:{
     titleText:{ immediate:true, handler(v){ document.title=v; } },
@@ -1289,9 +1412,27 @@ const app=Vue.createApp({
     },
     vhsPos(){ this.$nextTick(()=>this._updateVhsFx()); },
     vhsScrubbing(){ this.$nextTick(()=>this._updateVhsFx()); },
+    keys(newVal, oldVal){
+      if(this.reducedMotion()) return;
+      // detect status changes or new keys → snap flap + click
+      const oldById={}; (oldVal||[]).forEach(k=>{ oldById[k.id]=k.status; });
+      let changed=false;
+      newVal.forEach(k=>{
+        const prev=oldById[k.id];
+        if(prev===undefined || prev!==k.status){
+          changed=true;
+          this.solariOld[k.id]=prev||k.provider||'';
+          this.solariFlipping[k.id]=true;
+          this.solariClick(k.status);
+          setTimeout(()=>{ delete this.solariFlipping[k.id]; }, 460);
+        }
+      });
+      if(changed) this.solariRiffleAll(true);
+    },
     keysOpen(v){
       if(v && !this.reducedMotion()){
         this.$nextTick(()=> this.startShelfPhysics());
+        this.$nextTick(()=> this.solariRiffleAll(true));
       } else {
         if(this._shelfRaf){ cancelAnimationFrame(this._shelfRaf); this._shelfRaf=0; }
         document.querySelectorAll('.jar').forEach(el=>{ el.style.setProperty('--slosh','0'); el.style.setProperty('--tilt','0deg'); el.style.setProperty('--bob','0px'); });
@@ -1924,6 +2065,86 @@ const app=Vue.createApp({
       // kick bob immediately
       this._shelfRaf=requestAnimationFrame(step);
     },
+    // <!-- IMPL: Solari Split-Flap -->
+    solariClick(status){
+      if(this.reducedMotion()) return;
+      try{
+        if(!this._solariAudio) this._solariAudio=new (window.AudioContext||window.webkitAudioContext)();
+        const ac=this._solariAudio;
+        if(ac.state==='suspended') ac.resume();
+        const now=ac.currentTime;
+        const o=ac.createOscillator(), g=ac.createGain();
+        o.type='square';
+        // crisp: short bright click; reauth judder: lower + longer; dead: muted thud
+        let freq=1800, dur=0.07, gain=0.16;
+        if(status==='dead' || status==='revoked'){ freq=520; dur=0.14; gain=0.09; }
+        else if(status==='reauth_needed' || status==='reauth'){ freq=900; dur=0.09; gain=0.12; }
+        o.frequency.setValueAtTime(freq, now);
+        o.frequency.exponentialRampToValueAtTime(freq*0.62, now+dur*0.7);
+        g.gain.setValueAtTime(gain, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now+dur);
+        o.connect(g); g.connect(ac.destination);
+        o.start(now); o.stop(now+dur);
+        // second clack for crisp working
+        if(status==='working'){
+          const o2=ac.createOscillator(), g2=ac.createGain();
+          o2.type='square';
+          o2.frequency.setValueAtTime(freq*0.48, now+0.035);
+          o2.frequency.exponentialRampToValueAtTime(300, now+0.065);
+          g2.gain.setValueAtTime(0.08, now+0.035);
+          g2.gain.exponentialRampToValueAtTime(0.001, now+0.065);
+          o2.connect(g2); g2.connect(ac.destination);
+          o2.start(now+0.035); o2.stop(now+0.065);
+        }
+      }catch(_){}
+    },
+    solariClack(k,e,skipVerify){
+      if(e) e.stopPropagation();
+      if(this.reducedMotion()){
+        if(!skipVerify) this.refreshKey(k);
+        return;
+      }
+      const id=k.id;
+      this.solariOld[id]=k.provider||'';
+      this.solariFlipping[id]=true;
+      this.solariClick(k.status||'working');
+      // judder for reauth stays jittery longer; dead sags then resets slower
+      let hold=380;
+      if(k.status==='reauth_needed' || k.status==='reauth') hold=820;
+      else if(k.status==='dead') hold=520;
+      setTimeout(()=>{ delete this.solariFlipping[id]; }, hold);
+      if(!skipVerify) this.refreshKey(k);
+    },
+    onSolariInput(){
+      if(this.reducedMotion()) return;
+      clearTimeout(this._solariT);
+      this.solariRiffling=true;
+      // riffle every visible flap: rapid clacks + jitter
+      const n=Math.min(7, this.solariRows.length||3);
+      for(let i=0;i<n;i++){
+        setTimeout(()=>this.solariClick('working'), i*38);
+      }
+      this._solariT=setTimeout(()=>{
+        this.solariRiffling=false;
+        // settle: crisp snap
+        if(this.solariRows.length) this.solariClick('working');
+      }, 460 + Math.min(420, (this.solariQuery||'').length*28));
+    },
+    solariRiffleAll(silent){
+      if(this.reducedMotion()) return;
+      this.solariRiffling=true;
+      // mark every tile flipping briefly for the spring clack cascade
+      const rows=this.solariRows.length?this.solariRows:this.keyRows;
+      rows.forEach((k,i)=>{
+        this.solariOld[k.id]=k.provider||'';
+        this.solariFlipping[k.id]=true;
+        if(!silent) setTimeout(()=>this.solariClick(k.status||'working'), i*42);
+        else if(i<2) setTimeout(()=>this.solariClick(k.status||'working'), i*42);
+        setTimeout(()=>{ delete this.solariFlipping[k.id]; }, 360 + i*30);
+      });
+      clearTimeout(this._solariT);
+      this._solariT=setTimeout(()=>{ this.solariRiffling=false; }, 620);
+    },
   },
   directives:{
     // one-shot autofocus on the edit panel's name input when it mounts (D6 — replaces the
@@ -1964,8 +2185,10 @@ const app=Vue.createApp({
     clearTimeout(this._copyT);
     clearTimeout(this._shakeT);
     clearTimeout(this._vhsDecayT);
+    clearTimeout(this._solariT);
     if(this._shelfRaf) cancelAnimationFrame(this._shelfRaf);
     if(this._vhsRaf) cancelAnimationFrame(this._vhsRaf);
+    if(this._solariRaf) cancelAnimationFrame(this._solariRaf);
     window.removeEventListener('pointerdown',this.clearFlash);
     window.removeEventListener('keydown',this.clearFlash);
     if(this._paletteKey) window.removeEventListener('keydown',this._paletteKey);
