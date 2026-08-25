@@ -417,6 +417,39 @@ header,main,footer{position:relative}
 .spark{transition:transform .2s ease,box-shadow .2s ease}
 .card:hover .spark{transform:scale(1.02);box-shadow:0 2px 12px rgba(0,0,0,.2)}
 
+/* <!-- IMPL: Fuse Ring --> — one radial clock per account: solid = worst %, ghost = EWMA-velocity projection, tick = minutes-until-100%, snap ok<70 warn70-90 crit>=90 with spring */
+.fuse-wrap{display:flex;flex-direction:column;align-items:center;gap:9px;padding:4px 0 2px}
+.fuse-clock{position:relative;width:152px;height:152px;flex:none}
+.fuse-svg{width:100%;height:100%;transform:rotate(-90deg);overflow:visible;display:block}
+.fuse-track{fill:none;stroke:var(--inset);stroke-width:7;stroke-linecap:round}
+.fuse-ghost{fill:none;stroke-width:7;stroke-linecap:round;stroke-dasharray:4 6;opacity:.32;transition:stroke-dasharray .6s cubic-bezier(.16,1,.3,1),stroke-dashoffset .6s cubic-bezier(.16,1,.3,1),opacity .4s ease,stroke .35s ease}
+.fuse-ghost.fuse-ok{stroke:var(--ok)}
+.fuse-ghost.fuse-warn{stroke:var(--warn)}
+.fuse-ghost.fuse-crit{stroke:var(--crit)}
+.fuse-solid{fill:none;stroke-width:7;stroke-linecap:round;transition:stroke .5s cubic-bezier(.34,1.56,.64,1),stroke-dasharray .6s cubic-bezier(.34,1.56,.64,1),filter .45s ease}
+.fuse-solid.fuse-ok{stroke:var(--ok)}
+.fuse-solid.fuse-warn{stroke:var(--warn);filter:drop-shadow(0 0 8px rgba(217,154,61,.35))}
+.fuse-solid.fuse-crit{stroke:var(--crit);filter:drop-shadow(0 0 12px rgba(224,93,68,.45))}
+.fuse-tickline{stroke:var(--fg);stroke-width:1.4;stroke-linecap:round;opacity:.9}
+.fuse-tickline.ghost-tick{stroke:var(--dim);opacity:.55;stroke-dasharray:2 2}
+.fuse-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;pointer-events:none;text-align:center}
+.fuse-pct{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:30px;font-weight:700;line-height:1;letter-spacing:-.02em;transition:color .45s cubic-bezier(.34,1.56,.64,1),transform .45s cubic-bezier(.34,1.56,.64,1)}
+.fuse-pct small{font-size:15px;font-weight:400;opacity:.75;margin-left:1px}
+.fuse-pct.fuse-ok{color:var(--ok)}
+.fuse-pct.fuse-warn{color:var(--warn)}
+.fuse-pct.fuse-crit{color:var(--crit)}
+.fuse-eta{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--fg);min-height:13px}
+.fuse-eta.warn{color:var(--warn)}
+.fuse-eta.crit{color:var(--crit)}
+.fuse-sub{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.fuse-ghost-hint{color:var(--dim);font-style:italic}
+.fuse-wrap .greset{margin-top:0}
+.fuse-wrap .greset .until{color:var(--fg)}
+@media (prefers-reduced-motion:reduce){
+  .fuse-solid,.fuse-ghost,.fuse-pct{transition:none!important}
+  .fuse-solid.fuse-warn,.fuse-solid.fuse-crit{filter:none!important}
+}
+
 /* ============ Deck Tilt — parallax glare (iteration 2) ============ */
 .card{transform-style:preserve-3d;will-change:transform}
 .card.tilt{transition:transform .6s cubic-bezier(.16,1,.3,1),box-shadow .6s cubic-bezier(.16,1,.3,1)}
@@ -1098,28 +1131,27 @@ main.shake{animation:seismo-shake .38s ease}
                         :stroke-dasharray="isStale(a)?'3 3':null"/></svg></div>
           </div>
 
-          <div class="gauges">
-            <!-- 5-hour -->
-            <div>
-              <div class="g-top"><span>5-hour</span><b class="num" :class="hcls(Math.round(a.five_hour_pct||0))">{{ Math.round(a.five_hour_pct||0) }}%</b></div>
-              <div class="track" role="img" :aria-label="'5-hour '+Math.round(a.five_hour_pct||0)+' percent'">
-                <div class="fill" :class="fcls(Math.round(a.five_hour_pct||0))" :style="{width:Math.min(100,Math.round(a.five_hour_pct||0))+'%'}"></div>
-                <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%" title="selection cutoff"></i>
+          <!-- IMPL: Fuse Ring -->
+          <div class="fuse-wrap">
+            <div class="fuse-clock" role="img" :aria-label="'quota '+Math.round(worstOf(a))+' percent'+(fuseEtaText(a)!=='— steady'?' · '+fuseEtaText(a):'')">
+              <svg viewBox="0 0 100 100" class="fuse-svg" aria-hidden="true">
+                <circle class="fuse-track" cx="50" cy="50" r="45"></circle>
+                <g :transform="'rotate('+(worstOf(a)/100*360)+' 50 50)'"><circle class="fuse-ghost" :class="'fuse-'+fuseCls(worstOf(a))" cx="50" cy="50" r="45"
+                        :stroke-dasharray="fuseGhostDash(a)" stroke-dashoffset="0"
+                        :style="{opacity: fuseGhostPct(a) > 0.5 ? 0.42 : 0}"></circle></g>
+                <circle class="fuse-solid" :class="'fuse-'+fuseCls(worstOf(a))" cx="50" cy="50" r="45"
+                        :stroke-dasharray="fuseSolidDash(a)" stroke-dashoffset="0"></circle>
+                <g :transform="'rotate('+(worstOf(a)/100*360)+' 50 50)'"><line x1="50" y1="5" x2="50" y2="12" class="fuse-tickline"></line></g>
+                <g v-if="fuseGhostPct(a) > 0.8" :transform="'rotate('+((worstOf(a)+fuseGhostPct(a))/100*360)+' 50 50)'"><line x1="50" y1="5" x2="50" y2="10" class="fuse-tickline ghost-tick"></line></g>
+              </svg>
+              <div class="fuse-center">
+                <span class="fuse-pct num" :class="'fuse-'+fuseCls(worstOf(a))">{{ Math.round(worstOf(a)) }}<small>%</small></span>
+                <span class="fuse-eta" :class="fuseEtaCls(a)">{{ fuseEtaText(a) }}</span>
+                <span class="fuse-sub">{{ fuseSubLabel(a) }}</span>
               </div>
-              <div class="ticklabels"><span style="left:50%">50</span><span style="left:80%">80</span><span class="l95" style="left:95%">95</span></div>
-              <!-- D4: .greset .until / <span class="until"> — NOT [data-until] -->
-              <div class="greset" v-if="gaugeReset(a.five_hour_reset)">resets {{ gaugeReset(a.five_hour_reset).when }} · <span class="until">{{ gaugeReset(a.five_hour_reset).until }}</span></div>
             </div>
-            <!-- weekly (identical shape) -->
-            <div>
-              <div class="g-top"><span>weekly</span><b class="num" :class="hcls(Math.round(a.seven_day_pct||0))">{{ Math.round(a.seven_day_pct||0) }}%</b></div>
-              <div class="track" role="img" :aria-label="'weekly '+Math.round(a.seven_day_pct||0)+' percent'">
-                <div class="fill" :class="fcls(Math.round(a.seven_day_pct||0))" :style="{width:Math.min(100,Math.round(a.seven_day_pct||0))+'%'}"></div>
-                <i class="tick" style="left:50%"></i><i class="tick" style="left:80%"></i><i class="tick t95" style="left:95%" title="selection cutoff"></i>
-              </div>
-              <div class="ticklabels"><span style="left:50%">50</span><span style="left:80%">80</span><span class="l95" style="left:95%">95</span></div>
-              <div class="greset" v-if="gaugeReset(a.seven_day_reset)">resets {{ gaugeReset(a.seven_day_reset).when }} · <span class="until">{{ gaugeReset(a.seven_day_reset).until }}</span></div>
-            </div>
+            <div class="greset" v-if="fuseReset(a)">resets {{ fuseReset(a).when }} · <span class="until">{{ fuseReset(a).until }}</span><template v-if="fuseGhostPct(a) > 0.8"> · <span class="fuse-ghost-hint">→ {{ Math.round(Math.min(100, worstOf(a)+fuseGhostPct(a))) }}% at reset</span></template></div>
+            <div class="greset" v-else-if="gaugeReset(a.five_hour_reset)">resets {{ gaugeReset(a.five_hour_reset).when }} · <span class="until">{{ gaugeReset(a.five_hour_reset).until }}</span></div>
           </div>
 
           <p class="burn" :class="burnLine(a)[1]">{{ burnLine(a)[0] }}</p>
@@ -1969,6 +2001,106 @@ const app=Vue.createApp({
     gaugeReset(sec){
       if(!sec)return null;
       return{when:this.wkhhmm(new Date(sec*1000)),until:this.fmtUntil(sec*1000-this.now)};
+    },
+    // <!-- IMPL: Fuse Ring -->
+    fuseCirc(){ return 2*Math.PI*45; },
+    fuseCls(pct){ return pct>=90?'crit':pct>=70?'warn':'ok'; },
+    fuseVelocity(a){
+      const r=this.rings[a.account]||[];
+      const cutoff=this.now - 15*60*1000;
+      const win=r.filter(p=>p.t >= cutoff);
+      if(win.length<2) return 0;
+      let ewma=null; const alpha=0.38;
+      for(let i=1;i<win.length;i++){
+        const dtH=(win[i].t - win[i-1].t)/3600000;
+        if(dtH<0.0005) continue;
+        const rate=(win[i].v - win[i-1].v)/dtH;
+        if(ewma===null) ewma=rate;
+        else ewma=alpha*rate + (1-alpha)*ewma;
+      }
+      return ewma||0;
+    },
+    fuseGhostPct(a){
+      const worst=worstOf(a);
+      const vel=this.fuseVelocity(a);
+      if(vel<=0.12) return 0;
+      const is5h=(a.five_hour_pct||0) >= (a.seven_day_pct||0);
+      const resetSec=is5h ? a.five_hour_reset : a.seven_day_reset;
+      const fallback=is5h ? a.seven_day_reset : a.five_hour_reset;
+      const rs=resetSec || fallback;
+      if(!rs) return 0;
+      const msLeft=rs*1000 - this.now;
+      if(msLeft<=0) return 0;
+      const hLeft=msLeft/3600000;
+      const proj=worst + vel*hLeft;
+      const capped=Math.min(100, proj);
+      return Math.max(0, capped - worst);
+    },
+    fuseSolidDash(a){
+      const c=this.fuseCirc();
+      const pct=Math.max(0,Math.min(100,worstOf(a)));
+      const len=pct/100*c;
+      return len.toFixed(1)+' '+(c-len).toFixed(1);
+    },
+    fuseGhostDash(a){
+      const c=this.fuseCirc();
+      const g=Math.max(0,Math.min(100,this.fuseGhostPct(a)));
+      const len=g/100*c;
+      if(len<0.6) return '0 '+(c).toFixed(1);
+      return len.toFixed(1)+' '+(c-len).toFixed(1);
+    },
+    fuseGhostOffset(a){
+      const c=this.fuseCirc();
+      const pct=Math.max(0,Math.min(100,worstOf(a)));
+      const solid=pct/100*c;
+      // dashoffset = circ - solid to shift ghost start to end of solid (with base -90deg rotate)
+      // SVG circle dash starts at 3 o'clock, rotated -90 => top. Negative solid would also work; use (c - solid) for positive offset direction.
+      return (c - solid).toFixed(2);
+    },
+    fuseReset(a){
+      const is5h=(a.five_hour_pct||0) >= (a.seven_day_pct||0);
+      const sec=is5h ? a.five_hour_reset : a.seven_day_reset;
+      const alt=is5h ? a.seven_day_reset : a.five_hour_reset;
+      const s=sec || alt;
+      if(!s) return null;
+      return {when:this.wkhhmm(new Date(s*1000)), until:this.fmtUntil(s*1000-this.now)};
+    },
+    fuseMinutesUntil(a){
+      const worst=worstOf(a);
+      const vel=this.fuseVelocity(a);
+      if(vel<=0.18) return null;
+      const mins=(100 - worst)/vel*60;
+      if(!isFinite(mins)||mins<=0||mins> 60*72) return null;
+      return mins;
+    },
+    fuseEtaText(a){
+      if(a.disabled) return 'disabled';
+      if(a.reauth_needed) return 'needs re-auth';
+      const m=this.fuseMinutesUntil(a);
+      if(m==null){
+        const vel=this.fuseVelocity(a);
+        if(vel<=-0.18) return '↓ recovering';
+        const s=this.rings[a.account]||[];
+        if(s.length<2) return '— steady';
+        return '— steady';
+      }
+      if(m<60) return Math.max(1,Math.round(m))+'m until 100%';
+      const h=Math.floor(m/60), mm=Math.round(m%60);
+      return h+'h'+(mm? ' '+mm+'m':'')+' until 100%';
+    },
+    fuseEtaCls(a){
+      const m=this.fuseMinutesUntil(a);
+      if(m==null) return 'dim';
+      if(m<=30) return 'crit';
+      if(m<=90) return 'warn';
+      return '';
+    },
+    fuseSubLabel(a){
+      const worst=worstOf(a);
+      const c=this.fuseCls(worst);
+      if(worst>=90) return 'crit · '+Math.round(worst)+'%';
+      if(worst>=70) return 'warn · '+Math.round(worst)+'%';
+      return 'ok · '+Math.round(worst)+'%';
     },
     // SVG polyline points for the worst-% ring buffer. '' (no polyline), a flat 2-point line for
     // a single sample, or the full normalized path — x spans 0..110, y spans 30..0 (100%→y=0).
