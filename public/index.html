@@ -406,6 +406,101 @@ td.r,th.r{text-align:right}
 }
 @media (max-width:520px){.solari-tile{width:128px;height:82px}.solari-case{height:48px}.solari-face{font-size:10px}}
 
+<!-- IMPL: Shutter Vault -->
+.shutter-vault{margin-top:14px;padding:14px 14px 14px;background:
+  radial-gradient(ellipse 520px 120px at 22% 6%,rgba(255,255,255,.035),transparent 68%),
+  linear-gradient(180deg,#131614 0%,#0e100f 55%,#0a0c0a 100%);
+  border:1px solid #2d302b;border-radius:6px;overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 4px 18px rgba(0,0,0,.32)}
+.vault-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.vault-title{font:11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:rgba(232,220,200,.55)}
+.vault-title b{color:rgba(232,220,200,.88)}
+.vault-hint{margin-left:auto;font:11px var(--mono);letter-spacing:.06em;color:var(--dim);opacity:.9}
+.vault-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.vault-table{width:100%;border-collapse:separate;border-spacing:0 8px;font-size:13.5px}
+.vault-table thead th{padding:0 9px 6px;border:0;font:10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.vault-table tbody tr.vault-slat{height:52px}
+.vault-table tbody tr.vault-slat>td.vault-slat-td{padding:0;border:0;background:transparent}
+.vault-slat-inner{position:relative;display:block;height:52px;border:1px solid #2a2e29;border-radius:5px;overflow:hidden;
+  background:linear-gradient(180deg,#171a17 0%,#121412 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 2px 10px rgba(0,0,0,.28);
+  cursor:pointer;transform:translateZ(0);transition:border-color .18s,box-shadow .18s;view-transition-name:var(--vt-name,none)}
+.vault-slat:hover .vault-slat-inner{border-color:rgba(232,179,75,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 4px 14px rgba(0,0,0,.36),0 0 0 1px rgba(232,179,75,.10)}
+.vault-slat:focus-visible .vault-slat-inner{outline:1px solid var(--accent);outline-offset:2px}
+.vault-row-grid{display:grid;grid-template-columns:112px 118px 156px 82px 96px 106px 96px 84px;gap:0;align-items:center;height:100%;padding:0 6px 0 10px}
+.vault-row-grid span,.vault-row-grid div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:13px var(--mono)}
+.vault-row-grid .vault-provider{font-weight:600;color:var(--fg);letter-spacing:.02em}
+.vault-row-grid .vault-keyhint{font:12.5px var(--mono);color:var(--dim)}
+.vault-row-grid .mono.dim{color:var(--dim)}
+.vault-row-grid .vault-status{font:11px var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.vault-silk svg{display:block;width:60px;height:12px;overflow:visible}
+.vault-silk rect{rx:1}
+.vault-cell-used .badge{margin-left:6px}
+.vault-slat.is-open .vault-slat-inner{border-color:rgba(232,179,75,.42);box-shadow:0 0 0 1px rgba(232,179,75,.22),0 0 18px rgba(232,179,75,.18)}
+/* louvers — 4 horizontal slats with CSS 3D rotateX */
+.vault-louvers{position:absolute;inset:0;display:flex;flex-direction:column;gap:2px;padding:2px;pointer-events:none;
+  perspective:520px;-webkit-perspective:520px;transform-style:preserve-3d;background:transparent;z-index:2}
+.louver{flex:1;position:relative;border-radius:3px;transform-origin:50% 50%;transform:rotateX(0deg);
+  background:linear-gradient(180deg,rgba(38,42,36,.96) 0%,rgba(22,24,22,.98) 55%,rgba(16,18,16,.98) 100%);
+  border:1px solid #2d312b;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 1px 0 rgba(0,0,0,.45);
+  transition:transform .42s cubic-bezier(.16,1,.3,1),filter .22s,opacity .22s;
+  will-change:transform;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.louver .louver-edge{position:absolute;left:0;right:0;top:50%;height:1px;transform:translateY(-.5px);
+  background:linear-gradient(90deg,transparent,rgba(0,0,0,.42) 18%,rgba(0,0,0,.6) 50%,rgba(0,0,0,.42) 82%,transparent);opacity:.9}
+.louver:nth-child(1){transition-delay:0ms}.louver:nth-child(2){transition-delay:18ms}.louver:nth-child(3){transition-delay:36ms}.louver:nth-child(4){transition-delay:54ms}
+/* peek layer behind louvers — key_hint + Signal Silk */
+.vault-peek{position:absolute;inset:0;display:flex;align-items:center;gap:10px;padding:0 12px 0 14px;z-index:1;pointer-events:none;opacity:0;transition:opacity .22s}
+.vault-peek .peek-hint{font:12.5px var(--mono);letter-spacing:.04em;color:rgba(232,220,200,.88);background:rgba(232,179,75,.10);border:1px solid rgba(232,179,75,.22);border-radius:3px;padding:2px 6px}
+.vault-peek .peek-silk{margin-left:auto;display:flex;align-items:center}
+.vault-slat:hover .vault-peek{opacity:1}
+.vault-slat:hover .louver{transform:rotateX(58deg);filter:brightness(1.06)}
+.vault-slat:hover .louver:nth-child(even){transform:rotateX(62deg)}
+/* ViewTimeline scrub — pure CSS, zero JS, 60fps */
+@keyframes louver-view{from{transform:rotateX(0deg)}to{transform:rotateX(14deg)}}
+@supports (animation-timeline: view()){
+  .louver{animation:louver-view linear both;animation-timeline:view();animation-range:entry 20% cover 40%}
+  .vault-slat:hover .louver{animation-play-state:paused}
+}
+/* FLIP open — louvers swing fully via .is-open (JS toggles) */
+.vault-slat.is-open .louver{transform:rotateX(84deg);opacity:.18}
+.vault-slat.is-open .vault-peek{opacity:1}
+/* light-leak inspector */
+.shutter-mask{position:fixed;inset:0;z-index:82;background:rgba(8,10,8,.62);backdrop-filter:blur(8px) saturate(1.08);display:flex;justify-content:flex-end}
+.shutter-drawer{width:min(560px,92vw);height:100%;background:var(--panel);border-left:1px solid #2e332b;
+  box-shadow:-16px 0 48px rgba(0,0,0,.55),0 0 0 1px rgba(232,179,75,.08);display:flex;flex-direction:column;overflow:hidden;
+  position:relative;view-transition-name:var(--vt-drawer,none)}
+.shutter-drawer::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:.0;transition:opacity .42s;
+  background:radial-gradient(ellipse 520px 160px at 18% 0%,rgba(232,179,75,.18),transparent 68%),
+            radial-gradient(ellipse 380px 120px at 82% 100%,rgba(110,193,228,.12),transparent 70%),
+            linear-gradient(180deg,rgba(232,179,75,.08),transparent 42%);}
+.shutter-drawer.leak::before{opacity:1}
+.shutter-drawer-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#1c201c 0%,var(--panel) 100%)}
+.shutter-drawer-title{font:11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.shutter-drawer-head .btn{margin-left:auto}
+.shutter-drawer-body{flex:1;overflow-y:auto;padding:20px 18px 18px;display:flex;flex-direction:column;gap:14px}
+.shutter-kv{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--inset);font-size:13px}
+.shutter-k{font:11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);flex:none}
+.shutter-v{font:12.5px var(--mono);color:var(--fg);text-align:right;overflow:hidden;text-overflow:ellipsis}
+.shutter-v.ok{color:var(--ok)}.shutter-v.crit{color:var(--crit)}
+.shutter-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:12px;border-top:1px solid var(--line)}
+/* View Transitions — per-slat */
+::view-transition-group(shutter-root){animation-duration:.38s}
+::view-transition-old(shutter-*),::view-transition-new(shutter-*){mix-blend-mode:normal}
+@media (prefers-reduced-motion:reduce){
+  .louver{transition:none!important;animation:none!important;transform:none!important}
+  .vault-peek{transition:none!important;opacity:0!important}
+  .vault-slat:hover .vault-peek{opacity:0!important}
+  .shutter-drawer::before{display:none!important}
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+}
+@media (max-width:780px){.vault-row-grid{grid-template-columns:92px 96px 128px 66px 86px 82px 86px 64px;font-size:12px}.vault-silk svg{width:48px}}
+.shutter-enter-active{transition:opacity .22s ease}.shutter-leave-active{transition:opacity .18s ease}
+.shutter-enter-from,.shutter-leave-to{opacity:0}
+.shutter-enter-active .shutter-drawer{transition:transform .32s cubic-bezier(.16,1,.3,1)}
+.shutter-leave-active .shutter-drawer{transition:transform .22s ease}
+.shutter-enter-from .shutter-drawer{transform:translateX(100%)}
+.shutter-leave-to .shutter-drawer{transform:translateX(100%)}
+
 @media (max-width:520px){.jar{width:128px;min-height:212px}.jar-body{height:136px}.jars{gap:14px 12px}}
 
 /* ---------- footer ---------- */
@@ -1815,25 +1910,76 @@ main.shake{animation:seismo-shake .38s ease}
               </div>
             </div>
           </div>
-          <div class="scrollx keys-table" aria-hidden="true" style="display:none"><div class="keys-wrap"><table>
-            <thead><tr><th>provider</th><th>label</th><th>key</th><th>status</th><th>added</th><th>last used</th><th>verified</th><th></th></tr></thead>
-            <tbody>
-              <tr v-if="!keyRows.length"><td colspan="8" class="dim">no keys yet — add one below</td></tr>
-              <tr v-for="k in keyRows" :key="k.id">
-                <td>{{ k.provider }}</td>
-                <td class="dim">{{ k.label||'—' }}</td>
-                <td class="mono dim">{{ k.key_hint||'—' }}</td>
-                <td :class="k.stCls">{{ k.status||'unknown' }}</td>
-                <td class="dim">{{ k.created }}</td>
-                <td><span v-if="k.used">{{ k.used }}</span><span v-else class="dim">never</span><span v-if="k.stale" class="badge" title="never fetched or idle >90d">stale</span></td>
-                <td class="dim">{{ k.checked }}</td>
-                <td class="kacts">
-                  <button @click="refreshKey(k)" title="re-verify" :aria-label="'re-verify '+k.provider+' '+(k.label||'')">↻</button>
-                  <button @click="delKey(k)" class="del" title="delete" :aria-label="'delete '+k.provider+' '+(k.label||'')">✕</button>
-                </td>
-              </tr>
-            </tbody>
-          </table></div></div>
+          <!-- IMPL: Shutter Vault -->
+          <div class="shutter-vault scrollx keys-table" role="region" aria-label="Shutter Vault — louvers tilt to peek key hint and Signal Silk, click to open">
+            <div class="vault-head">
+              <span class="vault-title">▸ <b>Shutter Vault</b> · {{ keyRows.length }} slat{{ keyRows.length===1?'':'s' }}</span>
+              <span class="vault-hint">hover to tilt · click to open · Signal Silk behind louvers</span>
+            </div>
+            <div class="keys-wrap vault-wrap"><table class="vault-table">
+              <thead><tr><th>provider</th><th>label</th><th>key</th><th>status</th><th>added</th><th>last used</th><th>verified</th><th></th></tr></thead>
+              <tbody>
+                <tr v-if="!keyRows.length"><td colspan="8" class="dim" style="text-align:center;padding:18px;border:1px dashed #2e332b;border-radius:5px;background:rgba(255,255,255,.012)">no slats yet — add a key below to vault it</td></tr>
+                <tr v-for="(k,i) in keyRows" :key="k.id" class="vault-slat" :class="['st-'+(k.status||'unknown'), shutterOpenId===k.id ? 'is-open' : '']" :style="'--vt-name: shutter-'+k.id+'; view-transition-name: shutter-'+k.id" @click="openShutter(k,$event)" @keydown.enter.prevent="openShutter(k,$event)" @keydown.space.prevent="openShutter(k,$event)" tabindex="0" role="button" :aria-label="k.provider+(k.label?' '+k.label:'')+' '+k.status+' — open shutter vault'">
+                  <td colspan="8" class="vault-slat-td">
+                    <div class="vault-slat-inner">
+                      <div class="vault-row-grid">
+                        <span class="vault-provider">{{ k.provider }}</span>
+                        <span class="dim" style="font:11px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ k.label||'—' }}</span>
+                        <span style="display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden"><span class="vault-keyhint mono dim" style="font:12.5px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ k.key_hint||'—' }}</span><span class="vault-silk" aria-hidden="true"><svg viewBox="0 0 60 12" preserveAspectRatio="none" width="60" height="12"><rect v-for="(bh,j) in keySilkBars(k)" :key="j" :x="j*15+1" :y="12-bh.h" :width="10" :height="bh.h" :fill="bh.fill" :opacity="bh.o"/></svg></span></span>
+                        <span :class="k.stCls" style="font:11px var(--mono);letter-spacing:.08em;text-transform:uppercase">{{ k.status||'unknown' }}</span>
+                        <span class="dim" style="font:11px var(--mono)">{{ k.created }}</span>
+                        <span style="font:11px var(--mono)"><span v-if="k.used">{{ k.used }}</span><span v-else class="dim">never</span><span v-if="k.stale" class="badge" style="margin-left:6px;font-size:9px" title="never fetched or idle >90d">stale</span></span>
+                        <span class="dim" style="font:11px var(--mono)">{{ k.checked }}</span>
+                        <span class="kacts" @click.stop style="text-align:right;white-space:nowrap">
+                          <button @click="refreshKey(k); shutterTick(k.status)" title="re-verify" :aria-label="'re-verify '+k.provider+' '+(k.label||'')">↻</button>
+                          <button @click="delKey(k)" class="del" title="delete" :aria-label="'delete '+k.provider+' '+(k.label||'')">✕</button>
+                        </span>
+                      </div>
+                      <div class="vault-louvers" aria-hidden="true">
+                        <div class="louver" style="--i:0"><span class="louver-edge"></span></div>
+                        <div class="louver" style="--i:1"><span class="louver-edge"></span></div>
+                        <div class="louver" style="--i:2"><span class="louver-edge"></span></div>
+                        <div class="louver" style="--i:3"><span class="louver-edge"></span></div>
+                      </div>
+                      <div class="vault-peek" aria-hidden="true"><span class="peek-hint mono">{{ k.key_hint||'—' }}</span><span class="vault-silk peek-silk" aria-hidden="true"><svg viewBox="0 0 60 12" preserveAspectRatio="none" width="60" height="12"><rect v-for="(bh,j) in keySilkBars(k)" :key="j" :x="j*15+1" :y="12-bh.h" :width="10" :height="bh.h" :fill="bh.fill" :opacity="bh.o"/></svg></span></div>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table></div>
+          </div>
+          <!-- Shutter Vault inspector — View Transitions FLIP with light-leak -->
+          <Transition name="shutter">
+            <div v-if="shutterOpenId" class="shutter-mask" @click.self="closeShutter()" role="dialog" aria-modal="true" :aria-label="'Shutter inspector — '+(shutterRow?shutterRow.provider:'')">
+              <div class="shutter-drawer" :class="{leak: shutterLeak}" :style="shutterRow ? '--vt-drawer: shutter-'+shutterRow.id+'; view-transition-name: shutter-'+shutterRow.id : ''">
+                <div class="shutter-drawer-head">
+                  <span class="shutter-drawer-title">Shutter Vault · {{ shutterRow ? shutterRow.provider : '' }}</span>
+                  <button class="btn sm" @click="closeShutter()" aria-label="close shutter inspector">✕ close</button>
+                </div>
+                <div class="shutter-drawer-body" v-if="shutterRow">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <span class="badge" :class="shutterRow.stCls==='st-ok'?'ok':shutterRow.stCls==='st-dead'?'crit':'dim'">{{ shutterRow.status||'unknown' }}</span>
+                    <span class="dim mono" style="font-size:12.5px">{{ shutterRow.key_hint||'—' }}</span>
+                    <span class="vault-silk" aria-hidden="true" style="margin-left:auto"><svg viewBox="0 0 60 12" preserveAspectRatio="none" width="60" height="12"><rect v-for="(bh,j) in keySilkBars(shutterRow)" :key="j" :x="j*15+1" :y="12-bh.h" :width="10" :height="bh.h" :fill="bh.fill" :opacity="bh.o"/></svg></span>
+                  </div>
+                  <div class="shutter-kv"><span class="shutter-k">provider</span><span class="shutter-v">{{ shutterRow.provider }}</span></div>
+                  <div class="shutter-kv"><span class="shutter-k">label</span><span class="shutter-v dim">{{ shutterRow.label||'—' }}</span></div>
+                  <div class="shutter-kv"><span class="shutter-k">key hint</span><span class="shutter-v mono">{{ shutterRow.key_hint||'—' }}</span></div>
+                  <div class="shutter-kv"><span class="shutter-k">status</span><span class="shutter-v" :class="shutterRow.stCls==='st-ok'?'ok':shutterRow.stCls==='st-dead'?'crit':'dim'">{{ shutterRow.status||'unknown' }}</span></div>
+                  <div class="shutter-kv"><span class="shutter-k">added</span><span class="shutter-v dim">{{ shutterRow.created }}</span></div>
+                  <div class="shutter-kv"><span class="shutter-k">last used</span><span class="shutter-v">{{ shutterRow.used||'never' }}<span v-if="shutterRow.stale" class="badge" style="margin-left:8px">stale</span></span></div>
+                  <div class="shutter-kv"><span class="shutter-k">verified</span><span class="shutter-v dim">{{ shutterRow.checked }}</span></div>
+                  <div class="shutter-actions">
+                    <button class="btn sm" @click="refreshKey(shutterRow); shutterTick(shutterRow.status)">↻ verify</button>
+                    <button class="btn sm del" @click="delKey(shutterRow); closeShutter(true)" style="color:var(--crit);border-color:rgba(224,93,68,.35)">✕ delete</button>
+                    <button class="btn sm" @click="closeShutter()" style="margin-left:auto">close</button>
+                  </div>
+                  <div class="dim mono" style="font-size:11px;opacity:.6;margin-top:4px">louvers FLIP via View Transitions API · light-leak · soft tick</div>
+                </div>
+              </div>
+            </div>
+          </Transition>
           <div class="kmsg" role="status" :style="{color:kmsgColor}">{{ kmsg }}</div>
           <form class="addform" @submit.prevent="addKey">
             <input class="p" v-model="kprov" list="provlist" placeholder="provider" aria-label="provider" autocomplete="off">
@@ -2017,6 +2163,11 @@ const app=Vue.createApp({
     _rhizomeIdleT:0,
     _rhizomePulseLabel:'dormant · glass veins',
     _rhizomeAudio:null,
+    // <!-- IMPL: Shutter Vault -->
+    shutterOpenId:null,
+    shutterLeak:false,
+    _shutterAudio:null,
+    _shutterLeakT:0,
 
     /* ---- palette (iteration 1 — Warp Palette) ---- */
     paletteOpen:false,
@@ -2278,6 +2429,11 @@ const app=Vue.createApp({
         const meta=this.rhizomeSpeciesMeta(p);
         return {id:p,label:meta.label,count:counts[p],color:meta.color};
       });
+    },
+    // <!-- IMPL: Shutter Vault -->
+    shutterRow(){
+      if(!this.shutterOpenId) return null;
+      return this.keyRows.find(k=>k.id===this.shutterOpenId) || null;
     },
   },
   watch:{
@@ -3590,6 +3746,58 @@ const app=Vue.createApp({
       this._rhizomePulseT=setTimeout(()=>{ this._rhizomePulseLabel='dormant · glass veins'; }, 2200);
       if(window.__rhizomeNecrotize) window.__rhizomeNecrotize(provider);
     },
+    // <!-- IMPL: Shutter Vault -->
+    shutterTick(status){
+      if(this.reducedMotion()) return;
+      try{
+        if(!this._shutterAudio) this._shutterAudio=new (window.AudioContext||window.webkitAudioContext)();
+        const ac=this._shutterAudio; if(ac.state==='suspended') ac.resume();
+        const now=ac.currentTime;
+        const o=ac.createOscillator(), g=ac.createGain();
+        o.type='triangle';
+        let freq=1400, dur=0.09, gain=0.11;
+        if(status==='dead'){ freq=520; dur=0.16; gain=0.08; o.type='square'; }
+        else if(status==='reauth_needed'||status==='reauth'){ freq=820; dur=0.12; gain=0.10; o.type='square'; }
+        o.frequency.setValueAtTime(freq,now); o.frequency.exponentialRampToValueAtTime(freq*0.55,now+dur*0.6);
+        g.gain.setValueAtTime(gain,now); g.gain.exponentialRampToValueAtTime(0.001,now+dur);
+        o.connect(g); g.connect(ac.destination); o.start(now); o.stop(now+dur);
+        if(status==='working'){
+          const o2=ac.createOscillator(), g2=ac.createGain();
+          o2.type='sine'; o2.frequency.setValueAtTime(freq*0.52,now+0.032); o2.frequency.exponentialRampToValueAtTime(320,now+0.064);
+          g2.gain.setValueAtTime(0.06,now+0.032); g2.gain.exponentialRampToValueAtTime(0.001,now+0.064);
+          o2.connect(g2); g2.connect(ac.destination); o2.start(now+0.032); o2.stop(now+0.064);
+        }
+      }catch(_){}
+    },
+    openShutter(k,e){
+      if(e) e.stopPropagation();
+      const id=k.id;
+      if(this.shutterOpenId===id) return this.closeShutter();
+      this.shutterTick(k.status||'working');
+      const doOpen=()=>{ this.shutterOpenId=id; this.shutterLeak=false; this.$nextTick(()=>{ setTimeout(()=>{ this.shutterLeak=true; }, 60); }); };
+      if(this.reducedMotion() || !document.startViewTransition){
+        doOpen(); return;
+      }
+      try{
+        const vt=document.startViewTransition(()=>{ doOpen(); });
+        if(vt&&vt.finished) vt.finished.catch(()=>{}).finally(()=>{ this.shutterLeak=true; });
+      }catch(_){ doOpen(); }
+      clearTimeout(this._shutterLeakT);
+      this._shutterLeakT=setTimeout(()=>{ this.shutterLeak=true; }, 380);
+    },
+    closeShutter(instant){
+      if(!this.shutterOpenId) return;
+      this.shutterLeak=false;
+      clearTimeout(this._shutterLeakT);
+      if(instant || this.reducedMotion() || !document.startViewTransition){
+        this.shutterOpenId=null; return;
+      }
+      const closing=this.shutterOpenId;
+      try{
+        const vt=document.startViewTransition(()=>{ this.shutterOpenId=null; });
+        if(vt&&vt.finished) vt.finished.catch(()=>{});
+      }catch(_){ this.shutterOpenId=null; }
+    },
   },
   directives:{
     // one-shot autofocus on the edit panel's name input when it mounts (D6 — replaces the
@@ -3625,6 +3833,10 @@ const app=Vue.createApp({
     // <!-- IMPL: Inbox Warp --> — Escape closes inspector (also clicks mask)
     window.addEventListener('keydown',this._warpKey=e=>{
       if(e.key==='Escape'&&this.inspectorId&&!this.paletteOpen){this.closeWarp(); e.preventDefault();}
+    });
+    // <!-- IMPL: Shutter Vault --> — Escape closes shutter inspector
+    window.addEventListener('keydown',this._shutterKey=e=>{
+      if(e.key==='Escape'&&this.shutterOpenId){this.closeShutter(); e.preventDefault();}
     });
     // <!-- IMPL: Black Box Terminal --> — ~ / Backquote slides amber CRT (liquid glass + scanlines); respects inputs + palette
     window.addEventListener('keydown',this._bbKey=e=>{
