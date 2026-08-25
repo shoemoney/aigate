@@ -696,7 +696,7 @@ header,main,footer{position:relative}
              radial-gradient(260px 200px at var(--gx,50%) var(--gy,50%),rgba(232,179,75,.10),transparent 70%)}
 
 /* ============ IMPL: Seismograph Audit Drum — endless paper under a fixed spring needle ============ */
-.seismo-wrap{position:relative;margin:0 0 18px;z-index:1;height:220px;border-radius:3px;overflow:hidden;
+.seismo-wrap{position:relative;margin:0 0 18px;z-index:1;height:260px;border-radius:3px;overflow:hidden;
   background:
     radial-gradient(ellipse 180px 120px at 18% 42%,rgba(120,85,40,.09) 0%, transparent 68%),
     radial-gradient(ellipse 140px 90px at 74% 68%,rgba(110,75,30,.07) 0%, transparent 62%),
@@ -739,9 +739,9 @@ header,main,footer{position:relative}
 .seismo-wrap:hover .seismo-hint{color:rgba(60,45,15,.62)}
 @keyframes seismo-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-2px) rotate(-.18deg)}30%{transform:translateX(3px) rotate(.22deg)}45%{transform:translateX(-3px) rotate(-.15deg)}60%{transform:translateX(2px)}75%{transform:translateX(-1px)}}
 main.shake{animation:seismo-shake .38s ease}
-/* <!-- IMPL: Seismo Scope --> — 220px audit oscilloscope: instrument not altar, bound to /api/access, needle kick + sine decay, view() stagger + FLIP, toolbar scrubs history parallax */
-.seismo-wrap{height:220px !important}
-#seismo{height:220px}
+/* <!-- IMPL: Seismo Scope --> — 260px audit oscilloscope: instrument not altar, bound to /api/access, needle kick + sine decay, view() stagger + FLIP, toolbar scrubs history parallax */
+.seismo-wrap{height:260px !important}
+#seismo{height:260px}
 .seismo-wrap::after{box-shadow:0 0 8px rgba(0,0,0,.32), 1px 0 0 rgba(255,255,255,.55), -1px 0 0 rgba(0,0,0,.14), 0 0 0 1px rgba(232,179,75,.08)}
 .seismo-wrap .seismo-graticule{position:absolute;inset:0;pointer-events:none;z-index:1;opacity:.42;
   background:
@@ -786,6 +786,68 @@ main.shake{animation:seismo-shake .38s ease}
   .vault-move,.vault-enter-active,.vault-leave-active{transition:none!important}
   .seismo-wrap .seismo-graticule,.seismo-wrap .seismo-vignette{opacity:.18}
 }
+/* <!-- IMPL: Strata --> — 260px stratified core-sample: sediment laminae (thickness=5min bucket volume, hue=provider, dark=401/404/429, bright=retries), view()/scroll() parallax shear, warp-mask inspector */
+.seismo-wrap.is-strata{height:260px !important}
+.seismo-wrap.is-strata #seismo{display:none !important}
+.seismo-wrap.is-strata .seismo-needle{display:none !important}
+.seismo-wrap.is-strata .seismo-needle::before{display:none !important}
+.seismo-wrap.is-strata .seismo-scope-meta{display:none !important}
+.seismo-wrap.is-strata::after{opacity:.38; box-shadow:0 0 8px rgba(0,0,0,.28),1px 0 0 rgba(255,255,255,.42),-1px 0 0 rgba(0,0,0,.10),0 0 0 1px rgba(232,179,75,.06)}
+#strata-core{position:absolute;inset:24px 16px 26px 16px;z-index:2;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;border-radius:2px;background:linear-gradient(180deg,#1a1812 0%,#14120e 100%);border:1px solid rgba(60,45,15,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),inset 0 -5px 12px rgba(0,0,0,.32),0 0 0 1px rgba(232,179,75,.08);scrollbar-width:thin;scrollbar-color:rgba(232,179,75,.28) transparent;will-change:transform}
+#strata-core::-webkit-scrollbar{width:6px;height:6px}
+#strata-core::-webkit-scrollbar-thumb{background:rgba(60,45,15,.22);border-radius:3px}
+#strata-core::-webkit-scrollbar-track{background:transparent}
+.strata-lamina{position:relative;flex:none;width:100%;display:flex;align-items:center;gap:6px;padding:0 7px 0 8px;box-sizing:border-box;border-bottom:1px solid rgba(0,0,0,.22);cursor:pointer;pointer-events:auto;overflow:hidden;transform:translateZ(0);will-change:transform;transition:filter .16s ease,box-shadow .16s ease,transform .16s ease,opacity .16s ease;user-select:none;-webkit-user-select:none}
+.strata-lamina:last-child{border-bottom:0}
+.strata-lamina:hover{filter:brightness(1.10) saturate(1.06);z-index:3;box-shadow:0 2px 10px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.08)}
+.strata-lamina:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}
+.strata-lamina:active{transform:scale(.994)}
+.lamina-fill{position:absolute;inset:0;opacity:.92;pointer-events:none}
+.lamina-grain{position:absolute;inset:0;pointer-events:none;opacity:.22;background:repeating-linear-gradient(90deg,transparent 0 14px,rgba(0,0,0,.07) 14px 15px),repeating-linear-gradient(0deg,transparent 0 2px,rgba(255,255,255,.04) 2px 3px)}
+.lamina-time{position:relative;z-index:1;font:9.5px var(--mono);letter-spacing:.06em;color:rgba(255,248,230,.82);background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:1px 6px;white-space:nowrap;flex:none;backdrop-filter:blur(2px)}
+.lamina-prov{position:relative;z-index:1;font:9.5px var(--mono);letter-spacing:.08em;text-transform:lowercase;color:rgba(255,248,230,.88);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;opacity:.92}
+.lamina-cnt{position:relative;z-index:1;font:10px var(--mono);letter-spacing:.04em;color:rgba(255,248,230,.92);background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.07);border-radius:999px;padding:1px 6px;white-space:nowrap;flex:none}
+.lamina-cnt b{font-weight:700}
+.lamina-errdot{position:relative;z-index:1;width:7px;height:7px;border-radius:50%;background:#b12f1f;box-shadow:0 0 6px rgba(177,47,31,.55);flex:none;opacity:0}
+.lamina-errdot.on{opacity:1}
+.lamina-inclusion{position:absolute;z-index:1;width:9px;height:9px;border-radius:50%;background:radial-gradient(ellipse at 30% 30%,#2e1a0e 0%,#1a0f08 55%,#0d0704 100%);box-shadow:inset 0 1px 1px rgba(255,255,255,.12),0 1px 3px rgba(0,0,0,.45);opacity:.88;pointer-events:none;border:1px solid rgba(0,0,0,.35)}
+.lamina-vein{position:absolute;left:-2%;right:-2%;height:1px;top:50%;background:linear-gradient(90deg,transparent 0%,rgba(255,248,230,.0) 6%,rgba(255,248,230,.72) 18%,rgba(255,228,160,.95) 50%,rgba(255,248,230,.72) 82%,transparent 94%);box-shadow:0 0 6px rgba(255,228,160,.55),0 0 12px rgba(255,248,230,.22);opacity:.92;pointer-events:none;transform:rotate(-1.2deg)}
+.lamina-vein.v2{top:38%;opacity:.62;transform:rotate(.8deg)}
+.strata-empty{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;font:11px var(--mono);letter-spacing:.06em;color:rgba(60,45,15,.52);background:rgba(255,255,255,.55);border:1px dashed rgba(60,45,15,.14);border-radius:6px;margin:14px;padding:10px 14px}
+.strata-axis{position:absolute;left:16px;right:16px;top:24px;bottom:26px;z-index:3;pointer-events:none;opacity:.12;background:repeating-linear-gradient(90deg,transparent 0 28px,rgba(60,45,15,.18) 28px 29px);mix-blend-mode:multiply}
+.strata-legend{position:absolute;top:6px;left:20px;z-index:4;font:9.5px var(--mono);letter-spacing:.10em;text-transform:uppercase;color:rgba(60,45,15,.58);pointer-events:none}
+.strata-legend b{color:rgba(60,45,15,.88);font-weight:600}
+.strata-depth{position:absolute;right:20px;top:6px;z-index:4;font:9.5px var(--mono);letter-spacing:.06em;color:rgba(60,45,15,.42);pointer-events:none;background:rgba(255,255,255,.42);border:1px solid rgba(60,45,15,.10);border-radius:999px;padding:2px 7px;backdrop-filter:blur(4px)}
+/* parallax shear — view() drives horizontal drift as page scrolls; depth modulates amplitude */
+@keyframes strata-shear{from{transform:translateX(calc(var(--shear,0)* -14px))}to{transform:translateX(calc(var(--shear,0)* 14px))}}
+@keyframes strata-enter{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+@supports (animation-timeline: view()){
+  .strata-lamina{animation:strata-enter .38s cubic-bezier(.16,1,.3,1) both, strata-shear linear both;animation-timeline:view(), view();animation-range:entry 0% cover 18%, cover 0% cover 100%;animation-delay:calc(var(--i,0)*18ms),0s}
+}
+/* scroll() parallax — when core itself scrolls, deeper strata shear slower revealing time */
+@supports (animation-timeline: scroll()){
+  @media not (prefers-reduced-motion: reduce){
+    #strata-core{scroll-timeline:--strata-scroll block}
+    .strata-lamina{animation: strata-scroll-shear linear both; animation-timeline: --strata-scroll; animation-range:0% 100%}
+    @keyframes strata-scroll-shear{from{transform:translateX(calc(var(--shear,0)* -10px))}to{transform:translateX(calc(var(--shear,0)* 10px))}}
+  }
+}
+@media (prefers-reduced-motion:reduce){
+  #strata-core{overflow:hidden !important}
+  .strata-lamina{animation:none !important;transition:none !important;transform:none !important}
+  .lamina-vein,.lamina-inclusion{animation:none !important}
+  #strata-core{scroll-timeline:none !important}
+}
+#strata-warp.warp-mask{z-index:83}
+#strata-warp .warp-body{padding:16px 18px}
+#strata-warp table{width:100%;border-collapse:collapse;font:12.5px var(--mono)}
+#strata-warp th{font:10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+#strata-warp td{padding:6px 8px;border-bottom:1px solid rgba(38,42,36,.55);color:var(--fg);vertical-align:top;word-break:break-word}
+#strata-warp td.fail{color:var(--crit)}
+#strata-warp .strata-bucket-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+#strata-warp .strata-bucket-head .pill{font:11px var(--mono);letter-spacing:.08em;padding:3px 8px;border-radius:999px;border:1px solid var(--line);background:var(--inset);color:var(--dim)}
+#strata-warp .strata-bucket-head .pill.err{color:var(--crit);border-color:rgba(224,93,68,.35);background:rgba(224,93,68,.07)}
+#strata-warp .strata-bucket-head .pill.ok{color:var(--ok);border-color:rgba(95,174,122,.32);background:rgba(95,174,122,.07)}
 /* <!-- IMPL: Chladni Altar --> — black steel + bone powder; 160px hero, exclusive with Monsoon */
 #altar-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #1e1e22;border-radius:6px;overflow:hidden;background:#0a0a0c;box-shadow:0 4px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.06)}
 .altar-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#141418 0%,#0f1110 55%,#0a0a0c 100%);border-bottom:1px solid #1e1e22}
@@ -1909,17 +1971,28 @@ main.shake{animation:seismo-shake .38s ease}
 
       <!-- IMPL: Seismograph Audit Drum -->
       <!-- IMPL: Seismo Scope -->
-      <div id="seismo-wrap" class="seismo-wrap is-scope" aria-hidden="true" aria-label="Seismo Scope — 220px audit oscilloscope bound to /api/access, needle kicks on key fetch, idle sine">
-        <span class="seismo-label">▸ audit scope <b id="seismo-stat">flatline · dust</b></span>
-        <span class="seismo-hint">hover to scrub · filter scrubs history</span>
+      <!-- IMPL: Strata -->
+      <div id="seismo-wrap" class="seismo-wrap is-scope is-strata" aria-label="Strata core — 260px stratified audit core sample, 5min sediment laminae">
+        <span class="seismo-label">▸ strata core <b id="seismo-stat">coring…</b></span>
+        <span class="seismo-hint">click lamina to inspect · scroll to shear deeper time</span>
         <div class="seismo-sprocket left"></div>
         <div class="seismo-sprocket right"></div>
         <div class="seismo-graticule" aria-hidden="true"></div>
         <div class="seismo-vignette" aria-hidden="true"></div>
         <div class="seismo-tick" aria-hidden="true"></div>
+        <span class="strata-legend" aria-hidden="true">▸ strata · 5min buckets</span>
+        <span class="strata-depth" id="strata-depth" aria-hidden="true">— buckets · — events</span>
         <span class="seismo-scope-meta" aria-hidden="true"><i class="scope-dot" id="scope-dot"></i><span class="scope-readout" id="scope-readout"><b id="scope-kick-count">0</b> fetches · <span id="scope-idle">sine</span></span></span>
-        <canvas id="seismo" width="1200" height="220"></canvas>
-        <i class="seismo-needle" id="seismo-needle"></i>
+        <canvas id="seismo" width="1200" height="260" aria-hidden="true"></canvas>
+        <i class="seismo-needle" id="seismo-needle" aria-hidden="true"></i>
+        <div id="strata-core" role="list" aria-label="sediment laminae — thickness is volume per 5-minute bucket, hue is provider, dark inclusions are 401/404/429, bright veinlets are retries"></div>
+        <div class="strata-axis" aria-hidden="true"></div>
+      </div>
+      <div id="strata-warp" class="warp-mask" hidden role="dialog" aria-modal="true" aria-label="Strata bucket inspector">
+        <div class="warp-drawer" role="document">
+          <div class="warp-head"><button class="btn sm" id="strata-warp-back" aria-label="back">← back</button><span class="warp-title">Strata bucket</span><button class="x" id="strata-warp-close" aria-label="close">✕</button></div>
+          <div class="warp-body" id="strata-warp-body"></div>
+        </div>
       </div>
 
       <div class="act-grid">
@@ -13147,6 +13220,344 @@ function startRhizome(){
 
   // expose for tests
   window.__hopfLoom={cvs, drawOnce, resize};
+})();
+</script>
+<!-- IMPL: Strata -->
+<script>
+/* <!-- IMPL: Strata --> — 260px stratified core-sample instrument: /api/access?limit=1000 → 5min sediment laminae, thickness=volume, hue=provider, dark=401/404/429, bright=retries, view()/scroll() parallax shear, click → warp-mask inspector */
+(function(){
+  'use strict';
+  const BUCKET = 5*60*1000;
+  const CORE_ID='strata-core';
+  const STAT_ID='seismo-stat';
+  const DEPTH_ID='strata-depth';
+  const WARP_ID='strata-warp';
+  const WARP_BODY_ID='strata-warp-body';
+  const PROVIDER_HUES={
+    openai:'#5ec8a8', anthropic:'#d8a878', google:'#7eb8ff', gemini:'#7eb8ff', fal:'#c8a8ff',
+    openrouter:'#ff9bb3', perplexity:'#a8d0b8', mistral:'#e8b34b', cohere:'#8a9bff',
+    groq:'#ff8e5a', xai:'#6a6a6a', nvidia:'#76b900', deepseek:'#4a9eff', meta:'#5a8dee',
+    '':'#e8b34b'
+  };
+  const DARK_RE=/401|404|429/;
+  const RETRY_RE=/retry/i;
+  function hashStr(s){ let h=0; for(let i=0;i<s.length;i++) h=Math.imul(31,h)+s.charCodeAt(i)|0; return h>>>0; }
+  function providerColor(p){
+    const k=String(p||'').toLowerCase().trim();
+    if(PROVIDER_HUES[k]) return PROVIDER_HUES[k];
+    const h=hashStr(k)%360;
+    return 'hsl('+h+' 34% 48%)';
+  }
+  function darker(col){
+    if(col.startsWith('#')){
+      const n=parseInt(col.slice(1),16);
+      const r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+      const d=v=>Math.max(0,Math.round(v*0.74));
+      return 'rgb('+d(r)+','+d(g)+','+d(b)+')';
+    }
+    const m=/hsl\(\s*(\d+)\s+(\d+)%\s+(\d+)%/.exec(col);
+    if(m) return 'hsl('+m[1]+' '+m[2]+'% '+Math.max(14, +m[3]-14)+'%)';
+    return col;
+  }
+  function toMs(ts){
+    if(ts==null) return NaN;
+    if(typeof ts==='number') return ts<1e12 ? ts*1000 : ts;
+    try{
+      if(typeof window.toDate==='function') return +window.toDate(ts);
+      const s=String(ts);
+      if(/[TZ]/.test(s)) return +new Date(s);
+      return +new Date(s.replace(' ','T')+'Z');
+    }catch(_){ return NaN; }
+  }
+  function fmtHM(ms){
+    try{ const d=new Date(ms); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }catch(_){ return '--:--'; }
+  }
+  function fmtRange(s,e){
+    const ds=new Date(s), de=new Date(e);
+    const d0=ds.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+    return d0+' '+fmtHM(s)+'–'+fmtHM(e);
+  }
+  let accessRows=[];
+  let buckets=[];
+  let reduceMotion=false;
+  try{ reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(_){}
+  try{ matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',e=>{ reduceMotion=e.matches; }); }catch(_){}
+  const core=()=>document.getElementById(CORE_ID);
+  const statEl=()=>document.getElementById(STAT_ID);
+  const depthEl=()=>document.getElementById(DEPTH_ID);
+  const warpEl=()=>document.getElementById(WARP_ID);
+  const warpBodyEl=()=>document.getElementById(WARP_BODY_ID);
+
+  function bucketRows(rows){
+    const m=new Map();
+    for(const r of rows){
+      const ts=toMs(r.ts);
+      if(!isFinite(ts)) continue;
+      const start=Math.floor(ts/BUCKET)*BUCKET;
+      if(!m.has(start)) m.set(start,{start,end:start+BUCKET,rows:[]});
+      m.get(start).rows.push(r);
+    }
+    const arr=Array.from(m.values());
+    arr.sort((a,b)=>b.start-a.start);
+    return arr;
+  }
+
+  function renderBuckets(bks){
+    const c=core(); if(!c) return;
+    c.innerHTML='';
+    if(!bks.length){
+      const empty=document.createElement('div');
+      empty.className='strata-empty';
+      empty.textContent='no sediment yet — 0 buckets · waiting for /api/access';
+      c.appendChild(empty);
+      const s=statEl(); if(s) s.textContent='empty core · 0 buckets';
+      const d=depthEl(); if(d) d.textContent='— buckets · 0 events';
+      return;
+    }
+    const max=Math.max(...bks.map(b=>b.rows.length));
+    const total=bks.reduce((n,b)=>n+b.rows.length,0);
+    const s=statEl(); if(s) s.textContent= bks.length+' beds · '+total+' events';
+    const d=depthEl(); if(d) d.textContent= bks.length+' buckets · '+total+' events';
+    bks.forEach((b,idx)=>{
+      const count=b.rows.length;
+      const ratio=max?count/max:0;
+      const h=Math.max(8, Math.round(7 + Math.sqrt(ratio)*17));
+      // dominant provider
+      const freq={};
+      let dom='',domN=0;
+      for(const r of b.rows){
+        const p=String(r.account||r.host||r.action||'').toLowerCase().trim()||'unknown';
+        const short=p.split('.')[0].split('/')[0].slice(0,18);
+        freq[short]=(freq[short]||0)+1;
+        if(freq[short]>domN){ domN=freq[short]; dom=short; }
+      }
+      if(!dom) dom='unknown';
+      const baseCol=providerColor(dom);
+      const darkCol=darker(baseCol);
+      const errs=b.rows.filter(r=> DARK_RE.test(String(r.result||'')) || DARK_RE.test(String(r.action||'')) ).length;
+      const retr=b.rows.filter(r=> RETRY_RE.test(String(r.result||'')) || RETRY_RE.test(String(r.action||'')) ).length;
+      const lam=document.createElement('div');
+      lam.className='strata-lamina'+(errs?' has-err':'')+(retr?' has-retry':'');
+      lam.setAttribute('role','listitem');
+      lam.tabIndex=0;
+      lam.dataset.start=String(b.start);
+      lam.dataset.count=String(count);
+      lam.dataset.provider=dom;
+      lam.setAttribute('aria-label', fmtRange(b.start,b.end)+' · '+count+' events · '+dom+(errs?' · '+errs+' errors':'')+(retr?' · '+retr+' retries':''));
+      lam.style.height=h+'px';
+      lam.style.setProperty('--i', String(idx));
+      const shear= ((idx%5)*0.18 + 0.14 + (idx%2?0.07:0) + (idx%3===0?0.06:0));
+      lam.style.setProperty('--shear', shear.toFixed(3));
+      // fill
+      const fill=document.createElement('div');
+      fill.className='lamina-fill';
+      fill.style.background='linear-gradient(90deg,'+baseCol+' 0%,'+darkCol+' 100%)';
+      lam.appendChild(fill);
+      const grain=document.createElement('div');
+      grain.className='lamina-grain';
+      grain.setAttribute('aria-hidden','true');
+      lam.appendChild(grain);
+      // inclusions — dark pellets for 401/404/429
+      if(errs){
+        const n=Math.min(3, errs);
+        for(let k=0;k<n;k++){
+          const dot=document.createElement('i');
+          dot.className='lamina-inclusion';
+          const seed= (b.start + k*9991) % 10000;
+          const left= 14 + (seed % 68);
+          const top= 22 + ((seed*7)%56);
+          dot.style.left= left+'%';
+          dot.style.top= top+'%';
+          const sz= 6 + (seed%5);
+          dot.style.width=sz+'px'; dot.style.height=sz+'px';
+          lam.appendChild(dot);
+        }
+      }
+      // veinlets — bright quartz for retries
+      if(retr){
+        const v=document.createElement('i');
+        v.className='lamina-vein';
+        lam.appendChild(v);
+        if(retr>1){
+          const v2=document.createElement('i');
+          v2.className='lamina-vein v2';
+          lam.appendChild(v2);
+        }
+      }
+      // labels
+      const t=document.createElement('span');
+      t.className='lamina-time';
+      t.textContent=fmtHM(b.start);
+      lam.appendChild(t);
+      const p=document.createElement('span');
+      p.className='lamina-prov';
+      p.textContent=dom;
+      lam.appendChild(p);
+      const cnt=document.createElement('span');
+      cnt.className='lamina-cnt';
+      cnt.innerHTML='<b>'+count+'</b>';
+      lam.appendChild(cnt);
+      const dot=document.createElement('i');
+      dot.className='lamina-errdot'+(errs?' on':'');
+      dot.setAttribute('aria-hidden','true');
+      dot.title=errs?errs+' error(s)':'';
+      lam.appendChild(dot);
+
+      lam.addEventListener('click', ()=> openBucket(b));
+      lam.addEventListener('keydown', e=>{
+        if(e.key==='Enter' || e.key===' '){ e.preventDefault(); openBucket(b); }
+      });
+      c.appendChild(lam);
+    });
+  }
+
+  function openBucket(bucket){
+    const w=warpEl(), body=warpBodyEl();
+    if(!w||!body) return;
+    const rows=bucket.rows.slice().sort((a,b)=> toMs(b.ts)-toMs(a.ts));
+    const errs=rows.filter(r=> DARK_RE.test(String(r.result||''))).length;
+    const retr=rows.filter(r=> RETRY_RE.test(String(r.result||''))).length;
+    const provs={};
+    rows.forEach(r=>{ const p=String(r.account||r.host||'unknown'); provs[p]=(provs[p]||0)+1; });
+    const provSummary=Object.entries(provs).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([k,v])=>k+'×'+v).join(' · ')||'—';
+    const headHtml='<div class="strata-bucket-head">'
+      +'<span class="pill">'+fmtRange(bucket.start,bucket.end)+'</span>'
+      +'<span class="pill">'+rows.length+' events</span>'
+      +'<span class="pill '+(errs?'err':'ok')+'">'+(errs?errs+' × 401/404/429':'no 4xx')+'</span>'
+      +'<span class="pill '+(retr?'err':'ok')+'">'+(retr?retr+' retries':'no retries')+'</span>'
+      +'<span class="pill" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+provSummary.replace(/"/g,'&quot;')+'">'+provSummary+'</span>'
+      +'</div>';
+    const tableHead='<table><thead><tr><th>time</th><th>account</th><th>host</th><th>action</th><th>result</th></tr></thead><tbody>';
+    const tableRows=rows.map(r=>{
+      const t=fmtHM(toMs(r.ts));
+      const res=String(r.result||'');
+      const isFail= DARK_RE.test(res) || (res && res!=='ok');
+      return '<tr><td>'+t+'</td><td>'+esc(r.account||'—')+'</td><td>'+esc(r.host||'—')+'</td><td>'+esc(r.action||'—')+'</td><td class="'+(isFail?'fail':'')+'">'+esc(res||'—')+'</td></tr>';
+    }).join('');
+    const tableFoot='</tbody></table>';
+    body.innerHTML=headHtml+tableHead+tableRows+tableFoot;
+    const doShow=()=>{ w.hidden=false; w.style.display='flex'; document.body.style.overflow='hidden'; };
+    try{
+      if(document.startViewTransition && !reduceMotion){
+        document.startViewTransition(doShow);
+      } else doShow();
+    }catch(_){ doShow(); }
+    // focus close for a11y
+    setTimeout(()=>{ const btn=document.getElementById('strata-warp-close'); if(btn) btn.focus(); }, 60);
+  }
+  function esc(s){ return String(s).replace(/[&<>"']/g,c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function closeWarp(){
+    const w=warpEl(); if(!w||w.hidden) return;
+    const doHide=()=>{ w.hidden=true; w.style.display=''; document.body.style.overflow=''; };
+    try{
+      if(document.startViewTransition && !reduceMotion) document.startViewTransition(doHide);
+      else doHide();
+    }catch(_){ doHide(); }
+  }
+  // warp close handlers
+  function bindWarpChrome(){
+    const w=warpEl();
+    if(!w) return;
+    const back=document.getElementById('strata-warp-back');
+    const closeBtn=document.getElementById('strata-warp-close');
+    if(back) back.addEventListener('click', closeWarp);
+    if(closeBtn) closeBtn.addEventListener('click', closeWarp);
+    w.addEventListener('click', e=>{ if(e.target===w) closeWarp(); });
+    document.addEventListener('keydown', e=>{ if(e.key==='Escape' && w && !w.hidden){ e.preventDefault(); closeWarp(); }});
+  }
+
+  async function fetchStrata(){
+    const token=(function(){ try{ return (localStorage.getItem('aigate_token')|| localStorage.aigate_token || '').trim(); }catch(_){ return ''; }})();
+    const headers= token ? {Authorization:'Bearer '+token} : {};
+    try{
+      const r=await fetch('/api/access?limit=1000',{headers,credentials:'same-origin',cache:'no-store'});
+      if(!r.ok){
+        if(r.status===401 || r.status===403){
+          const s=statEl(); if(s) s.textContent='core locked · auth required';
+          renderBuckets([]);
+          return;
+        }
+        throw new Error('access '+r.status);
+      }
+      const rows=await r.json().catch(()=>[]);
+      const arr=Array.isArray(rows)?rows: (rows&&Array.isArray(rows.rows)?rows.rows:[]);
+      accessRows=arr;
+      buckets=bucketRows(arr);
+      renderBuckets(buckets);
+    }catch(e){
+      const s=statEl(); if(s) s.textContent='coring failed';
+      renderBuckets([]);
+      try{ console.warn('[strata] fetch failed',e); }catch(_){}
+    }
+  }
+
+  function hookVueLive(){
+    let tries=0;
+    const iv=setInterval(()=>{
+      try{
+        const appProxy=(typeof app!=='undefined' && app._instance && app._instance.proxy) ? app._instance.proxy : null;
+        if(!appProxy || !appProxy.addRows) { if(++tries>80) clearInterval(iv); return; }
+        if(appProxy.__strataHooked) { clearInterval(iv); return; }
+        const origAdd=appProxy.addRows.bind(appProxy);
+        appProxy.addRows=function(rows){
+          const r=origAdd(rows);
+          try{
+            const accessOnly=rows.filter(x=> x.kind==='access');
+            if(accessOnly.length){
+              // rows are already converted feed rows, but we need raw access_log shape to bucket correctly
+              // Instead of converting back, just refetch bucket window on burst, debounced
+              debouncedRefetch();
+            }
+          }catch(_){}
+          return r;
+        };
+        const origEv=appProxy.feedEvent ? appProxy.feedEvent.bind(appProxy) : null;
+        if(origEv){
+          appProxy.feedEvent=function(d,kind){
+            const res=origEv(d,kind);
+            if(kind==='access') debouncedRefetch();
+            return res;
+          };
+        }
+        // also snoop fetch for /api/access writes
+        if(window.fetch && !window.__strataFetchPatched){
+          window.__strataFetchPatched=true;
+          const origFetch=window.fetch;
+          window.fetch=function(input,init){
+            const url=typeof input==='string'?input: (input&&input.url)||'';
+            const p=origFetch.apply(this, arguments);
+            if(url && url.includes('/api/keys')){
+              p.then(()=>{ try{ debouncedRefetch(); }catch(_){} }).catch(()=>{});
+            }
+            return p;
+          };
+        }
+        appProxy.__strataHooked=true;
+        clearInterval(iv);
+      }catch(_){ if(++tries>80) clearInterval(iv); }
+    },300);
+  }
+  let refetchTimer=0;
+  function debouncedRefetch(){
+    clearTimeout(refetchTimer);
+    refetchTimer=setTimeout(fetchStrata, 900);
+  }
+
+  function start(){
+    if(!core()) return;
+    bindWarpChrome();
+    fetchStrata();
+    hookVueLive();
+    // periodic refresh as fallback when WS not live (e.g. no session)
+    setInterval(fetchStrata, 45000);
+    // retry if petals miss initial fetch due to race with auth bootstrap
+    setTimeout(fetchStrata, 2200);
+    // expose for tests
+    window.__strata={fetch:fetchStrata, bucketRows, renderBuckets, providerColor, get buckets(){return buckets;}, get rows(){return accessRows;}};
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+  setTimeout(start, 900);
 })();
 </script>
 </body>
