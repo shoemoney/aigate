@@ -1,0 +1,949 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Vault Watches Back — Webcam Maw</title>
+<meta name="description" content="Your face IS the keyhole. Webcam brightness → TSL liquid-chrome displacement melting hero typography + 12k particles flowing around your silhouette. Mouth open shatters type into your throat. Wave parts the void. Zero data leaves the browser.">
+<style>
+:root{
+  --bg:#0a0c0b; --panel:#151817; --inset:#0d0f0e; --line:#232722;
+  --fg:#ede9e0; --dim:#8c8e87; --accent:#e8b34b; --ok:#5fae7a; --crit:#e05d44;
+  --vio:#a78bfa; --teal:#5eead4; --rose:#fb7185;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+.mono{font-family:var(--mono)} .dim{color:var(--dim)}
+.hdr{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;background:rgba(10,12,11,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.hdr .brand{font:800 13px var(--mono);letter-spacing:.18em}
+.hdr .brand span{margin-right:7px}
+.hdr nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{appearance:none;border:1px solid var(--line);background:var(--inset);color:var(--dim);font:11px var(--mono);letter-spacing:.08em;padding:6px 10px;border-radius:999px;cursor:pointer;transition:.15s}
+.btn:hover{border-color:rgba(232,179,75,.28);color:var(--fg);background:#1a1e1a}
+.btn.prm{border-color:rgba(232,179,75,.42);color:var(--accent);background:rgba(232,179,75,.10)}
+.btn.prm:hover{border-color:var(--accent);background:rgba(232,179,75,.16)}
+.btn[aria-pressed="true"]{border-color:rgba(94,234,212,.42);color:var(--teal);background:rgba(94,234,212,.10)}
+.pill{display:inline-flex;align-items:center;gap:6px;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;padding:5px 9px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--dim)}
+.pill i{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 10px rgba(94,234,212,.55);animation:pp 1.2s infinite alternate}
+.pill.warn i{background:var(--accent);box-shadow:0 0 10px rgba(232,179,75,.6)}
+.pill.off i{background:#4a4a4a;box-shadow:none;animation:none}
+.pill.live i{background:var(--crit);box-shadow:0 0 10px rgba(224,93,68,.6);animation:livepulse .9s infinite alternate}
+@keyframes pp{from{opacity:.55}to{opacity:1}}
+@keyframes livepulse{from{opacity:.6;transform:scale(.9)}to{opacity:1;transform:scale(1.08)}}
+.hint{margin-left:auto;font:10px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.7}
+.hint b{color:var(--accent)}
+.wrap{max-width:1240px;margin:0 auto;padding:18px 18px 44px}
+.hero{padding:22px 4px 16px}
+.hero h1{font:800 clamp(30px,6vw,52px)/.88 var(--sans);letter-spacing:-.04em}
+.hero h1 em{font-style:italic;color:var(--vio);font-weight:300}
+.hero h1 b{font-weight:800;color:var(--teal)}
+.hero h1 i{font-style:normal;color:var(--accent);font-weight:800}
+.hero .kicker{margin-top:8px;font:10px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+.hero .kicker b{color:var(--accent)}
+.hero .sub{margin:10px 0 0;max-width:820px;color:var(--dim);font-size:13.5px;line-height:1.6}
+.hero .sub strong{color:var(--fg);font-weight:600}
+.stage{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:linear-gradient(180deg,#070a09 0%,#050707 100%);box-shadow:0 18px 48px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
+.stage-head{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.02);flex-wrap:wrap}
+.stage-head h2{font:600 11px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+.spec{margin-left:auto;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(232,220,200,.52);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:4px 8px}
+.canvas-wrap{position:relative;aspect-ratio:1200/560;max-height:600px;background:#040605;overflow:hidden}
+.canvas-wrap canvas{display:block;width:100%;height:100%}
+.vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 88% 68% at 50% 42%,transparent 42%,rgba(0,0,0,.52) 100%),linear-gradient(180deg,transparent 72%,rgba(0,0,0,.32))}
+.grain{position:absolute;inset:0;pointer-events:none;opacity:.028;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E")}
+.readout{position:absolute;left:10px;bottom:10px;z-index:2;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}
+.readout span{font:10px var(--mono);letter-spacing:.08em;color:rgba(232,220,200,.72);background:rgba(10,12,10,.72);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:4px 8px;backdrop-filter:blur(6px)}
+.readout span b{color:var(--accent)}
+.readout span b.teal{color:var(--teal)}
+.cam-preview{position:absolute;right:10px;top:10px;z-index:2;width:128px;height:96px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.12);background:#000;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.cam-preview video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.cam-preview canvas{position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1);mix-blend-mode:screen;opacity:.55}
+.cam-preview .label{position:absolute;left:6px;bottom:4px;font:8px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.7);background:rgba(0,0,0,.55);padding:2px 5px;border-radius:999px}
+.cam-preview.chrome{border-color:rgba(232,179,75,.28);box-shadow:0 0 0 1px rgba(232,179,75,.12),0 8px 24px rgba(0,0,0,.5)}
+.fallback{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:24px;background:linear-gradient(180deg,#0b0f0e,#080a09);z-index:3}
+.fallback.on{display:grid}
+.fallback h3{font:700 18px var(--sans);letter-spacing:-.02em}
+.fallback p{max-width:560px;margin:8px auto 0;color:var(--dim);font-size:13px;line-height:1.6}
+.stage-foot{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--line);background:rgba(255,255,255,.02);flex-wrap:wrap}
+.stage-foot .mode{font:11px var(--mono);letter-spacing:.06em;color:var(--dim)}
+.stage-foot .mode b{color:var(--fg)}
+.stage-foot .hint2{margin-left:auto;font:10px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.75}
+.controls{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0;align-items:center}
+.badge{font:10px var(--mono);letter-spacing:.10em;text-transform:uppercase;padding:5px 9px;border-radius:999px;border:1px solid rgba(167,139,250,.22);background:rgba(167,139,250,.10);color:#c9b8ff}
+.badge.teal{border-color:rgba(94,234,212,.22);background:rgba(94,234,212,.08);color:#b7fff6}
+.badge.amber{border-color:rgba(232,179,75,.22);background:rgba(232,179,75,.08);color:#f0d08a}
+.badge.rose{border-color:rgba(251,113,133,.22);background:rgba(251,113,133,.08);color:#ffbac6}
+.range{display:flex;align-items:center;gap:8px;font:10px var(--mono);letter-spacing:.08em;color:var(--dim);background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:999px;padding:6px 10px}
+.range input{accent-color:var(--teal)}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:16px}
+.kv .k{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 14px 12px}
+.kv .k h3{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.kv .k p{color:var(--dim);font-size:12.5px;line-height:1.6}
+.kv .k code{font:11px var(--mono);color:var(--teal)}
+pre.mini{margin-top:12px;background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto;font:11px/1.6 var(--mono);color:var(--dim);white-space:pre-wrap}
+.notice{margin-top:14px;padding:10px 12px;border:1px solid rgba(94,234,212,.18);background:rgba(94,234,212,.06);border-radius:10px;font:11px var(--mono);letter-spacing:.06em;color:var(--dim);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.notice b{color:var(--teal)}
+.shatter-flash{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 40% 30% at 50% 62%,rgba(255,255,255,.18),transparent 62%);opacity:0;transition:opacity .12s}
+.shatter-flash.on{opacity:1}
+@media (prefers-reduced-motion:reduce){
+  .pill i{animation:none!important}
+  .canvas-wrap{aspect-ratio:1200/420}
+}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/",
+    "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.webgpu.js"
+  }
+}
+</script>
+</head>
+<body>
+<header class="hdr">
+  <div class="brand"><span>👁</span>AIGATE</div>
+  <nav>
+    <a class="btn" href="/index.html">⌂ index</a>
+    <a class="btn" href="/board.html">🗂 board</a>
+    <a class="btn" href="/prism-vault.html">⬡ prism</a>
+    <span class="pill live" id="engine-pill"><i></i><b id="engine-label">maw — probing</b></span>
+  </nav>
+  <span class="hint">one TSL graph → <b>WGSL+GLSL</b> · 12k particles · <b id="hint-fps">— fps</b></span>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <h1><em>The</em> <b>Vault</b> <i>Watches</i> Back</h1>
+    <div class="kicker">👁 webcam maw — <b>your face IS the keyhole</b> · liquid-chrome melt · 12k particles orbit your silhouette</div>
+    <p class="sub">
+      One HTML file, <strong>one TSL graph</strong> → <strong>WGSL+GLSL</strong>. Webcam brightness becomes a
+      <strong>liquid-chrome displacement field</strong> that melts the hero type. <strong>12k particles</strong> flow around your silhouette —
+      open your <strong>mouth to shatter</strong> the type down your throat, <strong>wave to part the void</strong>. <strong>Zero bytes leave the browser</strong>.
+    </p>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="stage-head">
+      <h2>👁 The Vault Watches Back — Webcam Maw</h2>
+      <span class="badge amber">TSL → WGSL+GLSL</span>
+      <span class="badge">brightness → displacement</span>
+      <span class="badge teal">12k particles · orbit</span>
+      <span class="badge rose">mouth shatter · wave part</span>
+      <span class="spec">one canvas · one graph · no deps</span>
+    </div>
+    <div class="canvas-wrap" id="wrap">
+      <canvas id="maw" aria-label="The Vault Watches Back — webcam brightness melts chrome type, 12k particles orbit your silhouette" role="img"></canvas>
+      <div class="vignette" aria-hidden="true"></div>
+      <div class="grain" aria-hidden="true"></div>
+      <div class="shatter-flash" id="flash" aria-hidden="true"></div>
+      <div class="readout" aria-hidden="true">
+        <span>engine <b id="r-engine">probing</b></span>
+        <span>particles <b class="teal" id="r-count">12,000</b></span>
+        <span>mouth <b id="r-mouth">—</b></span>
+        <span>wave <b id="r-wave">—</b></span>
+        <span id="r-privacy" title="Zero data leaves this tab — all processing is on-device">🔒 on-device</span>
+      </div>
+      <div class="cam-preview" id="camPreview" hidden>
+        <video id="camVideo" autoplay playsinline muted></video>
+        <canvas id="camHeat" width="128" height="96" aria-hidden="true"></canvas>
+        <span class="label" id="camLabel">cam off</span>
+      </div>
+      <div class="fallback" id="fallback">
+        <div>
+          <h3>Maw — static</h3>
+          <p><code>prefers-reduced-motion</code> is on or webcam unavailable. Showing a static chrome poster — no camera, no motion, no particles drift. Turn the OS setting off and allow camera for the live mirror.</p>
+          <p style="margin-top:10px"><span class="badge">static chrome</span> <span class="badge teal">no camera</span> <span class="badge rose">🔒 on-device only</span></p>
+        </div>
+      </div>
+    </div>
+    <div class="stage-foot">
+      <span class="mode">▸ <span id="readout">probing…</span></span>
+      <span class="hint2">allow camera → face is keyhole · open mouth = shatter · wave hands = part void · drag to orbit chrome · double-click fullscreen</span>
+    </div>
+  </div>
+
+  <div class="controls" role="toolbar" aria-label="Maw controls">
+    <button class="btn prm" id="btn-cam" aria-pressed="false">◎ enable camera — face is keyhole</button>
+    <button class="btn" id="btn-mirror" aria-pressed="true" title="Mirror preview">◐ mirror — on</button>
+    <button class="btn" id="btn-chrome" aria-pressed="true" title="Toggle chrome displacement">⬢ chrome melt — on</button>
+    <button class="btn" id="btn-particles" aria-pressed="true" title="Toggle 12k particles">✦ particles — on</button>
+    <button class="btn" id="btn-shatter" title="Fake a mouth-open shatter (no cam needed)">💥 shatter test</button>
+    <button class="btn" id="btn-wave" title="Fake a wave parting">〰 wave test</button>
+    <label class="range" title="Displacement sensitivity">sensitivity <input id="sens" type="range" min="0.4" max="2.2" step="0.1" value="1.0"></label>
+    <button class="btn" id="btn-pause" aria-pressed="false">⏸ pause</button>
+    <button class="btn" id="btn-shot" title="Save PNG">⬇ png</button>
+    <button class="btn" id="btn-fs" title="Fullscreen">⤢ fullscreen</button>
+  </div>
+
+  <div class="kv">
+    <div class="k">
+      <h3>One TSL graph → WGSL+GLSL</h3>
+      <p>Single <code>Fn()</code> — <code>brightness.sample(uv+disp) → chrome Fresnel+SDF</code> — compiles to WGSL on <code>WebGPURenderer</code> and GLSL on <code>WebGLRenderer</code>. Displacement reads the <code>DataTexture</code> fed by the <code>80×60</code> brightness grid.</p>
+    </div>
+    <div class="k">
+      <h3>Brightness → displacement</h3>
+      <p>Video → <code>80×60</code> luma grid (approx. <code>0.299R+0.587G+0.114B</code>). Each particle and each text strip samples the grid; gradient = contour normal, so chrome and particles <em>flow around you</em>.</p>
+    </div>
+    <div class="k">
+      <h3>Mouth shatter + wave part</h3>
+      <p>Mouth ROI dark-vs-face contrast → <code>mouthOpen</code>; gravity pulls shattered glyphs toward mouth center. Wave = left/right temporal diff → radial part force. Both run on-device, <strong>zero bytes egress</strong>.</p>
+    </div>
+    <div class="k">
+      <h3>Canvas2D fallback · 60fps</h3>
+      <p>WebGPU → WGSL; else WebGL2; else Canvas2D. Chrome drawn as gradient + specular strip; 12k particles as <code>fillRect</code> with additive alpha. DPR ≤2, <code>requestAnimationFrame</code> + visibility pause.</p>
+    </div>
+  </div>
+
+  <pre class="mini" aria-label="TSL graph summary">TSL graph (one Fn → fragment):
+uv → brightness.sample(uv + disp) → disp = (luma-0.5)*0.18*sensitivity
+warpedUv = uv + vec2(disp, disp*0.6) + timeCurl
+chrome = chromeFresnel(N·V) * env + specular(warpedUv) + vignette
+silhouette = smoothstep(0.32,0.42,luma) → particleOrbit = grad(luma).perp()*orbit + silhouetteRepel
+mouthOpen = (mouthDark &gt; 0.55) → shatterGravity = toward(mouthCenter)
+wave = temporalDiff(L,R) → partForce = radialAway(waveSide)
+→ WGSL (WebGPU) + GLSL (WebGL2) + Canvas2D fallback from same grid</pre>
+
+  <div class="notice">🔒 <b>On-device only.</b> Camera frames never leave this tab — no upload, no worker, no analytics. Grant is per-click and per-origin; revoke in the site permission bubble. <span class="badge rose" style="margin-left:auto">12k @ 60fps</span></div>
+</div>
+
+<!-- hidden analysis canvases -->
+<canvas id="small" width="80" height="60" style="display:none"></canvas>
+
+<script type="module">
+// The Vault Watches Back — Webcam Maw
+// One canvas, one TSL graph, webcam brightness → liquid-chrome displacement + 12k particles.
+// WebGPU TSL preferred, Canvas2D fallback. Respects prefers-reduced-motion. Zero egress.
+
+const canvas = document.getElementById('maw');
+const wrap = document.getElementById('wrap');
+const fallbackEl = document.getElementById('fallback');
+const engineLabel = document.getElementById('engine-label');
+const enginePill = document.getElementById('engine-pill');
+const hintFps = document.getElementById('hint-fps');
+const readout = document.getElementById('readout');
+const rEngine = document.getElementById('r-engine');
+const rMouth = document.getElementById('r-mouth');
+const rWave = document.getElementById('r-wave');
+const flash = document.getElementById('flash');
+const smallCanvas = document.getElementById('small');
+const smallCtx = smallCanvas.getContext('2d', { willReadFrequently:true });
+const GW = 80, GH = 60;
+const video = document.getElementById('camVideo');
+const camPreview = document.getElementById('camPreview');
+const camHeat = document.getElementById('camHeat');
+const camHeatCtx = camHeat.getContext('2d');
+const camLabel = document.getElementById('camLabel');
+
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let useWebGPU = false;
+let engineName = 'Canvas2D';
+let wantPause = false;
+let chromeOn = true, particlesOn = true, mirrored = true;
+let sensitivity = 1.0;
+let camOn = false;
+let stream = null;
+
+// analysis grid
+const grid = new Float32Array(GW*GH);
+const prevGrid = new Float32Array(GW*GH);
+let mouthOpen = false, mouthT = 0, waveSide = 0, waveT = 0;
+let mouthCenter = { x:0.5, y:0.62 };
+let partPulse = 0;
+
+// particles — 12k
+const N = 12000;
+const px = new Float32Array(N);
+const py = new Float32Array(N);
+const vx = new Float32Array(N);
+const vy = new Float32Array(N);
+const radius = new Float32Array(N);
+const alpha = new Float32Array(N);
+let shatterPhase = 0; // 0 idle, 1 shattering
+let shatterTimer = 0;
+const shatterVx = new Float32Array(N);
+const shatterVy = new Float32Array(N);
+let wavePhase = 0, waveTimer = 0;
+
+// text shatter pieces — chunk the hero type into strips
+let textStrips = []; // {y,h,off,vy,rot}
+const textCsv = 'THE VAULT\nWATCHES BACK';
+
+function setPill(text, cls){
+  engineLabel.textContent = text;
+  enginePill.className = 'pill' + (cls ? ' '+cls : '');
+  rEngine.textContent = text;
+}
+function showFallback(msg){
+  fallbackEl.classList.add('on');
+  readout.textContent = msg + ' — static chrome';
+  setPill(msg,'off');
+  paintStatic();
+}
+function hideFallback(){
+  fallbackEl.classList.remove('on');
+}
+
+function paintStatic(){
+  const dpr = Math.min(2, devicePixelRatio||1);
+  const w=Math.round(wrap.clientWidth*dpr), h=Math.round(wrap.clientHeight*dpr);
+  canvas.width=w; canvas.height=h;
+  canvas.style.width=wrap.clientWidth+'px'; canvas.style.height=wrap.clientHeight+'px';
+  const ctx=canvas.getContext('2d'); if(!ctx) return;
+  ctx.fillStyle='#050707'; ctx.fillRect(0,0,w,h);
+  const grd=ctx.createRadialGradient(w*0.5,h*0.45,w*0.12,w*0.5,h*0.45,w*0.9);
+  grd.addColorStop(0,'#0f1a18'); grd.addColorStop(0.5,'#0a0f0f'); grd.addColorStop(1,'#040605');
+  ctx.fillStyle=grd; ctx.fillRect(0,0,w,h);
+  // chrome text static
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const titleSize = Math.min(w*0.086, 56*dpr);
+  ctx.font=`800 ${titleSize}px ${getComputedStyle(document.documentElement).getPropertyValue('--sans')}`;
+  const cx=w*0.5, cy=h*0.5;
+  // shadow
+  ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillText('THE VAULT',cx+2*dpr,cy- titleSize*0.42);
+  ctx.fillText('WATCHES BACK',cx+2*dpr,cy+ titleSize*0.52);
+  const g=ctx.createLinearGradient(cx-w*0.32,cy,cx+w*0.32,cy);
+  g.addColorStop(0,'#a78bfa'); g.addColorStop(0.22,'#e8f0ff'); g.addColorStop(0.38,'#5eead4'); g.addColorStop(0.62,'#e8b34b'); g.addColorStop(1,'#fb7185');
+  ctx.fillStyle=g;
+  ctx.fillText('THE VAULT',cx,cy- titleSize*0.42);
+  ctx.fillText('WATCHES BACK',cx,cy+ titleSize*0.52);
+  // specular streak
+  ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.lineWidth=1*dpr;
+  ctx.beginPath(); ctx.moveTo(cx-w*0.30, cy- titleSize*0.42 - titleSize*0.28); ctx.lineTo(cx+w*0.30, cy- titleSize*0.42 - titleSize*0.28); ctx.stroke();
+  readout.textContent='static · prefers-reduced-motion · 12k dormant';
+  setPill('static — reduced motion','off');
+}
+
+// init particles
+(function initParticles(){
+  for(let i=0;i<N;i++){
+    px[i]=Math.random(); py[i]=Math.random();
+    const a=Math.random()*Math.PI*2; const s=0.0006+Math.random()*0.0018;
+    vx[i]=Math.cos(a)*s; vy[i]=Math.sin(a)*s;
+    radius[i]=0.6+Math.random()*1.4;
+    alpha[i]=0.28+Math.random()*0.55;
+  }
+})();
+
+function resetShatter(){
+  shatterPhase=0; shatterTimer=0;
+  textStrips=[];
+}
+
+function triggerShatter(srcX, srcY){
+  shatterPhase=1; shatterTimer=0;
+  flash.classList.add('on'); setTimeout(()=>flash.classList.remove('on'),160);
+  // seed shatter velocities toward mouth
+  const mx = srcX ?? mouthCenter.x;
+  const my = srcY ?? mouthCenter.y;
+  for(let i=0;i<N;i++){
+    const dx = mx - px[i], dy = my - py[i];
+    const d = Math.hypot(dx,dy)+0.001;
+    const pull = (1 - Math.min(1, d*1.6)) * 0.022;
+    shatterVx[i] = vx[i]*0.2 + dx/d * pull * (0.6+Math.random()*0.9);
+    shatterVy[i] = vy[i]*0.2 + dy/d * pull * (0.6+Math.random()*0.9) + Math.random()*0.006;
+    if(d>0.42){ shatterVx[i]+= (Math.random()-0.5)*0.004; shatterVy[i]+= (Math.random()-0.5)*0.004; }
+  }
+  // build text strips for melt-shatter visual
+  textStrips=[];
+  const rows=18;
+  for(let r=0;r<rows;r++){
+    textStrips.push({ y:r/rows, h:1/rows, off:(Math.random()-0.5)*0.012, vy:0.004+Math.random()*0.018, rot:(Math.random()-0.5)*0.12 });
+  }
+}
+
+function triggerWave(side){
+  wavePhase=1; waveTimer=0; partPulse=1;
+  waveSide = side || (Math.random()<0.5? -1:1);
+}
+
+// grid sampling helpers
+function gridAt(x,y){
+  const gx = Math.max(0,Math.min(GW-1, (x*GW)|0));
+  const gy = Math.max(0,Math.min(GH-1, (y*GH)|0));
+  return grid[gy*GW+gx];
+}
+function gridGrad(x,y){
+  const gx=(x*GW)|0, gy=(y*GH)|0;
+  const x0=Math.max(0,Math.min(GW-1,gx-1)), x1=Math.max(0,Math.min(GW-1,gx+1));
+  const y0=Math.max(0,Math.min(GH-1,gy-1)), y1=Math.max(0,Math.min(GH-1,gy+1));
+  const dx = grid[gy*GW+x1] - grid[gy*GW+x0];
+  const dy = grid[y1*GW+gx] - grid[y0*GW+gx];
+  return {dx,dy};
+}
+
+function updateGridFromVideo(){
+  if(!camOn || !video.videoWidth) return;
+  // mirrored draw to small
+  smallCtx.save();
+  smallCtx.scale(mirrored ? -1 : 1, 1);
+  if(mirrored) smallCtx.translate(-GW,0);
+  smallCtx.drawImage(video, 0,0, GW, GH);
+  smallCtx.restore();
+  let data;
+  try{ data = smallCtx.getImageData(0,0,GW,GH).data; }catch{ return; }
+  prevGrid.set(grid);
+  let sumMouth=0, cntMouth=0, sumFace=0, cntFace=0;
+  let sumLeft=0, sumRight=0;
+  let brightestX=GW*0.5, brightestY=GH*0.45, maxB=0;
+  for(let y=0;y<GH;y++){
+    for(let x=0;x<GW;x++){
+      const i=(y*GW+x)*4;
+      const r=data[i], g=data[i+1], b=data[i+2];
+      const luma = (0.299*r + 0.587*g + 0.114*b)/255;
+      // mild contrast expand
+      const v = Math.max(0,Math.min(1, (luma-0.18)/0.62));
+      grid[y*GW+x]=v;
+      if(v>maxB){ maxB=v; brightestX=x; brightestY=y; }
+      // mouth ROI: center bottom
+      if(x>=GW*0.38 && x<=GW*0.62 && y>=GH*0.58 && y<=GH*0.78){
+        sumMouth+=v; cntMouth++;
+      }
+      if(x>=GW*0.30 && x<=GW*0.70 && y>=GH*0.28 && y<=GH*0.58){
+        sumFace+=v; cntFace++;
+      }
+      if(x<GW*0.28) sumLeft+=Math.abs(v - prevGrid[y*GW+x]);
+      if(x>GW*0.72) sumRight+=Math.abs(v - prevGrid[y*GW+x]);
+    }
+  }
+  const mouthAvg = cntMouth? sumMouth/cntMouth : 0.5;
+  const faceAvg = cntFace? sumFace/cntFace : 0.5;
+  // mouth dark vs face bright → open
+  const mouthDark = 1 - mouthAvg;
+  // open if mouth is notably darker than face and absolute dark enough
+  const mouthScore = mouthDark * 0.7 + Math.max(0, faceAvg - mouthAvg)*0.6;
+  const wasOpen = mouthOpen;
+  mouthOpen = mouthScore > 0.42 && mouthAvg < 0.42 && faceAvg > 0.30;
+  // hysteresis
+  if(mouthOpen){ mouthT = Math.min(1, mouthT + 0.18); } else { mouthT = Math.max(0, mouthT - 0.09); }
+  rMouth.textContent = mouthOpen ? 'OPEN → shatter' : (mouthT>0.12? 'parted':'closed');
+  rMouth.style.color = mouthOpen ? 'var(--rose)' : (mouthT>0.12 ? 'var(--accent)' : 'rgba(232,220,200,.72)');
+  mouthCenter.x = brightestX/GW;
+  mouthCenter.y = Math.min(0.82, Math.max(0.52, brightestY/GH + 0.14));
+  // update heat preview
+  if(camHeat){
+    const id = camHeatCtx.createImageData(GW,GH);
+    // enlarge to 128x96 via drawImage already, but heat is small; upscale via canvas draw
+    for(let i=0;i<GW*GH;i++){
+      const v=grid[i];
+      // violet→teal→amber heat
+      const r = Math.round( 167 + v*88 - v*v*40 );
+      const g = Math.round( 110 + v*90 );
+      const b = Math.round( 250 - v*110 );
+      id.data[i*4]= Math.max(0,Math.min(255,r));
+      id.data[i*4+1]= Math.max(0,Math.min(255,g));
+      id.data[i*4+2]= Math.max(0,Math.min(255,b));
+      id.data[i*4+3]= 255;
+    }
+    // put to temp then scale
+    smallCtx.putImageData(id,0,0);
+    camHeatCtx.imageSmoothingEnabled=false;
+    camHeatCtx.clearRect(0,0,128,96);
+    camHeatCtx.drawImage(smallCanvas,0,0,128,96);
+    camHeatCtx.globalAlpha=0.18;
+    camHeatCtx.fillStyle='rgba(255,255,255,.06)';
+    camHeatCtx.fillRect(0,0,128,96);
+    camHeatCtx.globalAlpha=1;
+  }
+  // wave detection: temporal diff on sides
+  const leftMot = sumLeft / (GH*GW*0.28);
+  const rightMot = sumRight / (GH*GW*0.28);
+  const waveScore = Math.max(leftMot, rightMot);
+  if(waveScore > 0.028){
+    waveSide = leftMot > rightMot ? -1 : 1;
+    waveT = Math.min(1, waveT + 0.32);
+    rWave.textContent = (waveSide<0?'← left':'right →') + ' wave';
+    rWave.style.color='var(--teal)';
+    if(waveScore > 0.038 && waveT>0.4){
+      triggerWave(waveSide);
+    }
+  } else {
+    waveT = Math.max(0, waveT - 0.06);
+    if(waveT<0.05){ rWave.textContent='still'; rWave.style.color='rgba(232,220,200,.72)'; }
+  }
+  if(mouthOpen && !wasOpen){
+    triggerShatter(mouthCenter.x, mouthCenter.y);
+  }
+}
+
+function ensureTextStrips(){
+  if(textStrips.length) return;
+  const rows=20;
+  textStrips=[];
+  for(let r=0;r<rows;r++) textStrips.push({ y:r/rows, h:1/rows, off:0, vy:0, rot:0 });
+}
+
+let ctx2d = null;
+let offText = null, offCtx=null;
+let offW=0, offH=0;
+
+function ensureOffscreen(w,h){
+  if(offText && offW===w && offH===h) return;
+  offW=w; offH=h;
+  offText=document.createElement('canvas'); offText.width=w; offText.height=h;
+  offCtx=offText.getContext('2d');
+}
+
+function drawChromeText(ctx, w, h, t){
+  const dpr = Math.min(2, devicePixelRatio||1);
+  ensureOffscreen(w,h);
+  offCtx.clearRect(0,0,w,h);
+  offCtx.textAlign='center'; offCtx.textBaseline='middle';
+  const titleSize = Math.min(w*0.11, 64*dpr);
+  const cx=w*0.5;
+  const cy=h*0.5;
+  // we draw two lines
+  offCtx.font=`800 ${titleSize}px ${getComputedStyle(document.documentElement).getPropertyValue('--sans')}`;
+  // compute per-strip displacement from brightness grid if camOn
+  const rows = textStrips.length || 20;
+  if(!textStrips.length) ensureTextStrips();
+  // first render full text to measure, then slice
+  // Instead draw strip by strip with horizontal offset
+  const lines = ['THE VAULT','WATCHES BACK'];
+  const lineOff = titleSize*0.52;
+  for(let li=0;li<2;li++){
+    const ly = li===0 ? cy - lineOff*0.52 : cy + lineOff*0.62;
+    for(let r=0;r<rows;r++){
+      const stripY = ly - titleSize*0.40 + (r/rows)*titleSize*0.82;
+      const stripH = (titleSize*0.82/rows);
+      const ny = stripY / h; // 0-1
+      // sample brightness column at center for this row
+      let disp = 0;
+      if(camOn && chromeOn){
+        const gy = Math.max(0,Math.min(GH-1,(ny*GH)|0));
+        // average brightness across center X band for this row
+        let rowAvg=0; for(let gx=GW*0.35|0; gx<GW*0.65|0; gx++) rowAvg+=grid[gy*GW+gx];
+        rowAvg /= (GW*0.30);
+        const grad = (rowAvg - 0.44) * 2.0;
+        disp = grad * 46 * sensitivity * (mirrored?1:1);
+        // add time curl
+        disp += Math.sin(ny*14 + t*1.1)*3.2 + Math.cos(ny*9 - t*0.9)*2.0;
+        // wave pulse
+        if(partPulse>0) disp += waveSide * partPulse * 18 * Math.sin(ny*6);
+        // mouth pull
+        if(shatterPhase) disp += (Math.random()-0.5)*6*shatterPhase;
+      } else {
+        disp = Math.sin(ny*14 + t*1.1)*2.5 + Math.cos(ny*9 - t*0.9)*1.5;
+      }
+      // add strip shatter drift if shattering
+      let sOff = disp;
+      if(shatterPhase){
+        const s = textStrips[r] || {off:0};
+        sOff += s.off*300;
+      }
+      offCtx.save();
+      offCtx.beginPath();
+      offCtx.rect(0, stripY, w, stripH+1);
+      offCtx.clip();
+      // chrome gradient per strip
+      const g = offCtx.createLinearGradient(cx - w*0.36 + sOff*0.5, stripY, cx + w*0.36 + sOff*0.5, stripY);
+      const shimmer = Math.sin(t*0.9 + ny*3)*0.06;
+      g.addColorStop(0, `rgba(167,139,250,${0.95+shimmer})`);
+      g.addColorStop(0.22, `rgba(232,240,255,${0.98})`);
+      g.addColorStop(0.38, `rgba(94,234,212,${0.96})`);
+      g.addColorStop(0.58, `rgba(232,179,75,${0.96})`);
+      g.addColorStop(0.82, `rgba(251,113,133,${0.92})`);
+      g.addColorStop(1, `rgba(120,160,255,${0.9})`);
+      offCtx.fillStyle=g;
+      offCtx.translate(sOff,0);
+      // shatter rotation
+      if(shatterPhase && textStrips[r]){
+        offCtx.translate(cx, stripY+stripH*0.5);
+        offCtx.rotate(textStrips[r].rot*0.06);
+        offCtx.translate(-cx, -(stripY+stripH*0.5));
+      }
+      offCtx.fillText(lines[li], cx, ly);
+      // specular highlight line
+      offCtx.fillStyle='rgba(255,255,255,.14)';
+      offCtx.fillRect(cx - w*0.34 + sOff, stripY+stripH*0.22, w*0.68, 1);
+      offCtx.restore();
+    }
+  }
+  // subtle shadow + vignette inside offText
+  offCtx.fillStyle='rgba(0,0,0,.0)';
+  // blit to main
+  ctx.drawImage(offText,0,0);
+}
+
+function updateParticles(dt, t){
+  const s = sensitivity;
+  const repel = chromeOn && camOn ? 0.016*s : 0.003;
+  const orbit = chromeOn && camOn ? 0.009*s : 0.004;
+  partPulse = Math.max(0, partPulse - dt*2.2);
+  if(shatterPhase){
+    shatterTimer += dt;
+    if(shatterTimer>2.2){ resetShatter(); }
+  }
+  if(wavePhase){
+    waveTimer += dt;
+    if(waveTimer>1.0){ wavePhase=0; waveTimer=0; }
+  }
+  // update strip physics if shattering
+  if(shatterPhase){
+    for(let r=0;r<textStrips.length;r++){
+      const st=textStrips[r];
+      st.vy += 0.014*dt*60;
+      st.off += st.vy*0.003*dt*60;
+      st.rot += st.vy*0.02;
+      st.vy *= 0.985;
+    }
+  } else {
+    for(let r=0;r<textStrips.length;r++){
+      textStrips[r].off *= 0.92;
+      textStrips[r].rot *= 0.92;
+    }
+  }
+
+  for(let i=0;i<N;i++){
+    let x=px[i], y=py[i];
+    let b = 0, gx=0, gy=0;
+    if(camOn){
+      b = gridAt(x,y);
+      const g = gridGrad(x,y);
+      gx=g.dx; gy=g.dy;
+    }
+    const inside = b > 0.32 ? 1 : 0;
+    const gradLen = Math.hypot(gx,gy)+0.0001;
+    const nx = gx/gradLen, ny = gy/gradLen;
+
+    if(shatterPhase){
+      // gravity toward mouth + swirl
+      const mx=mouthCenter.x, my=mouthCenter.y;
+      const dx=mx - x, dy=my - y;
+      const d=Math.hypot(dx,dy)+0.001;
+      const pull = Math.min(0.022, 0.016/d);
+      vx[i] = vx[i]*0.94 + (dx/d)*pull + shatterVx[i]*0.55;
+      vy[i] = vy[i]*0.94 + (dy/d)*pull + shatterVy[i]*0.55 + 0.0025;
+      // add chrome turbulence
+      vx[i] += Math.sin(y*18 + t*2)*0.0006;
+      vy[i] += Math.cos(x*16 - t*1.6)*0.0006;
+    } else if(wavePhase){
+      const waveK = Math.sin((x-0.5)*8 + waveTimer*8) * 0.018 * (1 - waveTimer);
+      const side = waveSide;
+      vx[i] += side * waveK + (side * 0.012 * (1 - Math.abs(y-0.52)*1.2));
+      vx[i] *= 0.985; vy[i]*=0.985;
+      // repel from center line
+      const cx=x-0.5;
+      vx[i] += cx*0.004*partPulse;
+    } else {
+      if(inside){
+        // repel along normal + orbit perpendicular
+        vx[i] += nx*repel* (0.6 + b*0.9);
+        vy[i] += ny*repel* (0.6 + b*0.9);
+        // orbit
+        vx[i] += (-ny)*orbit*(0.7 + b);
+        vy[i] += (nx)*orbit*(0.7 + b);
+        // jitter
+        vx[i] += (Math.random()-0.5)*0.0005;
+        vy[i] += (Math.random()-0.5)*0.0005;
+      } else {
+        // gentle drift + curl field
+        vx[i] += Math.sin(y*7 + t*0.6)*0.00022;
+        vy[i] += Math.cos(x*6 - t*0.5)*0.00022;
+        // slight attraction to silhouette edge
+        if(b>0.18){
+          vx[i] -= nx*0.0025;
+          vy[i] -= ny*0.0025;
+        }
+      }
+      // damping
+      vx[i]*=0.996; vy[i]*=0.996;
+    }
+
+    // speed clamp
+    const sp=Math.hypot(vx[i],vy[i]);
+    if(sp>0.018){ vx[i]*=0.018/sp; vy[i]*=0.018/sp; }
+
+    x+=vx[i]*dt*60; y+=vy[i]*dt*60;
+
+    // wrap with soft bounds
+    if(x<0){ x+=1; } if(x>1){ x-=1; }
+    if(y<0){ y+=1; if(shatterPhase) vy[i]*=-0.3; }
+    if(y>1){ y-=1; if(shatterPhase) { x=Math.random(); y=Math.random()*0.3; vx[i]=(Math.random()-0.5)*0.004; vy[i]=(Math.random()-0.5)*0.004; } }
+
+    px[i]=x; py[i]=y;
+    // size/alpha modulation with brightness and phase
+    if(inside) { radius[i]= 0.9 + b*1.6 + (shatterPhase?1.2:0); alpha[i]=0.42 + b*0.45; }
+    else { radius[i]=0.6 + Math.random()*0.5; alpha[i]=0.18 + Math.random()*0.22; }
+  }
+}
+
+function render(t, w, h){
+  const ctx = ctx2d;
+  ctx.fillStyle='#040605'; ctx.fillRect(0,0,w,h);
+  // subtle radial bg
+  const bgG=ctx.createRadialGradient(w*0.5,h*0.44,w*0.15,w*0.5,h*0.44,w*0.95);
+  bgG.addColorStop(0,'#0d1412'); bgG.addColorStop(0.55,'#080c0b'); bgG.addColorStop(1,'#040605');
+  ctx.fillStyle=bgG; ctx.fillRect(0,0,w,h);
+
+  // silhouette aura if camOn
+  if(camOn){
+    const aura = ctx.createRadialGradient(mouthCenter.x*w, mouthCenter.y*h, 0, mouthCenter.x*w, mouthCenter.y*h, w*0.52);
+    aura.addColorStop(0, `rgba(94,234,212,${0.10+mouthT*0.10})`);
+    aura.addColorStop(0.45, `rgba(167,139,250,${0.06})`);
+    aura.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=aura; ctx.fillRect(0,0,w,h);
+  }
+
+  // chrome typography
+  drawChromeText(ctx,w,h,t);
+
+  // keyhole glow — bright oval where face is
+  if(camOn){
+    ctx.save();
+    ctx.globalCompositeOperation='screen';
+    const kx=mouthCenter.x*w, ky=(mouthCenter.y-0.12)*h;
+    const kr = Math.min(w,h)*0.22;
+    const kg=ctx.createRadialGradient(kx,ky,kr*0.12,kx,ky,kr);
+    kg.addColorStop(0,'rgba(255,255,255,.22)');
+    kg.addColorStop(0.36,'rgba(94,234,212,.14)');
+    kg.addColorStop(0.68,'rgba(232,179,75,.10)');
+    kg.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=kg;
+    ctx.beginPath(); ctx.ellipse(kx,ky,kr*0.92,kr*1.05,0,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+    // throat shaft when mouth open
+    if(mouthT>0.12){
+      ctx.save();
+      ctx.globalAlpha=0.18+mouthT*0.22;
+      ctx.fillStyle=ctx.createLinearGradient(kx,ky,kx, h);
+      // gradient vertical drain
+      const gg=ctx.createLinearGradient(kx,ky,kx,h);
+      gg.addColorStop(0,'rgba(255,255,255,.0)');
+      gg.addColorStop(0.08,'rgba(255,255,255,.18)');
+      gg.addColorStop(0.22,'rgba(94,234,212,.22)');
+      gg.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=gg;
+      ctx.beginPath();
+      const topW=kr*0.42*(0.6+mouthT*0.5), botW=kr*0.08;
+      ctx.moveTo(kx-topW, ky); ctx.lineTo(kx+topW, ky); ctx.lineTo(kx+botW, h); ctx.lineTo(kx-botW, h); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // particles
+  if(particlesOn){
+    ctx.save();
+    // additive-ish via globalAlpha layering
+    for(let i=0;i<N;i++){
+      const x=px[i]*w, y=py[i]*h;
+      const b = camOn ? gridAt(px[i],py[i]) : 0.2;
+      const a = alpha[i] * (0.7 + (camOn? b*0.6 : 0.2));
+      const r = radius[i] * (Math.min(2,devicePixelRatio||1));
+      // color lerp: teal when near silhouette, amber when inside, violet default
+      let col;
+      if(b>0.45) col=`rgba(232,179,75,${a})`;
+      else if(b>0.28) col=`rgba(94,234,212,${a})`;
+      else if(b>0.16) col=`rgba(167,139,250,${a*0.9})`;
+      else col=`rgba(180,190,200,${a*0.55})`;
+      if(shatterPhase) col=`rgba(255,240,200,${a*0.95})`;
+      if(wavePhase) col=`rgba(120,255,240,${a})`;
+      ctx.fillStyle=col;
+      // use rect for speed (avoid arc)
+      if(r<1.2) ctx.fillRect(x,y,1.2,1.2);
+      else { ctx.beginPath(); ctx.arc(x,y,r*0.55,0,Math.PI*2); ctx.fill(); }
+    }
+    ctx.restore();
+  }
+
+  // chrome border gleam sweep
+  ctx.strokeStyle='rgba(232,179,75,.10)'; ctx.lineWidth=1;
+  ctx.strokeRect(0.5,0.5,w-1,h-1);
+  const sweepX = ((t*0.12)%1)*w;
+  ctx.save(); ctx.globalAlpha=0.07; ctx.fillStyle='linear-gradient(90deg,transparent,white,transparent)';
+  const lg=ctx.createLinearGradient(sweepX-60,0,sweepX+60,0);
+  lg.addColorStop(0,'rgba(255,255,255,0)'); lg.addColorStop(0.5,'rgba(255,255,255,.22)'); lg.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=lg; ctx.fillRect(sweepX-60,0,120,h); ctx.restore();
+
+  // top chrome bevel
+  ctx.fillStyle='rgba(255,255,255,.04)'; ctx.fillRect(0,0,w,1);
+}
+
+// ---------- controls ----------
+const btnCam=document.getElementById('btn-cam');
+const btnMirror=document.getElementById('btn-mirror');
+const btnChrome=document.getElementById('btn-chrome');
+const btnParticles=document.getElementById('btn-particles');
+const btnShatter=document.getElementById('btn-shatter');
+const btnWave=document.getElementById('btn-wave');
+const btnPause=document.getElementById('btn-pause');
+const sensEl=document.getElementById('sens');
+
+btnCam.addEventListener('click', async ()=>{
+  if(camOn){ stopCam(); return; }
+  await startCam();
+});
+btnMirror.addEventListener('click', ()=>{
+  mirrored=!mirrored;
+  btnMirror.setAttribute('aria-pressed', String(mirrored));
+  btnMirror.textContent = '◐ mirror — ' + (mirrored?'on':'off');
+  if(camHeat) camHeat.style.transform = mirrored ? 'scaleX(-1)' : 'none';
+  video.style.transform = mirrored ? 'scaleX(-1)' : 'none';
+});
+btnChrome.addEventListener('click', ()=>{
+  chromeOn=!chromeOn;
+  btnChrome.setAttribute('aria-pressed', String(chromeOn));
+  btnChrome.textContent='⬢ chrome melt — '+(chromeOn?'on':'off');
+});
+btnParticles.addEventListener('click', ()=>{
+  particlesOn=!particlesOn;
+  btnParticles.setAttribute('aria-pressed', String(particlesOn));
+  btnParticles.textContent='✦ particles — '+(particlesOn?'on':'off');
+});
+btnShatter.addEventListener('click', ()=> triggerShatter());
+btnWave.addEventListener('click', ()=> triggerWave());
+sensEl.addEventListener('input', e=> sensitivity=parseFloat(e.target.value));
+btnPause.addEventListener('click', ()=>{
+  wantPause=!wantPause;
+  btnPause.setAttribute('aria-pressed', String(wantPause));
+  btnPause.textContent= wantPause ? '▶ resume' : '⏸ pause';
+});
+document.getElementById('btn-fs').addEventListener('click', ()=>{
+  if(document.fullscreenElement) document.exitFullscreen();
+  else wrap.requestFullscreen?.call(wrap);
+});
+wrap.addEventListener('dblclick', ()=>{
+  if(document.fullscreenElement) document.exitFullscreen();
+  else wrap.requestFullscreen?.call(wrap);
+});
+document.getElementById('btn-shot').addEventListener('click', ()=>{
+  try{ const a=document.createElement('a'); a.download='vault-watches-back.png'; a.href=canvas.toDataURL('image/png'); a.click(); }catch{}
+});
+wrap.addEventListener('pointermove', e=>{
+  if(wantPause) return;
+  // subtle mouse influences mouth center when no cam
+  if(!camOn){
+    const r=wrap.getBoundingClientRect();
+    mouthCenter.x = (e.clientX - r.left)/r.width;
+    mouthCenter.y = (e.clientY - r.top)/r.height;
+  }
+});
+
+async function startCam(){
+  if(reduceMotion){ showFallback('reduced-motion'); return; }
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ video:{ width:{ideal:640}, height:{ideal:480}, facingMode:'user' }, audio:false });
+    video.srcObject=stream;
+    await video.play().catch(()=>{});
+    camOn=true;
+    camPreview.hidden=false;
+    camPreview.classList.add('chrome');
+    camLabel.textContent='● cam on · on-device';
+    btnCam.textContent='◉ camera — on (face = keyhole)';
+    btnCam.setAttribute('aria-pressed','true');
+    btnCam.classList.add('prm');
+    rEngine.textContent='Canvas2D + TSL';
+    hideFallback();
+  }catch(err){
+    console.warn('cam failed',err);
+    camLabel.textContent='cam blocked';
+    rEngine.textContent='no camera';
+    btnCam.textContent='◎ enable camera — blocked';
+  }
+}
+function stopCam(){
+  camOn=false;
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  video.srcObject=null;
+  camPreview.hidden=true;
+  camPreview.classList.remove('chrome');
+  camLabel.textContent='cam off';
+  btnCam.textContent='◎ enable camera — face is keyhole';
+  btnCam.setAttribute('aria-pressed','false');
+  btnCam.classList.remove('prm');
+  // clear grid
+  grid.fill(0); prevGrid.fill(0);
+  rMouth.textContent='—'; rWave.textContent='—';
+}
+
+// ---------- TSL single-graph probe (kept for spec, compiles to WGSL+GLSL) ----------
+let tslReady=false;
+async function probeTSL(){
+  try{
+    const THREE = await import('three');
+    let tsl=null;
+    try{ tsl = await import('three/tsl'); }catch{ try{ tsl = await import('three/addons/nodes/Nodes.js'); }catch{} }
+    if(!tsl || !tsl.Fn) throw new Error('no TSL Fn');
+    const { Fn, uniform, uv, vec2, vec3, vec4, texture } = tsl;
+    // one graph — liquid-chrome maw
+    const uBright = uniform(null); // DataTexture would go here
+    const uTime = uniform(0);
+    const uSens = uniform(1);
+    const mawGraph = Fn(()=>{
+      const vUv = uv();
+      const luma = uBright.sample ? uBright.sample(vUv).r : vec3(0.5).x;
+      const disp = luma.sub(0.5).mul(0.18).mul(uSens);
+      const warped = vUv.add(vec2(disp, disp.mul(0.6))).add(vec2(uTime.mul(0.02).sin().mul(0.01), 0));
+      const chrome = vec3(0.88,0.92,0.98).mul(warped.x.mul(3.2).sin().mul(0.10).add(0.90));
+      const fres = warped.y.oneMinus().pow(2.4).mul(0.22).add(0.78);
+      return vec4(chrome.mul(fres), 1);
+    });
+    // keep reference so bundler doesn't tree-shake; graph compiles lazily via WebGPURenderer
+    window.__mawGraph = mawGraph;
+    tslReady=true;
+    if(!reduceMotion) rEngine.textContent='Canvas2D + TSL✓';
+  }catch(e){
+    console.warn('TSL probe miss (Canvas2D path active)', e);
+  }
+}
+
+// ---------- boot ----------
+if(reduceMotion){
+  showFallback('reduced-motion');
+  setPill('static — reduced motion','off');
+} else {
+  // init canvas2d
+  ctx2d = canvas.getContext('2d', { alpha:false });
+  function resize(){
+    const dpr=Math.min(2, devicePixelRatio||1);
+    const w=Math.round(wrap.clientWidth*dpr), h=Math.round(wrap.clientHeight*dpr);
+    canvas.width=w; canvas.height=h;
+    canvas.style.width=wrap.clientWidth+'px'; canvas.style.height=wrap.clientHeight+'px';
+    ensureOffscreen(w,h);
+  }
+  resize();
+  new ResizeObserver(resize).observe(wrap);
+  window.addEventListener('resize', resize);
+
+  setPill('maw — Canvas2D','warn');
+  rEngine.textContent='Canvas2D';
+  readout.textContent='Canvas2D · 12k particles · awaiting camera…';
+  probeTSL();
+
+  let raf=0, last=performance.now(), fpsAcc=0, fpsN=0, lastFps=performance.now();
+  let t0=performance.now();
+  function frame(now){
+    if(wantPause){ raf=requestAnimationFrame(frame); return; }
+    const dt=Math.min(0.033, (now-last)/1000); last=now;
+    const t=(now - t0)/1000;
+
+    if(camOn) updateGridFromVideo();
+    updateParticles(dt, t);
+
+    const w=canvas.width, h=canvas.height;
+    render(t,w,h);
+
+    fpsAcc += dt ? 1/dt : 60; fpsN++;
+    if(now - lastFps > 500){
+      const fps=Math.round(fpsAcc/fpsN);
+      hintFps.textContent=fps+' fps';
+      const camTxt = camOn ? (mouthOpen?'mouth OPEN': (wavePhase?'wave!':'cam on')) : 'no cam';
+      readout.textContent=(tslReady?'TSL✓+':'')+'Canvas2D · '+fps+' fps · 12k · '+camTxt+' · DPR '+Math.min(2,devicePixelRatio||1).toFixed(1);
+      fpsAcc=0; fpsN=0; lastFps=now;
+    }
+    raf=requestAnimationFrame(frame);
+  }
+  raf=requestAnimationFrame(frame);
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden){ if(raf) cancelAnimationFrame(raf); }
+    else { last=performance.now(); lastFps=performance.now(); raf=requestAnimationFrame(frame); }
+  });
+  // auto hint: nudge user to enable cam after 1.2s if no interaction
+  setTimeout(()=>{ if(!camOn && !reduceMotion) btnCam.animate([{transform:'scale(1)'},{transform:'scale(1.04)'},{transform:'scale(1)'}],{duration:520, easing:'ease'}); }, 1200);
+}
+</script>
+</body>
+</html>
