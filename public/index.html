@@ -257,9 +257,19 @@ header,main,footer{position:relative}
 .spark{transition:transform .2s ease,box-shadow .2s ease}
 .card:hover .spark{transform:scale(1.02);box-shadow:0 2px 12px rgba(0,0,0,.2)}
 
+/* ============ Deck Tilt — parallax glare (iteration 2) ============ */
+.card{transform-style:preserve-3d;will-change:transform}
+.card.tilt{transition:transform .6s cubic-bezier(.16,1,.3,1),box-shadow .6s cubic-bezier(.16,1,.3,1)}
+.card.tilt-active{transition:none}
+.card .glare{position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .3s;
+  background:radial-gradient(420px 320px at var(--gx,50%) var(--gy,50%),rgba(255,255,255,.14),transparent 65%),
+             radial-gradient(260px 200px at var(--gx,50%) var(--gy,50%),rgba(232,179,75,.10),transparent 70%)}
+
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
   .spark svg polyline{stroke-dashoffset:0}   /* draw-in cut → show the full line, not a blank one */
   #monsoon{display:none}
+  .card{transform:none!important;box-shadow:none!important}
+  .card .glare{display:none}
 }
 @media (max-width:980px){.act-grid{grid-template-columns:1fr}}
 @media (max-width:760px){.rollup{display:none}.hwrap{gap:12px;padding-top:8px;padding-bottom:8px}}
@@ -364,8 +374,10 @@ header,main,footer{position:relative}
              wrapper makes the whole sentence a single flex item so the chips flow inline again. -->
         <div v-if="!accounts.length" key="empty" class="card" style="color:var(--dim)"><p>no accounts yet — run <span class="mono acc">claude setup-token</span>, then add the <span class="mono acc">sk-ant-oat01…</span> line via the add-account skill or <span class="mono acc">POST /api/accounts</span> (paste the token there, never here)</p></div>
 
-        <article v-for="a in sortedAccounts" :key="a.account" class="card"
-                 :class="{'is-parked':a.parked&&!a.disabled,'is-disabled':a.disabled}">
+        <article v-for="a in sortedAccounts" :key="a.account" class="card tilt"
+                 :class="{'is-parked':a.parked&&!a.disabled,'is-disabled':a.disabled}"
+                 @pointermove="onTilt" @pointerleave="offTilt">
+          <div class="glare" aria-hidden="true"></div>
           <div class="card-head">
             <span class="acct">{{ a.account }}</span>
             <span v-if="a.label" class="alabel">{{ a.label }}</span>
@@ -1223,6 +1235,28 @@ const app=Vue.createApp({
         // scroll the card into view and flash it
         this.$nextTick(()=>{const el=[...document.querySelectorAll('.card')].find(c=>c.textContent.includes(id)); if(el){el.scrollIntoView({behavior:'smooth',block:'center'}); el.style.outline='1px solid var(--accent)'; el.style.outlineOffset='2px'; setTimeout(()=>el.style.outline='',900);}});
       }
+    },
+    // ---- Deck Tilt — parallax glare (iteration 2) ----
+    onTilt(e){
+      if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const el=e.currentTarget, r=el.getBoundingClientRect();
+      const px=(e.clientX-r.left)/r.width, py=(e.clientY-r.top)/r.height;
+      const rx=(py-0.5)* -8, ry=(px-0.5)* 8;
+      el.style.transform='perspective(900px) rotateX('+rx.toFixed(2)+'deg) rotateY('+ry.toFixed(2)+'deg)';
+      el.style.boxShadow=(px>0.5?' -':' ')+'6px 10px 28px rgba(0,0,0,.38), 0 2px 8px rgba(0,0,0,.25)';
+      el.classList.remove('tilt'); el.classList.add('tilt-active');
+      el.style.setProperty('--gx',(px*100).toFixed(1)+'%');
+      el.style.setProperty('--gy',(py*100).toFixed(1)+'%');
+      const gl=el.querySelector('.glare'); if(gl) gl.style.opacity='1';
+      // monsoon drifts opposite for layered parallax
+      const ms=document.getElementById('monsoon'); if(ms) ms.style.transform='translate3d('+((px-0.5)*-14).toFixed(1)+'px,'+((py-0.5)*-10).toFixed(1)+'px,0)';
+    },
+    offTilt(e){
+      const el=e.currentTarget;
+      el.style.transform=''; el.style.boxShadow='';
+      el.classList.remove('tilt-active'); el.classList.add('tilt');
+      const gl=el.querySelector('.glare'); if(gl) gl.style.opacity='0';
+      const ms=document.getElementById('monsoon'); if(ms) ms.style.transform='';
     },
 
     /* ================= KEYS (§2.4) ================= */
