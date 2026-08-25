@@ -333,6 +333,8 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
 
 /* ============ Curl Monsoon — flow field generative bg (iteration 1) ============ */
 #monsoon{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.42}
+/* <!-- IMPL: Signal Ghost --> — 10k boids behind grid, fixed viewport, pointer-none like monsoon */
+#ghost{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.88}
 #app{position:relative;z-index:1}
 header,main,footer{position:relative}
 
@@ -460,6 +462,7 @@ main.shake{animation:seismo-shake .38s ease}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
   .spark svg polyline{stroke-dashoffset:0}   /* draw-in cut → show the full line, not a blank one */
   #monsoon{display:none}
+  #ghost{display:none!important}
   #seismo,.seismo-wrap{display:none}
   #altar-sec{display:none!important}
   #chladni{display:none!important}
@@ -551,7 +554,9 @@ main.shake{animation:seismo-shake .38s ease}
 <body>
 <!-- IMPL: Mercury Blob Toggle -->
 <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><filter id="mercury-goo" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/><feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="goo"/><feComposite in="SourceGraphic" in2="goo" operator="atop"/></filter></svg>
+<!-- IMPL: Signal Ghost — 10k boids fleet behind grid (fixed z0, pointer-none; JS tracks cursor) -->
 <canvas id="monsoon" aria-hidden="true"></canvas>
+<canvas id="ghost" aria-hidden="true"></canvas>
 
 <div id="app" v-cloak>
 
@@ -3867,6 +3872,476 @@ function startMonsoon(){
   resize();
   start();
   window.__ferrofabric={get N(){return filaments.length}, get density(){return density}, get shatter(){return shatter}, shuffle:()=>{buildFilaments(); shatter=0.55;}, _stop:stop, _start:start};
+})();
+</script>
+<!-- IMPL: Signal Ghost — 10k WebGPU-compute boids faked with JS spatial hash, 60fps, hunt + vortex + cursor + GHOST -->
+<script>
+/* <!-- IMPL: Signal Ghost --> — 10k boids behind grid: calm amber → hunt red, vortex over dead keys, cursor avoidance, GHOST feed+explode */
+(function(){
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cv=document.getElementById('ghost'); if(!cv) return;
+  const ctx=cv.getContext('2d'); if(!ctx) return;
+  const N=10000;
+  let dpr=Math.min(window.devicePixelRatio||1,2);
+  let cssW=0, cssH=0, raf=0, running=false, t=0;
+  let mx=-9999, my=-9999, hasMouse=false;
+  // hunt state
+  let huntTargets=[]; // {x,y,r}
+  let hoverHunt=null; // {x,y,r} from .frow.fail hover
+  let huntIntensity=0; // 0 calm ..1 hunt
+  let hoverFailActive=false;
+  // GHOST feed
+  let feedState='idle'; // idle|follow|explode
+  let feedT=0, followUntil=0, explodeUntil=0;
+  let ghostBuffer='';
+  let ghostHud=null;
+  // spatial hash
+  const CELL=44;
+  const PER_R=42, PER_R2=1764, SEP_R=16, SEP_R2=256;
+  const MAX_SPEED_CALM=1.55, MAX_SPEED_HUNT=2.85, MAX_SPEED_EXPLODE=5.2;
+  const MAX_FORCE=0.094;
+  // typed arrays
+  const x=new Float32Array(N), y=new Float32Array(N), vx=new Float32Array(N), vy=new Float32Array(N);
+  const phase=new Float32Array(N);
+  function randInit(){
+    for(let i=0;i<N;i++){
+      x[i]=Math.random()*cssW;
+      y[i]=Math.random()*cssH;
+      const a=Math.random()*Math.PI*2, s=0.42+Math.random()*0.9;
+      vx[i]=Math.cos(a)*s; vy[i]=Math.sin(a)*s;
+      phase[i]=Math.random()*Math.PI*2;
+    }
+  }
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    cssW=Math.max(1, Math.floor(window.innerWidth));
+    cssH=Math.max(1, Math.floor(window.innerHeight));
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+    // keep boids inside new viewport: clamp
+    for(let i=0;i<N;i++){
+      if(x[i]>cssW) x[i]=cssW*Math.random();
+      if(y[i]>cssH) y[i]=cssH*Math.random();
+      if(!cssW||!cssH) break;
+    }
+    // init on first resize if empty
+    if(t===0){
+      for(let i=0;i<N;i++){
+        if(x[i]===0&&y[i]===0&&vx[i]===0&&vy[i]===0){
+          x[i]=Math.random()*cssW; y[i]=Math.random()*cssH;
+          const a=Math.random()*Math.PI*2, s=0.42+Math.random()*0.9;
+          vx[i]=Math.cos(a)*s; vy[i]=Math.sin(a)*s; phase[i]=Math.random()*Math.PI*2;
+        }
+      }
+    }
+  }
+  resize(); randInit();
+  window.addEventListener('resize', ()=>resize());
+  // mouse track (pointer follows even though canvas pointer-events:none, track on window)
+  window.addEventListener('pointermove', e=>{ hasMouse=true; mx=e.clientX; my=e.clientY; }, {passive:true});
+  window.addEventListener('pointerleave', ()=>{ hasMouse=false; mx=-9999; my=-9999; });
+  // dead keys = cards that need attention (reauth/parked/disabled/crit) — poll rects throttled
+  function refreshHuntTargets(){
+    const cards=document.querySelectorAll('article.card');
+    const out=[];
+    for(const c of cards){
+      const chip=c.querySelector('.chip');
+      const txt=chip?chip.textContent.trim().toUpperCase():'';
+      const isDead = c.classList.contains('is-disabled') || !!c.querySelector('.reauth') || txt.includes('RE-AUTH') || txt.includes('DISABLED') || txt.includes('PARKED') || txt.includes('NO TOKEN') || c.querySelector('.chip.c-crit')!==null;
+      // also catch cards where hero >=95 via worstOf? read hero num text
+      let heroCrit=false;
+      const hero=c.querySelector('.hero-num');
+      if(hero){ const v=parseInt(hero.textContent,10); if(!isNaN(v)&&v>=95) heroCrit=true; }
+      if(isDead||heroCrit){
+        const r=c.getBoundingClientRect();
+        // viewport center
+        if(r.width>0&&r.height>0) out.push({x:r.left+r.width/2, y:r.top+r.height/2, r:Math.max(r.width,r.height)*0.48});
+      }
+    }
+    huntTargets=out;
+  }
+  setInterval(refreshHuntTargets, 520);
+  // also observe feed fails for hover hunt — pointerover delegation
+  document.addEventListener('pointerover', e=>{
+    const f=e.target.closest && e.target.closest('.frow.fail');
+    if(f){
+      hoverFailActive=true;
+      const r=f.getBoundingClientRect();
+      hoverHunt={x:r.left+r.width/2, y:r.top+r.height/2, r:Math.max(r.width,r.height)*0.52};
+    }
+  }, {passive:true});
+  document.addEventListener('pointerout', e=>{
+    const f=e.target.closest && e.target.closest('.frow.fail');
+    if(f){
+      // check if still over any fail row
+      const hovered=document.querySelector('.frow.fail:hover');
+      if(!hovered){ hoverFailActive=false; hoverHunt=null; }
+      else {
+        const r=hovered.getBoundingClientRect();
+        hoverHunt={x:r.left+r.width/2, y:r.top+r.height/2, r:Math.max(r.width,r.height)*0.52};
+      }
+    }
+  }, {passive:true});
+  // also treat any .inbox-row warn/fail as hunt signal -> hunt if inbox has reauth/deadkey items
+  // huntActive if dead cards exist or hoverFail
+  function isHuntActive(){
+    if(hoverFailActive) return true;
+    if(huntTargets.length>0) return true;
+    // also if feed has .frow.fail visible in viewport? use huntTargets already covers cards, but feed fails also trigger hunt
+    const failRows=document.querySelectorAll('.frow.fail');
+    if(failRows.length>0) return true;
+    return false;
+  }
+  // GHOST typing — type GHOST anywhere (not in INPUT) to feed then explode
+  function ensureHud(){
+    if(ghostHud) return ghostHud;
+    let el=document.getElementById('ghost-hud');
+    if(!el){
+      el=document.createElement('div');
+      el.id='ghost-hud';
+      el.setAttribute('aria-hidden','true');
+      el.style.cssText='position:fixed;right:14px;bottom:14px;z-index:2;pointer-events:none;font:11px ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:rgba(199,165,91,.0);background:rgba(16,18,17,.0);border:1px solid rgba(199,165,91,0);border-radius:20px;padding:6px 10px;transition:opacity .2s,transform .2s,background .2s,border-color .2s,color .2s;transform:translateY(4px);opacity:0;';
+      document.body.appendChild(el);
+    }
+    ghostHud=el; return el;
+  }
+  function flashHud(txt, ms){
+    const el=ensureHud();
+    el.textContent=txt;
+    el.style.opacity='1'; el.style.transform='translateY(0)';
+    el.style.color='rgba(199,165,91,.92)'; el.style.background='rgba(16,18,17,.72)'; el.style.borderColor='rgba(199,165,91,.22)';
+    el.style.boxShadow='0 2px 18px rgba(0,0,0,.35)';
+    clearTimeout(el._t);
+    el._t=setTimeout(()=>{ el.style.opacity='0'; el.style.transform='translateY(4px)'; }, ms||1400);
+  }
+  window.addEventListener('keydown', e=>{
+    const ae=document.activeElement;
+    if(ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.isContentEditable)) return;
+    if(e.metaKey||e.ctrlKey||e.altKey) return;
+    const ch=(e.key.length===1?e.key:'');
+    if(!ch) return;
+    ghostBuffer=(ghostBuffer+ch).slice(-12);
+    if(/ghost/i.test(ghostBuffer)){
+      if(feedState!=='idle') return;
+      ghostBuffer='';
+      triggerFeed();
+    }
+    // also show progressive hint GH -> GHO -> GHOST?
+    const tail=ghostBuffer.toUpperCase();
+    if(tail.length>0 && 'GHOST'.startsWith(tail)){
+      const el=ensureHud();
+      el.textContent='GHOST '+tail.length+'/5';
+      el.style.opacity='1'; el.style.transform='translateY(0)';
+      el.style.color='rgba(199,165,91,.72)'; el.style.background='rgba(16,18,17,.58)'; el.style.borderColor='rgba(199,165,91,.16)';
+      clearTimeout(el._hintT);
+      el._hintT=setTimeout(()=>{ el.style.opacity='0'; }, 900);
+    }
+  });
+  function triggerFeed(){
+    feedState='follow';
+    feedT=performance.now();
+    followUntil=feedT+2850;
+    explodeUntil=followUntil+1650;
+    huntIntensity=Math.max(huntIntensity, 0.92);
+    flashHud('◉ GHOST fed — following cursor…', 1800);
+    // nudge velocities toward cursor immediately
+    for(let i=0;i<N;i++){
+      const dx=mx - x[i], dy=my - y[i];
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d<620){
+        const k=(1 - d/620)*0.55;
+        vx[i]+= (dx/(d||1))*k*2.2;
+        vy[i]+= (dy/(d||1))*k*2.2;
+      }
+    }
+  }
+  function triggerExplode(){
+    feedState='explode';
+    feedT=performance.now();
+    const cx= hasMouse ? mx : cssW*0.5;
+    const cy= hasMouse ? my : cssH*0.5;
+    flashHud('✦ GHOST burst — amber explosion', 1600);
+    for(let i=0;i<N;i++){
+      const dx=x[i]-cx, dy=y[i]-cy;
+      const d=Math.sqrt(dx*dx+dy*dy)||1;
+      // outward blast: closer = stronger; plus random swirl
+      const near=Math.max(0, 1 - d/560);
+      const blast=(0.85 + Math.random()*1.1)*(2.2 + near*4.2);
+      const ang=Math.atan2(dy,dx) + (Math.random()-0.5)*0.55;
+      vx[i]=Math.cos(ang)*blast + (Math.random()-0.5)*1.2;
+      vy[i]=Math.sin(ang)*blast + (Math.random()-0.5)*1.2;
+    }
+  }
+  function isHidden(){ return document.hidden || window.matchMedia('(prefers-reduced-motion: reduce)').matches || cv.style.display==='none'; }
+  function start(){
+    if(running) return;
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    running=true; cancelAnimationFrame(raf); loop();
+  }
+  function stop(){ running=false; cancelAnimationFrame(raf); raf=0; }
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    if(document.hidden){ raf=requestAnimationFrame(loop); return; }
+    t++;
+    // feed timeline
+    const now=performance.now();
+    if(feedState==='follow' && now>=followUntil){ triggerExplode(); }
+    else if(feedState==='explode' && now>=explodeUntil){ feedState='idle'; flashHud('◉ flock calm', 900); }
+    // hunt intensity lerp
+    const wantHunt = isHuntActive() || feedState!=='idle';
+    const targetHunt = wantHunt ? 1 : 0;
+    huntIntensity += (targetHunt - huntIntensity)* (wantHunt?0.13:0.045);
+    if(Math.abs(huntIntensity-targetHunt)<0.01) huntIntensity=targetHunt;
+    // max speed by mode
+    const maxSpeed = feedState==='explode' ? MAX_SPEED_EXPLODE : (huntIntensity>0.5 ? MAX_SPEED_HUNT : MAX_SPEED_CALM);
+    const maxSpeed2 = maxSpeed*maxSpeed;
+    // build spatial hash
+    const cols=Math.ceil(cssW/CELL), rows=Math.ceil(cssH/CELL);
+    const grid=new Map();
+    for(let i=0;i<N;i++){
+      // wrap
+      if(x[i]<-12) x[i]=cssW+11; else if(x[i]>cssW+12) x[i]=-11;
+      if(y[i]<-12) y[i]=cssH+11; else if(y[i]>cssH+12) y[i]=-11;
+      let cx=Math.floor(x[i]/CELL), cy=Math.floor(y[i]/CELL);
+      if(cx<0) cx=0; if(cx>=cols) cx=cols-1;
+      if(cy<0) cy=0; if(cy>=rows) cy=rows-1;
+      const key=cy*cols+cx;
+      let arr=grid.get(key); if(!arr){ arr=[]; grid.set(key,arr); } arr.push(i);
+    }
+    // precompute hunt target list with hover merged
+    const allTargets = hoverHunt ? huntTargets.concat([hoverHunt]) : huntTargets;
+    // find nearest target for global intensity? per boid we find nearest
+    // update boids velocities
+    for(let i=0;i<N;i++){
+      const cx=Math.floor(x[i]/CELL), cy=Math.floor(y[i]/CELL);
+      let sepX=0, sepY=0, aliX=0, aliY=0, cohX=0, cohY=0, cnt=0;
+      let sepCnt=0;
+      for(let oy=-1; oy<=1; oy++){
+        const ny=cy+oy; if(ny<0||ny>=rows) continue;
+        for(let ox=-1; ox<=1; ox++){
+          const nx=cx+ox; if(nx<0||nx>=cols) continue;
+          const key=ny*cols+nx;
+          const cell=grid.get(key); if(!cell) continue;
+          for(let k=0;k<cell.length;k++){
+            const j=cell[k]; if(j===i) continue;
+            const dx=x[i]-x[j], dy=y[i]-y[j];
+            const d2=dx*dx+dy*dy;
+            if(d2<1 || d2>PER_R2) continue;
+            const d=Math.sqrt(d2);
+            // separation (close)
+            if(d2<SEP_R2){
+              sepX += dx/d; sepY += dy/d; sepCnt++;
+            }
+            aliX += vx[j]; aliY += vy[j];
+            cohX += x[j]; cohY += y[j];
+            cnt++;
+          }
+        }
+      }
+      let ax=0, ay=0;
+      if(cnt>0){
+        // separation steering
+        if(sepCnt>0){
+          sepX/=sepCnt; sepY/=sepCnt;
+          let len=Math.hypot(sepX,sepY)||1;
+          sepX=(sepX/len)*maxSpeed; sepY=(sepY/len)*maxSpeed;
+          let sx=sepX - vx[i], sy=sepY - vy[i];
+          let sl=Math.hypot(sx,sy); if(sl>MAX_FORCE){ sx=sx/sl*MAX_FORCE; sy=sy/sl*MAX_FORCE; }
+          ax+=sx*1.55; ay+=sy*1.55;
+        }
+        // alignment
+        aliX/=cnt; aliY/=cnt;
+        let al=Math.hypot(aliX,aliY)||1;
+        aliX=(aliX/al)*maxSpeed; aliY=(aliY/al)*maxSpeed;
+        let ax2=aliX - vx[i], ay2=aliY - vy[i];
+        let al2=Math.hypot(ax2,ay2); if(al2>MAX_FORCE){ ax2=ax2/al2*MAX_FORCE; ay2=ay2/al2*MAX_FORCE; }
+        ax+=ax2*1.05; ay+=ay2*1.05;
+        // cohesion
+        cohX/=cnt; cohY/=cnt;
+        let cxv=cohX - x[i], cyv=cohY - y[i];
+        let cl=Math.hypot(cxv,cyv)||1;
+        cxv=(cxv/cl)*maxSpeed; cyv=(cyv/cl)*maxSpeed;
+        let cx2=cxv - vx[i], cy2=cyv - vy[i];
+        let cl2=Math.hypot(cx2,cy2); if(cl2>MAX_FORCE){ cx2=cx2/cl2*MAX_FORCE; cy2=cy2/cl2*MAX_FORCE; }
+        ax+=cx2*0.92; ay+=cy2*0.92;
+      }
+      // hunt pull + vortex over dead keys
+      if(allTargets.length>0 && huntIntensity>0.06){
+        // find nearest target
+        let best=null, bestD2=1e9;
+        for(let ti=0;ti<allTargets.length;ti++){
+          const tg=allTargets[ti];
+          const dx=tg.x - x[i], dy=tg.y - y[i];
+          const d2=dx*dx+dy*dy;
+          if(d2<bestD2){ bestD2=d2; best=tg; }
+        }
+        if(best){
+          const dx=best.x - x[i], dy=best.y - y[i];
+          const d=Math.sqrt(bestD2)||1;
+          // pull toward target when hunting
+          const pull= 0.018 + huntIntensity*0.055 + (feedState==='follow'?0.042:0);
+          ax += (dx/d)*pull*maxSpeed*1.8;
+          ay += (dy/d)*pull*maxSpeed*1.8;
+          // vortex swirl when near target
+          const vortexR= Math.max(88, best.r*0.42);
+          if(d < vortexR + 62){
+            const tngX= -dy/d, tngY= dx/d; // perpendicular
+            const swirl = (1 - Math.min(1, d/(vortexR+62))) * (0.28 + huntIntensity*0.52) * (feedState==='explode'?0.55:1);
+            ax += tngX*swirl*1.9;
+            ay += tngY*swirl*1.9;
+            // slight inward
+            ax += (dx/d)*swirl*0.45;
+            ay += (dy/d)*swirl*0.45;
+          }
+        }
+      }
+      // cursor avoidance (only when hunting) + follow when feed follow
+      if(hasMouse){
+        const dxc=x[i]-mx, dyc=y[i]-my;
+        const d2c=dxc*dxc+dyc*dyc;
+        const avoidR = huntIntensity>0.25 ? 132 : 0;
+        if(avoidR>0 && d2c < avoidR*avoidR && d2c>4){
+          const d=Math.sqrt(d2c);
+          const rep= (1 - d/avoidR) * (0.72 + huntIntensity*0.45);
+          ax += (dxc/d)*rep*1.65;
+          ay += (dyc/d)*rep*1.65;
+        }
+        if(feedState==='follow'){
+          const dxf=mx - x[i], dyf=my - y[i];
+          const d2f=dxf*dxf+dyf*dyf;
+          const d=Math.sqrt(d2f)||1;
+          if(d<560){
+            const f=(1 - d/560)*0.92;
+            ax += (dxf/d)*f*1.35;
+            ay += (dyf/d)*f*1.35;
+          }
+        }
+      }
+      // add slight curl noise for calm shimmer
+      if(huntIntensity<0.35 && feedState==='idle'){
+        const n=Math.sin(x[i]*0.012 + t*0.018 + phase[i])*0.014;
+        const m=Math.cos(y[i]*0.013 + t*0.016)*0.014;
+        ax += n*0.42; ay += m*0.42;
+      }
+      // integrate
+      vx[i]+=ax; vy[i]+=ay;
+      // limit speed
+      let sp2=vx[i]*vx[i]+vy[i]*vy[i];
+      if(sp2>maxSpeed2){ const s=Math.sqrt(sp2); vx[i]=vx[i]/s*maxSpeed; vy[i]=vy[i]/s*maxSpeed; }
+      // drag / minimum speed floor for calm drift
+      vx[i]*=0.9985; vy[i]*=0.9985;
+      // position
+      x[i]+=vx[i]; y[i]+=vy[i];
+    }
+    // draw
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    // trail fade — amber vs red phosphor
+    if(feedState==='explode'){
+      ctx.fillStyle='rgba(18,14,8,0.13)';
+    } else if(huntIntensity>0.5){
+      const a=(0.09 + huntIntensity*0.07).toFixed(3);
+      ctx.fillStyle='rgba(22,12,12,'+a+')';
+    } else {
+      const a=(0.085 + huntIntensity*0.04).toFixed(3);
+      ctx.fillStyle='rgba(16,18,17,'+a+')';
+    }
+    ctx.fillRect(0,0,cssW,cssH);
+    // boid color lerp
+    let r,g,b, alpha;
+    if(feedState==='explode'){
+      r=232; g=179; b=75; alpha=0.92;
+    } else if(huntIntensity>0.08){
+      const m=huntIntensity;
+      // amber #c7a55b (199,165,91) -> red phosphor (232,64,64) HSL 0 85% 60% ~ 240,62,62 but spec hsla 0 85% 60% = ~239,55? approximate 232,93,68
+      const rr=199 + (232-199)*m;
+      const gg=165 + (76-165)*m;
+      const bb=91 + (68-91)*m;
+      r=rr|0; g=gg|0; b=bb|0; alpha=0.58 + m*0.26;
+    } else {
+      r=199; g=165; b=91; alpha=0.52;
+    }
+    // size varies slightly by speed for liveliness in hunt
+    const baseR = huntIntensity>0.5 ? 1.55 : 1.18;
+    // batch path for speed
+    ctx.fillStyle='rgba('+r+','+g+','+b+','+alpha.toFixed(3)+')';
+    ctx.beginPath();
+    for(let i=0;i<N;i++){
+      const xi=x[i], yi=y[i];
+      if(xi<-4||xi>cssW+4||yi<-4||yi>cssH+4) continue;
+      // speed-modulated radius
+      let rr=baseR;
+      if(huntIntensity>0.35){
+        const sp=Math.hypot(vx[i],vy[i]);
+        rr= baseR + Math.min(1.1, sp*0.22);
+      }
+      // orient slightly along velocity when hunting (elliptical)
+      if(huntIntensity>0.45 && feedState!=='explode'){
+        const ang=Math.atan2(vy[i],vx[i]);
+        const ca=Math.cos(ang)*rr*0.55, sa=Math.sin(ang)*rr*0.55;
+        // small streak: line segment instead of dot for motion blur feel
+        const x1=xi - ca, y1=yi - sa;
+        const x2=xi + ca, y2=yi + sa;
+        ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+        // we stroke lines, but path batch currently fill-only — fallback to rect for streak? do arc instead when not hunting
+      }
+      // use circle for calm / explode, use small rect for stroke case? keep circles for now for batch fill
+      ctx.moveTo(xi+rr, yi);
+      ctx.arc(xi, yi, rr, 0, Math.PI*2);
+    }
+    ctx.fill();
+    // when hunting, add subtle red glow overlay for swirl — faint
+    if(huntIntensity>0.55){
+      ctx.fillStyle='rgba(232,93,68,'+(0.018*huntIntensity).toFixed(3)+')';
+      for(let ti=0;ti<allTargets.length;ti++){
+        const tg=allTargets[ti];
+        const rad=Math.max(56, tg.r*0.52);
+        const g=ctx.createRadialGradient(tg.x,tg.y, 0, tg.x,tg.y, rad+42);
+        g.addColorStop(0,'rgba(232,93,68,'+(0.12*huntIntensity).toFixed(2)+')');
+        g.addColorStop(0.55,'rgba(232,93,68,'+(0.04*huntIntensity).toFixed(2)+')');
+        g.addColorStop(1,'rgba(232,93,68,0)');
+        ctx.fillStyle=g;
+        ctx.beginPath(); ctx.arc(tg.x,tg.y, rad+42, 0, Math.PI*2); ctx.fill();
+      }
+    }
+    // follow indicator: amber ring at cursor during feed follow
+    if(feedState==='follow' && hasMouse){
+      const pulse=(Math.sin(now*0.009)+1)*0.5;
+      ctx.strokeStyle='rgba(232,179,75,'+(0.22+ pulse*0.18).toFixed(2)+')';
+      ctx.lineWidth=1.4;
+      ctx.beginPath(); ctx.arc(mx,my, 16+ pulse*7, 0, Math.PI*2); ctx.stroke();
+      ctx.strokeStyle='rgba(232,179,75,0.12)';
+      ctx.beginPath(); ctx.arc(mx,my, 42, 0, Math.PI*2); ctx.stroke();
+    }
+    // explode flash
+    if(feedState==='explode'){
+      const age=now-feedT;
+      const p=Math.min(1, age/420);
+      const a=(0.18*(1-p)).toFixed(3);
+      if(a>0.01){
+        const cx=hasMouse?mx:cssW*0.5, cy=hasMouse?my:cssH*0.5;
+        const rad= 58 + p*220;
+        const g=ctx.createRadialGradient(cx,cy, 0, cx,cy, rad);
+        g.addColorStop(0,'rgba(232,179,75,'+a+')');
+        g.addColorStop(0.35,'rgba(232,179,75,'+(a*0.35).toFixed(3)+')');
+        g.addColorStop(1,'rgba(232,179,75,0)');
+        ctx.fillStyle=g;
+        ctx.beginPath(); ctx.arc(cx,cy, rad, 0, Math.PI*2); ctx.fill();
+      }
+    }
+    raf=requestAnimationFrame(loop);
+  }
+  // pause when tab hidden (already inside loop) + visibility listener
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) {} else if(!running) start(); });
+  // start after first paint so DOM cards are measurable
+  requestAnimationFrame(()=>{ refreshHuntTargets(); start(); });
+  window.__ghost={get N(){return N}, get hunt(){return huntIntensity}, get feed(){return feedState}, triggerFeed, triggerExplode, refreshHuntTargets};
+  // expose reduced-motion toggle observer
+  try{
+    window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', e=>{ if(e.matches) stop(); else start(); });
+  }catch(_){}
 })();
 </script>
 
