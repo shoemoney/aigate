@@ -723,6 +723,36 @@ main.shake{animation:seismo-shake .38s ease}
 .nebula-trailkey{display:flex;align-items:center;gap:6px;font:10px var(--mono);letter-spacing:.06em;color:var(--dim)}
 .nebula-trailkey b{color:var(--fg);font-weight:600}
 @media (prefers-reduced-motion:reduce){#nebula-sec{display:none!important}#nebula{display:none!important}}
+/* <!-- IMPL: Rhizome --> — The Vault That Grows Underground · mycelial network under glass · Velocity-Grid hyphae glow + mushroom species + spore drift + necrotize crunch */
+#rhizome-sec{position:relative;z-index:1;margin:0 0 14px;border:1px solid #242822;border-radius:6px;overflow:hidden;background:linear-gradient(180deg,#0d120e 0%,#0a0e0c 55%,#070a08 100%);box-shadow:0 4px 18px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.05)}
+.rhizome-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#131917 0%,#0d110f 55%,#070a08 100%);border-bottom:1px solid #242822;flex-wrap:wrap}
+.rhizome-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#a8d080}
+.rhizome-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.rhizome-head .rhizome-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.rhizome-head .rhizome-note b{color:#d8e8c8;font-weight:600}
+.rhizome-head .rhizome-actions{display:flex;align-items:center;gap:6px}
+.rhizome-canvas-wrap{position:relative;height:190px;background:
+  radial-gradient(ellipse 640px 120px at 50% -6%,rgba(168,208,128,.09),transparent 68%),
+  radial-gradient(ellipse 460px 110px at 82% 88%,rgba(95,174,122,.07),transparent 70%),
+  radial-gradient(ellipse 380px 90px at 14% 78%,rgba(232,179,75,.04),transparent 70%),
+  linear-gradient(180deg,#070a08 0%,#060809 100%);overflow:hidden;cursor:crosshair;touch-action:none}
+#rhizome{display:block;width:100%;height:100%;pointer-events:auto}
+.rhizome-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0a0f0c;border-top:1px solid #242822;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);flex-wrap:wrap}
+.rhizome-meta .mode{color:#d8e8c8}
+.rhizome-meta .hint{opacity:.75}
+.rhizome-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(168,208,128,.52);background:rgba(7,10,8,.55);border:1px solid rgba(168,208,128,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+.rhizome-pulse{position:absolute;right:12px;top:10px;pointer-events:none;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(168,208,128,.62);background:rgba(7,10,8,.55);border:1px solid rgba(168,208,128,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px}
+.rhizome-pulse i{width:7px;height:7px;border-radius:50%;background:#a8d080;box-shadow:0 0 8px rgba(168,208,128,.6);animation:rhizome-breathe 3.4s ease-in-out infinite}
+@keyframes rhizome-breathe{0%,100%{transform:scale(.88);opacity:.72}50%{transform:scale(1.2);opacity:1}}
+.rhizome-legend{display:flex;align-items:center;gap:8px;font:10px var(--mono);letter-spacing:.06em;color:var(--dim);flex-wrap:wrap}
+.rhizome-legend i{width:10px;height:10px;border-radius:50%;display:inline-block;vertical-align:middle;border:1px solid rgba(255,255,255,.14);box-shadow:0 0 6px currentColor;flex:none}
+.rhizome-legend em{width:14px;height:3px;border-radius:2px;display:inline-block;vertical-align:middle;opacity:.7;flex:none}
+.rhizome-glass{position:absolute;inset:0;pointer-events:none;border-radius:0;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),inset 0 -1px 0 rgba(0,0,0,.22)}
+.rhizome-glass::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.06),transparent 38%,transparent 72%,rgba(255,255,255,.03));pointer-events:none}
+.rhizome-glass::after{content:'';position:absolute;left:6%;right:6%;top:8%;height:22%;background:linear-gradient(180deg,rgba(255,255,255,.09),transparent);border-radius:50% / 100%;filter:blur(.3px);pointer-events:none}
+.rhizome-water-btn{font:10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:#a8d080;border:1px solid rgba(168,208,128,.28);border-radius:20px;padding:4px 10px;background:rgba(168,208,128,.08);transition:.15s}
+.rhizome-water-btn:hover{color:#d8e8c8;border-color:rgba(168,208,128,.45);background:rgba(168,208,128,.12)}
+@media (prefers-reduced-motion:reduce){#rhizome-sec .rhizome-canvas-wrap{height:84px}#rhizome{opacity:.42;filter:saturate(.6)}.rhizome-pulse i{animation:none!important}}
 /* <!-- IMPL: Spectral Vault --> — SDF vault door: torus-knot keyhole, depth tumblers, volumetric shafts, BREACH shockwave */
 #vault-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #23262a;border-radius:6px;overflow:hidden;background:#06090c;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
 .vault-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#13191c 0%,#0c1012 55%,#06090c 100%);border-bottom:1px solid #23262a}
@@ -1687,6 +1717,31 @@ main.shake{animation:seismo-shake .38s ease}
             </div>
             <div class="shelf-plank" aria-hidden="true"></div>
           </div>
+          <!-- IMPL: Rhizome — The Vault That Grows Underground · provider=mushroom species, key=spore node, Velocity-Grid hyphae glow -->
+          <div id="rhizome-sec" role="region" aria-label="Rhizome — The Vault That Grows Underground · mycelial network under glass">
+            <div class="rhizome-head">
+              <span class="sec-num">◈</span><h2>Rhizome</h2>
+              <span class="rhizome-note"><b id="rhizome-count">{{ rhizomeSporeLabel }}</b> · <b id="rhizome-mode">{{ rhizomeModeLabel }}</b> · 40×20 velocity-grid · hyphae = glass veins</span>
+              <span class="rhizome-actions">
+                <button class="rhizome-water-btn" type="button" @click="rhizomeWater()" title="water it — idle overgrowth pours, spores drift and re-tether" aria-label="water the mycelium">💧 water</button>
+                <button class="btn sm" type="button" @click="rhizomePulseAll()" title="pulse every hypha — light races through translucent veins" aria-label="pulse mycelium">◎ pulse</button>
+              </span>
+            </div>
+            <div class="rhizome-canvas-wrap" id="rhizome-wrap">
+              <canvas id="rhizome" width="1200" height="190" aria-label="Rhizome — mycelial vault under glass: each provider is a mushroom species, each key a spore node, hyphae glow with velocity-grid light pulses on every fetch, water to overgrow, revoke to necrotize" role="img"></canvas>
+              <div class="rhizome-glass" aria-hidden="true"></div>
+              <span class="rhizome-spec">⬢ 40×20 velocity-grid · Yi-Wen Lin glow · drift + re-tether · necrotize on revoke</span>
+              <span class="rhizome-pulse" id="rhizome-pulse" aria-hidden="true"><i></i><span id="rhizome-pulse-label">{{ rhizomePulseText }}</span></span>
+            </div>
+            <div class="rhizome-meta">
+              <span class="mode">▸ <span id="rhizome-readout">{{ rhizomeReadout }}</span></span>
+              <span class="rhizome-legend" id="rhizome-legend" aria-hidden="true">
+                <template v-for="m in rhizomeLegend" :key="m.id"><i :style="{background:m.color,color:m.color}"></i>{{ m.label }} · {{ m.count }}</template>
+                <em v-if="rhizomeLegend.length" style="background:linear-gradient(90deg,#a8d080,#e8b34b);margin-left:6px"></em><span v-if="rhizomeLegend.length" class="dim">hyphae pulse</span>
+              </span>
+              <span class="hint">Vue Vapor spore counters · canvas hyphae · WebAudio crunch · DPR≤2 · respects reduced-motion</span>
+            </div>
+          </div>
           <!-- IMPL: Solari Split-Flap -->
           <div class="solari-rail" role="region" aria-label="Solari departure board — every key is a flap, search riffles the board">
             <div class="solari-head">
@@ -1918,6 +1973,11 @@ const app=Vue.createApp({
     _solariAudio:null,
     _solariT:null,
     _solariRaf:0,
+    // <!-- IMPL: Rhizome -->
+    _rhizomePulseT:0,
+    _rhizomeIdleT:0,
+    _rhizomePulseLabel:'dormant · glass veins',
+    _rhizomeAudio:null,
 
     /* ---- palette (iteration 1 — Warp Palette) ---- */
     paletteOpen:false,
@@ -2140,6 +2200,46 @@ const app=Vue.createApp({
       if(n===tot) return 'all flaps';
       return n+' match';
     },
+    // <!-- IMPL: Rhizome --> — Vapor-mode spore counters (computed, no VDOM churn): 2000+ cheap derives, provider→species, key→spore node
+    rhizomeCounts(){
+      const m={};
+      for(const k of this.keys){
+        const p=k.provider||'unknown';
+        m[p]=(m[p]||0)+1;
+      }
+      return m;
+    },
+    rhizomeSporeLabel(){
+      const n=this.keys.length;
+      if(!n) return '0 spores · dormant soil';
+      const species=Object.keys(this.rhizomeCounts).length;
+      return n+' spore'+(n===1?'':'s')+' · '+species+' species';
+    },
+    rhizomeModeLabel(){
+      if(!this.keys.length) return 'dormant · glass veins';
+      const w=this.keys.filter(k=>k.status==='working').length;
+      const d=this.keys.filter(k=>k.status==='dead').length;
+      if(this.reducedMotion()) return w+' thriving · '+d+' necrotic · static';
+      if(d) return w+' thriving · '+d+' necrotic · breathing';
+      return w+' thriving · mycelial · breathing';
+    },
+    rhizomePulseText(){
+      return this._rhizomePulseLabel || 'dormant · glass veins';
+    },
+    rhizomeReadout(){
+      const n=this.keys.length;
+      if(!n) return '0 spores · water to overgrow · revoke to necrotize';
+      const providers=Object.keys(this.rhizomeCounts);
+      const parts=providers.map(p=> p+' '+this.rhizomeCounts[p]).join(' · ');
+      return n+' spores · '+parts+' · click shroom to pulse · 💧 to overgrow';
+    },
+    rhizomeLegend(){
+      const counts=this.rhizomeCounts;
+      return Object.keys(counts).sort().map(p=>{
+        const meta=this.rhizomeSpeciesMeta(p);
+        return {id:p,label:meta.label,count:counts[p],color:meta.color};
+      });
+    },
   },
   watch:{
     titleText:{ immediate:true, handler(v){ document.title=v; } },
@@ -2153,26 +2253,43 @@ const app=Vue.createApp({
     vhsPos(){ this.$nextTick(()=>this._updateVhsFx()); },
     vhsScrubbing(){ this.$nextTick(()=>this._updateVhsFx()); },
     keys(newVal, oldVal){
-      if(this.reducedMotion()) return;
       // detect status changes or new keys → snap flap + click
       const oldById={}; (oldVal||[]).forEach(k=>{ oldById[k.id]=k.status; });
       let changed=false;
-      newVal.forEach(k=>{
-        const prev=oldById[k.id];
-        if(prev===undefined || prev!==k.status){
-          changed=true;
-          this.solariOld[k.id]=prev||k.provider||'';
-          this.solariFlipping[k.id]=true;
-          this.solariClick(k.status);
-          setTimeout(()=>{ delete this.solariFlipping[k.id]; }, 460);
+      if(!this.reducedMotion()){
+        newVal.forEach(k=>{
+          const prev=oldById[k.id];
+          if(prev===undefined || prev!==k.status){
+            changed=true;
+            this.solariOld[k.id]=prev||k.provider||'';
+            this.solariFlipping[k.id]=true;
+            this.solariClick(k.status);
+            setTimeout(()=>{ delete this.solariFlipping[k.id]; }, 460);
+          }
+        });
+        if(changed) this.solariRiffleAll(true);
+      }
+      // <!-- IMPL: Rhizome --> — sync canvas network, pulse on status/arrival, keep vapor counters fresh
+      this.$nextTick(()=>{
+        if(window.__rhizomeSync) window.__rhizomeSync(newVal, oldVal);
+        // new keys → gentle pulse, status flips → bright pulse
+        if(newVal && oldVal){
+          const news=newVal.filter(k=>!oldById.hasOwnProperty(k.id));
+          if(news.length && window.__rhizomePulse) news.forEach(k=> window.__rhizomePulse(k.provider, k.id));
+          newVal.forEach(k=>{
+            const prev=oldById[k.id];
+            if(prev!==undefined && prev!==k.status && window.__rhizomePulse) window.__rhizomePulse(k.provider, k.id, k.status);
+          });
+        } else if(newVal && !oldVal && window.__rhizomeSync){
+          // initial load already synced
         }
       });
-      if(changed) this.solariRiffleAll(true);
     },
     keysOpen(v){
       if(v && !this.reducedMotion()){
         this.$nextTick(()=> this.startShelfPhysics());
         this.$nextTick(()=> this.solariRiffleAll(true));
+        this.$nextTick(()=>{ if(window.__rhizomeSync) window.__rhizomeSync(this.keys, []); if(window.__rhizomePulse) window.__rhizomePulse(null,null,'water'); });
       } else {
         if(this._shelfRaf){ cancelAnimationFrame(this._shelfRaf); this._shelfRaf=0; }
         document.querySelectorAll('.jar').forEach(el=>{ el.style.setProperty('--slosh','0'); el.style.setProperty('--tilt','0deg'); el.style.setProperty('--bob','0px'); });
@@ -3185,12 +3302,14 @@ const app=Vue.createApp({
       try{
         const r=await send('POST','/api/keys',{provider,key,label});
         if(r.status===401)return this.kick();
-        if(r.ok){ this.kmsgColor='var(--ok)'; this.kmsg='✓ added '+provider; this.kkey=''; this.klabel=''; }
+        if(r.ok){ this.kmsgColor='var(--ok)'; this.kmsg='✓ added '+provider; this.kkey=''; this.klabel=''; if(window.__rhizomePulse) window.__rhizomePulse(provider,null,'working'); }
         else{ this.kmsgColor='var(--crit)'; this.kmsg='✗ '+(r.body.error||('HTTP '+r.status)); }
       }catch(err){ this.kmsgColor='var(--crit)'; this.kmsg='✗ '+err; }
     },
     async delKey(k){
       if(!confirm('Delete key '+k.provider+(k.label?' · '+k.label:'')+' ('+(k.key_hint||'')+')?'))return;
+      // <!-- IMPL: Rhizome --> — necrotize before server confirms: crunch + vein darkens immediately
+      if(!this.reducedMotion()){ this.rhizomeCrunch(k.provider); }
       const r=await send('DELETE','/api/keys/'+k.id).catch(err=>({error:String(err)}));
       if(r.status===401)return this.kick();
       if(r.ok){ this.kmsgColor='var(--dim)'; this.kmsg='deleted'; }
@@ -3198,12 +3317,20 @@ const app=Vue.createApp({
     },
     async refreshKey(k){
       this.kmsgColor='var(--dim)'; this.kmsg='checking '+k.provider+'…';
+      // <!-- IMPL: Rhizome --> — light pulse races hyphae on every fetch/verify
+      if(window.__rhizomePulse) window.__rhizomePulse(k.provider, k.id, k.status);
+      if(!this.reducedMotion()){
+        this._rhizomePulseLabel='fetch · '+k.provider+' · light racing hyphae';
+        clearTimeout(this._rhizomePulseT);
+        this._rhizomePulseT=setTimeout(()=>{ this._rhizomePulseLabel='dormant · glass veins'; }, 1700);
+      }
       const r=await send('POST','/api/keys/'+k.id+'/refresh').catch(err=>({error:String(err)}));
       if(r.status===401)return this.kick();
       if(r.status===502){ this.kmsgColor='var(--crit)'; this.kmsg='✗ check failed — '+((r.body&&r.body.error)||'upstream error'); return; }
       if(r.ok){
         this.kmsgColor='var(--ok)';
         this.kmsg=r.body&&r.body.checked===false?'↳ no liveness probe for this provider':('✓ '+k.provider+' — '+(r.body&&r.body.alive?'working':'dead'));
+        if(r.body&&r.body.alive===false && !this.reducedMotion() && window.__rhizomeNecrotize) window.__rhizomeNecrotize(k.provider);
       }else{ this.kmsgColor='var(--crit)'; this.kmsg='✗ '+((r.body&&r.body.error)||r.error||('HTTP '+r.status)); }
     },
     // <!-- IMPL: Formaldehyde Jar Shelf -->
@@ -3356,6 +3483,74 @@ const app=Vue.createApp({
       clearTimeout(this._solariT);
       this._solariT=setTimeout(()=>{ this.solariRiffling=false; }, 620);
     },
+    // <!-- IMPL: Rhizome --> — species palette + Vapor counters + Velocity-Grid hyphae pulses + water/overgrowth + necrotize crunch
+    rhizomeSpeciesMeta(p){
+      const m=(p||'').toLowerCase();
+      if(m.includes('openai')) return {label:'Amanita',color:'#e8b34b',shape:'cap'};
+      if(m.includes('anthropic')||m.includes('claude')) return {label:'Morel',color:'#d99a3d',shape:'cone'};
+      if(m.includes('google')||m.includes('gemini')) return {label:'Chanterelle',color:'#5fae7a',shape:'funnel'};
+      if(m.includes('openrouter')) return {label:'Psilocybe',color:'#b8a8ff',shape:'bell'};
+      if(m.includes('fal')) return {label:'Inky Cap',color:'#ff8f8f',shape:'ink'};
+      if(m.includes('perplexity')) return {label:'Oyster',color:'#7ec8b8',shape:'oyster'};
+      if(m.includes('mistral')) return {label:'Porcini',color:'#c9a86a',shape:'porcini'};
+      if(m.includes('groq')) return {label:'Enoki',color:'#e0d8c8',shape:'enoki'};
+      if(m.includes('cohere')) return {label:'Shiitake',color:'#a8a090',shape:'shiitake'};
+      // hash fallback
+      let h=0; for(let i=0;i<m.length;i++) h=(h*31+m.charCodeAt(i))|0;
+      const cols=['#a8d080','#6ec6ff','#b8a8ff','#e8b34b','#ff8f8f','#7ec8b8','#d99a3d','#c98a6a'];
+      const labels=['Amanita','Morel','Chanterelle','Psilocybe','Inky Cap','Oyster','Porcini','Enoki'];
+      const idx=Math.abs(h)%cols.length;
+      return {label:labels[idx],color:cols[idx],shape:'cap'};
+    },
+    rhizomeWater(){
+      if(window.__rhizomeWater) window.__rhizomeWater();
+      this._rhizomePulseLabel='watered · overgrowth pouring';
+      clearTimeout(this._rhizomePulseT);
+      this._rhizomePulseT=setTimeout(()=>{ this._rhizomePulseLabel='dormant · glass veins'; }, 2400);
+      if(window.__rhizomePulse) window.__rhizomePulse(null,null,'water');
+      try{
+        if(!this._rhizomeAudio) this._rhizomeAudio=new (window.AudioContext||window.webkitAudioContext)();
+        const ac=this._rhizomeAudio; if(ac.state==='suspended') ac.resume();
+        const now=ac.currentTime;
+        const o=ac.createOscillator(), g=ac.createGain(), f=ac.createBiquadFilter();
+        o.type='sine'; f.type='lowpass'; f.frequency.setValueAtTime(900,now);
+        o.frequency.setValueAtTime(420,now); o.frequency.exponentialRampToValueAtTime(180,now+0.22);
+        g.gain.setValueAtTime(0.12,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.34);
+        o.connect(f); f.connect(g); g.connect(ac.destination); o.start(now); o.stop(now+0.36);
+      }catch(_){}
+    },
+    rhizomePulseAll(){
+      if(window.__rhizomePulse) window.__rhizomePulse(null,null,'pulse');
+      this._rhizomePulseLabel='pulse · light racing hyphae';
+      clearTimeout(this._rhizomePulseT);
+      this._rhizomePulseT=setTimeout(()=>{ this._rhizomePulseLabel='dormant · glass veins'; }, 1600);
+    },
+    rhizomeCrunch(provider){
+      if(this.reducedMotion()) return;
+      try{
+        if(!this._rhizomeAudio) this._rhizomeAudio=new (window.AudioContext||window.webkitAudioContext)();
+        const ac=this._rhizomeAudio; if(ac.state==='suspended') ac.resume();
+        const now=ac.currentTime;
+        // filtered noise burst + low thud = crunch
+        const len=Math.floor(ac.sampleRate*0.22);
+        const buf=ac.createBuffer(1,len,ac.sampleRate);
+        const ch=buf.getChannelData(0);
+        for(let i=0;i<len;i++){ ch[i]=(Math.random()*2-1)*Math.pow(1-i/len,1.8); }
+        const src=ac.createBufferSource(); src.buffer=buf;
+        const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.setValueAtTime(1800,now); bp.Q.setValueAtTime(0.9,now);
+        const hp=ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.setValueAtTime(400,now);
+        const g=ac.createGain(); g.gain.setValueAtTime(0.28,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.24);
+        src.connect(bp); bp.connect(hp); hp.connect(g); g.connect(ac.destination); src.start(now);
+        const o=ac.createOscillator(), og=ac.createGain();
+        o.type='sine'; o.frequency.setValueAtTime(110,now); o.frequency.exponentialRampToValueAtTime(28,now+0.18);
+        og.gain.setValueAtTime(0.26,now); og.gain.exponentialRampToValueAtTime(0.001,now+0.2);
+        o.connect(og); og.connect(ac.destination); o.start(now); o.stop(now+0.22);
+      }catch(_){}
+      this._rhizomePulseLabel='necrotize · vein severed — '+ (provider||'hypha') +' crunch';
+      clearTimeout(this._rhizomePulseT);
+      this._rhizomePulseT=setTimeout(()=>{ this._rhizomePulseLabel='dormant · glass veins'; }, 2200);
+      if(window.__rhizomeNecrotize) window.__rhizomeNecrotize(provider);
+    },
   },
   directives:{
     // one-shot autofocus on the edit panel's name input when it mounts (D6 — replaces the
@@ -3416,6 +3611,8 @@ const app=Vue.createApp({
     });
     // Curl Monsoon — flow field bg (iteration 1) — respects prefers-reduced-motion via CSS display:none, but also gate JS
     if(!matchMedia('(prefers-reduced-motion: reduce)').matches) this.$nextTick(()=>startMonsoon());
+    // <!-- IMPL: Rhizome --> — mycelial vault under glass (inside keys panel, not hero)
+    this.$nextTick(()=>startRhizome());
   },
   unmounted(){
     clearInterval(this._tick);
@@ -3496,6 +3693,494 @@ function startMonsoon(){
   frame();
   // stop on page hide to save battery
   document.addEventListener('visibilitychange',()=>{ if(document.hidden) cancelAnimationFrame(raf); else frame(); });
+}
+
+ // <!-- IMPL: Rhizome --> — The Vault That Grows Underground · 2D Velocity-Grid hyphae glow (Yi-Wen Lin fake) + spores drift/re-tether + overgrowth + necrotize crunch
+function startRhizome(){
+  const cv=document.getElementById('rhizome'); const wrap=document.getElementById('rhizome-wrap');
+  if(!cv||!wrap) return;
+  const ctx=cv.getContext('2d'); if(!ctx) return;
+  const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let dpr=Math.min(devicePixelRatio||1,2), W=0,H=0,raf=0,t=0;
+  let nodes=[], edges=[], centroids=new Map(), pulses=[], overgrowth=0, lastPulseAt=performance.now(), idleRaf=0;
+  const necro=new Map();
+  const gridW=40, gridH=20;
+  let gridGlow=new Float32Array(gridW*gridH);
+  let gridVX=new Float32Array(gridW*gridH);
+  let gridVY=new Float32Array(gridW*gridH);
+
+  function speciesMeta(p){
+    const m=(p||'').toLowerCase();
+    if(m.includes('openai')) return {color:'#e8b34b',shape:'cap'};
+    if(m.includes('anthropic')||m.includes('claude')) return {color:'#d99a3d',shape:'cone'};
+    if(m.includes('google')||m.includes('gemini')) return {color:'#5fae7a',shape:'funnel'};
+    if(m.includes('openrouter')) return {color:'#b8a8ff',shape:'bell'};
+    if(m.includes('fal')) return {color:'#ff8f8f',shape:'ink'};
+    if(m.includes('perplexity')) return {color:'#7ec8b8',shape:'oyster'};
+    if(m.includes('mistral')) return {color:'#c9a86a',shape:'porcini'};
+    if(m.includes('groq')) return {color:'#e0d8c8',shape:'enoki'};
+    let h=0; for(let i=0;i<m.length;i++) h=(h*31+m.charCodeAt(i))|0;
+    const cols=['#a8d080','#6ec6ff','#b8a8ff','#e8b34b','#ff8f8f','#7ec8b8','#d99a3d'];
+    return {color:cols[Math.abs(h)%cols.length],shape:'cap'};
+  }
+  function hexToRgb(hex){let r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return [r,g,b];}
+
+  function resize(){
+    dpr=Math.min(devicePixelRatio||1,2);
+    const r=wrap.getBoundingClientRect();
+    const cssW=Math.max(320, Math.floor(r.width));
+    const cssH=190;
+    cv.width=Math.floor(cssW*dpr); cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px'; cv.style.height=cssH+'px';
+    W=cssW; H=cssH;
+    gridGlow=new Float32Array(gridW*gridH);
+    gridVX=new Float32Array(gridW*gridH);
+    gridVY=new Float32Array(gridW*gridH);
+    rebuild();
+  }
+
+  function hash(s){let h=2166136261; for(let i=0;i<s.length;i++){h^=s.charCodeAt(i); h=Math.imul(h,16777619);}return h>>>0;}
+
+  function rebuild(keysOpt){
+    let keys=null;
+    try{
+      const proxy=(typeof app!=='undefined'&&app._instance&&app._instance.proxy)?app._instance.proxy:null;
+      if(keysOpt) keys=keysOpt;
+      else if(proxy&&proxy.keys) keys=proxy.keys;
+      else keys=[];
+    }catch(_){ keys=[]; }
+    if(!Array.isArray(keys)) keys=[];
+    const byProv=new Map();
+    keys.forEach(k=>{ const p=k.provider||'unknown'; if(!byProv.has(p)) byProv.set(p,[]); byProv.get(p).push(k); });
+    const provs=[...byProv.keys()].sort();
+    centroids=new Map();
+    const pad=70, usable=W - pad*2;
+    const step=provs.length<=1?0:usable/Math.max(1,provs.length-1);
+    provs.forEach((p,i)=>{
+      const x= provs.length===1? W*0.5 : pad + i*step + Math.sin(i*1.7)*8;
+      const y= H*0.62 + Math.cos(i*1.1)*10 + Math.sin(i*0.7)*6;
+      const meta=speciesMeta(p);
+      centroids.set(p,{x,y, meta, count:byProv.get(p).length});
+    });
+    const root={x:W*0.5, y:H*0.82, meta:{color:'#8a6b1e'}};
+    const nextNodes=[];
+    byProv.forEach((arr,p)=>{
+      const c=centroids.get(p);
+      arr.forEach(k=>{
+        const h=hash(String(k.id||k.provider+'-'+Math.random()));
+        const ang=(h%360)*Math.PI/180;
+        const rad= 16 + (h% 18) + (arr.length>3? (h%9):0);
+        const jx=c.x + Math.cos(ang)*rad + ((h>>>8)%7-3);
+        const jy=c.y - 14 - Math.sin(ang)*rad*0.55 - (h%10)*1.2;
+        const existing=nodes.find(n=>String(n.id)===String(k.id));
+        nextNodes.push({
+          id:k.id, provider:p, status:k.status||'unknown',
+          x: existing? existing.x : jx + (Math.random()*2-1)*2,
+          y: existing? existing.y : jy + (Math.random()*2-1)*2,
+          ox:jx, oy:jy, vx:(Math.random()-0.5)*0.2, vy:(Math.random()-0.5)*0.2,
+          phase:(h% 1000)/1000 * Math.PI*2, a:0.78 + (h% 30)/100
+        });
+      });
+    });
+    nodes=nextNodes;
+    edges=[];
+    nodes.forEach(n=>{
+      const c=centroids.get(n.provider);
+      if(c) edges.push({a:{x:n.x,y:n.y}, b:{x:c.x,y:c.y}, kind:'hypha', provider:n.provider, w:1.05, alpha:0.22});
+    });
+    provs.forEach((p,i)=>{
+      const c=centroids.get(p);
+      edges.push({a:{x:c.x,y:c.y}, b:{x:root.x,y:root.y}, kind:'rhizome', provider:p, w:1.8, alpha:0.28});
+      if(i>0){
+        const prev=centroids.get(provs[i-1]);
+        edges.push({a:{x:prev.x,y:prev.y}, b:{x:c.x,y:c.y}, kind:'rhizome', provider:p, w:1.25, alpha:0.18});
+      }
+    });
+    centroids.set('__root', root);
+  }
+
+  function gridIdx(gx,gy){ return gy*gridW+gx; }
+  function splatGlow(px,py,intensity){
+    const gx=Math.floor((px/W)*gridW), gy=Math.floor((py/H)*gridH);
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      const x=gx+dx, y=gy+dy; if(x<0||x>=gridW||y<0||y>=gridH) continue;
+      const d=Math.hypot(dx,dy);
+      const w=Math.max(0,1-d*0.62);
+      const idx=gridIdx(x,y);
+      gridGlow[idx]=Math.min(1, gridGlow[idx]+ intensity*w*0.85);
+      gridVX[idx]+= (Math.random()-0.5)*0.2*w;
+      gridVY[idx]+= (Math.random()-0.5)*0.2*w;
+    }
+  }
+
+  function pulse(provider, keyId, status){
+    lastPulseAt=performance.now();
+    overgrowth=Math.max(0, overgrowth-0.18);
+    let targets=[];
+    if(!provider){
+      targets=edges.filter(e=>e.kind!=='__root');
+    }else{
+      targets=edges.filter(e=>e.provider===provider);
+      if(!targets.length) targets=edges.filter(e=>e.kind==='rhizome');
+    }
+    const isWater=status==='water';
+    const cnt=Math.min(4, Math.max(1, targets.length? Math.min(3, targets.length):2));
+    for(let i=targets.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const tmp=targets[i]; targets[i]=targets[j]; targets[j]=tmp; }
+    for(let i=0;i<cnt;i++){
+      const e=targets[i%targets.length]; if(!e) continue;
+      const meta=speciesMeta(provider||e.provider||'');
+      const speed= isWater? 0.009 + Math.random()*0.007 : 0.018 + Math.random()*0.014;
+      pulses.push({x:e.a.x,y:e.a.y, ex:e.b.x, ey:e.b.y, prog:0, speed, color:meta.color, alpha:0.95, w:e.w, isWater});
+      splatGlow(e.a.x,e.a.y, isWater?0.55:0.82);
+    }
+    nodes.forEach(n=>{ if(!provider||n.provider===provider){ n.vx+=(Math.random()-0.5)*1.8; n.vy+=(Math.random()-0.5)*1.4; }});
+  }
+
+  function necrotize(provider){
+    if(!provider) return;
+    necro.set(provider, 0);
+    nodes.forEach(n=>{ if(n.provider===provider) n._necro=1; });
+    pulses.forEach(p=>{ if(p.color===speciesMeta(provider).color) p.isNecro=true; });
+  }
+
+  function water(){
+    lastPulseAt=performance.now();
+    overgrowth=Math.min(1, overgrowth+0.42);
+    pulse(null,null,'water');
+    pulse(null,null,'water');
+    nodes.forEach(n=>{ n.vx+=(Math.random()-0.5)*2.4; n.vy+=(Math.random()-0.5)*2.0; });
+  }
+
+  window.__rhizomeSync=(newVal, oldVal)=>{ rebuild(newVal); };
+  window.__rhizomePulse=(prov,keyId,status)=> pulse(prov,keyId,status);
+  window.__rhizomeWater=()=> water();
+  window.__rhizomeNecrotize=(prov)=> necrotize(prov);
+
+  cv.addEventListener('click', e=>{
+    if(reduced()){ water(); return; }
+    const r=cv.getBoundingClientRect();
+    const x=(e.clientX - r.left), y=(e.clientY - r.top);
+    let best=null, bd=36;
+    centroids.forEach((c,p)=>{
+      if(p==='__root') return;
+      const d=Math.hypot(c.x - x, c.y - y);
+      if(d < bd){ bd=d; best=p; }
+    });
+    if(best){ pulse(best,null,'pulse'); }
+    else { water(); }
+  });
+  cv.addEventListener('pointermove', e=>{
+    if(reduced()) return;
+    if(e.buttons!==1) return;
+    const r=cv.getBoundingClientRect();
+    const x=(e.clientX - r.left), y=(e.clientY - r.top);
+    splatGlow(x,y,0.14);
+  });
+
+  resize();
+  addEventListener('resize', resize);
+
+  let tries=0;
+  const initInt=setInterval(()=>{
+    try{
+      const proxy=(typeof app!=='undefined'&&app._instance&&app._instance.proxy)?app._instance.proxy:null;
+      if(proxy&&Array.isArray(proxy.keys)&&proxy.keys.length){ rebuild(proxy.keys); clearInterval(initInt); }
+      else if(++tries>18){ clearInterval(initInt); }
+    }catch(_){}
+  }, 280);
+
+  function frame(now){
+    if(reduced()){
+      ctx.save(); ctx.scale(dpr,dpr);
+      ctx.clearRect(0,0,W,H);
+      ctx.fillStyle='rgba(7,10,8,0.96)'; ctx.fillRect(0,0,W,H);
+      ctx.lineCap='round';
+      edges.forEach(e=>{
+        const meta=speciesMeta(e.provider||'');
+        const dim= necro.has(e.provider)? 0.08 : 0.14;
+        ctx.strokeStyle=meta.color; ctx.globalAlpha=dim; ctx.lineWidth=e.w*0.9;
+        ctx.beginPath(); ctx.moveTo(e.a.x,e.a.y); ctx.lineTo(e.b.x,e.b.y); ctx.stroke();
+      });
+      ctx.globalAlpha=1;
+      centroids.forEach((c,p)=>{
+        if(p==='__root') return;
+        const col=hexToRgb(c.meta.color);
+        ctx.fillStyle='rgba('+col[0]+','+col[1]+','+col[2]+',0.48)';
+        ctx.beginPath(); ctx.ellipse(c.x,c.y-6, 14, 9, 0, 0, Math.PI*2); ctx.fill();
+      });
+      nodes.forEach(n=>{
+        ctx.globalAlpha=n.a*0.55;
+        ctx.fillStyle= n.status==='working'? '#d8e8c8' : n.status==='dead'? '#5a3a2a' : '#8a8a7a';
+        ctx.beginPath(); ctx.arc(n.x,n.y, 2.8,0,Math.PI*2); ctx.fill();
+      });
+      ctx.restore();
+      return;
+    }
+    if(document.hidden){ raf=requestAnimationFrame(frame); return; }
+    t+=16;
+    const dt=16;
+    const idle= (now||performance.now())-lastPulseAt;
+    if(idle>9000){ overgrowth=Math.min(1, overgrowth + dt*0.00012); }
+    else if(idle<1200){ overgrowth=Math.max(0, overgrowth - dt*0.00035); }
+    necro.forEach((v,p)=>{
+      let nv=v+dt*0.0016; if(nv>1) nv=1;
+      necro.set(p,nv);
+    });
+
+    for(let i=0;i<gridGlow.length;i++){
+      gridGlow[i]*=0.93;
+      gridVX[i]*=0.88;
+      gridVY[i]*=0.88;
+      if(gridGlow[i]<0.01) gridGlow[i]=0;
+    }
+    for(let i=pulses.length-1;i>=0;i--){
+      const p=pulses[i];
+      p.prog+=p.speed * (p.isWater? 0.72:1) * (dt/16);
+      const x= p.x + (p.ex - p.x)*p.prog;
+      const y= p.y + (p.ey - p.y)*p.prog;
+      splatGlow(x,y, p.isWater?0.18:0.34);
+      p.x2=x; p.y2=y;
+      if(p.prog>=1){
+        splatGlow(p.ex,p.ey, p.isWater?0.42:0.72);
+        if(Math.random()<0.38 && p.ex!==centroids.get('__root')?.x){
+          const root=centroids.get('__root'); if(root){
+            pulses.push({x:p.ex,y:p.ey, ex:root.x, ey:root.y, prog:0, speed:p.speed*0.85, color:p.color, alpha:0.82, w:1.6});
+          }
+        }
+        pulses.splice(i,1);
+      }
+    }
+
+    const breathe=Math.sin(now*0.00052)*0.5+0.5;
+    nodes.forEach(n=>{
+      const drift= 0.42 + overgrowth*2.6;
+      const targetX=n.ox + Math.sin(now*0.00034 + n.phase)* (3.5 + overgrowth*12) + Math.cos(now*0.00021 + n.phase*1.3)*2;
+      const targetY=n.oy + Math.cos(now*0.00028 + n.phase)* (2.2 + overgrowth*6) + Math.sin(now*0.00041 + n.phase)*1.4;
+      n.vx += (targetX - n.x)*0.008;
+      n.vy += (targetY - n.y)*0.008;
+      const gx=Math.floor((n.x/W)*gridW), gy=Math.floor((n.y/H)*gridH);
+      if(gx>=0&&gx<gridW&&gy>=0&&gy<gridH){
+        const idx=gridIdx(gx,gy);
+        n.vx += gridVX[idx]*0.06;
+        n.vy += gridVY[idx]*0.06;
+      }
+      n.vx *=0.92; n.vy *=0.92;
+      n.x += n.vx*drift*0.62;
+      n.y += n.vy*drift*0.62;
+      if(n._necro){
+        n.vx+= (Math.random()-0.5)*0.6;
+        n.vy+=0.18;
+        n.y+=0.14;
+        n.a*=0.998;
+      }
+      n.x=Math.max(8, Math.min(W-8, n.x));
+      n.y=Math.max(8, Math.min(H-18, n.y));
+      if(idle<1200){
+        n.x += (n.ox - n.x)*0.004;
+        n.y += (n.oy - n.y)*0.004;
+      }
+    });
+
+    ctx.save(); ctx.scale(dpr,dpr);
+    ctx.fillStyle='rgba(7,10,8,1)'; ctx.fillRect(0,0,W,H);
+    ctx.globalAlpha=0.07; ctx.fillStyle='#1a2418';
+    for(let i=0;i<18;i++){
+      const gx=(i*97 + t*0.02)%W, gy=(H*0.78 + i*13)%H;
+      ctx.fillRect(gx, gy, 22, 1.2);
+    }
+    ctx.globalAlpha=1;
+
+    for(let gy=0;gy<gridH;gy++) for(let gx=0;gx<gridW;gx++){
+      const idx=gridIdx(gx,gy); const gval=gridGlow[idx]; if(gval<0.02) continue;
+      const cx=(gx+0.5)*(W/gridW), cy=(gy+0.5)*(H/gridH);
+      const rad= 18 + gval*22;
+      const grd=ctx.createRadialGradient(cx,cy,0,cx,cy,rad);
+      const alpha=Math.min(0.42, gval*0.52);
+      grd.addColorStop(0,'rgba(168,208,128,'+(alpha*0.55)+')');
+      grd.addColorStop(0.45,'rgba(232,179,75,'+(alpha*0.28)+')');
+      grd.addColorStop(1,'rgba(168,208,128,0)');
+      ctx.globalAlpha=1;
+      ctx.fillStyle=grd;
+      ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2); ctx.fill();
+    }
+
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    edges.forEach(e=>{
+      if(e.kind!=='rhizome') return;
+      const meta=speciesMeta(e.provider||'');
+      const nv=necro.get(e.provider)||0;
+      const isNecro=nv>0.02;
+      const baseA= isNecro? Math.max(0.04, e.alpha*(1-nv*0.85)) : e.alpha + overgrowth*0.06;
+      const mx=(e.a.x+e.b.x)/2, my=(e.a.y+e.b.y)/2;
+      const gx=Math.floor((mx/W)*gridW), gy=Math.floor((my/H)*gridH);
+      const gval=(gx>=0&&gx<gridW&&gy>=0&&gy<gridH)? gridGlow[gridIdx(gx,gy)] :0;
+      const w= e.w + gval*1.4 + breathe*0.22;
+      ctx.strokeStyle=isNecro? 'rgba(80,40,26,0.55)' : meta.color;
+      ctx.globalAlpha= baseA + gval*0.45;
+      ctx.lineWidth=w;
+      ctx.beginPath(); ctx.moveTo(e.a.x,e.a.y); ctx.lineTo(e.b.x,e.b.y); ctx.stroke();
+      if(!isNecro){
+        ctx.strokeStyle='rgba(255,255,255,0.18)';
+        ctx.globalAlpha= (0.14 + gval*0.22);
+        ctx.lineWidth=Math.max(0.6, w*0.42);
+        ctx.beginPath(); ctx.moveTo(e.a.x,e.a.y); ctx.lineTo(e.b.x,e.b.y); ctx.stroke();
+      }
+    });
+    edges.forEach(e=>{
+      if(e.kind!=='hypha') return;
+      const meta=speciesMeta(e.provider||'');
+      const nv=necro.get(e.provider)||0;
+      const isNecro=nv>0.14;
+      if(isNecro){
+        ctx.strokeStyle='rgba(80,40,26,'+ (0.22*(1-nv*0.5))+')';
+        ctx.globalAlpha=0.22;
+        ctx.setLineDash([3,4]);
+      } else {
+        ctx.strokeStyle=meta.color;
+        ctx.globalAlpha=0.18 + overgrowth*0.07;
+        ctx.setLineDash([]);
+      }
+      const mx=(e.a.x+e.b.x)/2, my=(e.a.y+e.b.y)/2;
+      const gx=Math.floor((mx/W)*gridW), gy=Math.floor((my/H)*gridH);
+      const gval=(gx>=0&&gx<gridW&&gy>=0&&gy<gridH)? gridGlow[gridIdx(gx,gy)] :0;
+      ctx.lineWidth= 1.0 + gval*0.9;
+      ctx.beginPath(); ctx.moveTo(e.a.x,e.a.y); ctx.lineTo(e.b.x,e.b.y); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+    ctx.globalAlpha=1;
+
+    pulses.forEach(p=>{
+      const x=p.x2!=null? p.x2 : p.x + (p.ex-p.x)*p.prog;
+      const y=p.y2!=null? p.y2 : p.y + (p.ey-p.y)*p.prog;
+      const rgb=hexToRgb(p.isNecro? '#5a2a14' : p.color);
+      const tx=p.x + (p.ex-p.x)*Math.max(0,p.prog-0.12);
+      const ty=p.y + (p.ey-p.y)*Math.max(0,p.prog-0.12);
+      ctx.strokeStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',0.62)';
+      ctx.globalAlpha=p.alpha*0.72;
+      ctx.lineWidth= (p.isWater?1.4:2.1);
+      ctx.beginPath(); ctx.moveTo(tx,ty); ctx.lineTo(x,y); ctx.stroke();
+      const grd=ctx.createRadialGradient(x,y,0,x,y,10);
+      grd.addColorStop(0,'rgba(255,255,255,0.92)');
+      grd.addColorStop(0.28,'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',0.88)');
+      grd.addColorStop(1,'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',0)');
+      ctx.globalAlpha=p.alpha;
+      ctx.fillStyle=grd;
+      ctx.beginPath(); ctx.arc(x,y,9,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha=1;
+    });
+
+    centroids.forEach((c,p)=>{
+      if(p==='__root'){
+        const pulse=Math.sin(now*0.0012)*0.18+0.82;
+        ctx.fillStyle='rgba(138,107,30,'+(0.42*pulse)+')';
+        ctx.beginPath(); ctx.arc(c.x,c.y, 7+ pulse*2,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgba(232,179,75,'+(0.55*pulse)+')';
+        ctx.beginPath(); ctx.arc(c.x,c.y, 3.2,0,Math.PI*2); ctx.fill();
+        return;
+      }
+      const nv=necro.get(p)||0;
+      const isNecro=nv>0.08;
+      const col=hexToRgb(c.meta.color);
+      const capAlpha=isNecro? Math.max(0.18, 0.62*(1-nv)) : 0.92;
+      ctx.globalAlpha= capAlpha*0.22;
+      ctx.fillStyle='rgba(0,0,0,0.55)';
+      ctx.beginPath(); ctx.ellipse(c.x+1,c.y+3, 15, 7,0,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha= capAlpha*0.85;
+      ctx.fillStyle= isNecro? 'rgba(60,40,22,0.72)' : 'rgba(232,230,210,0.92)';
+      ctx.fillRect(c.x-3.2, c.y-1, 6.4, 14);
+      ctx.globalAlpha=capAlpha;
+      const shape=c.meta.shape;
+      ctx.fillStyle= isNecro? 'rgba(90,52,28,0.82)' : 'rgba('+col[0]+','+col[1]+','+col[2]+',0.96)';
+      ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=0.9;
+      if(shape==='cone'){
+        ctx.beginPath(); ctx.moveTo(c.x-13,c.y+2); ctx.quadraticCurveTo(c.x,c.y-14,c.x+13,c.y+2); ctx.lineTo(c.x+9,c.y+4); ctx.lineTo(c.x-9,c.y+4); ctx.closePath(); ctx.fill(); ctx.stroke();
+      } else if(shape==='funnel'){
+        ctx.beginPath(); ctx.ellipse(c.x,c.y-2, 16, 10,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.globalAlpha=capAlpha*0.28; ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(c.x-4,c.y-5, 5,3, -0.3,0,Math.PI*2); ctx.fill();
+      } else if(shape==='bell'){
+        ctx.beginPath(); ctx.ellipse(c.x,c.y-4, 12, 11,0,Math.PI,Math.PI*2); ctx.rect(c.x-12,c.y-4,24,5); ctx.fill(); ctx.stroke();
+      } else if(shape==='ink'){
+        ctx.beginPath(); ctx.moveTo(c.x-10,c.y+4); ctx.quadraticCurveTo(c.x,c.y-16,c.x+10,c.y+4); ctx.lineTo(c.x+6,c.y+6); ctx.lineTo(c.x-6,c.y+6); ctx.closePath(); ctx.fill(); ctx.stroke();
+      } else {
+        ctx.beginPath(); ctx.ellipse(c.x,c.y-2, 15, 9,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+        if(!isNecro){
+          ctx.globalAlpha=capAlpha*0.92; ctx.fillStyle='rgba(255,255,255,0.72)';
+          ctx.beginPath(); ctx.arc(c.x-4,c.y-3,1.4,0,Math.PI*2); ctx.arc(c.x+3,c.y-5,1.0,0,Math.PI*2); ctx.arc(c.x+6,c.y-1,0.9,0,Math.PI*2); ctx.fill();
+        }
+      }
+      ctx.globalAlpha= capAlpha*0.18; ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=0.6;
+      for(let i=-2;i<=2;i++){ ctx.beginPath(); ctx.moveTo(c.x+i*3, c.y+1); ctx.lineTo(c.x+i*3, c.y+4); ctx.stroke(); }
+      ctx.globalAlpha=capAlpha;
+      ctx.fillStyle='rgba(7,10,8,0.82)'; ctx.strokeStyle='rgba(255,255,255,0.14)'; ctx.lineWidth=0.8;
+      const badgeW= 14 + String(c.count).length*5;
+      ctx.beginPath();
+      if(ctx.roundRect) ctx.roundRect(c.x - badgeW/2, c.y+13, badgeW, 12, 6);
+      else { ctx.rect(c.x - badgeW/2, c.y+13, badgeW,12); }
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle= isNecro? 'rgba(200,120,80,0.95)' : 'rgba(232,230,210,0.96)';
+      ctx.font='700 9px ui-monospace,monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(String(c.count), c.x, c.y+19);
+      ctx.globalAlpha=capAlpha*0.62; ctx.fillStyle='rgba(232,230,210,0.72)'; ctx.font='7px ui-monospace,monospace';
+      ctx.fillText(c.meta.label? c.meta.label.slice(0,8) : '', c.x, c.y-16);
+      ctx.globalAlpha=1;
+    });
+
+    nodes.forEach(n=>{
+      const nv=necro.get(n.provider)||0;
+      const isNecro=nv>0.08 || n._necro;
+      const meta=speciesMeta(n.provider);
+      const baseR= n.status==='working'? 3.6 : n.status==='dead'? 3.0 : 3.2;
+      const r= isNecro? Math.max(1.2, baseR*(1-nv*0.62)) : baseR + Math.sin(now*0.001+ n.phase)*0.3;
+      const alpha= isNecro? Math.max(0.12, (n.a||0.78)*(1-nv*0.85)) : (n.a||0.78) + breathe*0.08;
+      if(overgrowth>0.12 && !isNecro){
+        ctx.globalAlpha= overgrowth*0.14;
+        ctx.strokeStyle=meta.color; ctx.lineWidth=0.7;
+        ctx.beginPath(); ctx.arc(n.x,n.y, r+3 + overgrowth*4,0,Math.PI*2); ctx.stroke();
+      }
+      if(!isNecro){
+        const grd=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,r*3.2);
+        const col=hexToRgb(n.status==='working'? meta.color : n.status==='dead'? '#8a5a3a' : '#9a9a8a');
+        grd.addColorStop(0,'rgba('+col[0]+','+col[1]+','+col[2]+','+(alpha*0.42)+')');
+        grd.addColorStop(1,'rgba('+col[0]+','+col[1]+','+col[2]+',0)');
+        ctx.globalAlpha=1; ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(n.x,n.y, r*3.2,0,Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha=alpha;
+      if(isNecro){
+        ctx.fillStyle='rgba(90,42,22,0.82)';
+        ctx.strokeStyle='rgba(60,28,14,0.9)'; ctx.lineWidth=0.8;
+        ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=0.7; ctx.beginPath(); ctx.moveTo(n.x-r*0.6,n.y-r*0.5); ctx.lineTo(n.x+r*0.4,n.y+r*0.3); ctx.stroke();
+      } else {
+        const col=hexToRgb(n.status==='working'? meta.color : n.status==='dead'? '#8a5a3a' : '#b0b0a0');
+        ctx.fillStyle='rgba('+col[0]+','+col[1]+','+col[2]+',0.98)';
+        ctx.strokeStyle='rgba(255,255,255,0.24)'; ctx.lineWidth=0.8;
+        ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle='rgba(255,255,255,0.72)'; ctx.beginPath(); ctx.arc(n.x- r*0.32, n.y- r*0.38, r*0.32,0,Math.PI*2); ctx.fill();
+        if(overgrowth>0.32){
+          const ang= now*0.0018 + n.phase;
+          const sx=n.x + Math.cos(ang)* (r+4+overgrowth*2), sy=n.y+ Math.sin(ang)*(r*0.6+2);
+          ctx.globalAlpha=overgrowth*0.42; ctx.fillStyle=meta.color;
+          ctx.beginPath(); ctx.arc(sx,sy, 1.1,0,Math.PI*2); ctx.fill();
+        }
+      }
+      ctx.globalAlpha=1;
+    });
+
+    if(overgrowth>0.4){
+      ctx.globalAlpha= overgrowth*0.06;
+      ctx.fillStyle='rgba(255,255,255,0.55)';
+      for(let i=0;i<3;i++){
+        const gx= (W*0.22 + i*W*0.28 + Math.sin(now*0.0002+i)*12);
+        const gy= 22 + Math.cos(now*0.0003+i*1.1)*4;
+        ctx.beginPath(); ctx.arc(gx,gy, 1.1+ Math.sin(now*0.001+i)*0.4,0,Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha=1;
+    }
+
+    ctx.restore();
+    raf=requestAnimationFrame(frame);
+  }
+  frame(performance.now());
 }
 
 // ── IMPL: Seismograph Audit Drum — endless paper + fixed spring needle, no deps ──
