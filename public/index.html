@@ -696,6 +696,53 @@ main.shake{animation:seismo-shake .38s ease}
   .warp-drawer{transition:none!important}
   .inspector-enter-active,.inspector-leave-active{transition:none!important}
 }
+/* <!-- IMPL: Black Box Terminal --> — ~ phosphor CRT slide-down (amber, liquid glass + scanlines, Matrix rain) */
+.bb-mask{position:fixed;inset:0;z-index:85;background:rgba(4,6,4,.38);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+.bb-shell{position:fixed;top:0;left:0;right:0;z-index:86;height:min(52vh,560px);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;
+  background:linear-gradient(180deg,rgba(18,16,8,.96) 0%,rgba(10,12,10,.98) 100%);
+  border-bottom:1px solid rgba(255,184,106,.22);box-shadow:0 18px 48px rgba(0,0,0,.65),0 0 0 1px rgba(255,184,106,.08),0 0 36px rgba(255,184,106,.14);
+  backdrop-filter:blur(12px) saturate(1.15);-webkit-backdrop-filter:blur(12px) saturate(1.15);
+  transform:translateY(-100%);transition:transform .38s cubic-bezier(.16,1,.3,1)}
+.bb-shell.open{transform:translateY(0)}
+.bb-shell::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:.22;
+  background:repeating-linear-gradient(0deg,rgba(255,184,106,.09) 0 1px,transparent 1px 3px),
+            radial-gradient(ellipse 900px 420px at 50% -10%,rgba(255,184,106,.14),transparent 72%)}
+.bb-shell::after{content:'';position:absolute;inset:0;pointer-events:none;opacity:.35;
+  background:radial-gradient(ellipse at 50% 0%,transparent 58%,rgba(0,0,0,.55) 100%)}
+.bb-head{display:flex;align-items:center;gap:10px;padding:10px 14px 9px;border-bottom:1px solid rgba(255,184,106,.14);position:relative;z-index:1;flex:none}
+.bb-title{font:11px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:#ffb86a;text-shadow:0 0 8px rgba(255,184,106,.65),0 0 18px rgba(255,184,106,.28)}
+.bb-title small{color:rgba(255,184,106,.55);letter-spacing:.08em;text-transform:none;margin-left:8px;text-shadow:none}
+.bb-head .bb-close{margin-left:auto;font:11px var(--mono);color:rgba(255,184,106,.7);border:1px solid rgba(255,184,106,.18);border-radius:4px;padding:3px 8px;background:rgba(255,184,106,.06)}
+.bb-head .bb-close:hover{color:#ffb86a;border-color:rgba(255,184,106,.35);background:rgba(255,184,106,.12)}
+.bb-out{flex:1;overflow-y:auto;padding:12px 14px 8px;font:13px/1.55 var(--mono);color:#ffb86a;text-shadow:0 0 6px rgba(255,184,106,.45),0 0 14px rgba(255,184,106,.18);position:relative;z-index:1;scrollbar-width:thin;scrollbar-color:rgba(255,184,106,.25) transparent}
+.bb-out::-webkit-scrollbar{width:6px;height:6px}
+.bb-out::-webkit-scrollbar-thumb{background:rgba(255,184,106,.22);border-radius:3px}
+.bb-line{white-space:pre-wrap;word-break:break-word;padding:1px 0}
+.bb-line.in{color:#ffd9a0}
+.bb-line.in::before{content:'❯ ';color:rgba(255,184,106,.9)}
+.bb-line.sys{color:rgba(255,184,106,.55);text-shadow:none;font-size:12px}
+.bb-line.err{color:#ff8a6a;text-shadow:0 0 6px rgba(255,90,60,.4)}
+.bb-line.ok{color:#ffb86a}
+.bb-line.dim{color:rgba(255,184,106,.42);text-shadow:none}
+.bb-inbar{display:flex;align-items:center;gap:8px;padding:10px 14px 12px;border-top:1px solid rgba(255,184,106,.10);background:rgba(255,184,106,.04);position:relative;z-index:1;flex:none}
+.bb-prompt{font:13px var(--mono);color:#ffb86a;text-shadow:0 0 8px rgba(255,184,106,.5);flex:none}
+.bb-input{flex:1;background:transparent;border:0;color:#ffe9c2;font:13px var(--mono);outline:none;caret-color:#ffb86a;text-shadow:0 0 6px rgba(255,184,106,.45)}
+.bb-input::placeholder{color:rgba(255,184,106,.32)}
+.bb-hint{position:absolute;left:44px;right:14px;bottom:100%;padding:6px 8px;font:11px var(--mono);color:rgba(255,184,106,.55);background:rgba(12,10,6,.92);border:1px solid rgba(255,184,106,.14);border-radius:6px 6px 0 0;pointer-events:none;max-height:110px;overflow:hidden}
+.bb-crt{position:absolute;inset:0;pointer-events:none;z-index:0;opacity:.10;background:repeating-linear-gradient(90deg,transparent 0 2px,rgba(255,184,106,.04) 2px 3px)}
+.bb-enter-active{transition:opacity .22s ease}
+.bb-leave-active{transition:opacity .18s ease}
+.bb-enter-from,.bb-leave-to{opacity:0}
+.bb-enter-active .bb-shell{transition:transform .38s cubic-bezier(.16,1,.3,1)}
+.bb-leave-active .bb-shell{transition:transform .28s ease}
+#bb-matrix{position:fixed;inset:0;z-index:87;pointer-events:none;background:#050700;display:none}
+#bb-matrix.on{display:block;pointer-events:auto}
+@media (prefers-reduced-motion:reduce){
+  .bb-shell{transition:none!important}
+  .bb-out{ text-shadow:none!important}
+  .bb-title{ text-shadow:none!important}
+  #bb-matrix{display:none!important}
+}
 </style>
 </head>
 <body>
@@ -738,12 +785,46 @@ main.shake{animation:seismo-shake .38s ease}
     <!-- IMPL: Mercury Blob Toggle -->
     <button id="mercury-toggle" class="mercury-blob" type="button" role="switch" aria-checked="false" aria-label="Mercury blob — drag thumb to stretch, click to toggle" title="Mercury Blob — drag to liquefy"><span class="mercury-label" aria-hidden="true">◉ mercury</span><span class="mercury-track" aria-hidden="true"><span class="mercury-goo"><i class="mercury-dot"></i><i class="mercury-thumb"></i></span></span></button>
     <button class="btn" @click="paletteOpen=true" title="command palette (⌘K)">⌘K</button>
+    <button class="btn" @click="toggleBlackBox" title="Black Box terminal (~)">~</button>
     <button class="btn" @click="toggleBell" :aria-pressed="String(notifyOn)"
             :aria-label="notifyOn?'disable browser notifications':'enable browser notifications'"
             :title="notifyOn?'notifications on':'browser notifications'">🔔</button>
     <button class="btn" @click="doLogout">log out</button>
   </div>
 </header>
+
+<!-- IMPL: Black Box Terminal — ~ phosphor CRT slide-down (amber, liquid glass + scanlines, vault ls/cat/stats --chart, help jokes, rm -rf Matrix 10K) -->
+<Teleport to="body">
+<Transition name="bb">
+<div v-if="bbOpen" class="bb-mask" @click.self="closeBlackBox()">
+  <div class="bb-shell" :class="{open:bbOpen}" role="dialog" aria-label="Black Box terminal" @click.stop>
+    <div class="bb-crt" aria-hidden="true"></div>
+    <div class="bb-head">
+      <span class="bb-title">⬢ BLACK BOX <small>v1 — phosphor</small></span>
+      <span class="dim" style="font:11px var(--mono);color:rgba(255,184,106,.45)">~ to close · Tab complete · ↑ history</span>
+      <button class="bb-close" @click="closeBlackBox()" aria-label="close terminal">✕</button>
+    </div>
+    <div ref="bbOut" class="bb-out" @click="$refs.bbInput&&$refs.bbInput.focus()">
+      <div v-for="(ln,i) in bbRows" :key="i" class="bb-line" :class="ln.cls">{{ ln.text }}</div>
+      <div v-if="!bbRows.length" class="bb-line sys">Black Box — type <b>help</b> · vault ls · vault cat &lt;provider&gt; · vault stats --chart · sudo rm -rf /</div>
+    </div>
+    <div class="bb-inbar">
+      <div v-if="bbHint" class="bb-hint">{{ bbHint }}</div>
+      <span class="bb-prompt">❯</span>
+      <input ref="bbInput" v-model="bbInput" class="bb-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        placeholder="help · vault ls · vault cat openai · vault stats --chart"
+        @keydown.enter.prevent="bbExec()"
+        @keydown.esc="closeBlackBox()"
+        @keydown.tab.prevent="bbTab()"
+        @keydown.up.prevent="bbHist(-1)"
+        @keydown.down.prevent="bbHist(1)"
+        @input="bbOnInput">
+    </div>
+  </div>
+</div>
+</Transition>
+</Teleport>
+<canvas id="bb-matrix" aria-hidden="true"></canvas>
 
 <!-- ============ critical banner — flare spec §7 ============ -->
 <Teleport to="body">
@@ -893,10 +974,10 @@ main.shake{animation:seismo-shake .38s ease}
         <span class="sec-note">{{ inbox.length }} open</span></div>
       <TransitionGroup name="inbox" tag="div" id="inbox">
         <div v-for="(it,idx) in inbox" :key="it.id" class="inbox-row" :class="{'warn-row':it.warn}" @click="openWarp(it.id)" tabindex="0" role="button" :aria-label="'inspect '+it.id" @keydown.enter.prevent="openWarp(it.id)" @keydown.space.prevent="openWarp(it.id)" :style="{'--warp-idx':idx}">
-          <span class="inbox-pill" :class="it.warn?'warn':'crit'" :style="inspectorId===it.id?{'view-transition-name':'warp-pill'}:{}">{{ it.pill }}</span>
+          <span class="inbox-pill" :class="it.warn?'warn':'crit'" :style="warpFromId===it.id?{'view-transition-name':'warp-pill'}:{}">{{ it.pill }}</span>
           <p><template v-for="(p,i) in it.parts" :key="i"><b v-if="p.t==='b'">{{ p.s }}</b><code v-else-if="p.t==='code'">{{ p.s }}</code><template v-else>{{ p.s }}</template></template></p>
-          <span class="inbox-host" :style="inspectorId===it.id?{'view-transition-name':'warp-host'}:{}">{{ it.hostChip }}</span>
-          <span class="inbox-time" :style="inspectorId===it.id?{'view-transition-name':'warp-time'}:{}">{{ it.timeLabel }}</span>
+          <span class="inbox-host" :style="warpFromId===it.id?{'view-transition-name':'warp-host'}:{}">{{ it.hostChip }}</span>
+          <span class="inbox-time" :style="warpFromId===it.id?{'view-transition-name':'warp-time'}:{}">{{ it.timeLabel }}</span>
           <!-- copiedId (not a shared boolean) → each row's button state is independent (critique §1) -->
           <button v-if="it.copy" class="btn sm" @click.stop="copyCmd(it.id)">{{ copiedId===it.id?'copied':'copy cmd' }}</button>
           <button class="x" @click.stop="dismiss(it.id)" aria-label="dismiss">✕</button>
@@ -1332,6 +1413,7 @@ const app=Vue.createApp({
     copiedId:null,               // inbox item id whose copy button currently reads 'copied'
     // <!-- IMPL: Inbox Warp --> — shared-element inspector id (null = closed)
     inspectorId:null,
+    warpFromId:null,             // source anchor for VT: list row that owns warp-* in old snapshot
 
     /* ---- activity feed ---- */
     feed:[],                  // newest-first rows {key,kind,ts,account,host,model,text,fail}; CAP 200
@@ -1368,6 +1450,16 @@ const app=Vue.createApp({
     paletteQuery:'',
     paletteIdx:0,
     paletteSpot:{x:320,y:28,o:0},
+
+    /* ---- Black Box Terminal ( ~ phosphor CRT) ---- */
+    bbOpen:false,
+    bbInput:'',
+    bbRows:[],
+    bbHistory:[],
+    bbHistIdx:-1,
+    bbHint:'',
+    _bbMatrixRaf:0,
+    _bbMatrixOn:false,
 
     /* ---- private bookkeeping, never rendered ---- */
     _prevWorst:{},                       // account -> previous worst% (79→80 runaway edge)
@@ -1575,6 +1667,10 @@ const app=Vue.createApp({
   },
   watch:{
     titleText:{ immediate:true, handler(v){ document.title=v; } },
+    bbOpen(v){
+      if(v){ this.bbHint=''; this.bbHistIdx=this.bbHistory.length; this.$nextTick(()=>this.$refs.bbInput?.focus()); this.$nextTick(()=>{const o=this.$refs.bbOut; if(o) o.scrollTop=o.scrollHeight;}); }
+      else { this.stopBbMatrix(); }
+    },
     paletteOpen(v){
       if(v){ this.paletteQuery=''; this.paletteIdx=0; this.$nextTick(()=>this.$refs.paletteInput?.focus()); }
     },
@@ -1783,19 +1879,26 @@ const app=Vue.createApp({
       this._copyT=setTimeout(()=>{ if(this.copiedId===id)this.copiedId=null; },1200);   // per-row, not a shared flag (critique §1)
     },
     // <!-- IMPL: Inbox Warp --> — shared-element warp open/close via View Transitions API (fallback instant + reduced-motion)
+    // Fix: Inbox Warp pairing was 0:2 (old=0,new=2 duplicates) → used warpFromId so old has source-only and new has dest-only.
+    // open: warpFromId set BEFORE capture → old list=1 drawer=0; cleared INSIDE callback → new list=0 drawer=1.
+    // close: warpFromId set INSIDE callback (old list=0 drawer=1) → new list=1 drawer=0; cleared on finished.
     openWarp(id){
       if(this.inspectorId===id) return;
       if(this.reducedMotion() || !document.startViewTransition){
         this.inspectorId=id; return;
       }
-      document.startViewTransition(()=>{ this.inspectorId=id; });
+      this.warpFromId=id;
+      const vt=document.startViewTransition(()=>{ this.inspectorId=id; this.warpFromId=null; });
+      if(vt&&vt.finished) vt.finished.catch(()=>{}).finally(()=>{ if(this.warpFromId===id) this.warpFromId=null; });
     },
     closeWarp(instant){
       if(!this.inspectorId) return;
       if(instant || this.reducedMotion() || !document.startViewTransition){
-        this.inspectorId=null; return;
+        this.inspectorId=null; this.warpFromId=null; return;
       }
-      document.startViewTransition(()=>{ this.inspectorId=null; });
+      const closingId=this.inspectorId;
+      const vt=document.startViewTransition(()=>{ this.inspectorId=null; this.warpFromId=closingId; });
+      if(vt&&vt.finished) vt.finished.then(()=>{ if(this.warpFromId===closingId) this.warpFromId=null; }).catch(()=>{ if(this.warpFromId===closingId) this.warpFromId=null; });
     },
 
     /* ================= CARDS (§2.2) ================= */
@@ -2104,6 +2207,253 @@ const app=Vue.createApp({
         if(tear) tear.style.top=(38+Math.random()*38)+'%';
       }
     },
+    // <!-- IMPL: Black Box Terminal --> — ~ phosphor CRT, liquid glass, scanlines, vault cmds, Matrix 10K
+    toggleBlackBox(){ this.bbOpen=!this.bbOpen; if(this.bbOpen) this.bbPrintSys('Black Box — type help for commands  (vault ls · vault cat <provider> · vault stats --chart)'); },
+    closeBlackBox(){ this.bbOpen=false; this.bbHint=''; },
+    bbPush(text,cls){ this.bbRows.push({text,cls:cls||'ok'}); if(this.bbRows.length>180) this.bbRows.splice(0,this.bbRows.length-180); this.$nextTick(()=>{const o=this.$refs.bbOut; if(o) o.scrollTop=o.scrollHeight;}); },
+    bbPrintSys(t){ this.bbPush(t,'sys'); },
+    bbHist(dir){
+      if(!this.bbHistory.length) return;
+      let n=this.bbHistIdx+dir;
+      if(n<0) n=0; if(n>=this.bbHistory.length){ n=this.bbHistory.length; this.bbInput=''; this.bbHistIdx=n; this.bbHint=''; return; }
+      this.bbHistIdx=n; this.bbInput=this.bbHistory[n]||''; this.bbHint='';
+    },
+    bbOnInput(){
+      const v=(this.bbInput||'').trimStart();
+      if(!v){ this.bbHint=''; return; }
+      const cmds=['help','clear','vault ls','vault cat ','vault stats --chart','vault stats','sudo rm -rf /','sudo rm -rf / --no-preserve-root'];
+      const low=v.toLowerCase();
+      const hit=cmds.find(c=>c.startsWith(low) && c!==low);
+      if(hit) this.bbHint='Tab → '+hit;
+      else if(low.startsWith('vault cat ')){
+        const pref=low.slice(10).trim();
+        const provs=(this.providers||[]).map(p=>p.id).concat([...new Set((this.keys||[]).map(k=>k.provider))]);
+        const m=provs.find(p=>p.toLowerCase().startsWith(pref));
+        if(m) this.bbHint='Tab → vault cat '+m;
+        else this.bbHint='';
+      } else this.bbHint='';
+    },
+    bbTab(){
+      const h=this.bbHint;
+      if(h && h.startsWith('Tab → ')){ this.bbInput=h.slice(6); this.bbHint=''; return; }
+      // fallback: complete provider for vault cat
+      const low=(this.bbInput||'').toLowerCase();
+      if(low.startsWith('vault cat ')){
+        const pref=low.slice(10).trim();
+        const provs=(this.providers||[]).map(p=>p.id).concat([...new Set((this.keys||[]).map(k=>k.provider))]);
+        const m=provs.find(p=>p.toLowerCase().startsWith(pref.toLowerCase()));
+        if(m) this.bbInput='vault cat '+m;
+      } else if('vault ls'.startsWith(low)) this.bbInput='vault ls';
+      else if('help'.startsWith(low)) this.bbInput='help';
+      else if('clear'.startsWith(low)) this.bbInput='clear';
+      this.bbHint='';
+    },
+    bbExec(){
+      const raw=(this.bbInput||'').trim();
+      if(!raw) return;
+      this.bbHistory.push(raw); this.bbHistIdx=this.bbHistory.length; this.bbHint='';
+      this.bbPush(raw,'in');
+      this.bbInput='';
+      const low=raw.toLowerCase().trim();
+      const args=raw.trim().split(/\s+/);
+      // sudo rm -rf / → Matrix rain 10K
+      if(/^sudo\s+rm\s+-rf\s+\/\s*(--no-preserve-root)?\s*$/.test(low)){
+        this.bbPush('nice try. decrypting the matrix…','sys');
+        this.bbPush('sudo: rm -rf / — you have awoken the glyphs.','err');
+        this.startBbMatrix();
+        return;
+      }
+      if(low==='help' || low==='?'){
+        this.bbPush('commands:','sys');
+        this.bbPush('  vault ls                     — list providers (real registry)','ok');
+        this.bbPush('  vault cat <provider>         — show key hint only (never the secret)','ok');
+        this.bbPush('  vault stats [--chart]        — usage sparklines (ASCII)','ok');
+        this.bbPush('  help                         — this screen (try: man touch grass)','ok');
+        this.bbPush('  clear                        — clear terminal','ok');
+        this.bbPush('  sudo rm -rf /                — do not.','ok');
+        this.bbPush('','dim');
+        this.bbPush('fake unix jokes:','sys');
+        this.bbPush('  man touch  →  No manual entry for touch — try grass','dim');
+        this.bbPush('  cat /dev/urandom | head     →  you are beautiful but you are not random','dim');
+        this.bbPush('  rm -rf node_modules         →  therapy not found','dim');
+        this.bbPush('  sudo make me a sandwich     →  What? Make it yourself. (xkcd 149)','dim');
+        this.bbPush('  git commit -m "fix"          →  3 files changed, 0 bugs fixed, 2 created','dim');
+        this.bbPush('  :(){:|:&};:                 →  kindly not.','dim');
+        return;
+      }
+      if(low==='clear'){ this.bbRows=[]; return; }
+      if(low==='man touch grass' || low==='man touch'){ this.bbPush('No manual entry for touch — try: grass (outside)','sys'); return; }
+      if(low.startsWith('vault ')){
+        const sub=(args[1]||'').toLowerCase();
+        if(sub==='ls'){
+          const provs=this.providers && this.providers.length ? this.providers : [];
+          const byId={}; (this.keys||[]).forEach(k=>{byId[k.provider]=(byId[k.provider]||0)+1;});
+          const ids=[...new Set([...provs.map(p=>p.id), ...Object.keys(byId)])].sort();
+          if(!ids.length){ this.bbPush('no providers registered yet — add a key below','sys'); return; }
+          this.bbPush('provider            keys   label','sys');
+          this.bbPush('────────────────────────────────────────','dim');
+          ids.forEach(id=>{
+            const p=provs.find(x=>x.id===id);
+            const cnt=byId[id]||0;
+            const label=p && p.label ? (' — '+p.label) : '';
+            const pad=id.padEnd(18,' ');
+            this.bbPush('  '+pad+String(cnt).padStart(4,' ')+'    '+(label||''),'ok');
+          });
+          return;
+        }
+        if(sub==='cat'){
+          const prov=(args[2]||'').trim();
+          if(!prov){ this.bbPush('usage: vault cat <provider>   (hint only, never the secret)','err'); return; }
+          const rows=(this.keys||[]).filter(k=>k.provider.toLowerCase()===prov.toLowerCase());
+          if(!rows.length){
+            // also check providers list for existence hint
+            const known=(this.providers||[]).find(p=>p.id.toLowerCase()===prov.toLowerCase());
+            if(known) this.bbPush('provider "'+prov+'" — no keys stored yet (hint: —)','sys');
+            else this.bbPush('no working key for '+prov+' — vault is empty for that provider','err');
+            return;
+          }
+          rows.forEach(k=>{
+            const hint=k.key_hint || (k.key ? (k.key.slice(0,8)+'…'+k.key.slice(-4)) : '…');
+            const lbl=k.label ? ' · '+k.label : '';
+            const st=k.status||'unknown';
+            this.bbPush(prov+'  '+hint+lbl+'  ['+st+']','ok');
+          });
+          this.bbPush('(hint only — use /api/keys/'+prov+' with bearer to fetch)','dim');
+          return;
+        }
+        if(sub==='stats'){
+          const wantChart=low.includes('--chart') || low.includes('chart');
+          const accts=this.accounts||[];
+          const keys=this.keys||[];
+          const working=keys.filter(k=>k.status==='working').length, dead=keys.filter(k=>k.status==='dead').length;
+          this.bbPush('vault stats — '+accts.length+' account'+(accts.length===1?'':'s')+' · '+keys.length+' key'+(keys.length===1?'':'s')+' ('+working+'✓ '+dead+'✗)','sys');
+          if(!wantChart){
+            accts.slice(0,8).forEach(a=>{
+              const w=worstOf(a);
+              this.bbPush('  '+a.account.padEnd(18,' ')+String(Math.round(w)).padStart(3,' ')+'% worst','ok');
+            });
+            if(!accts.length) this.bbPush('  (no accounts — add one via claude setup-token)','dim');
+            this.bbPush('tip: vault stats --chart  for sparklines','dim');
+            return;
+          }
+          // --chart ASCII sparklines
+          const blocks=['▁','▂','▃','▄','▅','▆','▇','█'];
+          const spark=(arr)=>{
+            if(!arr||!arr.length) return '▁▁▁▁▁▁▁▁';
+            const vals=arr.map(x=>typeof x==='object'? (x.v??0) : x);
+            const mn=Math.min(...vals), mx=Math.max(...vals);
+            const span=(mx-mn)||1;
+            return vals.map(v=>{
+              const n=(v-mn)/span; const idx=Math.min(7, Math.max(0, Math.floor(n*7.9)));
+              return blocks[idx];
+            }).join('');
+          };
+          if(accts.length){
+            accts.slice(0,10).forEach(a=>{
+              const ring=this.rings && this.rings[a.account] ? this.rings[a.account] : [];
+              const s=spark(ring.length?ring: Array.from({length:16},(_,i)=> Math.max(0, Math.min(100, worstOf(a)+ (Math.sin(i*0.9+a.account.length)*8) )) ));
+              const w=Math.round(worstOf(a));
+              this.bbPush('  '+a.account.padEnd(14,' ')+' '+String(w).padStart(3,' ')+'%  '+s,'ok');
+            });
+          } else {
+            // demo chart from dummy ticks when no accounts
+            const demo=spark(Array.from({length:24},(_,i)=> 22+Math.sin(i*0.6)*14+Math.cos(i*1.1)*6 ));
+            this.bbPush('  (demo)   42%  '+demo,'ok');
+          }
+          // key health spark too
+          if(keys.length){
+            const ks=keys.slice(0,12).map(k=> k.status==='working'? 82 : k.status==='dead'? 12 : 48);
+            this.bbPush('  keys health        '+spark(ks),'ok');
+          }
+          return;
+        }
+        this.bbPush('unknown vault command — try: vault ls | vault cat <provider> | vault stats --chart','err');
+        return;
+      }
+      // easter eggs
+      if(low==='ls' || low==='pwd' || low==='whoami'){ this.bbPush( (low==='whoami'?'aigate': low==='pwd'?'/vault/black/box' : 'vault  accounts  keys  ghosts'), 'ok'); return; }
+      if(low.startsWith('cat ')){ this.bbPush('cat: '+args.slice(1).join(' ')+': hint only — try: vault cat <provider>','err'); return; }
+      if(low.startsWith('sudo ')){ this.bbPush('sudo: a password is required — and you do not have it. try: help','err'); return; }
+      this.bbPush(raw+': command not found — type help','err');
+    },
+    startBbMatrix(){
+      if(this.reducedMotion()){ this.bbPush('prefers-reduced-motion: Matrix rain disabled (static)','sys'); return; }
+      const cv=document.getElementById('bb-matrix');
+      if(!cv) return;
+      const dpr=Math.min(devicePixelRatio||1,2);
+      const ctx=cv.getContext('2d'); if(!ctx) return;
+      cv.classList.add('on');
+      this._bbMatrixOn=true;
+      // allow Esc / click to exit
+      const offClick=()=>this.stopBbMatrix();
+      cv.addEventListener('click', offClick, {once:true});
+      const escOnce=(e)=>{ if(e.key==='Escape'){ this.stopBbMatrix(); window.removeEventListener('keydown', escOnce); } };
+      window.addEventListener('keydown', escOnce, {once:true});
+      let w=innerWidth, h=innerHeight;
+      const resize=()=>{ w=innerWidth; h=innerHeight; cv.width=Math.floor(w*dpr); cv.height=Math.floor(h*dpr); cv.style.width=w+'px'; cv.style.height=h+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); };
+      resize();
+      const onResize=()=>resize();
+      addEventListener('resize', onResize);
+      this._bbMatrixCleanup=()=>{ removeEventListener('resize', onResize); cv.removeEventListener('click', offClick); window.removeEventListener('keydown', escOnce); };
+      // 10K instanced glyphs — columns * rows trick to hit exactly 10k draws/frame
+      const cols=Math.max(1, Math.floor(w/14));
+      const colW=w/cols;
+      const N=10000;
+      const glyphs='アイウエオカキクケコサシスセソタチツテト012345789ABCDEFGHIJKLMNOPQRSTUVWXYZ$+-*/=<>'.split('');
+      // distribute 10k across columns as stacked drops
+      const drops=[];
+      for(let i=0;i<N;i++){
+        const col=i % cols;
+        const x=col*colW + Math.random()*colW*0.6;
+        const y=Math.random()*h - Math.random()*h*0.8;
+        const sp=0.9 + Math.random()*2.8;
+        const ch=glyphs[(Math.random()*glyphs.length)|0];
+        const sz=10 + (Math.random()*5)|0;
+        drops.push({x,y,sp,ch,sz, a:0.35+Math.random()*0.55});
+      }
+      let raf=0; let t0=performance.now();
+      const frame=(now)=>{
+        if(!this._bbMatrixOn){ cancelAnimationFrame(raf); return; }
+        const dt=Math.min(33, now - t0); t0=now;
+        // fade trail — amber-tinted
+        ctx.fillStyle='rgba(5,7,0,0.16)';
+        ctx.fillRect(0,0,w,h);
+        ctx.textBaseline='top';
+        for(let i=0;i<drops.length;i++){
+          const d=drops[i];
+          d.y += d.sp * (dt/16.6) * 1.35;
+          if(d.y > h + 14){ d.y = -14 - Math.random()*h*0.35; d.x = (i % cols)*colW + Math.random()*colW*0.6; d.ch=glyphs[(Math.random()*glyphs.length)|0]; }
+          // occasional char flicker
+          if((i & 31)===0 && Math.random()<0.08) d.ch=glyphs[(Math.random()*glyphs.length)|0];
+          // head glows brighter, tail dimmer — store a = distance-based fade
+          const isHead = (i % 14)===0;
+          ctx.font=(isHead?'700 ':'400 ')+d.sz+'px var(--mono)';
+          ctx.fillStyle=isHead? 'rgba(255,220,140,'+(0.92).toFixed(2)+')' : 'rgba(255,184,106,'+d.a.toFixed(2)+')';
+          if(isHead){ ctx.shadowColor='rgba(255,184,106,0.85)'; ctx.shadowBlur=8; } else ctx.shadowBlur=0;
+          ctx.fillText(d.ch, d.x, d.y);
+          ctx.shadowBlur=0;
+        }
+        // scanline tint
+        ctx.fillStyle='rgba(255,184,106,0.018)';
+        for(let y=0;y<h;y+=4) ctx.fillRect(0,y,w,1);
+        raf=requestAnimationFrame(frame);
+        this._bbMatrixRaf=raf;
+      };
+      // first clear to black then start
+      ctx.fillStyle='#050700'; ctx.fillRect(0,0,w,h);
+      this.bbPush('▲  Matrix rain — 10,000 glyphs  ·  click or Esc to exit','sys');
+      raf=requestAnimationFrame(frame);
+      this._bbMatrixRaf=raf;
+    },
+    stopBbMatrix(){
+      if(!this._bbMatrixOn) return;
+      this._bbMatrixOn=false;
+      if(this._bbMatrixRaf) cancelAnimationFrame(this._bbMatrixRaf);
+      this._bbMatrixRaf=0;
+      const cv=document.getElementById('bb-matrix');
+      if(cv){ cv.classList.remove('on'); const c=cv.getContext('2d'); if(c) c.clearRect(0,0,cv.width,cv.height); }
+      if(this._bbMatrixCleanup){ try{this._bbMatrixCleanup();}catch(_){} this._bbMatrixCleanup=null; }
+    },
     // ---- Warp Palette (iteration 1) ----
     onPaletteMouse(e){
       const r=e.currentTarget.getBoundingClientRect();
@@ -2364,6 +2714,28 @@ const app=Vue.createApp({
     window.addEventListener('keydown',this._warpKey=e=>{
       if(e.key==='Escape'&&this.inspectorId&&!this.paletteOpen){this.closeWarp(); e.preventDefault();}
     });
+    // <!-- IMPL: Black Box Terminal --> — ~ / Backquote slides amber CRT (liquid glass + scanlines); respects inputs + palette
+    window.addEventListener('keydown',this._bbKey=e=>{
+      const isBackquote=(e.key==='`' || e.key==='~' || e.code==='Backquote');
+      if(isBackquote && !e.metaKey && !e.ctrlKey && !e.altKey && !this.paletteOpen){
+        const ae=document.activeElement;
+        const tag=ae && ae.tagName;
+        const isTyping=tag==='INPUT' || tag==='TEXTAREA' || (ae && ae.isContentEditable);
+        // if typing in Black Box itself, let ` through; if typing elsewhere, ignore
+        const inBb=ae && ae.classList && ae.classList.contains('bb-input');
+        if(isTyping && !inBb) return;
+        e.preventDefault();
+        // if Matrix rain is on, Backquote should close rain first
+        if(this._bbMatrixOn){ this.stopBbMatrix(); return; }
+        this.toggleBlackBox();
+      } else if(e.key==='Escape' && this.bbOpen){
+        // bb gets first crack before warp/palette when open
+        if(this._bbMatrixOn){ this.stopBbMatrix(); e.preventDefault(); return; }
+        this.closeBlackBox(); e.preventDefault();
+      } else if(e.key==='Escape' && this._bbMatrixOn){
+        this.stopBbMatrix(); e.preventDefault();
+      }
+    });
     // Curl Monsoon — flow field bg (iteration 1) — respects prefers-reduced-motion via CSS display:none, but also gate JS
     if(!matchMedia('(prefers-reduced-motion: reduce)').matches) this.$nextTick(()=>startMonsoon());
   },
@@ -2381,6 +2753,8 @@ const app=Vue.createApp({
     window.removeEventListener('keydown',this.clearFlash);
     if(this._paletteKey) window.removeEventListener('keydown',this._paletteKey);
     if(this._warpKey) window.removeEventListener('keydown',this._warpKey);
+    if(this._bbKey) window.removeEventListener('keydown',this._bbKey);
+    if(this._bbMatrixRaf) cancelAnimationFrame(this._bbMatrixRaf);
   },
 });
 app.component('dashboard-body',DashboardBody);
