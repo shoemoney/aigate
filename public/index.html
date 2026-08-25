@@ -496,6 +496,56 @@ main.shake{animation:seismo-shake .38s ease}
 @media (max-width:980px){.act-grid{grid-template-columns:1fr}}
 @media (max-width:760px){.rollup{display:none}.hwrap{gap:12px;padding-top:8px;padding-bottom:8px}}
 @media (max-width:420px){main{padding:0 14px}.hwrap{padding:0 14px}.hero-num{font-size:34px}.spark{width:100px}}
+/* <!-- IMPL: VHS Time Machine --> — sticky shuttle above footer: tracking tear, static, chromatic wobble, vignette */
+#vhs-shuttle{position:sticky;bottom:0;z-index:16;margin:0 auto;max-width:1240px;width:100%;background:rgba(18,20,18,.96);backdrop-filter:blur(10px) saturate(1.12);border:1px solid var(--line);border-bottom:0;border-radius:6px 6px 0 0;padding:10px 14px 11px;box-shadow:0 -8px 28px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.06);transform:translateZ(0)}
+#vhs-shuttle::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:var(--vhs-static-op,0);background:
+  repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px),
+  repeating-linear-gradient(90deg,rgba(255,255,255,.015) 0 1px,transparent 1px 12px);mix-blend-mode:overlay}
+.vhs-inner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:relative;z-index:1}
+.vhs-label{font:11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);display:flex;align-items:center;gap:7px;white-space:nowrap}
+.vhs-label b{color:var(--fg);font-weight:600}
+.vhs-rec{width:8px;height:8px;border-radius:50%;background:var(--crit);display:inline-block;box-shadow:0 0 8px rgba(224,93,68,.6);flex:none}
+.vhs-rec.blink{animation:vhs-blink 1.05s steps(2,end) infinite}
+.vhs-rec.rew{animation:vhs-blink .32s steps(2,end) infinite}
+@keyframes vhs-blink{0%,55%{opacity:1}56%,100%{opacity:.18}}
+.vhs-rail{flex:1;display:flex;align-items:center;gap:10px;min-width:180px}
+.vhs-time{font:11px var(--mono);color:var(--dim);white-space:nowrap;min-width:84px;text-align:right}
+.vhs-time.live{color:var(--ok)}
+.vhs-mode{font:11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);min-width:64px;text-align:left}
+.vhs-mode.rew{color:var(--warn)}
+.vhs-rail input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:22px;background:transparent;cursor:pointer}
+.vhs-rail input[type=range]::-webkit-slider-runnable-track{height:5px;background:linear-gradient(90deg,var(--inset),#1e2220);border:1px solid var(--line);border-radius:3px}
+.vhs-rail input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;margin-top:-7px;border-radius:50%;background:radial-gradient(circle at 34% 28%,#fff8e6 0%,#f3d68a 42%,#e8b34b 62%,#c9982e 100%);border:1px solid rgba(232,179,75,.55);box-shadow:0 1px 6px rgba(0,0,0,.35),0 0 0 1px rgba(232,179,75,.15)}
+.vhs-rail input[type=range]::-moz-range-track{height:5px;background:var(--inset);border:1px solid var(--line);border-radius:3px}
+.vhs-rail input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 34% 28%,#fff8e6 0%,#f3d68a 42%,#e8b34b 62%,#c9982e 100%);border:1px solid rgba(232,179,75,.55);box-shadow:0 1px 6px rgba(0,0,0,.35)}
+.vhs-rail input[type=range]:focus-visible::-webkit-slider-thumb{outline:1px solid var(--accent);outline-offset:2px}
+.vhs-count{font:11px var(--mono);color:var(--dim);white-space:nowrap}
+.vhs-tear{position:absolute;left:0;right:0;height:2px;top:50%;transform:translateY(-50%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.72) 18%,rgba(232,179,75,.55) 50%,rgba(255,255,255,.72) 82%,transparent);opacity:0;pointer-events:none;mix-blend-mode:screen;filter:blur(.2px)}
+#vhs-shuttle.is-scrubbing .vhs-tear{opacity:var(--vhs-tear-op,0);animation:vhs-tear-jitter .11s steps(2,end) infinite}
+@keyframes vhs-tear-jitter{0%{transform:translateY(-50%) translateX(0)}50%{transform:translateY(-50%) translateX(1px)}100%{transform:translateY(-50%) translateX(-1px) translateY(calc(-50% + 1px))}}
+/* global VHS artifacts — driven by --vhs-* on #app */
+#app.vhs-engaged main{filter:blur(var(--vhs-blur,0px)) saturate(var(--vhs-sat,1)) hue-rotate(var(--vhs-hue,0deg)) contrast(var(--vhs-contrast,1));will-change:filter}
+#app.vhs-engaged .frow{transition:transform .12s, filter .12s, opacity .12s}
+#app.vhs-engaged .frow .snip,#app.vhs-engaged .frow .m{filter:saturate(1.7)}
+#app.vhs-wobble .frow{animation:vhs-wobble .18s steps(2,end) infinite}
+@keyframes vhs-wobble{0%{transform:translateX(0)}50%{transform:translateX(var(--vhs-wobble-x,1px))}100%{transform:translateX(calc(var(--vhs-wobble-x,1px) * -0.6))}}
+#app.vhs-chroma .frow .snip{text-shadow:-.85px 0 rgba(255,70,70,.62), .85px 0 rgba(70,170,255,.62)}
+#app.vhs-chroma .card{position:relative}
+#app.vhs-chroma .card::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 1px 0 0 rgba(255,60,60,.18), inset -1px 0 0 rgba(60,170,255,.18);opacity:var(--vhs-chroma-op,0)}
+#app.vhs-vignette main{position:relative}
+#app.vhs-vignette main::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:3px;box-shadow:inset 0 0 90px rgba(0,0,0,.55), inset 0 0 160px rgba(0,0,0,.32);opacity:var(--vhs-vignette-op,0)}
+#app.vhs-static main::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:var(--vhs-static-main,0);background:
+  repeating-linear-gradient(0deg,rgba(255,255,255,.06) 0 1px,transparent 1px 2px),
+  repeating-linear-gradient(90deg,rgba(255,255,255,.02) 0 1px,transparent 1px 18px);mix-blend-mode:overlay;z-index:2}
+#app.vhs-engaged .feed .frow{opacity:calc(0.72 + var(--vhs-feed-op,0)*0.28)}
+#app.vhs-engaged .feed .frow.vhs-fresh{opacity:1;filter:none;text-shadow:none}
+@media (prefers-reduced-motion:reduce){
+  #vhs-shuttle .vhs-tear{animation:none!important}
+  .vhs-rec{animation:none!important}
+  #app.vhs-wobble .frow{animation:none!important}
+  #app.vhs-engaged main{filter:none!important}
+  #app.vhs-chroma .frow .snip{text-shadow:none!important}
+}
 </style>
 </head>
 <body>
@@ -916,6 +966,21 @@ main.shake{animation:seismo-shake .38s ease}
  </template>
 </Suspense>
 
+<!-- IMPL: VHS Time Machine — history shuttle: sticky range 0=rewind → 100=live, filtered feedRows + tracking artifacts -->
+<div v-if="authed" id="vhs-shuttle" :class="{'is-scrubbing':vhsScrubbing}" role="region" aria-label="VHS Time Machine — scrub vault history">
+  <div class="vhs-inner">
+    <span class="vhs-label"><i class="vhs-rec" :class="{blink:vhsPos===100, rew:vhsPos<100 && vhsScrubbing}"></i><b>VHS</b> Time Machine · {{ vhsModeLabel }}</span>
+    <div class="vhs-rail">
+      <span class="vhs-time" :class="{live:vhsPos===100}">{{ vhsTimeLabel }}</span>
+      <input type="range" min="0" max="100" step="1" v-model.number="vhsPos" @input="onVhsInput" @pointerdown="vhsScrubbing=true" @pointerup="onVhsRelease" @change="onVhsRelease" aria-label="VHS history shuttle — drag to rewind vault life">
+      <span class="vhs-count">{{ vhsCountLabel }}</span>
+    </div>
+    <span class="vhs-mode" :class="{rew:vhsPos<100}">{{ vhsPos===100 ? '▶ PLAY' : (vhsPos<28 ? '◀◀ REW' : '◀ SHUTTLE') }}</span>
+    <button class="btn sm" type="button" @click="vhsPos=100; onVhsInput(); onVhsRelease()" title="snap to live" aria-label="snap to live">live</button>
+  </div>
+  <div class="vhs-tear" aria-hidden="true"></div>
+</div>
+
 <!-- footer div{} is a COMPOUND CSS selector — the direct <div> child is load-bearing (spec-css.md) -->
 <footer v-if="authed"><div>{{ footText }}</div></footer>
 
@@ -1033,6 +1098,13 @@ const app=Vue.createApp({
     /* ---- private bookkeeping, never rendered ---- */
     _prevWorst:{},                       // account -> previous worst% (79→80 runaway edge)
     _heroRaf:{},                          // account -> requestAnimationFrame handle (so a re-trigger cancels the old tween)
+    /* <!-- IMPL: VHS Time Machine --> — shuttle state */
+    vhsPos:100,
+    vhsScrubbing:false,
+    vhsVel:0,
+    _vhsLastPos:100,
+    _vhsLastT:0,
+    _vhsRaf:0,
   }},
   computed:{
     // Warp Palette — fuzzy search across commands + accounts + providers
@@ -1043,6 +1115,7 @@ const app=Vue.createApp({
         {id:'cmd:clear',icon:'🧹',title:'Clear all filters',sub:'Reset account + host chips on activity feed',hot:'',match:'clear filter reset'},
         {id:'cmd:pause',icon:'⏸',title: this.paused?'Resume live feed':'Pause live feed',sub: this.paused?'Resume streaming activity':'Freeze the feed and queue incoming rows',hot:'Space',match:'pause resume feed live'},
         {id:'cmd:keys',icon:'🔑',title: this.keysOpen?'Hide provider keys':'Show provider keys',sub:'Toggle the provider keys disclosure',hot:'',match:'keys provider vault'},
+        {id:'cmd:vhs-live',icon:'📼',title: this.vhsPos===100?'VHS: rewind history':'VHS: snap to live',sub: this.vhsPos===100?'Shuttle into the tape — drag to rewind':'Return to live head (100%)',hot:'V',match:'vhs time machine history shuttle rewind live tape tracking'},
         ...this.accounts.map(a=>({id:'acct:'+a.account,icon:eligible(a)?'🟢':a.reauth_needed?'🔴':'🟡',title:a.account,sub:(a.label||'')+' · '+worstOf(a)+'% worst · '+(eligible(a)?'selectable':'needs attention'),hot:'',match:a.account+' '+(a.label||'') })),
         ...this.providers.map(p=>({id:'prov:'+p.id,icon:'⬢',title:p.id,sub:(p.label||'')+' · add a key for this provider',hot:'',match:p.id+' '+(p.label||'') })),
       ];
@@ -1118,11 +1191,49 @@ const app=Vue.createApp({
     },
 
     /* ================= FEED (§2.3) ================= */
+    vhsCutoffTs(){
+      if(this.vhsPos>=100) return Infinity;
+      if(!this.feed.length) return Infinity;
+      // min/max ts across current feed (newest-first storage, but ts can be any)
+      let min=Infinity,max=-Infinity;
+      for(const r of this.feed){ if(r.ts<min) min=r.ts; if(r.ts>max) max=r.ts; }
+      if(!isFinite(min)||!isFinite(max)||min===max) return Infinity;
+      // pos 0 = oldest, 100 = live (max). linear cutoff.
+      return min + (max - min)*(this.vhsPos/100);
+    },
+    vhsTimeLabel(){
+      if(this.vhsPos>=100) return 'LIVE ●';
+      if(!this.feed.length) return '— no history';
+      const cut=this.vhsCutoffTs;
+      // find row nearest cutoff to show its age/date
+      let best=null,bestD=Infinity;
+      for(const r of this.feed){ const d=Math.abs(r.ts-cut); if(d<bestD){bestD=d; best=r;} }
+      if(!best) return 'REW '+this.vhsPos+'%';
+      const ageS=(this.now - best.ts)/1000;
+      // when very old, show absolute time
+      if(ageS>86400) return this.wkhhmm(new Date(best.ts))+' · '+fmtAge(ageS)+' ago';
+      return '−'+fmtAge(ageS)+' · '+new Date(best.ts).toLocaleTimeString().slice(0,8);
+    },
+    vhsModeLabel(){
+      if(this.vhsPos>=100) return 'PLAY';
+      if(this.vhsPos<28) return 'REW ◀◀';
+      if(this.vhsPos<62) return 'SHUTTLE ◀';
+      return 'SHUTTLE ◀';
+    },
+    vhsCountLabel(){
+      const n=this.feedRows.length, tot=this.feed.length;
+      if(this.vhsPos>=100) return n+' / '+tot;
+      return n+' · '+this.vhsPos+'% tape';
+    },
     feedRows(){
       // filters AND together; an empty filter object (no keys) passes everything for that dimension
-      return this.feed.filter(r =>
+      const cutoff=this.vhsCutoffTs;
+      const base=this.feed.filter(r =>
         (!this.anyAcctFilter || this.fAccounts[r.account]) &&
-        (!this.anyHostFilter || this.fHosts[r.host]));
+        (!this.anyHostFilter || this.fHosts[r.host]) &&
+        (cutoff===Infinity || r.ts <= cutoff));
+      // when rewound, newest tail beyond cutoff is hidden — but if at 100%, live tail still streams (no cutoff)
+      return base;
     },
     anyAcctFilter(){ return Object.keys(this.fAccounts).length>0; },
     anyHostFilter(){ return Object.keys(this.fHosts).length>0; },
@@ -1171,6 +1282,8 @@ const app=Vue.createApp({
     paletteOpen(v){
       if(v){ this.paletteQuery=''; this.paletteIdx=0; this.$nextTick(()=>this.$refs.paletteInput?.focus()); }
     },
+    vhsPos(){ this.$nextTick(()=>this._updateVhsFx()); },
+    vhsScrubbing(){ this.$nextTick(()=>this._updateVhsFx()); },
     keysOpen(v){
       if(v && !this.reducedMotion()){
         this.$nextTick(()=> this.startShelfPhysics());
@@ -1582,6 +1695,86 @@ const app=Vue.createApp({
       this.fAccounts = {};
       this.fHosts = {};
     },
+    // <!-- IMPL: VHS Time Machine --> — shuttle input + velocity-driven artifacts
+    onVhsInput(){
+      const now=performance.now();
+      const dt=Math.max(16, now - (this._vhsLastT||now));
+      const d=Math.abs(this.vhsPos - (this._vhsLastPos ?? this.vhsPos));
+      // velocity in % per ms -> 0..~1 range; boost intensity when scrubbing fast
+      this.vhsVel = Math.min(2.5, d / dt * 16);
+      this._vhsLastPos=this.vhsPos;
+      this._vhsLastT=now;
+      this._updateVhsFx();
+    },
+    onVhsRelease(){
+      this.vhsScrubbing=false;
+      this.vhsVel*=0.35;
+      this._updateVhsFx();
+      // snap velocity decay
+      clearTimeout(this._vhsDecayT);
+      this._vhsDecayT=setTimeout(()=>{ this.vhsVel=0; this._updateVhsFx(); }, 420);
+    },
+    _updateVhsFx(){
+      if(this.reducedMotion()){
+        const app=document.getElementById('app');
+        if(app){ app.classList.remove('vhs-engaged','vhs-wobble','vhs-chroma','vhs-vignette','vhs-static'); app.style.removeProperty('--vhs-blur'); }
+        return;
+      }
+      const app=document.getElementById('app');
+      const shuttle=document.getElementById('vhs-shuttle');
+      if(!app) return;
+      const off=Math.max(0, 100 - this.vhsPos); // 0 at live, 100 at rewind
+      const scrub=this.vhsScrubbing ? 1 : 0;
+      const vel=this.vhsVel||0;
+      // intensity: base from distance off-live + velocity boost
+      const base = off/100; // 0..1
+      const intensity = Math.min(1, base*0.92 + vel*0.42 + scrub*0.12);
+      const engaged=intensity>0.04;
+      app.classList.toggle('vhs-engaged', engaged);
+      app.classList.toggle('vhs-wobble', intensity>0.28);
+      app.classList.toggle('vhs-chroma', intensity>0.18);
+      app.classList.toggle('vhs-vignette', intensity>0.12);
+      app.classList.toggle('vhs-static', intensity>0.22);
+      if(!engaged){
+        app.style.removeProperty('--vhs-blur');
+        app.style.removeProperty('--vhs-hue');
+        app.style.removeProperty('--vhs-sat');
+        app.style.removeProperty('--vhs-contrast');
+        app.style.removeProperty('--vhs-tear-op');
+        app.style.removeProperty('--vhs-chroma-op');
+        app.style.removeProperty('--vhs-vignette-op');
+        app.style.removeProperty('--vhs-static-op');
+        app.style.removeProperty('--vhs-static-main');
+        app.style.removeProperty('--vhs-wobble-x');
+        if(shuttle){ shuttle.style.removeProperty('--vhs-tear-op'); shuttle.style.removeProperty('--vhs-static-op'); }
+        return;
+      }
+      const blur=(intensity*0.9 + vel*0.18).toFixed(2);
+      const hue=(intensity*4 - vel*2).toFixed(1);
+      const sat=(1 + intensity*0.42).toFixed(2);
+      const contrast=(1 + intensity*0.08).toFixed(2);
+      app.style.setProperty('--vhs-blur', blur+'px');
+      app.style.setProperty('--vhs-hue', hue+'deg');
+      app.style.setProperty('--vhs-sat', sat);
+      app.style.setProperty('--vhs-contrast', contrast);
+      app.style.setProperty('--vhs-tear-op', (0.28 + intensity*0.42).toFixed(2));
+      app.style.setProperty('--vhs-chroma-op', (0.18 + intensity*0.42).toFixed(2));
+      app.style.setProperty('--vhs-vignette-op', (0.12 + intensity*0.44).toFixed(2));
+      app.style.setProperty('--vhs-static-op', (0.08 + intensity*0.22).toFixed(3));
+      app.style.setProperty('--vhs-static-main', (0.04 + intensity*0.14).toFixed(3));
+      app.style.setProperty('--vhs-feed-op', intensity.toFixed(2));
+      const wob=(1 + intensity*2.2 + vel*0.9).toFixed(1);
+      app.style.setProperty('--vhs-wobble-x', wob+'px');
+      if(shuttle){
+        shuttle.style.setProperty('--vhs-tear-op', (0.22 + intensity*0.55).toFixed(2));
+        shuttle.style.setProperty('--vhs-static-op', (0.06 + intensity*0.18).toFixed(3));
+      }
+      // randomize tear vertical position when scrubbing fast
+      if(this.vhsScrubbing && vel>0.6){
+        const tear=shuttle && shuttle.querySelector('.vhs-tear');
+        if(tear) tear.style.top=(38+Math.random()*38)+'%';
+      }
+    },
     // ---- Warp Palette (iteration 1) ----
     onPaletteMouse(e){
       const r=e.currentTarget.getBoundingClientRect();
@@ -1591,6 +1784,7 @@ const app=Vue.createApp({
       if(!row) return;
       this.paletteOpen=false;
       if(row.id==='cmd:board') location.href='/board.html';
+      else if(row.id==='cmd:vhs-live'){ if(this.vhsPos===100){ this.vhsPos=18; this.onVhsInput(); } else { this.vhsPos=100; this.onVhsInput(); this.onVhsRelease(); } this.$nextTick(()=>document.getElementById('vhs-shuttle')?.scrollIntoView({behavior:'smooth',block:'center'})); }
       else if(row.id==='cmd:clear') this.clearChips();
       else if(row.id==='cmd:pause') this.togglePause();
       else if(row.id==='cmd:keys'){ this.keysOpen=true; this.$nextTick(()=>document.querySelector('.disclosure')?.scrollIntoView({behavior:'smooth',block:'center'})); }
@@ -1742,6 +1936,15 @@ const app=Vue.createApp({
     this.boot();
     window.addEventListener('pointerdown',this.clearFlash,{passive:true});
     window.addEventListener('keydown',this.clearFlash,{passive:true});
+    // <!-- IMPL: VHS Time Machine --> — global pointerup ensures scrubbing flag clears even if pointer leaves slider; V key snaps
+    window.addEventListener('pointerup',()=>{ if(this.vhsScrubbing) this.onVhsRelease(); },{passive:true});
+    window.addEventListener('keydown',e=>{
+      if((e.key==='v'||e.key==='V') && !e.metaKey && !e.ctrlKey && !e.altKey && document.activeElement && document.activeElement.tagName!=='INPUT' && !this.paletteOpen){
+        if(this.vhsPos===100){ this.vhsPos=22; this.onVhsInput(); this.vhsScrubbing=true; } else { this.vhsPos=100; this.onVhsInput(); this.onVhsRelease(); }
+        const s=document.getElementById('vhs-shuttle'); if(s) s.scrollIntoView({behavior:'smooth',block:'center'});
+      }
+    });
+    this.$nextTick(()=>this._updateVhsFx());
     // Warp Palette — Cmd+K / Ctrl+K (iteration 1)
     window.addEventListener('keydown',this._paletteKey=e=>{
       if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();this.paletteOpen=!this.paletteOpen;}
@@ -1755,7 +1958,9 @@ const app=Vue.createApp({
     clearTimeout(this._statsT);
     clearTimeout(this._copyT);
     clearTimeout(this._shakeT);
+    clearTimeout(this._vhsDecayT);
     if(this._shelfRaf) cancelAnimationFrame(this._shelfRaf);
+    if(this._vhsRaf) cancelAnimationFrame(this._vhsRaf);
     window.removeEventListener('pointerdown',this.clearFlash);
     window.removeEventListener('keydown',this.clearFlash);
     if(this._paletteKey) window.removeEventListener('keydown',this._paletteKey);
