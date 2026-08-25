@@ -210,6 +210,14 @@
   .flightclone.done{background:linear-gradient(135deg,#22c98a,#2fd6b0);--fg:rgba(34,201,138,.6)}
   .flightclone.error{background:linear-gradient(135deg,#ff5d6c,#ff7a54);--fg:rgba(255,93,108,.6)}
 
+  /* <!-- IMPL: Board Deck Tilt --> ============ Deck Tilt — parallax glare (board) ============ */
+  .card{transform-style:preserve-3d;will-change:transform}
+  .card.tilt{transition:transform .6s cubic-bezier(.16,1,.3,1),box-shadow .6s cubic-bezier(.16,1,.3,1)}
+  .card.tilt-active{transition:none}
+  .card .glare{position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .3s;
+    background:radial-gradient(420px 320px at var(--gx,50%) var(--gy,50%),rgba(255,255,255,.14),transparent 65%),
+               radial-gradient(260px 200px at var(--gx,50%) var(--gy,50%),rgba(107,124,255,.10),transparent 70%)}
+
   .thread{margin-top:10px;border-top:1px dashed var(--line);padding-top:9px;display:flex;flex-direction:column;gap:9px}
   .turn .tp{font-size:11.5px;color:var(--cyan);font-weight:600;margin-bottom:2px}
   .turn .tp::before{content:"› "}
@@ -303,6 +311,7 @@
     *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
     .card.running::after{animation:none;background:linear-gradient(90deg,transparent,rgba(245,165,36,.6));padding:1px}
     .card:hover{transform:none}.card.dragging{transform:none}
+    .card{transform:none!important;box-shadow:none!important}.card .glare{display:none}
     .card .spin{animation:none;border-top-color:var(--run)}
     header .dot{animation:none}.summary .ln{opacity:1;animation:none}
     .card.settled{animation:none}.sheen,.bloom,.errmark,.flightclone{display:none}.ripple,.errpulse{animation:none;box-shadow:none}
@@ -340,16 +349,18 @@
         <span v-if="col.key==='todo'&&selectedIds.length>0" class="selectionbar">{{selectedIds.length}} selected <button type="button" @click="selectedIds=[]">clear</button></span>
       </h2>
       <transition-group name="flip" tag="div" class="list">
-        <div v-for="(c,idx) in cards(col.key)" :key="c.id" class="card" :data-id="c.id"
+        <div v-for="(c,idx) in cards(col.key)" :key="c.id" class="card tilt" :data-id="c.id"
              :class="[c.status,staleClass(c),runOverClass(c),{open:opened===c.id,dragging:dragId===c.id||(dragIds&&dragIds.includes(c.id)),settled:justMoved===c.id,flash:flashing[c.id],flying:flying[c.id],linked:linked===c.id,selected:col.key==='todo'&&selectedIds.includes(c.id),'drop-before':dragOverId===c.id&&dragOverPos==='before','drop-after':dragOverId===c.id&&dragOverPos==='after'}]"
              @mouseenter="c.status==='running'&&(linked=c.id)" @mouseleave="linked===c.id&&(linked=null)"
              tabindex="0" role="button" :aria-expanded="opened===c.id" :aria-selected="col.key==='todo'&&selectedIds.includes(c.id)"
              :draggable="col.key==='todo'"
-             @dragstart="col.key==='todo'&&dragStart(c,$event)" @dragend="dragEnd"
-             @dragover="col.key==='todo'&&dragOver(c,$event)" @drop="col.key==='todo'&&drop(c)"
+             @dragstart="col.key==='todo'&&dragStart(c,$event)" @dragend="dragEnd($event)"
+             @dragover="col.key==='todo'&&dragOver(c,$event)" @drop="col.key==='todo'&&drop(c,$event)"
+             @pointermove="onTilt" @pointerleave="offTilt" @pointercancel="offTilt"
              @click="col.key==='todo'&&($event.shiftKey||$event.ctrlKey||$event.metaKey) ? toggleSelect(c,$event) : expand(c)"
              @keydown.enter.self.prevent="expand(c)" @keydown.space.self.prevent="expand(c)"
              @keydown.alt.up.prevent="col.key==='todo'&&moveCard(c,-1)" @keydown.alt.down.prevent="col.key==='todo'&&moveCard(c,1)">
+          <div class="glare" aria-hidden="true"></div>
           <span v-if="flashing[c.id]" class="sheen" aria-hidden="true"></span>
           <span v-if="col.key==='todo'&&idx===0&&dragId==null&&!filter" class="nexthalo" aria-hidden="true" title="next to be claimed"></span>
           <template v-if="celebrating[c.id]"><span class="ripple" aria-hidden="true"></span><span class="bloom" aria-hidden="true">✓</span></template>
@@ -752,8 +763,9 @@ createApp({
       const list=e.currentTarget.closest('.list');
       if(list){ const lr=list.getBoundingClientRect();
         if(e.clientY-lr.top<44) list.scrollTop-=14; else if(lr.bottom-e.clientY<44) list.scrollTop+=14; } },
-    dragEnd(){ this.dragId=null; this.dragOverId=null; this.dragIds=null; },
-    async drop(target){
+    dragEnd(e){ if(e&&e.currentTarget) try{this.offTilt(e)}catch{} else document.querySelectorAll('.card.tilt-active').forEach(el=>{el.style.transform='';el.style.boxShadow='';el.classList.remove('tilt-active');el.classList.add('tilt');const gl=el.querySelector('.glare');if(gl) gl.style.opacity='0';}); this.dragId=null; this.dragOverId=null; this.dragIds=null; },
+    async drop(target,e){
+      if(e&&e.currentTarget) try{this.offTilt(e)}catch{}
       const src=this.dragId; const moving=(this.dragIds&&this.dragIds.length)?this.dragIds:(src==null?[]:[src]);
       this.dragOverId=null;
       if(src==null||moving.includes(target.id)){ this.dragId=null; this.dragIds=null; return; }
@@ -764,6 +776,25 @@ createApp({
       ids.splice(at,0,...movingOrdered);
       this.dragId=null; this.dragIds=null; this.selectedIds=[]; this.settle(src);   // spring overshoot on the landed card
       await this.reorder(ids);
+    },
+    // ---- Deck Tilt — parallax glare (board) ----
+    onTilt(e){
+      if(this.dragId!=null) return;
+      if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const el=e.currentTarget, r=el.getBoundingClientRect();
+      const px=(e.clientX-r.left)/r.width, py=(e.clientY-r.top)/r.height;
+      const rx=(py-0.5)*-8, ry=(px-0.5)*8;
+      el.style.transform='perspective(900px) rotateX('+rx.toFixed(2)+'deg) rotateY('+ry.toFixed(2)+'deg)';
+      el.style.boxShadow=(px>0.5?' -':' ')+'6px 10px 28px rgba(0,0,0,.38), 0 2px 8px rgba(0,0,0,.25)';
+      el.classList.remove('tilt'); el.classList.add('tilt-active');
+      el.style.setProperty('--gx',(px*100).toFixed(1)+'%');
+      el.style.setProperty('--gy',(py*100).toFixed(1)+'%');
+      const gl=el.querySelector('.glare'); if(gl) gl.style.opacity='1';
+    },
+    offTilt(e){
+      const el=e.currentTarget; el.style.transform=''; el.style.boxShadow='';
+      el.classList.remove('tilt-active'); el.classList.add('tilt');
+      const gl=el.querySelector('.glare'); if(gl) gl.style.opacity='0';
     },
     async create(){
       if(!this.form.prompt.trim()){this.formMsg='prompt is required';return;}
