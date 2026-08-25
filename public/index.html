@@ -562,6 +562,26 @@ footer div{max-width:1240px;margin:0 auto;padding:22px 24px 30px;font-family:var
 .palette-enter-from{opacity:0;transform:translateY(8px) scale(.98)}
 .palette-leave-to{opacity:0}
 
+/* <!-- IMPL: Hopf Loom --> — ray-marched Hopf fibration fake: S3→S2 fibers as Villarceau great circles over torus, orbits, scrubs on scroll via ViewTimeline — single fullscreen canvas behind layout */
+#hopf-loom{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.92}
+#hopf-scroll-proxy{position:fixed;top:0;left:0;width:1px;height:1px;pointer-events:none;opacity:0}
+@supports (animation-timeline:view()){
+  html{--hopf-scroll:0}
+  #hopf-scroll-proxy{animation:hopf-scroll-tl linear both;animation-timeline:view();animation-range:entry 0% exit 100%}
+  @keyframes hopf-scroll-tl{from{--hopf-scroll:0}to{--hopf-scroll:1}}
+}
+@media (prefers-reduced-motion:reduce){
+  #hopf-loom{opacity:.16;animation:none!important}
+  #hopf-scroll-proxy{animation:none!important}
+}
+/* windows into SAME canvas — untouched dead zones become topological signature */
+.keys-panel, #keys-panel{background:rgba(18,20,18,.42)!important;backdrop-filter:blur(10px) saturate(1.08);-webkit-backdrop-filter:blur(10px) saturate(1.08);border-color:rgba(232,179,75,.08)!important}
+.disclosure{background:rgba(23,25,22,.46)!important;backdrop-filter:blur(8px) saturate(1.06);-webkit-backdrop-filter:blur(8px) saturate(1.06)}
+.palette-mask{background:rgba(8,10,8,.28)!important;backdrop-filter:blur(10px) saturate(1.14);-webkit-backdrop-filter:blur(10px) saturate(1.14)}
+.login-card{background:rgba(23,25,22,.58)!important;backdrop-filter:blur(16px) saturate(1.12);-webkit-backdrop-filter:blur(16px) saturate(1.12);box-shadow:0 18px 48px rgba(0,0,0,.48),0 0 0 1px rgba(232,179,75,.07)}
+footer{background:rgba(16,18,17,.34)!important;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border-top-color:rgba(38,42,36,.45)!important}
+.seismo-wrap{background:linear-gradient(180deg,rgba(241,234,214,.84) 0%,rgba(236,229,207,.82) 50%,rgba(232,223,194,.84) 100%)!important;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+.toolbar{background:rgba(18,20,18,.32)!important;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-radius:6px;padding:6px 8px}
 /* ============ Curl Monsoon — flow field generative bg (iteration 1) ============ */
 #monsoon{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.42}
 /* <!-- IMPL: Signal Ghost --> — 10k boids behind grid, fixed viewport, pointer-none like monsoon */
@@ -1196,6 +1216,8 @@ main.shake{animation:seismo-shake .38s ease}
 <!-- IMPL: Mercury Blob Toggle -->
 <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><filter id="mercury-goo" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/><feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="goo"/><feComposite in="SourceGraphic" in2="goo" operator="atop"/></filter></svg>
 <!-- IMPL: Signal Ghost — 10k boids fleet behind grid (fixed z0, pointer-none; JS tracks cursor) -->
+<!-- IMPL: Hopf Loom -->
+<canvas id="hopf-loom" aria-hidden="true"></canvas><div id="hopf-scroll-proxy" aria-hidden="true"></div>
 <canvas id="monsoon" aria-hidden="true"></canvas>
 <canvas id="ghost" aria-hidden="true"></canvas>
 <!-- IMPL: Ghost Fleet -->
@@ -12309,6 +12331,345 @@ function startRhizome(){
   // also retry shortly after Vue mounts (Vue mounts async after bootGate)
   setTimeout(start, 900);
   setTimeout(start, 2500);
+})();
+</script>
+<!-- IMPL: Hopf Loom -->
+<script>
+/* <!-- IMPL: Hopf Loom --> — Hopf Fibration Fiber Field: S3→S2 fibers as Villarceau great circles over torus.
+   Pure math — no SDF thorns/blobs/doors, no reaction-diffusion, no fluid.
+   2D canvas fake of TSL raymarch: one fixed canvas z:0 pointer-none behind layout; orbit + ViewTimeline scrub.
+   Fiber = (1,1) torus knot: P(t)=((R+r cos(t+off))cos t,(R+r cos(t+off))sin t,r sin(t+off)) gives linked great circles.
+   Also draws faint torus wire + second mirrored family at low opacity for loom depth.
+   Scroll scrubs phase: CSS ViewTimeline drives --hopf-scroll if supported, JS fallback to window scroll. DPR≤2, 60fps, no deps. */
+(function(){
+  const cvs=document.getElementById('hopf-loom');
+  if(!cvs) return;
+  const ctx=cvs.getContext('2d',{alpha:true});
+  if(!ctx) return;
+  const DPR=()=>Math.min(2, window.devicePixelRatio||1);
+  let w=0,h=0,dpr=1,raf=0,t0=performance.now();
+  const RM=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // torus
+  const R=1.52, r=0.58;
+  const NFIB=24, NSEG=96;
+  const NFIB2=13;
+  // color palette: warm loom (amber) + cool filament (teal) drift by index
+  function fiberColor(i, total, alpha){
+    const hue= 34 + (i/total)*18 + Math.sin(i*0.9)*6; // 34..52 warm, slight variation
+    const sat= 88 - (i%3)*10;
+    const lig= 62 + (i%2?4:-3);
+    return 'hsla('+hue.toFixed(1)+','+sat+'%,'+lig+'%,'+alpha+')';
+  }
+  function fiberColorCool(i,total,alpha){
+    const hue= 188 + (i/total)*14;
+    return 'hsla('+hue.toFixed(1)+', 72%, 64%,'+alpha+')';
+  }
+  function resize(){
+    dpr=DPR();
+    w=window.innerWidth; h=window.innerHeight;
+    const W=Math.max(1, Math.floor(w*dpr)), H=Math.max(1, Math.floor(h*dpr));
+    if(cvs.width!==W||cvs.height!==H){ cvs.width=W; cvs.height=H; }
+    cvs.style.width=w+'px'; cvs.style.height=h+'px';
+  }
+  resize();
+  window.addEventListener('resize', resize, {passive:true});
+
+  // scroll phase 0..1 → 0..2π
+  let scrollPhase=0;
+  function readScrollPhase(){
+    // prefer CSS --hopf-scroll if ViewTimeline is active (computed value 0..1)
+    try{
+      const v=getComputedStyle(document.documentElement).getPropertyValue('--hopf-scroll').trim();
+      if(v!=='' ){
+        const n=parseFloat(v);
+        if(isFinite(n)) return Math.max(0,Math.min(1,n));
+      }
+    }catch(_){}
+    const doc=document.documentElement;
+    const max=Math.max(1, doc.scrollHeight - window.innerHeight);
+    return Math.max(0, Math.min(1, window.scrollY / max));
+  }
+
+  // perspective
+  function project(x,y,z, cx,cy, scale, yaw, pitch){
+    // yaw around Y, pitch around X
+    const cyaw=Math.cos(yaw), syaw=Math.sin(yaw);
+    const cp=Math.cos(pitch), sp=Math.sin(pitch);
+    // yaw
+    let xr= x*cyaw + z*syaw;
+    let zr= -x*syaw + z*cyaw;
+    let yr= y;
+    // pitch around X
+    let yr2= yr*cp - zr*sp;
+    let zr2= yr*sp + zr*cp;
+    // perspective: camera at (0,0, camZ) looking toward origin
+    const camZ= 4.2;
+    const pz= camZ - zr2;
+    const f= scale / Math.max(0.35, pz);
+    return {x: cx + xr*f, y: cy + yr2*f, z: zr2, pz: pz, depth: (zr2+2.2)/4.4 };
+  }
+
+  function draw(){
+    const now=performance.now();
+    const elapsed=(now - t0)/1000;
+    const reduced=RM();
+    if(reduced){
+      // static single frame at low opacity, no orbit
+      scrollPhase=readScrollPhase();
+    }else{
+      scrollPhase=readScrollPhase();
+    }
+    // orbit
+    const orbitSpeed=reduced?0:0.055; // rad/s — slow loom rotation
+    const yaw= elapsed*orbitSpeed + scrollPhase*Math.PI*0.62;
+    const pitch= 0.18 + Math.sin(elapsed*0.07)*0.04 + scrollPhase*0.06;
+    const cx= w*dpr/2, cy= h*dpr/2;
+    // scale so torus fits · responsive to viewport
+    const base=Math.min(w,h);
+    const scale= (reduced? 520: 560) * dpr * (base/900);
+    // fade for dead zones: stronger when scroll near top (hero) vs bottom
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    // clear with transparent (behind layout shows through)
+    ctx.clearRect(0,0,w,h);
+    // subtle vignette for screenshot signature (not blocking)
+    if(!reduced){
+      const grd=ctx.createRadialGradient(w*0.5,h*0.42, Math.min(w,h)*0.18, w*0.5,h*0.42, Math.min(w,h)*0.95);
+      grd.addColorStop(0,'rgba(232,179,75,0.025)');
+      grd.addColorStop(0.5,'rgba(110,193,228,0.015)');
+      grd.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=grd;
+      ctx.fillRect(0,0,w,h);
+    }
+    // glow backdrop for torus (soft bottom-lit)
+    if(!reduced){
+      const g2=ctx.createRadialGradient(w*0.5,h*0.62, 0, w*0.5,h*0.62, Math.min(w,h)*0.48);
+      g2.addColorStop(0,'rgba(232,179,75,0.06)');
+      g2.addColorStop(0.45,'rgba(110,193,228,0.03)');
+      g2.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=g2;
+      ctx.fillRect(0,0,w,h);
+    }
+
+    // draw faint torus wire circles (major rings) for anchor — 2 latitudes
+    ctx.lineWidth=0.9;
+    for(let k=0;k<2;k++){
+      const v= -0.55 + k*1.10;
+      const pts=[];
+      for(let i=0;i<=64;i++){
+        const u=i/64*Math.PI*2;
+        const x=(R + r*Math.cos(v))*Math.cos(u);
+        const y=(R + r*Math.cos(v))*Math.sin(u);
+        const z=r*Math.sin(v);
+        const p=project(x,y,z,cx,cy,scale,yaw,pitch);
+        pts.push(p);
+      }
+      ctx.beginPath();
+      for(let i=0;i<pts.length;i++){
+        const p=pts[i];
+        if(i===0) ctx.moveTo(p.x/dpr,p.y/dpr);
+        else ctx.lineTo(p.x/dpr,p.y/dpr);
+      }
+      ctx.strokeStyle='rgba(232,179,75,'+(k===0?0.07:0.05)+')';
+      ctx.stroke();
+    }
+    // meridional faint ring
+    for(let k=0;k<2;k++){
+      const u=k*Math.PI;
+      const pts=[];
+      for(let i=0;i<=48;i++){
+        const v=i/48*Math.PI*2;
+        const x=(R + r*Math.cos(v))*Math.cos(u);
+        const y=(R + r*Math.cos(v))*Math.sin(u);
+        const z=r*Math.sin(v);
+        const p=project(x,y,z,cx,cy,scale,yaw,pitch);
+        pts.push(p);
+      }
+      ctx.beginPath();
+      for(let i=0;i<pts.length;i++){
+        const p=pts[i];
+        if(i===0) ctx.moveTo(p.x/dpr,p.y/dpr);
+        else ctx.lineTo(p.x/dpr,p.y/dpr);
+      }
+      ctx.strokeStyle='rgba(110,193,228,0.05)';
+      ctx.stroke();
+    }
+
+    const phaseOff= scrollPhase*Math.PI*2;
+    const breath= 1 + Math.sin(elapsed*0.62)*0.012 + scrollPhase*0.01;
+    // mirrored faint family (opposite chirality) at low opacity for loom depth
+    for(let f=0; f<NFIB2; f++){
+      const off= (f/NFIB2)*Math.PI*2 + phaseOff*0.5;
+      const pts=[];
+      for(let s=0;s<=NSEG;s++){
+        const t=s/NSEG*Math.PI*2;
+        // opposite chirality: v = -t + off
+        const v= -t + off;
+        const vv=v*breath;
+        const cs=Math.cos(vv), sn=Math.sin(vv);
+        const x=(R + r*cs)*Math.cos(t);
+        const y=(R + r*cs)*Math.sin(t);
+        const z=r*sn;
+        const p=project(x,y,z,cx,cy,scale,yaw,pitch);
+        pts.push(p);
+      }
+      // draw glow then core
+      if(!reduced){
+        ctx.beginPath();
+        for(let i=0;i<pts.length;i++){ const p=pts[i]; if(i===0) ctx.moveTo(p.x/dpr,p.y/dpr); else ctx.lineTo(p.x/dpr,p.y/dpr); }
+        ctx.strokeStyle=fiberColorCool(f,NFIB2, 0.08);
+        ctx.lineWidth=5.5;
+        ctx.lineCap='round'; ctx.lineJoin='round';
+        ctx.shadowColor='rgba(110,193,228,0.22)'; ctx.shadowBlur=10;
+        ctx.stroke();
+        ctx.shadowBlur=0;
+      }
+      ctx.beginPath();
+      for(let i=0;i<pts.length;i++){
+        const p=pts[i];
+        const vis= Math.max(0, Math.min(1, (p.depth*0.7+0.3)));
+        // skip segment if behind camera
+        if(p.pz<0.2) continue;
+        if(i===0) ctx.moveTo(p.x/dpr,p.y/dpr);
+        else{
+          // alpha mod by depth
+          const a= 0.05 + vis*0.09;
+          if(i%16===0){
+            ctx.strokeStyle=fiberColorCool(f,NFIB2, a);
+            ctx.lineWidth= 0.7 + vis*0.9;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(p.x/dpr,p.y/dpr);
+          } else ctx.lineTo(p.x/dpr,p.y/dpr);
+        }
+      }
+      ctx.strokeStyle=fiberColorCool(f,NFIB2, 0.11);
+      ctx.lineWidth=1.0; ctx.stroke();
+    }
+
+    // primary family — the hero loom (1,1) Villarceau great circles)
+    for(let f=0; f<NFIB; f++){
+      const off= (f/NFIB)*Math.PI*2 + phaseOff;
+      const pts=[];
+      for(let s=0;s<=NSEG;s++){
+        const t=s/NSEG*Math.PI*2;
+        const v= t + off;
+        const vv=v*breath;
+        const cs=Math.cos(vv), sn=Math.sin(vv);
+        const x=(R + r*cs)*Math.cos(t);
+        const y=(R + r*cs)*Math.sin(t);
+        const z=r*sn;
+        const p=project(x,y,z,cx,cy,scale,yaw,pitch);
+        pts.push(p);
+      }
+      // depth sort hint: average depth for ordering not needed with translucent but we modulate glow
+      // glow pass
+      if(!reduced){
+        ctx.beginPath();
+        for(let i=0;i<pts.length;i++){ const p=pts[i]; if(i===0) ctx.moveTo(p.x/dpr,p.y/dpr); else ctx.lineTo(p.x/dpr,p.y/dpr); }
+        const avgDepth= pts.reduce((a,p)=>a+p.depth,0)/pts.length;
+        const glowA= 0.06 + avgDepth*0.06;
+        ctx.strokeStyle= fiberColor(f,NFIB, glowA);
+        ctx.lineWidth= 6.5;
+        ctx.lineCap='round'; ctx.lineJoin='round';
+        ctx.shadowColor= f%3===0 ? 'rgba(232,179,75,0.22)' : f%3===1? 'rgba(110,193,228,0.18)':'rgba(95,174,122,0.14)';
+        ctx.shadowBlur= 12;
+        ctx.stroke();
+        ctx.shadowBlur=0;
+      }
+      // core segmented by depth for crisp tubes
+      let segStart=0;
+      for(let i=1;i<=pts.length;i++){
+        const cur=pts[i], prev=pts[i-1];
+        const visPrev= prev? Math.max(0,Math.min(1,(prev.depth*0.75+0.25))):0;
+        const visCur= cur? Math.max(0,Math.min(1,(cur.depth*0.75+0.25))):visPrev;
+        const vis=(visPrev+visCur)/2;
+        const behind= prev&&prev.pz<0.22;
+        const nextBehind= cur&&cur.pz<0.22;
+        const breakSeg= i===pts.length || behind || nextBehind || Math.abs(visCur-visPrev)>0.42;
+        if(breakSeg){
+          if(i-1>segStart){
+            ctx.beginPath();
+            for(let j=segStart;j<i;j++){
+              const p=pts[j];
+              if(p.pz<0.22) continue;
+              if(j===segStart) ctx.moveTo(p.x/dpr,p.y/dpr);
+              else ctx.lineTo(p.x/dpr,p.y/dpr);
+            }
+            const a= 0.18 + vis*0.62;
+            const lw= 0.9 + vis*1.55;
+            ctx.strokeStyle= fiberColor(f,NFIB, a);
+            ctx.lineWidth= lw;
+            ctx.lineCap='round'; ctx.lineJoin='round';
+            ctx.stroke();
+            // specular highlight dot at frontmost point
+            if(vis>0.82 && !reduced){
+              let best=pts[segStart], bi=segStart;
+              for(let j=segStart;j<i;j++) if(pts[j].depth>best.depth){best=pts[j]; bi=j;}
+              if(best && best.depth>0.82){
+                ctx.beginPath();
+                ctx.arc(best.x/dpr,best.y/dpr, 1.25, 0, Math.PI*2);
+                ctx.fillStyle='rgba(255,248,230,'+(0.42+vis*0.28)+')';
+                ctx.fill();
+              }
+            }
+          }
+          segStart=i;
+        }
+      }
+    }
+
+    // center torus hole shimmer (subtle)
+    if(!reduced){
+      ctx.beginPath();
+      const hole=project(0,0,0,cx,cy,scale,yaw,pitch);
+      const rh= (r*0.42*scale / 4.2) / dpr;
+      const grd=ctx.createRadialGradient(hole.x/dpr,hole.y/dpr, 0, hole.x/dpr,hole.y/dpr, rh*1.9);
+      grd.addColorStop(0,'rgba(232,179,75,0.10)');
+      grd.addColorStop(0.45,'rgba(232,179,75,0.04)');
+      grd.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=grd;
+      ctx.arc(hole.x/dpr,hole.y/dpr, rh*1.9, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    if(!reduced) raf=requestAnimationFrame(draw);
+  }
+
+  // scroll listener for fallback (rAF reads scrollPhase each frame anyway)
+  let ticking=false;
+  function onScroll(){
+    if(ticking) return;
+    ticking=true;
+    requestAnimationFrame(()=>{ ticking=false; if(RM()&&raf) { /* static mode will re-draw once */ drawOnce(); } });
+  }
+  function drawOnce(){
+    if(RM()){
+      draw();
+    }
+  }
+  window.addEventListener('scroll', onScroll, {passive:true});
+
+  // reduced-motion toggle
+  const mq=matchMedia('(prefers-reduced-motion: reduce)');
+  mq.addEventListener? mq.addEventListener('change', ()=>{
+    if(mq.matches){
+      if(raf){ cancelAnimationFrame(raf); raf=0; }
+      drawOnce();
+    }else{
+      t0=performance.now();
+      if(!raf) raf=requestAnimationFrame(draw);
+    }
+  }): mq.addListener(()=>{
+    if(mq.matches){ if(raf){cancelAnimationFrame(raf);raf=0;} drawOnce(); }
+    else{ t0=performance.now(); if(!raf) raf=requestAnimationFrame(draw); }
+  });
+
+  // start
+  if(RM()){ drawOnce(); }
+  else{ raf=requestAnimationFrame(draw); }
+
+  // expose for tests
+  window.__hopfLoom={cvs, drawOnce, resize};
 })();
 </script>
 </body>
