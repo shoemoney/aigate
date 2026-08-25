@@ -675,6 +675,23 @@ main.shake{animation:seismo-shake .38s ease}
 .turing-pulse{position:absolute;right:12px;top:10px;pointer-events:none;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(180,232,220,.62);background:rgba(5,9,10,.55);border:1px solid rgba(126,200,184,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px}
 .turing-pulse i{width:7px;height:7px;border-radius:50%;background:#7ec8b8;box-shadow:0 0 8px rgba(126,200,184,.6);animation:turing-breathe 2.8s ease-in-out infinite}
 @keyframes turing-breathe{0%,100%{transform:scale(.88);opacity:.72}50%{transform:scale(1.2);opacity:1}}
+/* <!-- IMPL: Pulsefield --> — BZ/FHN double-buffer excitable media · spiral waves, annihilating fronts, pacemaker spirals advected by curl noise · neon nervous tissue · pure PDE math, zero SDF · sibling to Turing Tide */
+#pulsefield-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #2a1e38;border-radius:6px;overflow:hidden;background:#06060e;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
+.pulsefield-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#14101e 0%,#0d0a16 55%,#06060e 100%);border-bottom:1px solid #2a1e38;flex-wrap:wrap}
+.pulsefield-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#ff4fd8}
+.pulsefield-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.pulsefield-head .pulsefield-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.pulsefield-head .pulsefield-note b{color:#ffccf0;font-weight:600}
+.pulsefield-head .pulsefield-actions{display:flex;align-items:center;gap:6px}
+.pulsefield-canvas-wrap{position:relative;height:160px;background:radial-gradient(ellipse 640px 120px at 28% 0%,rgba(255,79,216,.08),transparent 68%),radial-gradient(ellipse 460px 120px at 82% 88%,rgba(79,245,255,.07),transparent 70%),radial-gradient(ellipse 360px 100px at 58% 78%,rgba(255,179,120,.05),transparent 70%),linear-gradient(180deg,#06080f 0%,#05060e 100%);overflow:hidden;cursor:crosshair;touch-action:none}
+#pulsefield{display:block;width:100%;height:100%;pointer-events:auto}
+.pulsefield-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0d0a16;border-top:1px solid #2a1e38;font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.pulsefield-meta .mode{color:#ffccf0}
+.pulsefield-meta .hint{opacity:.75}
+.pulsefield-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(255,79,216,.52);background:rgba(6,6,14,.55);border:1px solid rgba(255,79,216,.14);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+.pulsefield-pulse{position:absolute;right:12px;top:10px;pointer-events:none;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(255,204,240,.68);background:rgba(6,6,14,.55);border:1px solid rgba(255,79,216,.14);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px}
+.pulsefield-pulse i{width:7px;height:7px;border-radius:50%;background:#ff4fd8;box-shadow:0 0 10px rgba(255,79,216,.65),0 0 18px rgba(79,245,255,.25);animation:pulsefield-breathe 2.4s ease-in-out infinite}
+@keyframes pulsefield-breathe{0%,100%{transform:scale(.88);opacity:.72}50%{transform:scale(1.22);opacity:1}}
 /* <!-- IMPL: Interference Lace --> — 14 plane waves Schrödinger interference + thin-film iridescence (OPD) + velocity-grid persistence — single canvas 2D, no SDF/raymarch */
 #lace-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #2a2440;border-radius:6px;overflow:hidden;background:#07080f;box-shadow:0 4px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05)}
 .lace-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#14122a 0%,#0e0c1a 55%,#07080f 100%);border-bottom:1px solid #2a2440;flex-wrap:wrap}
@@ -841,6 +858,8 @@ main.shake{animation:seismo-shake .38s ease}
   .card .glare{display:none}
   #turing-sec{display:none!important}
   #turing{display:none!important}
+  #pulsefield-sec{display:none!important}
+  #pulsefield{display:none!important}
   #voronoi-sec{display:none!important}
   #voronoi{display:none!important}
   #nebula-sec{display:none!important}
@@ -1404,6 +1423,26 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="turing-meta">
         <span class="mode">▸ <span id="turing-readout">Du 0.16 · Dv 0.08 · double-buffered · pure fragment math</span></span>
         <span class="hint">pure fragment math · zero SDF · 1 canvas</span>
+      </div>
+    </section>
+    <!-- IMPL: Pulsefield -->
+    <section id="pulsefield-sec" class="pulsefield-sec" aria-label="Pulsefield — BZ Excitable Media">
+      <div class="pulsefield-head">
+        <span class="sec-num">00</span><h2>Pulsefield</h2>
+        <span class="pulsefield-note"><b id="pulsefield-mode">spiral</b> · <b id="pulsefield-waves">0 fronts</b> · <b id="pulsefield-rate">0 imp/s</b> · click = excite · drag = paint</span>
+        <span class="pulsefield-actions">
+          <button id="pulsefield-shock" class="btn sm" type="button" aria-label="shock pulsefield">⚡ shock</button>
+          <button id="pulsefield-reset" class="btn sm" type="button" aria-label="reset pulsefield">↻ reset</button>
+        </span>
+      </div>
+      <div class="pulsefield-canvas-wrap" id="pulsefield-wrap">
+        <canvas id="pulsefield" width="1200" height="160" aria-label="Pulsefield — BZ/FHN excitable media, spiral waves, annihilating fronts, pacemaker spirals advected by curl noise" role="img"></canvas>
+        <span class="pulsefield-spec">⬢ FHN u*(1-u)*(u-a)−v · curl-advected · zero SDF</span>
+        <span class="pulsefield-pulse" id="pulsefield-pulse" aria-hidden="true"><i></i><span id="pulsefield-pulse-label">pulse 0.00×</span></span>
+      </div>
+      <div class="pulsefield-meta">
+        <span class="mode">▸ <span id="pulsefield-readout">ε 0.020 · a 0.08 · b 0.64 · ping-pong</span></span>
+        <span class="hint">pure PDE math · 1 canvas · neon nervous tissue</span>
       </div>
     </section>
     <!-- IMPL: Interference Lace — 14 plane waves Schrödinger interference + thin-film iridescence (OPD) + velocity-grid persistence · single canvas 2D · no SDF/raymarch · 4s breath -->
@@ -8815,6 +8854,400 @@ function startRhizome(){
     io.observe(sec);
   }catch(_){}
   window.__turing={start,stop,get running(){return running}, inject, get F(){return curF}, get k(){return curK}, get health(){return healthSmooth}, get sim(){return {w:simW,h:simH}}};
+})();
+</script>
+<!-- IMPL: Pulsefield -->
+<script>
+/* <!-- IMPL: Pulsefield --> — BZ/FHN excitable media · FitzHugh-Nagumo: du/dt = D*lap(u)+u*(1-u)*(u-a)-v, dv/dt=eps*(b*u - v) · curl-noise advection · annihilating fronts & pacemaker spirals · single-canvas ping-pong FBO · zero SDF */
+(function(){
+  'use strict';
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('pulsefield-sec');
+  const cv=document.getElementById('pulsefield');
+  const wrap=document.getElementById('pulsefield-wrap');
+  if(!sec||!cv||!wrap) return;
+  const ctx=cv.getContext('2d',{alpha:false});
+  if(!ctx) return;
+  let dpr=Math.min(window.devicePixelRatio||1,2), cssW=0, cssH=0;
+  let simW=0, simH=0, N=0;
+  let uA=null, vA=null, uB=null, vB=null;
+  let curU=null, curV=null, nxtU=null, nxtV=null;
+  let off=null, offCtx=null, img=null;
+  let t=0, raf=0, running=false;
+  // FHN params — excitable regime yielding spirals
+  const D=0.22, a=0.08, b=0.64, eps=0.018;
+  const curlAmp=0.38; // px per step in sim units
+  let stepsPerFrame=5;
+  let frontsEst=0, impCount=0, impRate=0, lastImpWindow=performance.now();
+  let pacemakerPhase=0;
+  function alloc(w,h){
+    simW=w; simH=h; N=w*h;
+    uA=new Float32Array(N); vA=new Float32Array(N);
+    uB=new Float32Array(N); vB=new Float32Array(N);
+    off=document.createElement('canvas'); off.width=w; off.height=h;
+    offCtx=off.getContext('2d',{alpha:false});
+    img=offCtx.createImageData(w,h);
+    for(let i=0;i<N;i++){ uA[i]=0; vA[i]=0; }
+    // small resting noise so medium is not perfectly uniform (breaks symmetry)
+    for(let i=0;i<N;i++){ if(Math.random()<0.006){ uA[i]=Math.random()*0.12; vA[i]=Math.random()*0.06; } }
+    // seed pacemaker spirals — two cores opposite chirality + central broken front
+    seedSpiral(w*0.28, h*0.52, 13,  1);
+    seedSpiral(w*0.74, h*0.46, 13, -1);
+    // broken plane wave in middle to guarantee fronts immediately
+    const y0=(h*0.5)|0, band=3;
+    for(let y=y0-band;y<=y0+band;y++){
+      if(y<0||y>=h) continue;
+      for(let x=(w*0.18)|0;x<(w*0.62)|0;x++){
+        const j=y*w+x;
+        // half-wave: left half excited, right half cut — creates free ends that curl into spirals
+        if(x < w*0.42) { uA[j]=0.92; vA[j]=0.14; }
+      }
+    }
+    // random micro-seeds
+    for(let k=0;k<3;k++){
+      const cx=Math.random()*w, cy=Math.random()*h;
+      const rad=5+Math.random()*5;
+      for(let yy=Math.max(0,(cy-rad)|0);yy<Math.min(h,(cy+rad+1)|0);yy++){
+        for(let xx=Math.max(0,(cx-rad)|0);xx<Math.min(w,(cx+rad+1)|0);xx++){
+          const dx=xx-cx, dy=yy-cy; if(dx*dx+dy*dy<=rad*rad){ const j=yy*w+xx; uA[j]=Math.max(uA[j],0.72); }
+        }
+      }
+    }
+    curU=uA; curV=vA; nxtU=uB; nxtV=vB;
+  }
+  function seedSpiral(cx, cy, rad, chirality){
+    for(let y=Math.max(0,(cy-rad)|0); y<Math.min(simH,(cy+rad+1)|0); y++){
+      for(let x=Math.max(0,(cx-rad)|0); x<Math.min(simW,(cx+rad+1)|0); x++){
+        const dx=x-cx, dy=y-cy;
+        const d2=dx*dx+dy*dy; if(d2>rad*rad) continue;
+        const dist=Math.sqrt(d2);
+        const ang=Math.atan2(dy,dx);
+        const phase= chirality* (ang + dist*0.42);
+        const fall=1 - dist/rad;
+        const j=y*simW+x;
+        // phase maps to excitation: create ~ Archimedean arm
+        const s=Math.sin(phase);
+        // thin front: s>0.2 => high u; trailing refractory follows
+        let u=0, v=0;
+        if(s>0.18){
+          u=0.55 + s*0.42;
+          v=0.06 + fall*0.14;
+        } else if(s>-0.35){
+          u=0.04 + (s+0.35)*0.08;
+          v=0.18 + fall*0.18;
+        } else {
+          u=0.02; v=0.26*fall;
+        }
+        // blend in falling off
+        curU_SeedBlend(j, u*fall);
+        curV_SeedBlend(j, v*fall);
+      }
+    }
+  }
+  function curU_SeedBlend(j, val){ if(!uA) return; uA[j]=Math.max(uA[j], Math.min(1,val)); }
+  function curV_SeedBlend(j, val){ if(!vA) return; vA[j]=Math.max(vA[j], Math.min(1,val)); }
+  // realloc-safe seedSpiral needs uA/vA already; after alloc we alias curU/curV so above works if we call before alias — our seedSpiral above uses uA directly, ok.
+  // But we defined seedSpiral to write to uA/vA before alias; adjust: seedSpiral already uses uA/vA internally.
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const r=wrap.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(r.width));
+    cssH=Math.max(1,Math.floor(r.height));
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+    const targetCols=Math.max(110, Math.min(220, Math.floor(cssW/5.6)));
+    const targetRows=Math.max(28, Math.min(44, Math.floor(cssH/4.0)));
+    if(simW!==targetCols||simH!==targetRows||!curU) alloc(targetCols,targetRows);
+  }
+  function isHidden(){
+    if(sec.hidden) return true;
+    if(sec.style.display==='none') return true;
+    if(document.hidden) return true;
+    const r=sec.getBoundingClientRect();
+    if(r.bottom<0||r.top>innerHeight+120) return true;
+    return false;
+  }
+  function start(){ if(running) return; if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; running=true; cancelAnimationFrame(raf); loop(); }
+  function stop(){ running=false; cancelAnimationFrame(raf); raf=0; }
+  function inject(cx01, cy01, radSim, strength){
+    if(!curU||!curV) return;
+    const cx=cx01*simW, cy=cy01*simH;
+    const rad=radSim||7;
+    const rad2=rad*rad;
+    const str=Math.max(0, Math.min(1.2, strength||0.62));
+    for(let y=Math.max(0,(cy-rad)|0); y<Math.min(simH,(cy+rad+1)|0); y++){
+      for(let x=Math.max(0,(cx-rad)|0); x<Math.min(simW,(cx+rad+1)|0); x++){
+        const dx=x-cx, dy=y-cy; const d2=dx*dx+dy*dy; if(d2>rad2) continue;
+        const j=y*simW+x;
+        const e=1 - Math.sqrt(d2)/rad;
+        // excitation impulse: bump u hard, depress v slightly to make it excitable
+        const du=str*e;
+        curU[j]=Math.min(1, curU[j] + du);
+        // mild recovery suppression makes front sharper
+        curV[j]=Math.max(0, curV[j] - du*0.12);
+        nxtU[j]=curU[j]; nxtV[j]=curV[j];
+      }
+    }
+    impCount++;
+  }
+  // pacemaker tick — auto-emits expanding ring from each spiral core every ~ 1.1s
+  function pacemakerTick(){
+    pacemakerPhase+=0.018;
+    if((t%36)!==0) return;
+    // two cores pulse alternately
+    const phaseS=Math.sin(pacemakerPhase);
+    if(phaseS>0.25){
+      // ring from left core — inject annulus
+      const cx=0.28, cy=0.52;
+      for(let k=0;k<2;k++) inject(cx + (Math.random()-0.5)*0.02, cy + (Math.random()-0.5)*0.02, 8, 0.52);
+    } else if(phaseS<-0.25){
+      const cx=0.74, cy=0.46;
+      for(let k=0;k<2;k++) inject(cx + (Math.random()-0.5)*0.02, cy + (Math.random()-0.5)*0.02, 8, 0.52);
+    }
+  }
+  function step(){
+    const w=simW, h=simH;
+    // precompute time factor for curl
+    const tt=t*0.007;
+    for(let y=0;y<h;y++){
+      const ay=y*0.17, sinAyTt = Math.sin(ay + tt*0.9), cosAyTt = Math.cos(ay + tt*0.9);
+      for(let x=0;x<w;x++){
+        const ax=x*0.11;
+        const sinAx = Math.sin(ax - tt*0.6), cosAx = Math.cos(ax - tt*0.6);
+        // divergence-free curl field (analytic)
+        const vx = curlAmp * cosAyTt * sinAx;
+        const vy = -curlAmp * cosAx * sinAyTt;
+        // semi-Lagrangian source lookup (nearest)
+        let sx = (x - vx)|0, sy = (y - vy)|0;
+        if(sx<0) sx+=w; else if(sx>=w) sx-=w;
+        if(sy<0) sy+=h; else if(sy>=h) sy-=h;
+        // clamp wrap
+        sx = ((sx % w)+w)%w; sy=((sy % h)+h)%h;
+        const si = sy*w + sx;
+        const i = y*w + x;
+        let u = curU[si];
+        let v = curV[si];
+        // laplacian of u at source neighbourhood (5-point, toroidal) — diffusion only on u
+        const xLe = (sx-1+w)%w, xRi=(sx+1)%w, yUp=(sy-1+h)%h, yDn=(sy+1)%h;
+        const uLe=curU[sy*w+xLe], uRi=curU[sy*w+xRi], uUp=curU[yUp*w+sx], uDn=curU[yDn*w+sx];
+        const lapU = uLe+uRi+uUp+uDn - 4*u;
+        // FHN
+        // du = D*lap + u*(1-u)*(u-a) - v
+        // dv = eps*(b*u - v)
+        const ua = u - a;
+        let du = D*lapU + u*(1-u)*ua - v;
+        let dv = eps*(b*u - v);
+        let nu = u + du;
+        let nv = v + dv;
+        if(nu!==nu) nu=u; if(nv!==nv) nv=v;
+        if(nu<0) nu=0; else if(nu>1) nu=1;
+        if(nv<0) nv=0; else if(nv>0.92) nv=0.92;
+        nxtU[i]=nu; nxtV[i]=nv;
+      }
+    }
+    let tu=curU; curU=nxtU; nxtU=tu;
+    let tv=curV; curV=nxtV; nxtV=tv;
+  }
+  function neonColor(u,v){
+    // living neon nervous tissue: u = excitation (0..1), v = recovery (0..0.9)
+    // annihilating fronts: colliding high-u fronts extinguish (handled by PDE); visually they appear as bright seams that vanish
+    // map: resting #080810 -> refractory violet -> excited cyan/magenta front
+    u=Math.max(0,Math.min(1,u));
+    v=Math.max(0,Math.min(0.92,v));
+    if(u<0.07 && v<0.12){
+      // deep resting — near-black with faint indigo
+      return [7,8,18];
+    }
+    const front = Math.max(0, u - 0.48 - v*0.36); // 0..~0.5
+    const exc = Math.pow(Math.max(0, u - v*0.28), 0.95);
+    const ref = Math.pow(v, 0.82);
+    if(front>0.018){
+      // bright front — lerp cyan ↔ magenta by local v and by global time shimmer
+      // v low => cyan (electric), v high => magenta (overdriven)
+      const tShim = Math.sin(t*0.03 + u*9 + v*5)*0.08;
+      const m = Math.max(0,Math.min(1, ref*1.35 + tShim + 0.08));
+      // cyan  62,245,255  ;  magenta 255,82,214 ;  amber-hot 255,195,88 for very high front
+      let r,g,b;
+      if(front>0.22 && exc>0.68){
+        // hottest core — amber-white hot
+        const k=Math.min(1, (front-0.22)/0.18);
+        r= 255;
+        g= 180 + (245-180)*(1-k) + 10*Math.sin(t*0.04);
+        b= 88 + (214-88)*(1-k);
+      } else {
+        r= 62 + (255-62)*m;
+        g= 245 + (82-245)*m;
+        b= 255 + (214-255)*m;
+        // boost brightness with front
+        const boost = Math.min(28, front*78);
+        r=Math.min(255, r+boost); g=Math.min(255, g+boost*0.72); b=Math.min(255, b+boost*0.58);
+      }
+      // add faint film of refractory around front
+      if(ref>0.32){ r=(r*0.82 + 88*0.18)|0; g=(g*0.84+ 28*0.16)|0; b=(b*0.86+ 92*0.14)|0; }
+      return [r|0,g|0,b|0];
+    }
+    if(ref>0.14){
+      // refractory tail — deep violet / plum
+      const k=Math.min(1, ref);
+      const r= 14 + k*72;
+      const g= 10 + k*26;
+      const b= 28 + k*78;
+      // faint exc bleed
+      const er= exc*18;
+      return [(r+er)|0, (g+er*0.6)|0, (b+er*0.9)|0];
+    }
+    // intermediate — dim teal/indigo resting wash carrying faint waves
+    const wash = exc*0.55 + ref*0.22;
+    const r= 7 + wash*52;
+    const g= 9 + wash*62;
+    const b= 16 + wash*84;
+    return [r|0,g|0,b|0];
+  }
+  function render(){
+    const d=img.data;
+    let frontCells=0;
+    for(let i=0;i<N;i++){
+      const u=curU[i], v=curV[i];
+      if(u>0.62 && v<0.38) frontCells++;
+      const c=neonColor(u,v);
+      const j=i*4;
+      d[j]=c[0]; d[j+1]=c[1]; d[j+2]=c[2]; d[j+3]=255;
+    }
+    frontsEst = (frontsEst*0.86 + frontCells*0.14)|0;
+    offCtx.putImageData(img,0,0);
+    ctx.save(); ctx.scale(dpr,dpr);
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(off,0,0,cssW,cssH);
+    ctx.imageSmoothingEnabled=true;
+    // vignette
+    const vg=ctx.createRadialGradient(cssW*0.5,cssH*0.5,0,cssW*0.5,cssH*0.5,Math.max(cssW,cssH)*0.92);
+    vg.addColorStop(0,'rgba(10,6,18,0)'); vg.addColorStop(0.60,'rgba(10,6,18,0)'); vg.addColorStop(1,'rgba(0,0,0,0.52)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,cssW,cssH);
+    // faint scan for living texture
+    ctx.fillStyle='rgba(255,79,216,0.018)';
+    for(let y=0;y<cssH;y+=4) ctx.fillRect(0,y,cssW,1);
+    // impulses leave a brief bloom
+    if(impRate>0.12){
+      ctx.fillStyle='rgba(255,79,216,'+(Math.min(0.09, impRate*0.06)).toFixed(3)+')';
+      ctx.fillRect(0,0,cssW,cssH);
+    }
+    ctx.restore();
+  }
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    t++;
+    pacemakerTick();
+    for(let s=0;s<stepsPerFrame;s++) step();
+    // extra steps every few frames to keep fronts lively
+    if(t%4===0) step();
+    render();
+    // impulse rate window
+    const now=performance.now();
+    if(now-lastImpWindow>1000){
+      impRate = impCount / ((now-lastImpWindow)/1000);
+      impCount=0; lastImpWindow=now;
+    }
+    if(t%18===0){
+      const modeEl=document.getElementById('pulsefield-mode');
+      const wavesEl=document.getElementById('pulsefield-waves');
+      const rateEl=document.getElementById('pulsefield-rate');
+      const pulse=document.getElementById('pulsefield-pulse-label');
+      const readout=document.getElementById('pulsefield-readout');
+      const fronts=frontsEst;
+      let mode='quiescent';
+      if(fronts>180) mode='annihilating';
+      else if(fronts>95) mode='spiral';
+      else if(fronts>38) mode='fronts';
+      else if(fronts>12) mode='pacemaker';
+      else mode='resting';
+      // modulate scan: fronts feel alive
+      if(modeEl) modeEl.textContent=mode;
+      if(wavesEl) wavesEl.textContent=fronts+' fronts';
+      if(rateEl) rateEl.textContent=impRate.toFixed(1)+' imp/s';
+      if(pulse) pulse.textContent='pulse '+impRate.toFixed(2)+'× · '+mode;
+      if(readout) readout.textContent='ε 0.018 · a 0.08 · b 0.64 · D 0.22 · curl '+curlAmp.toFixed(2)+' · '+simW+'×'+simH;
+    }
+    raf=requestAnimationFrame(loop);
+  }
+  function pos01(e){
+    const r=cv.getBoundingClientRect();
+    return [Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)), Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))];
+  }
+  let dragging=false, lastPos=null;
+  cv.addEventListener('pointerdown', (e)=>{
+    dragging=true; cv.setPointerCapture(e.pointerId);
+    const [x,y]=pos01(e); inject(x,y,10,0.82); lastPos=[x,y];
+    cv.style.filter='brightness(1.14)'; setTimeout(()=>cv.style.filter='',160);
+  });
+  cv.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    const [x,y]=pos01(e);
+    if(lastPos){
+      const dx=x-lastPos[0], dy=y-lastPos[1];
+      const d=Math.hypot(dx,dy);
+      const n=Math.max(1,Math.ceil(d*simW/2.2));
+      for(let i=0;i<=n;i++){ const u=i/n; inject(lastPos[0]+dx*u, lastPos[1]+dy*u, 7, 0.48); }
+    } else inject(x,y,7,0.48);
+    lastPos=[x,y];
+  });
+  cv.addEventListener('pointerup', (e)=>{ dragging=false; lastPos=null; try{cv.releasePointerCapture(e.pointerId);}catch(_){} });
+  cv.addEventListener('pointercancel', ()=>{ dragging=false; lastPos=null; });
+  cv.addEventListener('pointerleave', ()=>{ if(!dragging) lastPos=null; });
+  document.getElementById('pulsefield-shock')?.addEventListener('click', ()=>{
+    for(let k=0;k<4;k++) setTimeout(()=>inject(Math.random()*0.82+0.09, Math.random()*0.72+0.14, 11, 0.72), k*70);
+    cv.style.filter='brightness(1.18)'; setTimeout(()=>cv.style.filter='',220);
+  });
+  document.getElementById('pulsefield-reset')?.addEventListener('click', ()=>{
+    alloc(simW,simH);
+    cv.style.filter='brightness(1.16)'; setTimeout(()=>cv.style.filter='',200);
+  });
+  // data → excitation impulses: fetch 401 and /api/* success
+  (function hookFetch(){
+    const orig=window.fetch;
+    if(!orig||orig.__pulsefieldHooked) return;
+    const wrapped=function(input,init){
+      const p=orig.apply(this,arguments);
+      p.then(res=>{
+        try{
+          const url= typeof input==='string'?input:(input&&input.url)||'';
+          if(res && res.status===401){
+            for(let k=0;k<2;k++) setTimeout(()=>inject(Math.random()*0.72+0.14, Math.random()*0.62+0.18, 12, 0.78), k*85);
+          } else if(url.includes('/api/keys') || url.includes('/api/capabilities') || url.includes('/api/access')){
+            if(res && res.ok){
+              inject(Math.random()*0.78+0.11, Math.random()*0.60+0.20, 8, 0.52);
+            }
+          } else if(url.includes('/api/')){
+            if(res && res.ok) inject(Math.random()*0.78+0.11, Math.random()*0.60+0.20, 6, 0.38);
+          }
+        }catch(_){}
+      }).catch(()=>{});
+      return p;
+    };
+    wrapped.__pulsefieldHooked=true;
+    // preserve turing hook flag if already wrapped
+    if(orig.__turingHooked) wrapped.__turingHooked=true;
+    // chain: if orig is already turing-wrapped, keep both hooks by calling orig which is turing's wrapper
+    // To avoid losing turing's hook when we wrap again, detect and re-wrap orig's orig
+    window.fetch=wrapped;
+  })();
+  // also observe 401s via global error-ish: listen for fetch injected above; plus kick on visibility
+  resize(); start();
+  window.addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) return; if(!running) start(); });
+  try{
+    const mq=window.matchMedia('(prefers-reduced-motion: reduce)');
+    mq.addEventListener('change', e=>{ if(e.matches) stop(); else start(); });
+  }catch(_){}
+  try{
+    const io=new IntersectionObserver((ents)=>{
+      for(const en of ents) if(en.target===sec && en.isIntersecting) start();
+    },{threshold:0});
+    io.observe(sec);
+  }catch(_){}
+  window.__pulsefield={start,stop,get running(){return running}, inject, get sim(){return {w:simW,h:simH}}, get fronts(){return frontsEst}, get rate(){return impRate}};
 })();
 </script>
 <!-- IMPL: Interference Lace -->
