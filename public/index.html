@@ -69,13 +69,20 @@ section:first-child{border-top:0}
 .sec-note{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--dim)}
 
 /* ---------- inbox ---------- */
-.inbox-row{display:flex;align-items:center;gap:12px;padding:13px 16px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--crit);border-radius:4px;margin-bottom:9px;transition:.15s}
+.inbox-row{display:flex;align-items:center;gap:12px;padding:13px 16px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--crit);border-radius:4px;margin-bottom:9px;transition:.15s;cursor:pointer}
 .inbox-row.warn-row{border-left-color:var(--warn)}
 .inbox-row:hover{border-color:#333830}
 .inbox-row p{font-size:15px;flex:1;min-width:0}
 .inbox-row code{font-family:var(--mono);font-size:13.5px;background:var(--inset);border:1px solid var(--line);border-radius:3px;padding:2px 7px;color:var(--accent)}
 .x{color:var(--dim);padding:5px 9px;border-radius:3px;font-family:var(--mono)}
 .x:hover{color:var(--crit);background:var(--inset)}
+/* <!-- IMPL: Inbox Warp --> — shared-element warp: pill/timestamp/host chip fly via View Transitions API; list FLIP staggers 40ms */
+.inbox-pill{font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;padding:3px 7px;border-radius:3px;border:1px solid;font-weight:600;white-space:nowrap;flex:none}
+.inbox-pill.crit{color:var(--crit);border-color:rgba(224,93,68,.45);background:rgba(224,93,68,.08)}
+.inbox-pill.warn{color:var(--warn);border-color:rgba(217,154,61,.45);background:rgba(217,154,61,.08)}
+.inbox-time{font:11px var(--mono);color:var(--dim);white-space:nowrap;flex:none}
+.inbox-host{font:11px var(--mono);letter-spacing:.06em;padding:3px 7px;border-radius:3px;border:1px solid var(--line);background:var(--inset);color:var(--dim);white-space:nowrap;flex:none;max-width:140px;overflow:hidden;text-overflow:ellipsis}
+.inbox-row:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
 
 /* ---------- account cards ---------- */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:16px}
@@ -649,6 +656,46 @@ main.shake{animation:seismo-shake .38s ease}
   #app.vhs-engaged main{filter:none!important}
   #app.vhs-chroma .frow .snip{text-shadow:none!important}
 }
+/* <!-- IMPL: Inbox Warp --> — View Transitions + staggered FLIP + inspector drawer (z-index > palette 80) */
+.inbox-move{transition:transform .25s ease; transition-delay:calc(var(--warp-idx,0)*40ms)}
+.warp-mask{position:fixed;inset:0;z-index:82;background:rgba(8,10,8,.62);backdrop-filter:blur(8px) saturate(1.08);display:flex;justify-content:flex-end}
+.warp-drawer{width:min(560px,92vw);height:100%;background:var(--panel);border-left:1px solid var(--line);box-shadow:-16px 0 48px rgba(0,0,0,.55),0 0 0 1px rgba(232,179,75,.08);display:flex;flex-direction:column;overflow:hidden}
+.warp-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#1c201c 0%,var(--panel) 100%)}
+.warp-title{font:11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-left:auto;margin-right:auto}
+.warp-body{flex:1;overflow-y:auto;padding:20px 18px 18px;display:flex;flex-direction:column;gap:16px}
+.warp-hero{display:flex;align-items:center;gap:10px}
+.warp-id{font-size:12px;color:var(--dim)}
+.warp-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.warp-sev{font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;padding:3px 7px;border-radius:3px;border:1px solid}
+.warp-sev.crit{color:var(--crit);border-color:rgba(224,93,68,.45);background:rgba(224,93,68,.08)}
+.warp-sev.warn{color:var(--warn);border-color:rgba(217,154,61,.45);background:rgba(217,154,61,.08)}
+.warp-prompt{background:var(--inset);border:1px solid var(--line);border-radius:6px;padding:14px 14px;font-size:14px;line-height:1.55}
+.warp-prompt code{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:2px 6px;color:var(--accent)}
+.warp-detail{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--line);border-radius:6px;background:var(--inset)}
+.warp-kv{display:flex;justify-content:space-between;gap:12px;font-size:13px}
+.warp-k{font:11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);flex:none}
+.warp-v{font-size:13px;color:var(--fg);text-align:right;overflow:hidden;text-overflow:ellipsis}
+.warp-v.mono{font-family:var(--mono);font-size:12.5px}
+.warp-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:12px;border-top:1px solid var(--line)}
+.inspector-enter-active{transition:opacity .22s ease}
+.inspector-leave-active{transition:opacity .18s ease}
+.inspector-enter-from,.inspector-leave-to{opacity:0}
+.inspector-enter-active .warp-drawer{transition:transform .32s cubic-bezier(.16,1,.3,1)}
+.inspector-leave-active .warp-drawer{transition:transform .22s ease}
+.inspector-enter-from .warp-drawer{transform:translateX(100%)}
+.inspector-leave-to .warp-drawer{transform:translateX(100%)}
+/* View Transitions API — shared elements fly; root crossfade shortened */
+::view-transition-group(warp-pill),::view-transition-group(warp-host),::view-transition-group(warp-time){animation-duration:.32s;animation-timing-function:cubic-bezier(.16,1,.3,1)}
+::view-transition-old(warp-pill),::view-transition-new(warp-pill),
+::view-transition-old(warp-host),::view-transition-new(warp-host),
+::view-transition-old(warp-time),::view-transition-new(warp-time){mix-blend-mode:normal}
+::view-transition-old(root),::view-transition-new(root){animation-duration:.18s}
+@media (prefers-reduced-motion:reduce){
+  .inbox-move{transition:none!important;transition-delay:0ms!important}
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+  .warp-drawer{transition:none!important}
+  .inspector-enter-active,.inspector-leave-active{transition:none!important}
+}
 </style>
 </head>
 <body>
@@ -845,14 +892,56 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="sec-head"><span class="sec-num">01</span><h2>Action required</h2>
         <span class="sec-note">{{ inbox.length }} open</span></div>
       <TransitionGroup name="inbox" tag="div" id="inbox">
-        <div v-for="it in inbox" :key="it.id" class="inbox-row" :class="{'warn-row':it.warn}">
+        <div v-for="(it,idx) in inbox" :key="it.id" class="inbox-row" :class="{'warn-row':it.warn}" @click="openWarp(it.id)" tabindex="0" role="button" :aria-label="'inspect '+it.id" @keydown.enter.prevent="openWarp(it.id)" @keydown.space.prevent="openWarp(it.id)" :style="{'--warp-idx':idx}">
+          <span class="inbox-pill" :class="it.warn?'warn':'crit'" :style="inspectorId===it.id?{'view-transition-name':'warp-pill'}:{}">{{ it.pill }}</span>
           <p><template v-for="(p,i) in it.parts" :key="i"><b v-if="p.t==='b'">{{ p.s }}</b><code v-else-if="p.t==='code'">{{ p.s }}</code><template v-else>{{ p.s }}</template></template></p>
+          <span class="inbox-host" :style="inspectorId===it.id?{'view-transition-name':'warp-host'}:{}">{{ it.hostChip }}</span>
+          <span class="inbox-time" :style="inspectorId===it.id?{'view-transition-name':'warp-time'}:{}">{{ it.timeLabel }}</span>
           <!-- copiedId (not a shared boolean) → each row's button state is independent (critique §1) -->
-          <button v-if="it.copy" class="btn sm" @click="copyCmd(it.id)">{{ copiedId===it.id?'copied':'copy cmd' }}</button>
-          <button class="x" @click="dismiss(it.id)" aria-label="dismiss">✕</button>
+          <button v-if="it.copy" class="btn sm" @click.stop="copyCmd(it.id)">{{ copiedId===it.id?'copied':'copy cmd' }}</button>
+          <button class="x" @click.stop="dismiss(it.id)" aria-label="dismiss">✕</button>
         </div>
       </TransitionGroup>
     </section>
+    <!-- IMPL: Inbox Warp — shared-element inspector drawer (view-transition-name warp-pill/warp-time/warp-host) -->
+    <Teleport to="body">
+    <Transition name="inspector">
+    <div v-if="inspectorId" class="warp-mask" @click.self="closeWarp()" role="dialog" aria-modal="true" :aria-label="'inspector '+inspectorId">
+      <div class="warp-drawer">
+        <div class="warp-head">
+          <button class="btn sm" @click="closeWarp()" aria-label="back to inbox">← back</button>
+          <span class="warp-title">Inspector</span>
+          <button class="x" @click="closeWarp()" aria-label="close">✕</button>
+        </div>
+        <div class="warp-body" v-if="warpItem">
+          <div class="warp-hero">
+            <span class="inbox-pill" :class="warpItem.warn?'warn':'crit'" style="view-transition-name:warp-pill">{{ warpItem.pill }}</span>
+            <span class="warp-id mono">{{ warpItem.id }}</span>
+          </div>
+          <div class="warp-meta">
+            <span class="inbox-host" style="view-transition-name:warp-host">{{ warpItem.hostChip }}</span>
+            <span class="inbox-time" style="view-transition-name:warp-time">{{ warpItem.timeLabel }}</span>
+            <span class="warp-sev" :class="warpItem.warn?'warn':'crit'">{{ warpItem.warn?'WARN':'CRIT' }}</span>
+          </div>
+          <div class="warp-prompt">
+            <p><template v-for="(p,i) in warpItem.parts" :key="i"><b v-if="p.t==='b'">{{ p.s }}</b><code v-else-if="p.t==='code'">{{ p.s }}</code><template v-else>{{ p.s }}</template></template></p>
+          </div>
+          <div class="warp-detail">
+            <div class="warp-kv"><span class="warp-k">host</span><span class="warp-v mono">{{ warpItem.hostChip }}</span></div>
+            <div class="warp-kv"><span class="warp-k">severity</span><span class="warp-v" :class="warpItem.warn?'warn':'crit'">{{ warpItem.warn?'warn — needs attention soon':'crit — blocks selection right now' }}</span></div>
+            <div class="warp-kv"><span class="warp-k">age</span><span class="warp-v mono">{{ warpItem.timeLabel }}</span></div>
+            <div class="warp-kv" v-if="warpItem.copy"><span class="warp-k">command</span><code class="warp-v">claude setup-token</code></div>
+          </div>
+          <div class="warp-actions">
+            <button v-if="warpItem.copy" class="btn accent sm" @click="copyCmd(warpItem.id); $event.target.textContent='copied'; setTimeout(()=>{$event.target.textContent='copy cmd'},1200)">{{ copiedId===warpItem.id?'copied':'copy cmd' }}</button>
+            <button class="btn sm" @click="dismiss(warpItem.id); closeWarp()">dismiss</button>
+            <button class="btn sm" @click="closeWarp()">close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </Transition>
+    </Teleport>
 
     <!-- 02 · account cards -->
     <section>
@@ -1241,6 +1330,8 @@ const app=Vue.createApp({
     reauthMsgs:{},             // account -> .reauth [data-rmsg] error ('' = hidden)
     dismissed:{},               // inbox item id -> true (session only, never persisted)
     copiedId:null,               // inbox item id whose copy button currently reads 'copied'
+    // <!-- IMPL: Inbox Warp --> — shared-element inspector id (null = closed)
+    inspectorId:null,
 
     /* ---- activity feed ---- */
     feed:[],                  // newest-first rows {key,kind,ts,account,host,model,text,fail}; CAP 200
@@ -1331,7 +1422,8 @@ const app=Vue.createApp({
       const items=[];
       for(const a of this.accounts){
         if(a.reauth_needed&&!this.dismissed['reauth:'+a.account]){
-          items.push({id:'reauth:'+a.account,warn:false,copy:true,parts:[
+          const age=this.curAge(a);
+          items.push({id:'reauth:'+a.account,warn:false,copy:true,pill:'CRIT',hostChip:a.account,timeLabel:age!=null?fmtAge(age)+' ago':'needs re-auth',parts:[
             {t:'b',s:a.account},
             {t:'x',s:' needs re-auth — run '},
             {t:'code',s:'claude setup-token'},
@@ -1340,7 +1432,7 @@ const app=Vue.createApp({
         }
         const age=this.curAge(a);
         if(!a.reauth_needed&&age!=null&&age>STALE_S&&!this.dismissed['stale:'+a.account]){
-          items.push({id:'stale:'+a.account,warn:true,copy:false,parts:[
+          items.push({id:'stale:'+a.account,warn:true,copy:false,pill:'WARN',hostChip:a.account,timeLabel:fmtAge(age)+' ago',parts:[
             {t:'b',s:a.account},
             {t:'x',s:" hasn't reported usage in "+fmtAge(age)+" — poll may be failing"},
           ]});
@@ -1348,7 +1440,7 @@ const app=Vue.createApp({
       }
       for(const k of this.keys){
         if(k.status==='dead'&&!this.dismissed['deadkey:'+k.id]){
-          items.push({id:'deadkey:'+k.id,warn:false,copy:false,parts:[
+          items.push({id:'deadkey:'+k.id,warn:false,copy:false,pill:'CRIT',hostChip:k.provider+(k.label?' · '+k.label:''),timeLabel:k.last_checked?this.relTime(k.last_checked,'—'):k.created?this.relTime(k.created_at,'—'):'—',parts:[
             {t:'x',s:'provider key '},
             {t:'b',s:"'"+k.provider+(k.label?' · '+k.label:'')+"'"},
             {t:'x',s:' is dead — last check failed'},
@@ -1357,6 +1449,8 @@ const app=Vue.createApp({
       }
       return items;
     },
+    // <!-- IMPL: Inbox Warp --> — resolved inspector item for drawer
+    warpItem(){ return this.inbox.find(x=>x.id===this.inspectorId)||null; },
     footText(){ return 'aigate'+(this.version?' v'+this.version:'')+' · 30-day log retention'; },
     // reads `this.now` (not Date.now()) so the 1s tick repaints it — same trick as curAge
     clockText(){ return new Date(this.now).toTimeString().slice(0,8); },
@@ -1680,13 +1774,28 @@ const app=Vue.createApp({
 
     clearFlash(){ if(this.runFlash)this.runFlash=false; },
 
-    dismiss(id){ this.dismissed[id]=true; },
+    dismiss(id){ this.dismissed[id]=true; if(this.inspectorId===id) this.closeWarp(true); },
 
     copyCmd(id){
       try{ navigator.clipboard&&navigator.clipboard.writeText('claude setup-token'); }catch(_){}
       this.copiedId=id;
       clearTimeout(this._copyT);
       this._copyT=setTimeout(()=>{ if(this.copiedId===id)this.copiedId=null; },1200);   // per-row, not a shared flag (critique §1)
+    },
+    // <!-- IMPL: Inbox Warp --> — shared-element warp open/close via View Transitions API (fallback instant + reduced-motion)
+    openWarp(id){
+      if(this.inspectorId===id) return;
+      if(this.reducedMotion() || !document.startViewTransition){
+        this.inspectorId=id; return;
+      }
+      document.startViewTransition(()=>{ this.inspectorId=id; });
+    },
+    closeWarp(instant){
+      if(!this.inspectorId) return;
+      if(instant || this.reducedMotion() || !document.startViewTransition){
+        this.inspectorId=null; return;
+      }
+      document.startViewTransition(()=>{ this.inspectorId=null; });
     },
 
     /* ================= CARDS (§2.2) ================= */
@@ -2249,6 +2358,11 @@ const app=Vue.createApp({
     window.addEventListener('keydown',this._paletteKey=e=>{
       if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();this.paletteOpen=!this.paletteOpen;}
       else if(e.key==='Escape'&&this.paletteOpen){this.paletteOpen=false;}
+      else if(e.key==='Escape'&&this.inspectorId){this.closeWarp(); e.preventDefault();}
+    });
+    // <!-- IMPL: Inbox Warp --> — Escape closes inspector (also clicks mask)
+    window.addEventListener('keydown',this._warpKey=e=>{
+      if(e.key==='Escape'&&this.inspectorId&&!this.paletteOpen){this.closeWarp(); e.preventDefault();}
     });
     // Curl Monsoon — flow field bg (iteration 1) — respects prefers-reduced-motion via CSS display:none, but also gate JS
     if(!matchMedia('(prefers-reduced-motion: reduce)').matches) this.$nextTick(()=>startMonsoon());
@@ -2266,6 +2380,7 @@ const app=Vue.createApp({
     window.removeEventListener('pointerdown',this.clearFlash);
     window.removeEventListener('keydown',this.clearFlash);
     if(this._paletteKey) window.removeEventListener('keydown',this._paletteKey);
+    if(this._warpKey) window.removeEventListener('keydown',this._warpKey);
   },
 });
 app.component('dashboard-body',DashboardBody);
