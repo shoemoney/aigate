@@ -626,6 +626,23 @@ main.shake{animation:seismo-shake .38s ease}
 .metablob-meta .mode{color:#e8dff8}
 .metablob-meta .hint{opacity:.75}
 .metablob-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(216,200,240,.52);background:rgba(8,6,12,.55);border:1px solid rgba(200,184,232,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+/* <!-- IMPL: Living Voronoi --> — Worley F1/F2 + Lloyd relaxation + edge-distance glow + breathe/divide/fracture */
+#voronoi-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #1c2320;border-radius:6px;overflow:hidden;background:#080a0c;box-shadow:0 4px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05)}
+.voronoi-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#121412 0%,#0c0e10 55%,#080a0c 100%);border-bottom:1px solid #1c2320;flex-wrap:wrap}
+.voronoi-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#8ecfd8}
+.voronoi-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.voronoi-head .voronoi-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.voronoi-head .voronoi-note b{color:#c8e8f0;font-weight:600}
+.voronoi-head .voronoi-actions{display:flex;align-items:center;gap:6px}
+.voronoi-canvas-wrap{position:relative;height:180px;background:radial-gradient(ellipse 620px 140px at 50% 0%,rgba(142,207,216,.07),transparent 68%),radial-gradient(ellipse 420px 120px at 82% 88%,rgba(232,179,75,.05),transparent 70%),linear-gradient(180deg,#080b0e 0%,#05070a 100%);overflow:hidden;cursor:crosshair;touch-action:none}
+#voronoi{display:block;width:100%;height:100%;pointer-events:auto}
+.voronoi-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0c0e10;border-top:1px solid #1c2320;font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.voronoi-meta .mode{color:#c8e8f0}
+.voronoi-meta .hint{opacity:.75}
+.voronoi-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(142,207,216,.52);background:rgba(8,10,12,.55);border:1px solid rgba(142,207,216,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+.voronoi-pulse{position:absolute;right:12px;top:10px;pointer-events:none;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(200,232,240,.62);background:rgba(5,7,10,.55);border:1px solid rgba(142,207,216,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px}
+.voronoi-pulse i{width:7px;height:7px;border-radius:50%;background:#8ecfd8;box-shadow:0 0 8px rgba(142,207,216,.6);animation:voronoi-breathe 3.2s ease-in-out infinite}
+@keyframes voronoi-breathe{0%,100%{transform:scale(.88);opacity:.75}50%{transform:scale(1.22);opacity:1}}
 /* <!-- IMPL: Spectral Vault --> — SDF vault door: torus-knot keyhole, depth tumblers, volumetric shafts, BREACH shockwave */
 #vault-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #23262a;border-radius:6px;overflow:hidden;background:#06090c;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
 .vault-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#13191c 0%,#0c1012 55%,#06090c 100%);border-bottom:1px solid #23262a}
@@ -712,6 +729,8 @@ main.shake{animation:seismo-shake .38s ease}
   .lung-clip{display:none!important}
   .card{transform:none!important;box-shadow:none!important}
   .card .glare{display:none}
+  #voronoi-sec{display:none!important}
+  #voronoi{display:none!important}
 }
 /* <!-- IMPL: Mercury Blob Toggle --> — single SVG goo filter + surface-tension necking + spring jiggle; respects reduced-motion */
 .mercury-blob{display:inline-flex;align-items:center;gap:8px;padding:5px 10px 5px 8px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--dim);font:12px var(--mono);letter-spacing:.08em;text-transform:uppercase;transition:border-color .18s,color .18s,background .18s;user-select:none;-webkit-user-select:none;touch-action:none}
@@ -1167,6 +1186,26 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="metablob-meta">
         <span class="mode">▸ <span id="metablob-readout">12 metaballs · 1 field · seamless merge</span></span>
         <span class="hint">pure 2D marching squares · 1 canvas · DPR≤2</span>
+      </div>
+    </section>
+    <!-- IMPL: Living Voronoi — breathing cell map · Worley F1/F2 + Lloyd · edge-distance glow · divide/fracture -->
+    <section id="voronoi-sec" class="voronoi-sec" aria-label="Living Voronoi — Breathing Cell Map">
+      <div class="voronoi-head">
+        <span class="sec-num">00</span><h2>Living Voronoi</h2>
+        <span class="voronoi-note">~<b id="voronoi-count">40</b> territories · <b id="voronoi-mode">breathing</b> · click = divide · 401 = fracture</span>
+        <span class="voronoi-actions">
+          <button id="voronoi-divide" class="btn sm" type="button" aria-label="divide a cell">＋ divide</button>
+          <button id="voronoi-shatter" class="btn sm" type="button" aria-label="fracture a cell">✦ fracture</button>
+        </span>
+      </div>
+      <div class="voronoi-canvas-wrap" id="voronoi-wrap">
+        <canvas id="voronoi" width="1200" height="180" aria-label="Living Voronoi — breathing territory map, cells divide on new keys, fracture on 401s" role="img"></canvas>
+        <span class="voronoi-spec">⬢ Worley F1/F2 · Lloyd 0.05 · edge = F2−F1 · DPR≤2</span>
+        <span class="voronoi-pulse" id="voronoi-pulse" aria-hidden="true"><i></i><span id="voronoi-pulse-label">breathe 1.00×</span></span>
+      </div>
+      <div class="voronoi-meta">
+        <span class="mode">▸ <span id="voronoi-readout">40 cells · Lloyd relaxing · 8px grid</span></span>
+        <span class="hint">pure 2D distance field · 1 canvas · click to divide</span>
       </div>
     </section>
 
@@ -6948,6 +6987,460 @@ function startMonsoon(){
   document.addEventListener('visibilitychange',()=>{ if(document.hidden) return; if(!running) start(); });
   try{ window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',e=>{ if(e.matches) stop(); else start(); }); }catch(_){}
   window.__metablob={start,stop,get running(){return running},get threshold(){return threshold},set threshold(v){threshold=Math.max(0.4,Math.min(1.8,v));}};
+})();
+</script>
+<!-- IMPL: Living Voronoi -->
+<script>
+/* <!-- IMPL: Living Voronoi --> — Worley F1/F2 + Lloyd relaxation + edge-distance glow · breathe/divide/fracture · 1 canvas DPR≤2 · 8px grid */
+(function(){
+  'use strict';
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('voronoi-sec');
+  const cv=document.getElementById('voronoi');
+  const wrap=document.getElementById('voronoi-wrap');
+  if(!sec||!cv||!wrap) return;
+  const ctx=cv.getContext('2d',{alpha:false});
+  if(!ctx) return;
+  const N_INIT=40, N_MIN=14, N_MAX=64;
+  const STEP=8; // grid sample spacing px (css)
+  const LLOYD_K=0.05;
+  let dpr=Math.min(window.devicePixelRatio||1,2), cssW=0, cssH=0, cols=0, rows=0;
+  let gridOwner=null, gridEdge=null, gridF1=null;
+  let seeds=[];
+  let t=0, raf=0, running=false;
+  let reqRate=0; // 0..1 smoothed request intensity
+  const reqTimes=[]; // timestamps of recent events for rate calc
+  let fractureFlash=0; // 0..1 red flash after 401
+  let breathePhase=0;
+  // shards for fracture shatter
+  const shards=[];
+  // territory palette — golden angle hues, muted
+  function seedHue(i){ return (i*137.508)%360; }
+  function hsl(h,s,l){ return 'hsl('+h.toFixed(1)+','+s+'%,'+l+'%)'; }
+  function hexFromHsl(h,s,l){
+    s/=100; l/=100;
+    const k=n=>(n+h/30)%12;
+    const a=s*Math.min(l,1-l);
+    const f=n=> l - a*Math.max(-1,Math.min(k(n)-3,Math.min(9-k(n),1)));
+    const toHex=x=> Math.round(x*255).toString(16).padStart(2,'0');
+    return '#'+toHex(f(0))+toHex(f(8))+toHex(f(4));
+  }
+
+  function buildSeeds(n){
+    seeds=[];
+    for(let i=0;i<n;i++){
+      seeds.push({
+        x: 0.08+Math.random()*0.84,
+        y: 0.12+Math.random()*0.76,
+        vx:(Math.random()-0.5)*0.0025,
+        vy:(Math.random()-0.5)*0.0025,
+        ph: Math.random()*Math.PI*2,
+        hue: seedHue(i),
+        scale:1,
+        born: performance.now() - Math.random()*1200,
+      });
+    }
+  }
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const r=wrap.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(r.width));
+    cssH=Math.max(1,Math.floor(r.height));
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+    cols=Math.ceil(cssW/STEP);
+    rows=Math.ceil(cssH/STEP);
+    gridOwner=new Int16Array(cols*rows);
+    gridEdge=new Float32Array(cols*rows);
+    gridF1=new Float32Array(cols*rows);
+  }
+
+  function isHidden(){
+    if(sec.hidden) return true;
+    if(sec.style.display==='none') return true;
+    if(document.hidden) return true;
+    const r=sec.getBoundingClientRect();
+    if(r.bottom<0||r.top>innerHeight+120) return true;
+    return false;
+  }
+  function start(){ if(running) return; if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; running=true; cancelAnimationFrame(raf); loop(); }
+  function stop(){ running=false; cancelAnimationFrame(raf); raf=0; }
+
+  function divideAt(x01,y01){
+    if(seeds.length>=N_MAX) return;
+    // find nearest seed to split from
+    let best=-1, bd=1e9;
+    for(let i=0;i<seeds.length;i++){ const dx=seeds[i].x - x01, dy=seeds[i].y - y01; const d=dx*dx+dy*dy; if(d<bd){bd=d;best=i;} }
+    const p= best>=0 ? seeds[best] : null;
+    const nx = p ? Math.max(0.02,Math.min(0.98, p.x + (Math.random()-0.5)*0.05)) : x01;
+    const ny = p ? Math.max(0.06,Math.min(0.94, p.y + (Math.random()-0.5)*0.05)) : y01;
+    const hue = p ? (p.hue+ 18 + Math.random()*22)%360 : seedHue(seeds.length);
+    seeds.push({x:nx,y:ny,vx:(Math.random()-0.5)*0.003,vy:(Math.random()-0.5)*0.003,ph:Math.random()*Math.PI*2,hue,scale:0.12,born:performance.now()});
+    pulseBreathe(0.45);
+    reqTimes.push(performance.now());
+    updateCount();
+  }
+  function fractureRandom(){
+    if(seeds.length<=N_MIN) return;
+    const idx=(Math.random()*seeds.length)|0;
+    const s=seeds[idx];
+    // spawn shards
+    const cx=s.x*cssW, cy=s.y*cssH;
+    const col=hexFromHsl(s.hue,42,52);
+    for(let k=0;k<10;k++){
+      const ang=Math.random()*Math.PI*2;
+      const sp= 22 + Math.random()*44;
+      shards.push({x:cx,y:cy,vx:Math.cos(ang)*sp*0.11, vy:Math.sin(ang)*sp*0.11, life:1, rot:Math.random()*Math.PI*2, vr:(Math.random()-0.5)*0.22, col, sz: 3+Math.random()*7});
+    }
+    seeds.splice(idx,1);
+    fractureFlash=1;
+    pulseBreathe(0.6);
+    reqTimes.push(performance.now());
+    updateCount();
+  }
+  function pulseBreathe(intensity){
+    breathePhase += intensity*0.7;
+  }
+  function updateCount(){
+    const el=document.getElementById('voronoi-count');
+    if(el) el.textContent=String(seeds.length);
+  }
+  function computeRate(){
+    const now=performance.now();
+    while(reqTimes.length && now - reqTimes[0] > 5000) reqTimes.shift();
+    const r= Math.min(1, reqTimes.length/8); // 0..1
+    reqRate = reqRate*0.92 + r*0.08; // smooth
+  }
+
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    t++;
+    breathePhase += 0.016 + reqRate*0.018;
+    if(fractureFlash>0) fractureFlash = Math.max(0, fractureFlash - 0.045);
+    computeRate();
+    const breathe = 0.94 + Math.sin(breathePhase*0.55)*0.06 + reqRate*0.07; // 0.94..1.13
+    const edgeBoost = 0.45 + reqRate*0.45 + Math.sin(breathePhase*0.9)*0.08;
+    // drift + Lloyd prep — compute centroids from previous grid
+    // Worley drift — each seed orbits slightly
+    for(let i=0;i<seeds.length;i++){
+      const s=seeds[i];
+      const driftX = Math.sin(t*0.009 + s.ph)*0.00055 + Math.cos(t*0.006 + s.ph*1.3)*0.00032;
+      const driftY = Math.cos(t*0.008 + s.ph*0.7)*0.00055 + Math.sin(t*0.005 + s.ph*1.7)*0.00032;
+      s.x += s.vx + driftX;
+      s.y += s.vy + driftY;
+      // gentle spring to center
+      s.x += (0.5 - s.x)*0.0006;
+      s.y += (0.5 - s.y)*0.0006;
+      // grow in after divide
+      if(s.scale<1) s.scale = Math.min(1, s.scale + 0.045);
+      // clamp
+      s.x=Math.max(0.015,Math.min(0.985,s.x));
+      s.y=Math.max(0.02,Math.min(0.98,s.y));
+    }
+    // build distance field on low-res grid
+    const accX=new Float32Array(seeds.length);
+    const accY=new Float32Array(seeds.length);
+    const cnt=new Int32Array(seeds.length);
+    for(let y=0;y<rows;y++){
+      const gy=y*STEP+STEP*0.5;
+      for(let x=0;x<cols;x++){
+        const gx=x*STEP+STEP*0.5;
+        let best=-1, d1=1e9, d2=1e9;
+        for(let i=0;i<seeds.length;i++){
+          const s=seeds[i];
+          const sx=s.x*cssW, sy=s.y*cssH;
+          // breathe: scale distance field slightly per seed phase
+          const sc = s.scale * (0.98 + Math.sin(breathePhase*0.48 + s.ph)*0.025);
+          const dx=gx - sx, dy=gy - sy;
+          const d=Math.hypot(dx,dy)/sc;
+          if(d<d1){ d2=d1; d1=d; best=i; }
+          else if(d<d2){ d2=d; }
+        }
+        const idx=y*cols+x;
+        gridOwner[idx]=best;
+        gridEdge[idx]=d2 - d1;
+        gridF1[idx]=d1;
+        if(best>=0){ accX[best]+=gx; accY[best]+=gy; cnt[best]++; }
+      }
+    }
+    // Lloyd relaxation — nudge seeds toward centroid
+    for(let i=0;i<seeds.length;i++){
+      if(cnt[i]<2) continue;
+      const cx= accX[i]/cnt[i] / cssW;
+      const cy= accY[i]/cnt[i] / cssH;
+      seeds[i].x += (cx - seeds[i].x)*LLOYD_K;
+      seeds[i].y += (cy - seeds[i].y)*LLOYD_K;
+      // add slight velocity from Lloyd so drift feels continuous
+      seeds[i].vx = (cx - seeds[i].x)*0.004 + seeds[i].vx*0.92;
+      seeds[i].vy = (cy - seeds[i].y)*0.004 + seeds[i].vy*0.92;
+    }
+
+    // ---- render ----
+    ctx.save(); ctx.scale(dpr,dpr);
+    ctx.clearRect(0,0,cssW,cssH);
+    // deep base
+    ctx.fillStyle='#080b0e'; ctx.fillRect(0,0,cssW,cssH);
+    // subtle vignette
+    const vg=ctx.createRadialGradient(cssW*0.5,cssH*0.5,0, cssW*0.5,cssH*0.5, Math.max(cssW,cssH)*0.9);
+    vg.addColorStop(0,'rgba(18,28,36,0.36)'); vg.addColorStop(0.58,'rgba(8,12,16,0)'); vg.addColorStop(1,'rgba(0,0,0,0.55)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,cssW,cssH);
+    // fracture red tint
+    if(fractureFlash>0.01){
+      ctx.fillStyle='rgba(224,93,68,'+(fractureFlash*0.16).toFixed(3)+')';
+      ctx.fillRect(0,0,cssW,cssH);
+    }
+    // draw cells — fill each grid quad with owner color, lerp edge glow in same pass
+    const edgeThresh = 13 + edgeBoost*4; // glow radius px
+    // precompute cell colors
+    const cellFill=new Array(seeds.length);
+    for(let i=0;i<seeds.length;i++){
+      const s=seeds[i];
+      const pulse = 0.96 + Math.sin(breathePhase*0.7 + s.ph)*0.04 + reqRate*0.06;
+      // mix hsl toward accent when rate high
+      const mix = reqRate*0.18;
+      const h = s.hue*(1-mix) + 188*mix;
+      const ll = 18 + pulse*8 + (1 - s.scale)* -4; // darker when newborn scaling
+      const sat = 22 + pulse*10;
+      cellFill[i]= hsl(h,sat, ll + 9);
+    }
+    for(let y=0;y<rows;y++){
+      for(let x=0;x<cols;x++){
+        const idx=y*cols+x;
+        const own=gridOwner[idx];
+        if(own<0) continue;
+        const gx=x*STEP, gy=y*STEP;
+        // edge distance
+        const e=gridEdge[idx];
+        const isEdge = e < edgeThresh;
+        if(isEdge){
+          const tEdge = Math.max(0, Math.min(1, 1 - e/edgeThresh));
+          // glow mixes owner fill vs border highlight
+          const glowAlpha = Math.pow(tEdge,0.7) * (0.42 + edgeBoost*0.22);
+          // draw cell fill slightly dimmer near edge, then glow overlay
+          ctx.fillStyle=cellFill[own];
+          ctx.globalAlpha= 0.92 - tEdge*0.22;
+          ctx.fillRect(gx,gy,STEP+1,STEP+1);
+          ctx.globalAlpha=1;
+          // fracture red edge
+          if(fractureFlash>0.04){
+            ctx.fillStyle='rgba(224,93,68,'+(glowAlpha*0.55*fractureFlash).toFixed(3)+')';
+            ctx.fillRect(gx,gy,STEP+1,STEP+1);
+          } else {
+            // teal/cyan Voronoi glow — additive feel via light color
+            const glow = tEdge>0.62 ? 'rgba(142,207,216,'+(glowAlpha*0.78).toFixed(3)+')' : 'rgba(200,232,240,'+(glowAlpha*0.52).toFixed(3)+')';
+            ctx.fillStyle=glow;
+            ctx.fillRect(gx,gy,STEP+1,STEP+1);
+          }
+        } else {
+          ctx.fillStyle=cellFill[own];
+          const pulseA = 0.12 + (1 - (gridF1[idx]/(Math.max(cssW,cssH)*0.25)))*0.06;
+          ctx.globalAlpha= 0.96 + pulseA*0.04;
+          ctx.fillRect(gx,gy,STEP+1,STEP+1);
+          ctx.globalAlpha=1;
+        }
+      }
+    }
+    // crisp Voronoi borders — second pass stroking where horizontal/vertical neighbor owner differs
+    ctx.lineWidth=1; ctx.lineCap='round'; ctx.lineJoin='round';
+    const borderAlpha = 0.38 + edgeBoost*0.18 - fractureFlash*0.1;
+    ctx.strokeStyle= fractureFlash>0.08 ? 'rgba(224,93,68,'+(0.42*fractureFlash+0.12).toFixed(3)+')' : 'rgba(142,207,216,'+borderAlpha.toFixed(3)+')';
+    ctx.shadowColor= fractureFlash>0.08 ? 'rgba(224,93,68,0.42)' : 'rgba(142,207,216,0.30)';
+    ctx.shadowBlur= 6 + edgeBoost*3;
+    ctx.beginPath();
+    for(let y=0;y<rows;y++){
+      for(let x=0;x<cols;x++){
+        const idx=y*cols+x, own=gridOwner[idx];
+        if(x+1<cols && gridOwner[idx+1]!==own){
+          const gx=(x+1)*STEP, gy=y*STEP;
+          ctx.moveTo(gx,gy); ctx.lineTo(gx,gy+STEP);
+        }
+        if(y+1<rows && gridOwner[idx+cols]!==own){
+          const gx=x*STEP, gy=(y+1)*STEP;
+          ctx.moveTo(gx,gy); ctx.lineTo(gx+STEP,gy);
+        }
+      }
+    }
+    ctx.stroke(); ctx.shadowBlur=0;
+    // seed dots — tiny territory capitals, breathe scale
+    for(let i=0;i<seeds.length;i++){
+      const s=seeds[i];
+      const sx=s.x*cssW, sy=s.y*cssH;
+      const r = (2.1 + Math.sin(breathePhase*0.62 + s.ph)*0.5 + reqRate*0.6) * s.scale;
+      ctx.fillStyle='rgba(255,255,255,0.92)';
+      ctx.shadowColor='rgba(142,207,216,0.55)'; ctx.shadowBlur=7;
+      ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.fillStyle='rgba(8,12,16,0.92)';
+      ctx.beginPath(); ctx.arc(sx,sy,Math.max(0.7,r*0.45),0,Math.PI*2); ctx.fill();
+    }
+    // shards
+    if(shards.length){
+      for(let i=shards.length-1;i>=0;i--){
+        const sh=shards[i];
+        sh.x += sh.vx; sh.y += sh.vy; sh.vy += 0.14; sh.vx*=0.992; sh.rot+=sh.vr; sh.life-=0.018;
+        if(sh.life<=0){ shards.splice(i,1); continue; }
+        ctx.save();
+        ctx.globalAlpha=Math.max(0, sh.life*0.92);
+        ctx.translate(sh.x, sh.y); ctx.rotate(sh.rot);
+        ctx.fillStyle=sh.col;
+        ctx.fillRect(-sh.sz*0.5,-sh.sz*0.5,sh.sz,sh.sz*0.72);
+        ctx.fillStyle='rgba(255,255,255,0.22)'; ctx.fillRect(-sh.sz*0.5,-sh.sz*0.5,sh.sz,1.2);
+        ctx.restore();
+      }
+    }
+    // glass highlight
+    const hg=ctx.createLinearGradient(0,0,0,cssH);
+    hg.addColorStop(0,'rgba(255,255,255,0.055)'); hg.addColorStop(0.28,'rgba(255,255,255,0.012)'); hg.addColorStop(1,'rgba(0,0,0,0.22)');
+    ctx.fillStyle=hg; ctx.fillRect(0,0,cssW,cssH);
+    ctx.restore();
+
+    // readout throttled
+    if(t%20===0){
+      const el=document.getElementById('voronoi-readout');
+      if(el) el.textContent= seeds.length+' cells · F2−F1 glow '+(edgeThresh|0)+'px · '+(reqRate>0.22?'hot '+Math.round(reqRate*100)+'%':'calm');
+      const mode=document.getElementById('voronoi-mode');
+      if(mode) mode.textContent = fractureFlash>0.12 ? 'FRACTURE' : (reqRate>0.42?'surging': reqRate>0.14?'breathing':'breathing');
+      const pulse=document.getElementById('voronoi-pulse-label');
+      if(pulse) pulse.textContent='breathe '+breathe.toFixed(2)+'×';
+    }
+    raf=requestAnimationFrame(loop);
+  }
+
+  // interactions — click to divide at cursor cell
+  function canvasPos(e){
+    const r=cv.getBoundingClientRect();
+    const x=(e.clientX - r.left)/r.width;
+    const y=(e.clientY - r.top)/r.height;
+    return [Math.max(0,Math.min(1,x)), Math.max(0,Math.min(1,y))];
+  }
+  cv.addEventListener('click', (e)=>{
+    const [x,y]=canvasPos(e);
+    divideAt(x,y);
+    // tiny flash
+    cv.style.filter='brightness(1.10)'; setTimeout(()=>cv.style.filter='',120);
+  });
+  cv.addEventListener('pointerdown', (e)=>{
+    if(e.button!==0) return;
+    // right-drag not needed
+  });
+  document.getElementById('voronoi-divide')?.addEventListener('click',()=> divideAt(Math.random()*0.7+0.15, Math.random()*0.6+0.18));
+  document.getElementById('voronoi-shatter')?.addEventListener('click',()=> fractureRandom());
+
+  // watch for real events — new keys (add seed), 401s (fracture)
+  let lastKeyCount=-1, lastFailCount=-1, lastAccessFail=-1;
+  function probeApp(){
+    try{
+      const appEl=document.getElementById('app');
+      // Vue app exposed as window.app or via __vue_app__
+      const vueApp = window.app || (appEl && appEl.__vue_app__) || null;
+      let keysLen=-1, feedFails=-1, accessFails=-1;
+      if(vueApp){
+        // try proxy refs
+        const proxy = vueApp._instance && vueApp._instance.proxy;
+        if(proxy){
+          if(Array.isArray(proxy.keys)) keysLen=proxy.keys.length;
+          if(Array.isArray(proxy.feed)) feedFails=proxy.feed.filter(r=>r && r.fail).length;
+        }
+        // fallback: reactive data via exposed
+        if(keysLen<0 && vueApp.config && vueApp.config.globalProperties) {}
+      }
+      // DOM fallback — keys table rows
+      if(keysLen<0){
+        const chip=document.querySelectorAll('[data-provider]'); // not reliable
+        keysLen=chip.length||-1;
+      }
+      // also snoop access audit via fetch hook — we patch fetch below
+      if(keysLen>=0 && lastKeyCount>=0 && keysLen>lastKeyCount){
+        const diff=keysLen-lastKeyCount;
+        for(let i=0;i<Math.min(diff,3);i++) setTimeout(()=>divideAt(Math.random()*0.8+0.1, Math.random()*0.7+0.12), i*90);
+      }
+      if(keysLen>=0) lastKeyCount=keysLen;
+      if(feedFails>=0 && lastFailCount>=0 && feedFails>lastFailCount){
+        const diff=feedFails-lastFailCount;
+        for(let i=0;i<Math.min(diff,2);i++) setTimeout(fractureRandom, i*110);
+        // also bump rate
+        for(let i=0;i<diff;i++) reqTimes.push(performance.now());
+      }
+      if(feedFails>=0) lastFailCount=feedFails;
+    }catch(_){}
+  }
+  // snoop fetch for /api/keys and /api/access 401s without breaking app
+  (function hookFetch(){
+    const orig=window.fetch;
+    if(!orig || orig.__voronoiHooked) return;
+    window.fetch=function(input, init){
+      const p=orig.apply(this, arguments);
+      p.then(res=>{
+        try{
+          const url= typeof input==='string' ? input : (input && input.url)||'';
+          if(url.includes('/api/keys') && res && res.ok){
+            // treat any successful keys fetch as potential activity — nudge rate
+            reqTimes.push(performance.now());
+          }
+          if(res && res.status===401){
+            // fracture on 401 anywhere
+            fractureRandom();
+            reqTimes.push(performance.now());
+          }
+        }catch(_){}
+      }).catch(()=>{});
+      return p;
+    };
+    window.fetch.__voronoiHooked=true;
+  })();
+  // also hook WebSocket messages for 401 / key events
+  (function hookWS(){
+    const tryHook=()=>{
+      try{
+        const proxy=(window.app && window.app._instance && window.app._instance.proxy);
+        const ws= proxy && proxy._ws;
+        if(ws && !ws.__voronoiHooked){
+          ws.addEventListener('message', (ev)=>{
+            try{
+              const m=JSON.parse(ev.data);
+              if(m && m.type==='access' && m.result && /401|unauthorized|invalid/i.test(m.result)) { fractureRandom(); reqTimes.push(performance.now()); }
+              if(m && m.type==='prompt'){ reqTimes.push(performance.now()); }
+            }catch(_){}
+          });
+          ws.__voronoiHooked=true;
+        }
+      }catch(_){}
+    };
+    setInterval(tryHook, 1200);
+    setTimeout(tryHook, 900);
+  })();
+  // also observe inbox DOM for 401-ish entries
+  const inboxObs=new MutationObserver(()=>{
+    const txt=document.getElementById('inbox')?.textContent||'';
+    if(/401|unauthorized|invalid/i.test(txt)){
+      // count 401 mentions vs last
+      const cur=(txt.match(/401/g)||[]).length;
+      if(lastAccessFail>=0 && cur>lastAccessFail) { fractureRandom(); reqTimes.push(performance.now()); }
+      lastAccessFail=cur;
+    }
+  });
+  try{ const ib=document.getElementById('inbox'); if(ib) inboxObs.observe(ib,{childList:true,subtree:true,characterData:true}); }catch(_){}
+
+  setInterval(probeApp, 900);
+
+  resize(); buildSeeds(N_INIT); updateCount(); start();
+  window.addEventListener('resize', resize);
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden) return; if(!running) start(); });
+  try{
+    const mq=window.matchMedia('(prefers-reduced-motion: reduce)');
+    mq.addEventListener('change', e=>{ if(e.matches) stop(); else start(); });
+  }catch(_){}
+  // pause when offscreen via IntersectionObserver
+  try{
+    const io=new IntersectionObserver((ents)=>{
+      for(const en of ents){ if(en.target===sec){ if(en.isIntersecting) start(); else { /* keep running but loop will early-exit */ } } }
+    },{threshold:0});
+    io.observe(sec);
+  }catch(_){}
+  window.__voronoi={start,stop,get running(){return running}, divideAt, fractureRandom, get seeds(){return seeds}, get reqRate(){return reqRate}};
 })();
 </script>
 <!-- IMPL: Ghost Fleet -->
