@@ -1437,6 +1437,36 @@ main.shake{animation:seismo-shake .38s ease}
   .bb-title{ text-shadow:none!important}
   #bb-matrix{display:none!important}
 }
+/* <!-- IMPL: Spinodal --> — Cahn-Hilliard demixing chrome: double-buffered 4th-order PDE, indigo→acid tint, dripped behind .keys-table/.toolbar/.addform; headers bead/rupture on add-key */
+#keys-panel{position:relative;overflow:hidden;isolation:isolate}
+.toolbar{position:relative;overflow:hidden;isolation:isolate}
+.addform{position:relative;isolation:isolate}
+#spinodal{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;opacity:.62;filter:saturate(1.16) contrast(1.08) blur(0.35px);mix-blend-mode:normal;border-radius:6px}
+#spinodal-toolbar{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;opacity:.48;filter:saturate(1.14) contrast(1.06);border-radius:6px}
+.toolbar > *:not(#spinodal-toolbar), #keys-panel > *:not(#spinodal){position:relative;z-index:1}
+.keys-panel::after{content:'';position:absolute;inset:0;pointer-events:none;z-index:0;opacity:.18;background:radial-gradient(ellipse 680px 160px at 50% 0%,rgba(200,232,106,.08),transparent 68%),radial-gradient(ellipse 420px 120px at 82% 92%,rgba(107,63,160,.09),transparent 70%);mix-blend-mode:overlay}
+.spinodal-meta{position:absolute;right:10px;bottom:8px;z-index:1;pointer-events:none;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(200,232,106,.52);background:rgba(8,6,16,.55);border:1px solid rgba(107,63,160,.18);border-radius:20px;padding:3px 7px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px}
+.spinodal-meta i{width:7px;height:7px;border-radius:50%;background:linear-gradient(135deg,#6b3fa0,#c8e86a);box-shadow:0 0 8px rgba(200,232,106,.45);flex:none}
+.spinodal-spec{position:absolute;left:10px;bottom:8px;z-index:1;pointer-events:none;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(180,200,255,.48);background:rgba(8,6,16,.45);border:1px solid rgba(107,63,160,.14);border-radius:20px;padding:3px 7px;backdrop-filter:blur(4px)}
+.vault-table thead th{position:relative;overflow:visible;--bead-s:0;--bead-o:0}
+.vault-table thead th.beading::after{content:'';position:absolute;left:50%;bottom:-3px;width:var(--bead-w,14px);height:var(--bead-h,7px);background:radial-gradient(ellipse 70% 58% at 50% 28%,rgba(255,255,255,.96) 0%,rgba(234,255,140,.92) 22%,rgba(200,232,106,.88) 44%,rgba(107,63,160,.92) 78%,rgba(34,20,84,.96) 100%);border:1px solid rgba(255,255,255,.38);border-radius:50% / 58%;transform:translateX(-50%) scale(var(--bead-s));opacity:var(--bead-o);transition:transform .42s cubic-bezier(.34,1.56,.64,1),opacity .28s ease;box-shadow:0 1px 6px rgba(0,0,0,.32),0 0 10px rgba(200,232,106,.22),inset 0 1px 1px rgba(255,255,255,.72);pointer-events:none;z-index:2}
+.vault-table thead th.beading.active::after{--bead-s:1;--bead-o:1}
+.vault-table thead th.rupturing{animation:spinodal-header-jolt .38s cubic-bezier(.34,1.56,.64,1)}
+@keyframes spinodal-header-jolt{0%{transform:translateY(0)}28%{transform:translateY(1.2px) scale(1.02,.98)}58%{transform:translateY(-0.8px) scale(.98,1.02)}100%{transform:translateY(0) scale(1,1)}}
+.spinodal-rupture-drop{position:absolute;bottom:-1px;width:5px;height:5px;border-radius:50%;background:radial-gradient(circle at 30% 28%,rgba(255,255,255,.98),rgba(200,232,106,.92) 45%,rgba(107,63,160,.9) 78%);border:1px solid rgba(255,255,255,.42);box-shadow:0 0 6px rgba(200,232,106,.42);pointer-events:none;animation:spinodal-rupture-fly .62s cubic-bezier(.16,1,.3,1) forwards;will-change:transform,opacity}
+@keyframes spinodal-rupture-fly{0%{transform:translate(-50%,0) scale(1);opacity:1}100%{transform:translate(calc(-50% + var(--dx,10px)), var(--dy,-12px)) scale(.42);opacity:0}}
+.keys-table.beading{animation:spinodal-table-sheen .52s ease}
+@keyframes spinodal-table-sheen{0%{box-shadow:0 0 0 1px rgba(107,63,160,.12)}38%{box-shadow:0 0 0 1px rgba(200,232,106,.22),0 0 18px rgba(200,232,106,.14)}100%{box-shadow:0 0 0 1px rgba(107,63,160,.12)}}
+.addform.spinodal-surge{animation:spinodal-surge .52s cubic-bezier(.34,1.56,.64,1)}
+@keyframes spinodal-surge{0%{box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}34%{box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 0 1px rgba(200,232,106,.22),0 0 16px rgba(107,63,160,.14)}100%{box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}
+@media (prefers-reduced-motion:reduce){
+  #spinodal,#spinodal-toolbar{display:none!important}
+  .spinodal-meta,.spinodal-spec{display:none!important}
+  .vault-table thead th.beading::after{display:none!important}
+  .spinodal-rupture-drop{animation:none!important;display:none!important}
+  .vault-table thead th.rupturing{animation:none!important}
+  .keys-table.beading,.addform.spinodal-surge{animation:none!important}
+}
 </style>
 </head>
 <body>
@@ -2064,7 +2094,7 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="act-grid">
         <div>
           <!-- IMPL: Morph Rail -->
-          <div class="toolbar">
+          <div class="toolbar"><canvas id="spinodal-toolbar" aria-hidden="true"></canvas>
             <button class="btn sm" @click="togglePause" :class="{accent:paused}" :aria-pressed="String(paused)">{{ paused?'▶ resume':'⏸ pause' }}</button>
             <span class="lbl">filter</span><span class="morph-count" style="view-transition-name:filter-count" :style="{display: (feedRows.length||anyFilter)?'inline-flex':'none'}" aria-live="polite"><b>{{ anyFilter ? Object.keys(fAccounts).length+Object.keys(fHosts).length : feedRows.length }}</b> {{ anyFilter ? 'filtered' : 'rows' }}</span>
             <span>
@@ -2116,7 +2146,7 @@ main.shake{animation:seismo-shake .38s ease}
       </button>
       <Transition name="panel">
         <!-- IMPL: Formaldehyde Jar Shelf -->
-        <div class="keys-panel" id="keys-panel" v-show="keysOpen">
+        <div class="keys-panel" id="keys-panel" v-show="keysOpen"><canvas id="spinodal" aria-hidden="true"></canvas><span class="spinodal-spec" aria-hidden="true">⬢ Cahn-Hilliard · indigo→acid · double-buffered</span><span class="spinodal-meta" aria-hidden="true"><i></i><span id="spinodal-label">demixing</span></span>
           <div class="jar-shelf" role="region" aria-label="horror vault — shake to slosh, pop a jar to verify" @click.self="shakeShelf">
             <div class="shelf-label">▸ specimen vault · {{ keys.length }} jar{{ keys.length===1?'':'s' }}<span class="dim" style="font-size:11px;letter-spacing:.04em;text-transform:none;margin-left:6px">— pop a jar to verify · shake the shelf</span><button class="shake-btn" type="button" @click="shakeShelf" aria-label="shake shelf">⤢ shake shelf</button></div>
             <div class="jars" :class="{shaking:shelfShake}" @click="onShelfClick">
@@ -13972,6 +14002,274 @@ function startRhizome(){
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start);
   else start();
   setTimeout(start, 900);
+})();
+</script>
+<!-- IMPL: Spinodal -->
+<script>
+/* Cahn-Hilliard spinodal demixing — 4th-order PDE, double-buffered, indigo→acid, dripped behind .keys-panel/.toolbar/.addform; headers bead/rupture on add-key */
+(()=>{'use strict';
+  const W=192, H=96, N=W*H;
+  const GAMMA=0.72, DT=0.13, STEPS=2;
+  let cur=new Float32Array(N), nxt=new Float32Array(N), mu=new Float32Array(N);
+  let raf=0, paused=false, tick=0;
+  const off=document.createElement('canvas'); off.width=W; off.height=H;
+  const octx=off.getContext('2d');
+  let imgData=null;
+  try{ imgData=octx.createImageData(W,H); }catch(_){ imgData=null; }
+  function idx(x,y){ return y*W+x; }
+  function lapAt(src,x,y){
+    const c=src[idx(x,y)];
+    const l=x>0?src[idx(x-1,y)]:c;
+    const r=x<W-1?src[idx(x+1,y)]:c;
+    const u=y>0?src[idx(x,y-1)]:c;
+    const d=y<H-1?src[idx(x,y+1)]:c;
+    return (l+r+u+d-4*c);
+  }
+  function init(){
+    for(let i=0;i<N;i++) cur[i]=(Math.random()*2-1)*0.18;
+    // add low-freq bias to seed domains fast
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+      const v=Math.sin(x*0.11)*0.07 + Math.cos(y*0.09)*0.07 + Math.sin((x+y)*0.06)*0.08;
+      cur[idx(x,y)]+=v;
+    }
+    nxt.set(cur);
+  }
+  function step(){
+    // mu = phi^3 - phi - GAMMA*lap(phi)
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+      const i=idx(x,y);
+      const phi=cur[i];
+      const lap=lapAt(cur,x,y);
+      mu[i]= phi*phi*phi - phi - GAMMA*lap;
+    }
+    // nxt = cur + DT * lap(mu)
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+      const i=idx(x,y);
+      const lapMu=lapAt(mu,x,y);
+      let v=cur[i] + DT*lapMu;
+      // clamp to avoid blow-up (explicit is stiff)
+      if(v>1.35) v=1.35; else if(v<-1.35) v=-1.35;
+      nxt[i]=v;
+    }
+    // swap
+    const tmp=cur; cur=nxt; nxt=tmp;
+  }
+  function phiToRgb(phi, edge){
+    let t=(phi+1)*0.5;
+    const w=0.13;
+    let tt=Math.max(0,Math.min(1,(t-(0.5-w))/(2*w)));
+    tt=tt*tt*(3-2*tt);
+    const r0=34,g0=20,b0=84;
+    const rM=92,gM=58,bM=148;
+    const r1=200,g1=232,b1=106;
+    let r,g,b;
+    if(tt<0.5){
+      let u=tt*2; u=u*u*(3-2*u);
+      r=r0+(rM-r0)*u; g=g0+(gM-g0)*u; b=b0+(bM-b0)*u;
+    }else{
+      let u=(tt-0.5)*2; u=u*u*(3-2*u);
+      r=rM+(r1-rM)*u; g=gM+(g1-gM)*u; b=bM+(b1-bM)*u;
+    }
+    if(Math.abs(phi)<0.24 && edge>0.10){
+      const sheen=Math.min(1,edge*2.1)*(1-Math.abs(phi)/0.24);
+      r+= (255-r)*sheen*0.60;
+      g+= (255-g)*sheen*0.56;
+      b+= (255-b)*sheen*0.40;
+    }
+    return [r|0,g|0,b|0];
+  }
+  function render(){
+    if(!imgData) return;
+    const d=imgData.data;
+    let edgeAcc=0, cross=0;
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+      const i=idx(x,y);
+      const phi=cur[i];
+      const l=x>0?cur[idx(x-1,y)]:phi;
+      const r=x<W-1?cur[idx(x+1,y)]:phi;
+      const u=y>0?cur[idx(x,y-1)]:phi;
+      const dwn=y<H-1?cur[idx(x,y+1)]:phi;
+      const dx=(r-l)*0.5, dy=(dwn-u)*0.5;
+      const edge=Math.sqrt(dx*dx+dy*dy);
+      edgeAcc+=edge;
+      if((phi>0)!==(l>0) || (phi>0)!==(u>0)) cross++;
+      const rgb=phiToRgb(phi, edge);
+      const p=i*4;
+      d[p]=rgb[0]; d[p+1]=rgb[1]; d[p+2]=rgb[2]; d[p+3]=255;
+    }
+    octx.putImageData(imgData,0,0);
+    // blit to visible canvases
+    const canvases=[document.getElementById('spinodal'), document.getElementById('spinodal-toolbar')].filter(Boolean);
+    canvases.forEach(c=>{
+      const ctx=c.getContext('2d');
+      if(!ctx) return;
+      const rect=c.getBoundingClientRect();
+      const dpr=Math.min(2, window.devicePixelRatio||1);
+      const needW=Math.max(1, Math.round(rect.width*dpr));
+      const needH=Math.max(1, Math.round(rect.height*dpr));
+      if(c.width!==needW || c.height!==needH){ c.width=needW; c.height=needH; }
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+      ctx.imageSmoothingEnabled=true;
+      ctx.imageSmoothingQuality='high';
+      // subtle vignette via destination
+      ctx.clearRect(0,0,rect.width,rect.height);
+      ctx.drawImage(off,0,0,rect.width,rect.height);
+      // overlay sheen vignette
+      const g=ctx.createRadialGradient(rect.width*0.5, rect.height*0.15, 0, rect.width*0.5, rect.height*0.5, Math.max(rect.width,rect.height)*0.85);
+      g.addColorStop(0,'rgba(255,255,255,0.06)');
+      g.addColorStop(0.58,'rgba(0,0,0,0)');
+      g.addColorStop(1,'rgba(0,0,0,0.16)');
+      ctx.fillStyle=g; ctx.fillRect(0,0,rect.width,rect.height);
+    });
+    // meta label update throttled
+    tick++;
+    if(tick%28===0){
+      const lab=document.getElementById('spinodal-label');
+      if(lab){
+        const avgEdge=(edgeAcc/N).toFixed(3);
+        // coarsening proxy: fewer interfaces = coarsened
+        const coarsen=cross<1800?'coarsened':cross<3400?'coarsening':'demixing';
+        lab.textContent=coarsen+' · '+cross+' edges · γ'+GAMMA.toFixed(2);
+      }
+    }
+  }
+  function injectBlob(gx,gy,rad,val){
+    const cx=Math.max(0,Math.min(W-1, Math.round(gx)));
+    const cy=Math.max(0,Math.min(H-1, Math.round(gy)));
+    const rr=rad*rad;
+    for(let dy=-rad; dy<=rad; dy++) for(let dx=-rad; dx<=rad; dx++){
+      const x=cx+dx, y=cy+dy;
+      if(x<0||x>=W||y<0||y>=H) continue;
+      if(dx*dx+dy*dy>rr) continue;
+      const d=Math.sqrt(dx*dx+dy*dy)/rad;
+      const fall=1-d;
+      const i=idx(x,y);
+      cur[i]= cur[i]*(1-fall*0.62) + val*fall*0.92 + (Math.random()-0.5)*0.06*fall;
+      if(cur[i]>1.4) cur[i]=1.4; if(cur[i]<-1.4) cur[i]=-1.4;
+    }
+  }
+  function reduced(){ try{return matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(_){return false;} }
+  function loop(){
+    if(paused || reduced() || document.hidden){ raf=requestAnimationFrame(loop); return; }
+    for(let s=0;s<STEPS;s++) step();
+    render();
+    raf=requestAnimationFrame(loop);
+  }
+  function beadHeaders(){
+    const ths=document.querySelectorAll('.vault-table thead th');
+    const tbl=document.querySelector('.shutter-vault.keys-table');
+    const form=document.querySelector('.addform');
+    if(tbl) { tbl.classList.add('beading'); setTimeout(()=>tbl.classList.remove('beading'), 720); }
+    if(form){ form.classList.add('spinodal-surge'); setTimeout(()=>form.classList.remove('spinodal-surge'), 620); }
+    ths.forEach((th,i)=>{
+      th.classList.remove('beading','active','rupturing');
+      void th.offsetWidth;
+      th.classList.add('beading');
+      th.style.setProperty('--bead-w', (11+Math.random()*13).toFixed(1)+'px');
+      th.style.setProperty('--bead-h', (6+Math.random()*5).toFixed(1)+'px');
+      setTimeout(()=>th.classList.add('active'), 28+i*52);
+      setTimeout(()=>ruptureTh(th), 680+i*74);
+    });
+    setTimeout(()=>{
+      ths.forEach(th=>{ th.classList.remove('beading','active','rupturing'); th.style.removeProperty('--bead-w'); th.style.removeProperty('--bead-h'); });
+      ths.forEach(th=>{ th.querySelectorAll('.spinodal-rupture-drop').forEach(d=>d.remove()); });
+    }, 1700);
+  }
+  function ruptureTh(th){
+    th.classList.add('rupturing');
+    for(let k=0;k<3;k++){
+      const d=document.createElement('i');
+      d.className='spinodal-rupture-drop';
+      d.style.left=(28+Math.random()*44).toFixed(1)+'%';
+      d.style.setProperty('--dx', (Math.random()*30-15).toFixed(1)+'px');
+      d.style.setProperty('--dy', (-8-Math.random()*13).toFixed(1)+'px');
+      th.appendChild(d);
+      setTimeout(()=>{ try{d.remove();}catch(_){} }, 860);
+    }
+    setTimeout(()=>th.classList.remove('rupturing'), 720);
+  }
+  function onAddKey(){
+    if(reduced()) return;
+    beadHeaders();
+    // inject two contrasting blobs — oil/water dewetting
+    injectBlob(Math.random()*(W-28)+14, Math.random()*(H-26)+13, 10+Math.random()*7, 1.02);
+    injectBlob(Math.random()*(W-28)+14, Math.random()*(H-26)+13, 9+Math.random()*6, -1.02);
+    // extra toolbar drip
+    const tb=document.getElementById('spinodal-toolbar');
+    if(tb){ tb.style.transition='opacity 120ms'; tb.style.opacity='0.72'; setTimeout(()=>tb.style.opacity='', 420); }
+  }
+  // patch fetch for POST /api/keys to trigger bead/rupture + injection
+  function patchFetch(){
+    if(window.__spinodalPatched) return;
+    window.__spinodalPatched=true;
+    const orig=window.fetch;
+    window.fetch=function(input, init){
+      const url=typeof input==='string'?input:(input&&input.url)||'';
+      const method=(init&&init.method)|| (typeof input==='object'&&input.method)||'GET';
+      const p=orig.apply(this, arguments);
+      if(url && url.includes('/api/keys') && String(method).toUpperCase()==='POST'){
+        p.then(r=>{
+          try{
+            if(r && r.ok){
+              setTimeout(onAddKey, 22);
+            } else if(r && r.status>=200 && r.status<300){
+              setTimeout(onAddKey, 22);
+            }
+          }catch(_){}
+        }).catch(()=>{});
+        // also fire optimistically on request (so UI beads even before response)
+        try{ setTimeout(()=>{ if(!reduced()) beadHeaders(); }, 18);}catch(_){}
+      }
+      return p;
+    };
+  }
+  function hookVue(){
+    let tries=0;
+    const iv=setInterval(()=>{
+      try{
+        const proxy=(typeof app!=='undefined' && app._instance && app._instance.proxy)?app._instance.proxy:null;
+        if(!proxy || !proxy.addKey){ if(++tries>90) clearInterval(iv); return; }
+        if(proxy.__spinodalHooked){ clearInterval(iv); return; }
+        const orig=proxy.addKey.bind(proxy);
+        proxy.addKey=async function(){
+          try{ onAddKey(); }catch(_){}
+          const res=await orig.apply(this, arguments);
+          try{ onAddKey(); }catch(_){}
+          return res;
+        };
+        proxy.__spinodalHooked=true;
+        clearInterval(iv);
+      }catch(_){ if(++tries>90) clearInterval(iv); }
+    }, 340);
+  }
+  function start(){
+    if(reduced()){
+      const a=document.getElementById('spinodal'), b=document.getElementById('spinodal-toolbar');
+      if(a) a.style.display='none'; if(b) b.style.display='none';
+      return;
+    }
+    init();
+    // warm-up: coarsen a bit before showing so not uniform noise
+    for(let k=0;k<140;k++) step();
+    render();
+    patchFetch();
+    hookVue();
+    // periodic spontaneous drips (Ostwald ripening drips)
+    setInterval(()=>{
+      if(reduced()||document.hidden) return;
+      if(Math.random()<0.72) injectBlob(Math.random()*(W-22)+11, Math.random()*(H-22)+11, 5+Math.random()*5, Math.random()<0.5?0.88:-0.88);
+    }, 2200);
+    // animate
+    if(!raf) raf=requestAnimationFrame(loop);
+    window.addEventListener('resize',()=>{ render(); });
+    document.addEventListener('visibilitychange',()=>{
+      if(document.hidden) paused=true; else { paused=false; if(!raf) raf=requestAnimationFrame(loop); }
+    });
+    window.__spinodal={inject:injectBlob, bead:beadHeaders, rupture:ruptureTh, get cur(){return cur;}, get W(){return W;}, get H(){return H;}, gamma:GAMMA, dt:DT};
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+  setTimeout(start, 700);
 })();
 </script>
 </body>
