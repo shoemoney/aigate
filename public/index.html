@@ -355,6 +355,20 @@ main.shake{animation:seismo-shake .38s ease}
 #horizon-sec.is-fullscreen{position:fixed;inset:0;z-index:45;margin:0;border-radius:0;border:0;display:flex;flex-direction:column;background:#04060a}
 #horizon-sec.is-fullscreen .horizon-canvas-wrap{flex:1;height:auto;min-height:0}
 #horizon-sec.is-fullscreen .horizon-head{border-radius:0}
+/* <!-- IMPL: Ferrofabric --> — hair-thin iron filaments snap to dipole field lines around finger-draggable magnets */
+#ferrofabric-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #1c2220;border-radius:6px;overflow:hidden;background:#080a0c;box-shadow:0 4px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05)}
+.ferrofabric-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#121614 0%,#0c0e10 55%,#080a0c 100%);border-bottom:1px solid #1c2220}
+.ferrofabric-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#c8c4b8}
+.ferrofabric-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.ferrofabric-head .ferrofabric-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.ferrofabric-head .ferrofabric-note b{color:#e8e0c8;font-weight:600}
+.ferrofabric-canvas-wrap{position:relative;height:160px;background:#090a0a;overflow:hidden;cursor:grab;touch-action:none}
+.ferrofabric-canvas-wrap.dragging{cursor:grabbing}
+#ferrofabric{display:block;width:100%;height:100%;pointer-events:auto}
+.ferrofabric-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0c0e10;border-top:1px solid #1c2220;font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.ferrofabric-meta .mode{color:#e8e0c8}
+.ferrofabric-meta .hint{opacity:.75}
+.ferrofabric-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(232,224,200,.52);background:rgba(8,10,12,.55);border:1px solid rgba(200,196,184,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
   .spark svg polyline{stroke-dashoffset:0}   /* draw-in cut → show the full line, not a blank one */
   #monsoon{display:none}
@@ -365,6 +379,8 @@ main.shake{animation:seismo-shake .38s ease}
   #ferro{display:none!important}
   #horizon-sec{display:none!important}
   #horizon{display:none!important}
+  #ferrofabric-sec{display:none!important}
+  #ferrofabric{display:none!important}
   .card{transform:none!important;box-shadow:none!important}
   .card .glare{display:none}
 }
@@ -508,7 +524,7 @@ main.shake{animation:seismo-shake .38s ease}
         <span class="hint">pure SDF spikes · 1/(dist+ε) · no fluid sim</span>
       </div>
     </section>
-    <!-- IMPL: Event Horizon — 00 hero quad-state (monsoon | chladni | ferro | horizon) — 160px slot, fullscreen expand -->
+    <!-- IMPL: Event Horizon — 10k lensed stars · Schwarzschild -->
     <section id="horizon-sec" class="horizon-sec" hidden aria-label="Event Horizon">
       <div class="horizon-head">
         <span class="sec-num">00</span><h2>Event Horizon</h2>
@@ -525,6 +541,22 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="horizon-meta">
         <span class="mode">▸ <span id="horizon-readout">10 000 stars · lensing 1/r · photon ring</span></span>
         <span class="hint">pure math · 1 canvas · Schwarzschild approx</span>
+      </div>
+    </section>
+    <!-- IMPL: Ferrofabric — standalone 160px fabric below hero, above seismo — single canvas, no physics engine -->
+    <section id="ferrofabric-sec" class="ferrofabric-sec" aria-label="Ferrofabric">
+      <div class="ferrofabric-head">
+        <span class="sec-num">00</span><h2>Ferrofabric</h2>
+        <span class="ferrofabric-note">drag magnets · <b id="ferrofabric-mode">2 magnets · 2 400 filaments</b> · wheel = density</span>
+        <button id="ferrofabric-clear" class="btn sm" type="button" aria-label="shuffle filaments">↻ shuffle</button>
+      </div>
+      <div class="ferrofabric-canvas-wrap" id="ferrofabric-wrap">
+        <canvas id="ferrofabric" width="1200" height="160" aria-label="Ferrofabric — drag magnets, filings snap to field lines" role="img"></canvas>
+        <span class="ferrofabric-spec">⧉ dipole 1/r&sup3; · hair-thin · no physics engine</span>
+      </div>
+      <div class="ferrofabric-meta">
+        <span class="mode">▸ <span id="ferrofabric-readout">2 400 hair lines · snap → ripple → shatter</span></span>
+        <span class="hint">pure vector field · 1 canvas · DPR≤2</span>
       </div>
     </section>
 
@@ -3012,6 +3044,410 @@ function startMonsoon(){
     if(ferroSec) _obs.observe(ferroSec,{attributes:true,attributeFilter:['hidden']});
     _obs.observe(sec,{attributes:true,attributeFilter:['hidden','class']});
   }catch(_){}
+})();
+</script>
+<!-- IMPL: Ferrofabric -->
+<script>
+/* <!-- IMPL: Ferrofabric --> — hair-thin iron filaments snap to dipole field lines around draggable magnets; pure vector field, no physics engine */
+(function(){
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('ferrofabric-sec');
+  const wrap=document.getElementById('ferrofabric-wrap');
+  const cv=document.getElementById('ferrofabric');
+  const modeEl=document.getElementById('ferrofabric-mode');
+  const readout=document.getElementById('ferrofabric-readout');
+  const clearBtn=document.getElementById('ferrofabric-clear');
+  if(!sec||!wrap||!cv) return;
+  const ctx=cv.getContext('2d'); if(!ctx) return;
+  let dpr=Math.min(window.devicePixelRatio||1,2);
+  let W=0,H=0,cssW=0,cssH=160,raf=0,t=0,running=false;
+  let filaments=[];
+  let N=2400;
+  let density=1;
+  const magnets=[
+    {x:0,y:0,tx:0,ty:0,pol:1,ang:0},
+    {x:0,y:0,tx:0,ty:0,pol:-1,ang:0}
+  ];
+  let dragging=-1, dragVel=0, lastMx=0, lastMy=0, shatter=0;
+  let pendingAdd=false;
+
+  function isHidden(){ return sec.hidden||sec.style.display==='none'||document.hidden; }
+
+  function buildFilaments(){
+    filaments=new Array(N);
+    for(let i=0;i<N;i++){
+      const x=Math.random()*cssW;
+      const y=Math.random()*cssH;
+      const len= 5 + Math.random()*7; // 5..12
+      const baseAng=Math.random()*Math.PI; // filaments are undirected lines (0..π) not vectors 0..2π — reduces flip
+      filaments[i]={x,y,len,baseAng,curAng:baseAng,tgtAng:baseAng,phase:Math.random()*Math.PI*2,tw:Math.random()*Math.PI*2};
+    }
+  }
+
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const r=wrap.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(r.width));
+    cssH=160;
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+    W=cv.width; H=cv.height;
+    if(magnets[0].tx===0 && magnets[0].ty===0){
+      magnets[0].tx=cssW*0.32; magnets[0].ty=cssH*0.48;
+      magnets[1].tx=cssW*0.68; magnets[1].ty=cssH*0.52;
+      magnets[0].x=magnets[0].tx; magnets[0].y=magnets[0].ty;
+      magnets[1].x=magnets[1].tx; magnets[1].y=magnets[1].ty;
+      lastMx=magnets[0].x; lastMy=magnets[0].y;
+    } else {
+      magnets.forEach(m=>{ m.tx=Math.max(14,Math.min(cssW-14,m.tx)); m.ty=Math.max(14,Math.min(cssH-14,m.ty)); });
+    }
+    buildFilaments();
+  }
+
+  function angDiff(a,b){ // shortest b-a in -π..π
+    let d=b-a;
+    d=(d+Math.PI)%(2*Math.PI);
+    if(d<0) d+=2*Math.PI;
+    return d-Math.PI;
+  }
+  // dipole field: B = pol * k * (3(m·r̂)r̂ - m)/r³  ; k tuned
+  function fieldAt(fx,fy){
+    let Bx=0, By=0;
+    let mag2=0;
+    for(let i=0;i<magnets.length;i++){
+      const m=magnets[i];
+      const rx=fx - m.x, ry=fy - m.y;
+      const r2=rx*rx+ry*ry;
+      const r=Math.sqrt(r2);
+      if(r<7) continue;
+      const invR=1/r;
+      const rxh=rx*invR, ryh=ry*invR;
+      const mX=Math.cos(m.ang), mY=Math.sin(m.ang);
+      const mDot=mX*rxh + mY*ryh;
+      const k= 13800 * density; // tuned for visible snapping
+      const denom=(r*r*r + 900); // r³ + soft core to avoid blow-up
+      const scale= (m.pol * k) / denom;
+      const bX = (3*mDot*rxh - mX)*scale;
+      const bY = (3*mDot*ryh - mY)*scale;
+      Bx+=bX; By+=bY;
+      mag2+=bX*bX+bY*bY;
+    }
+    const mag=Math.sqrt(mag2);
+    if(mag<1e-6) return {ax:0,ay:1,mag:0,dir:0};
+    const nx=Bx/mag, ny=By/mag;
+    let dir=Math.atan2(ny,nx);
+    // filaments are undirected: map dir to 0..π (filings have no polarity arrow)
+    if(dir<0) dir+=Math.PI;
+    if(dir>=Math.PI) dir-=Math.PI;
+    return {ax:nx,ay:ny,mag:mag,dir:dir};
+  }
+
+  function start(){
+    if(running) return;
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    running=true; cancelAnimationFrame(raf); t=0; loop();
+  }
+  function stop(){ running=false; cancelAnimationFrame(raf); raf=0; }
+
+  function nearestMag(px,py){
+    let best=0, bestD=1e9;
+    for(let i=0;i<magnets.length;i++){ const d=Math.hypot(px-magnets[i].x, py-magnets[i].y); if(d<bestD){bestD=d; best=i; } }
+    return {idx:best, dist:bestD};
+  }
+
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    t++;
+
+    // lerp magnets
+    let maxVel=0;
+    for(let i=0;i<magnets.length;i++){
+      const m=magnets[i];
+      const dx=m.tx - m.x, dy=m.ty - m.y;
+      const v=Math.hypot(dx,dy);
+      if(v>maxVel) maxVel=v;
+      m.x += dx*0.20;
+      m.y += dy*0.20;
+    }
+    dragVel = dragVel*0.82 + maxVel*0.18;
+    // shatter: when magnets race, filings jitter then reform
+    const targetShatter=Math.min(1, dragVel*0.11);
+    shatter += (targetShatter - shatter)*0.14;
+    // gentle orbit when idle
+    if(dragging===-1 && dragVel<0.6){
+      magnets[0].tx += Math.sin(t*0.007)*0.18;
+      magnets[0].ty += Math.cos(t*0.009)*0.12;
+      magnets[1].tx += Math.cos(t*0.008)*0.16;
+      magnets[1].ty += Math.sin(t*0.0075)*0.14;
+      magnets.forEach(m=>{
+        m.tx=Math.max(14,Math.min(cssW-14,m.tx));
+        m.ty=Math.max(14,Math.min(cssH-14,m.ty));
+      });
+    }
+    shatter*=0.992; // decay when still
+
+    ctx.save();
+    ctx.scale(dpr,dpr);
+    // bg — brushed iron plate
+    ctx.clearRect(0,0,cssW,cssH);
+    ctx.fillStyle='#0a0c0a';
+    ctx.fillRect(0,0,cssW,cssH);
+    // faint brushed highlight
+    const hg=ctx.createLinearGradient(0,0,0,cssH);
+    hg.addColorStop(0,'rgba(255,255,255,0.07)');
+    hg.addColorStop(0.26,'rgba(255,255,255,0.015)');
+    hg.addColorStop(0.58,'rgba(255,255,255,0)');
+    hg.addColorStop(1,'rgba(0,0,0,0.38)');
+    ctx.fillStyle=hg; ctx.fillRect(0,0,cssW,cssH);
+    const vg=ctx.createRadialGradient(cssW*0.5,cssH*0.5,0,cssW*0.5,cssH*0.5,Math.max(cssW,cssH)*0.85);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(0.72,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.48)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,cssW,cssH);
+    // soft halos around magnets
+    for(let i=0;i<magnets.length;i++){
+      const m=magnets[i];
+      // estimate local field mag for halo size
+      let haloR= 28 + shatter*10;
+      const hg2=ctx.createRadialGradient(m.x,m.y,0,m.x,m.y,haloR*2.2);
+      const col = m.pol>0 ? '200,190,170' : '170,190,200';
+      hg2.addColorStop(0,'rgba('+col+',0.09)');
+      hg2.addColorStop(0.45,'rgba('+col+',0.03)');
+      hg2.addColorStop(1,'rgba('+col+',0)');
+      ctx.fillStyle=hg2; ctx.beginPath(); ctx.arc(m.x,m.y,haloR*2.2,0,Math.PI*2); ctx.fill();
+    }
+
+    // update filaments angles
+    // ripple wave
+    const rippleA= 0.11 + Math.sin(t*0.018)*0.03;
+    for(let i=0;i<filaments.length;i++){
+      const f=filaments[i];
+      const fd=fieldAt(f.x,f.y);
+      // distance to nearest magnet for clumping
+      const nm=nearestMag(f.x,f.y);
+      const near = Math.max(0, 1 - nm.dist/110); // 0 far, 1 touching
+      // field influence: saturate by mag, but also boosted by nearness (1/r³ already does, but add readability)
+      let influence=Math.min(1, fd.mag*1.9 + near*0.55);
+      // shatter reduces influence
+      influence *= (1 - shatter*0.62);
+      // ripple: far filaments wobble more, near ones stay locked
+      let tgt=fd.dir;
+      if(influence<0.62){
+        tgt += Math.sin(t*0.028 + f.x*0.014 + f.y*0.018 + f.phase)*rippleA*(1 - influence*0.7);
+      }
+      if(shatter>0.12){
+        // shattered: jitter target randomly
+        const jr=(Math.sin(i*12.9898 + t*0.41)*0.5+0.5 -0.5)*shatter*1.8;
+        tgt+=jr;
+      }
+      // filaments undirected so take shortest on π-circle (not 2π)
+      let d=angDiff(f.curAng, tgt);
+      // wrap to π periodicity: filaments look same flipped 180°
+      if(d>Math.PI/2) d-=Math.PI;
+      if(d<-Math.PI/2) d+=Math.PI;
+      const snap= 0.12 + influence*0.42 + near*0.10;
+      f.curAng += d * snap;
+      // keep in 0..π
+      if(f.curAng<0) f.curAng+=Math.PI;
+      if(f.curAng>=Math.PI) f.curAng-=Math.PI;
+      // tiny organic drift: filaments slowly clump toward nearest magnet when very near (visual density)
+      if(near>0.58 && influence>0.45 && dragging===-1){
+        const m=magnets[nm.idx];
+        const angToMag=Math.atan2(m.y - f.y, m.x - f.x);
+        // nudge position a hair along field, not directly to magnet centre, to form streaks
+        f.x += Math.cos(angToMag)*0.018 * near * density;
+        f.y += Math.sin(angToMag)*0.018 * near * density;
+        // wrap within bounds with soft re-seed if escaped
+        if(f.x< -6) f.x=cssW+6; if(f.x>cssW+6) f.x=-6;
+        if(f.y< -6) f.y=cssH+6; if(f.y>cssH+6) f.y=-6;
+      }
+      f._inf=influence; f._near=near;
+    }
+
+    // batch filaments by alpha bucket (hair-thin, same hue, alpha varies with influence) → 8 strokes not N
+    const buckets=8;
+    const bucketPaths=new Array(buckets); for(let b=0;b<buckets;b++) bucketPaths[b]=[];
+    for(let i=0;i<filaments.length;i++){
+      const f=filaments[i];
+      const a = 0.22 + f._inf*0.62 + f._near*0.12 + Math.sin(t*0.04+f.tw)*0.04*(1-f._inf);
+      const clamped=Math.max(0,Math.min(1,a));
+      const b=Math.max(0,Math.min(buckets-1, Math.floor(clamped*buckets)));
+      bucketPaths[b].push(f);
+    }
+    ctx.lineCap='round';
+    for(let b=0;b<buckets;b++){
+      const list=bucketPaths[b];
+      if(!list.length) continue;
+      const alpha=(b+0.5)/buckets; // center of bucket
+      // iron color: slightly warm silver, cooler far, warmer near magnets
+      // use single silver with alpha; brighter buckets look like polished filing
+      const baseA=(0.18 + alpha*0.82);
+      ctx.strokeStyle='rgba(205,210,215,'+baseA.toFixed(3)+')';
+      // thicker buckets (higher influence) get slightly heavier hair
+      const w = 0.52 + alpha*0.62 * density;
+      ctx.lineWidth=w;
+      ctx.beginPath();
+      for(let k=0;k<list.length;k++){
+        const f=list[k];
+        const half=(f.len*0.5 * density);
+        // undirected line: extend both ways along curAng
+        const ca=Math.cos(f.curAng), sa=Math.sin(f.curAng);
+        const x1=f.x - ca*half, y1=f.y - sa*half;
+        const x2=f.x + ca*half, y2=f.y + sa*half;
+        ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+      }
+      ctx.stroke();
+      // specular glint for brightest bucket
+      if(b>=buckets-2){
+        ctx.strokeStyle='rgba(235,238,240,0.22)';
+        ctx.lineWidth=0.35;
+        ctx.stroke();
+      }
+    }
+
+    // magnets — pill with N/S caps + specular
+    for(let i=0;i<magnets.length;i++){
+      const m=magnets[i];
+      const isDrag=dragging===i;
+      const rx=16, ry=10;
+      ctx.save();
+      ctx.translate(m.x,m.y);
+      ctx.rotate(m.ang);
+      // shadow
+      ctx.fillStyle='rgba(0,0,0,0.32)';
+      ctx.beginPath(); ctx.ellipse(1.2,1.8,rx*0.98,ry*0.92,0,0,Math.PI*2); ctx.fill();
+      // body
+      const bg=ctx.createLinearGradient(-rx,0,rx,0);
+      bg.addColorStop(0, m.pol>0 ? '#7a2424' : '#23406a');
+      bg.addColorStop(0.36, m.pol>0 ? '#b94a3a' : '#4a78b4');
+      bg.addColorStop(0.50, '#d8dde2');
+      bg.addColorStop(0.64, m.pol>0 ? '#b94a3a' : '#4a78b4');
+      bg.addColorStop(1, m.pol>0 ? '#7a2424' : '#23406a');
+      // rounded pill path
+      ctx.fillStyle=bg;
+      ctx.beginPath();
+      if(ctx.roundRect) { ctx.roundRect(-rx,-ry,rx*2,ry*2,ry); } else {
+        ctx.moveTo(-rx+ry,-ry); ctx.lineTo(rx-ry,-ry); ctx.arc(rx-ry,0,ry,-Math.PI/2,Math.PI/2); ctx.lineTo(-rx+ry,ry); ctx.arc(-rx+ry,0,ry,Math.PI/2,-Math.PI/2); ctx.closePath();
+      }
+      ctx.fill();
+      // inner bevel
+      ctx.strokeStyle='rgba(255,255,255,0.22)'; ctx.lineWidth=0.9; ctx.stroke();
+      ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=0.6; ctx.beginPath();
+      if(ctx.roundRect) ctx.roundRect(-rx+0.6,-ry+0.6,rx*2-1.2,ry*2-1.2,ry-0.6); else ctx.stroke();
+      if(!ctx.roundRect) ctx.stroke();
+      // N / S label
+      ctx.fillStyle= m.pol>0 ? 'rgba(255,235,230,0.95)' : 'rgba(230,240,255,0.95)';
+      ctx.font='700 9px ui-monospace,monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(m.pol>0 ? 'N' : 'S', -rx*0.42, 0.5);
+      ctx.fillText(m.pol>0 ? 'S' : 'N', rx*0.42, 0.5);
+      // north dot
+      ctx.fillStyle=m.pol>0 ? 'rgba(255,90,90,0.95)' : 'rgba(90,160,255,0.95)';
+      ctx.shadowColor=m.pol>0 ? 'rgba(255,60,60,0.55)' : 'rgba(90,160,255,0.55)'; ctx.shadowBlur=isDrag?8:4;
+      ctx.beginPath(); ctx.arc(m.pol>0 ? -rx*0.42 : rx*0.42, 0, isDrag?2.1:1.4, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
+      // drag ring
+      if(isDrag){
+        ctx.strokeStyle='rgba(232,224,200,0.9)'; ctx.setLineDash([2,2]); ctx.lineWidth=0.8;
+        ctx.beginPath(); ctx.ellipse(0,0,rx+5,ry+5,0,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+      }
+      ctx.restore();
+      // outer glow when shattered
+      if(shatter>0.18){
+        ctx.fillStyle='rgba(232,224,200,'+(shatter*0.06).toFixed(3)+')';
+        ctx.beginPath(); ctx.arc(m.x,m.y, 18+shatter*10, 0, Math.PI*2); ctx.fill();
+      }
+    }
+
+    ctx.restore();
+
+    if(t%6===0){
+      const nTxt=N.toLocaleString('en-US');
+      if(modeEl) modeEl.textContent=magnets.length+' magnet'+(magnets.length>1?'s':'')+' · '+nTxt+' filaments';
+      const shTxt= shatter>0.22 ? ' · shatter '+(shatter*100|0)+'%' : shatter>0.08 ? ' · ripple' : '';
+      if(readout) readout.textContent=nTxt+' hair lines · '+ (dragVel>0.8?'shatter → ': dragVel>0.25?'ripple → ':'snap → ')+(shatter>0.18?'reforming':'field-locked')+shTxt;
+    }
+
+    raf=requestAnimationFrame(loop);
+  }
+
+  function hitMag(px,py){
+    for(let i=0;i<magnets.length;i++){
+      const d=Math.hypot(px-magnets[i].x, py-magnets[i].y);
+      if(d<22) return i;
+    }
+    return -1;
+  }
+
+  wrap.addEventListener('pointerdown', e=>{
+    const r=wrap.getBoundingClientRect();
+    const px=e.clientX - r.left, py=e.clientY - r.top;
+    const hit=hitMag(px,py);
+    if(hit!==-1){
+      dragging=hit;
+      wrap.classList.add('dragging');
+      try{ wrap.setPointerCapture(e.pointerId); }catch(_){}
+      magnets[hit].tx=px; magnets[hit].ty=py;
+      e.preventDefault();
+      return;
+    }
+    // click empty: throw nearest magnet there with a little shatter
+    const near=nearestMag(px,py);
+    magnets[near.idx].tx=px; magnets[near.idx].ty=py;
+    shatter=Math.min(1, shatter+0.32);
+  });
+  wrap.addEventListener('pointermove', e=>{
+    if(dragging===-1) return;
+    const r=wrap.getBoundingClientRect();
+    const px=Math.max(10,Math.min(cssW-10, e.clientX - r.left));
+    const py=Math.max(10,Math.min(cssH-10, e.clientY - r.top));
+    magnets[dragging].tx=px; magnets[dragging].ty=py;
+  });
+  function endDrag(e){
+    if(dragging===-1) return;
+    const id=dragging; dragging=-1;
+    wrap.classList.remove('dragging');
+    try{ wrap.releasePointerCapture(e.pointerId); }catch(_){}
+    // fling shatter
+    shatter=Math.min(1, shatter+ Math.min(0.45, dragVel*0.08));
+  }
+  wrap.addEventListener('pointerup', endDrag);
+  wrap.addEventListener('pointercancel', endDrag);
+  wrap.addEventListener('pointerleave', e=>{ if(dragging!==-1) endDrag(e); });
+  wrap.addEventListener('dblclick', e=>{
+    if(magnets.length>=3) return;
+    const r=wrap.getBoundingClientRect();
+    const px=e.clientX - r.left, py=e.clientY - r.top;
+    magnets.push({x:px,y:py,tx:px,ty:py,pol:Math.random()<0.5?1:-1,ang:Math.random()*Math.PI});
+    shatter=0.42;
+    if(modeEl) modeEl.textContent=magnets.length+' magnets · '+N.toLocaleString('en-US')+' filaments';
+  });
+
+  wrap.addEventListener('wheel', e=>{
+    e.preventDefault();
+    const delta= -e.deltaY*0.0009;
+    density=Math.max(0.45, Math.min(1.65, density + delta));
+    // also scale filament lengths live without rebuild
+    for(let i=0;i<filaments.length;i++) filaments[i].len = (5+Math.random()*7) * (0.85+ density*0.15);
+    shatter=Math.min(1, shatter+Math.abs(e.deltaY)*0.0007);
+  }, {passive:false});
+
+  cv.tabIndex=0;
+  cv.addEventListener('keydown', e=>{
+    if(e.key==='ArrowLeft') { magnets.forEach(m=>m.tx=Math.max(10,m.tx-14)); shatter=0.22; e.preventDefault(); }
+    else if(e.key==='ArrowRight'){ magnets.forEach(m=>m.tx=Math.min(cssW-10,m.tx+14)); shatter=0.22; e.preventDefault(); }
+    else if(e.key==='ArrowUp'){ magnets.forEach(m=>m.ty=Math.max(10,m.ty-10)); shatter=0.22; e.preventDefault(); }
+    else if(e.key==='ArrowDown'){ magnets.forEach(m=>m.ty=Math.min(cssH-10,m.ty+10)); shatter=0.22; e.preventDefault(); }
+    else if(e.key===' '||e.key==='Enter'){ buildFilaments(); shatter=0.55; e.preventDefault(); }
+  });
+  if(clearBtn) clearBtn.addEventListener('click', ()=>{ buildFilaments(); shatter=0.55; cv.focus(); });
+
+  window.addEventListener('resize', ()=>{ resize(); });
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) return; if(!running) start(); });
+
+  // boot
+  resize();
+  start();
+  window.__ferrofabric={get N(){return filaments.length}, get density(){return density}, get shatter(){return shatter}, shuffle:()=>{buildFilaments(); shatter=0.55;}, _stop:stop, _start:start};
 })();
 </script>
 
