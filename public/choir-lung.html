@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Choir Lung — Sonified Breath</title>
+<style>
+:root{
+  --bg:#060608; --panel:#111114; --line:#1d1d22;
+  --fg:#ede8e0; --dim:#9a9590; --accent:#e8b34b; --vio:#a78bfa; --teal:#5eead4;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --serif:Georgia,serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--sans);overflow-x:hidden;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+.sitehdr{position:fixed;inset:0 0 auto 0;z-index:40;display:flex;align-items:center;gap:14px;padding:10px 18px;background:rgba(6,6,8,.88);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.sitehdr .brand{font:800 12px var(--mono);letter-spacing:.18em}
+.sitehdr .brand em{color:var(--vio);font-style:normal}
+.sitehdr a{color:var(--dim);text-decoration:none;font:11px var(--mono);letter-spacing:.08em}
+.sitehdr a:hover{color:var(--fg)}
+.sitehdr nav{display:flex;gap:10px;align-items:center}
+.hint{margin-left:auto;font:10px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.75}
+.hint b{color:var(--vio)}
+#stage{position:fixed;inset:44px 0 0 0;z-index:0}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block}
+.vignette{position:absolute;inset:0;pointer-events:none;z-index:1;
+  background:
+    radial-gradient(ellipse 92% 70% at 50% 38%,transparent 38%,rgba(0,0,0,.58) 100%),
+    radial-gradient(ellipse 60% 45% at 50% 0%,rgba(167,139,250,.10),transparent 68%),
+    linear-gradient(180deg,rgba(6,6,8,.18),rgba(6,6,8,.55));
+}
+.grain{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:.032;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+}
+.wrap{position:relative;z-index:5;max-width:1240px;margin:0 auto;padding:74px 18px 40px}
+.hero{text-align:center;padding:30px 12px 10px}
+.hero h1{font:700 clamp(30px,6vw,54px)/.95 var(--serif);letter-spacing:-.03em}
+.hero h1 i{font-style:italic;color:var(--vio);font-weight:400}
+.hero h1 b{color:var(--teal);font-weight:700;letter-spacing:-.04em}
+.hero .kicker{margin-top:10px;font:11px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+.hero .kicker b{color:var(--accent)}
+.hero .sub{margin:14px auto 0;max-width:640px;color:var(--dim);font-size:14px;line-height:1.6}
+.hero .sub strong{color:var(--fg);font-weight:600}
+
+.controls{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:18px 0 8px}
+.btn{appearance:none;border:1px solid rgba(167,139,250,.28);background:rgba(167,139,250,.10);color:var(--fg);font:11px var(--mono);letter-spacing:.10em;text-transform:uppercase;padding:10px 14px;border-radius:999px;cursor:pointer;transition:.15s}
+.btn:hover{border-color:rgba(167,139,250,.55);background:rgba(167,139,250,.16);transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn.primary{border-color:rgba(94,234,212,.42);background:linear-gradient(180deg,rgba(94,234,212,.18),rgba(167,139,250,.12));color:#e8fffb}
+.btn.live{border-color:rgba(94,234,212,.55);background:rgba(94,234,212,.18);box-shadow:0 0 18px rgba(94,234,212,.22)}
+.btn.ghost{border-color:var(--line);background:rgba(255,255,255,.04);color:var(--dim)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.pill{display:inline-flex;align-items:center;gap:7px;font:11px var(--mono);letter-spacing:.08em;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--dim)}
+.pill i{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 10px rgba(94,234,212,.7);animation:pulse 1.2s infinite alternate}
+.pill.off i{background:#555;box-shadow:none;animation:none}
+.pill.warn{border-color:rgba(232,179,75,.28);background:rgba(232,179,75,.08);color:#e8dcc8}
+@keyframes pulse{from{opacity:.6}to{opacity:1}}
+
+.grid{display:grid;grid-template-columns:1.35fr .85fr;gap:14px;margin-top:16px}
+@media(max-width:860px){.grid{grid-template-columns:1fr}}
+.card{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:rgba(17,17,20,.72);backdrop-filter:blur(10px);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.card-h{display:flex;align-items:center;gap:10px;padding:10px 12px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));border-bottom:1px solid var(--line);font:11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.card-h b{color:var(--fg)}
+.card-b{padding:12px}
+.meter{height:6px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden;position:relative}
+.meter i{position:absolute;inset:0 100% 0 0;background:linear-gradient(90deg,var(--teal),var(--vio));border-radius:999px;transition: right .12s linear}
+.spectrum{display:grid;grid-template-columns:repeat(32,1fr);gap:3px;align-items:end;height:64px;margin-top:10px}
+.spectrum i{display:block;border-radius:2px;background:linear-gradient(180deg,var(--teal),var(--vio));opacity:.9;min-height:2px;transition:height .08s linear}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;font:11px var(--mono);color:var(--dim)}
+.kv b{color:var(--fg);font-weight:600}
+.log{max-height:160px;overflow:auto;font:11px var(--mono);line-height:1.6;color:var(--dim);white-space:pre-wrap}
+.log b{color:var(--accent)}
+.field{width:100%;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--fg);font:13px var(--mono);padding:10px 12px;border-radius:10px;outline:none}
+.field:focus{border-color:rgba(167,139,250,.45);box-shadow:0 0 0 3px rgba(167,139,250,.14)}
+.help{font:11px var(--mono);color:var(--dim);margin-top:8px;line-height:1.5}
+.help code{color:var(--teal)}
+.footer{margin-top:18px;text-align:center;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.7}
+.footer a{color:var(--accent);text-decoration:none}
+.footer a:hover{text-decoration:underline}
+/* reduced motion */
+@media(prefers-reduced-motion:reduce){
+  #gl{opacity:.55}
+  .pill i{animation:none}
+  .btn{transition:none}
+}
+</style>
+</head>
+<body>
+<header class="sitehdr">
+  <a class="brand" href="/index.html" title="back to AIGATE">AIGATE <em>· CHOIR LUNG</em></a>
+  <nav>
+    <a href="/index.html">← dashboard</a>
+    <a href="/board.html">🗂 board</a>
+    <a href="/splat-attic.html">🗝 attic</a>
+  </nav>
+  <span class="hint"><b>44 visuals</b> · 01 audio — hear the Lung, see the voice</span>
+</header>
+
+<div id="stage" aria-hidden="true">
+  <canvas id="gl"></canvas>
+  <div class="vignette"></div>
+  <div class="grain"></div>
+</div>
+
+<div class="wrap">
+  <section class="hero">
+    <div class="kicker">first audio layer in 44 visuals · <b>mic → analyser → convolver + granular</b> → ribbon</div>
+    <h1>Choir <i>Lung</i> — <b>Sonified Breath</b></h1>
+    <p class="sub">Breath, hover, and typing become a <strong>vault choir</strong>: Web Audio granular grains through a synthetic cathedral <strong>Convolver</strong>, Analyser FFT bins driving a <strong>WebGL2 ribbon</strong> in sync. Pitch is throughput, distortion is error — hear the Lung, see the voice.</p>
+    <div class="controls">
+      <button id="enable" class="btn primary" type="button">◎ enable breath — mic + choir</button>
+      <button id="demo" class="btn" type="button">▶ demo breath (no mic)</button>
+      <button id="mute" class="btn ghost" type="button" aria-pressed="false">🔊 sound on</button>
+      <span id="status" class="pill off"><i></i><span>idle — hover or type to breathe</span></span>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px">
+      <span class="pill" id="pitch-pill">pitch — throughput <b id="pitch-v">—</b></span>
+      <span class="pill" id="dist-pill">distortion — error <b id="dist-v">—</b></span>
+      <span class="pill warn" id="fallback-pill" hidden>mic blocked — hover / typing is breath proxy (pre-convolved)</span>
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <div class="card-h"><b>◈ Ribbon — WebGL2</b> <span style="margin-left:auto">pitch = sway · distortion = fray · breath = swell</span></div>
+      <div class="card-b">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font:11px var(--mono);letter-spacing:.08em;color:var(--dim)">voice</span>
+          <div class="meter" style="flex:1"><i id="voice-meter"></i></div>
+          <span id="voice-db" style="font:11px var(--mono);color:var(--dim)">−∞ dB</span>
+        </div>
+        <div class="spectrum" id="spectrum" aria-hidden="true"></div>
+        <div class="kv" style="margin-top:10px">
+          <span>engine</span><b id="kv-engine">WebGL2 ribbon + Web Audio (Analyser → Convolver + granular)</b>
+          <span>bins</span><b id="kv-bins">32 FFT → uniforms</b>
+          <span>vault</span><b id="kv-vault">synthetic cathedral — 3.4s exponential + early taps</b>
+          <span>grain</span><b id="kv-grain">40–180 ms · Hann · 6 voices · vault-wet</b>
+        </div>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-h"><b>♫ Choir — breath proxy</b> <span style="margin-left:auto">move · hover · type</span></div>
+      <div class="card-b">
+        <label for="typefield" style="font:11px var(--mono);letter-spacing:.08em;color:var(--dim);display:block;margin-bottom:6px">type here — each keystroke is a grain (pitch = throughput)</label>
+        <input id="typefield" class="field" autocomplete="off" spellcheck="false" placeholder="type to sing — try: vault breath throughput error">
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <span class="pill">hover energy <b id="hover-v">0%</b></span>
+          <span class="pill">keys <b id="keys-v">0</b></span>
+          <span class="pill">grains/s <b id="grains-v">0.0</b></span>
+        </div>
+        <div class="help">Mic denied? <code>hover</code> and <code>typing</code> drive the same Convolver + granular path with a <code>pre-convolved impulse</code> — no silent fail. Reduced-motion users get a static ribbon and no audio.</div>
+        <div class="log" id="log" style="margin-top:10px">— Lung idle. Enable mic or hover/type to breathe.
+— Pitch (low bins) → ribbon sway / throughput.
+— Distortion (high bins) → ribbon fray / error.</div>
+      </div>
+    </section>
+  </div>
+
+  <p class="footer">Single HTML · inline style + JS · Web Audio + WebGL2 · no deps · <a href="/index.html">return to dashboard</a> · WebGL2 ribbon shader uniforms driven by FFT — hear the Lung, see the voice.</p>
+</div>
+
+<script>
+(()=>{"use strict";
+const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// Elements
+const cvs = document.getElementById("gl");
+const enableBtn = document.getElementById("enable");
+const demoBtn = document.getElementById("demo");
+const muteBtn = document.getElementById("mute");
+const statusPill = document.getElementById("status");
+const fallbackPill = document.getElementById("fallback-pill");
+const voiceMeter = document.getElementById("voice-meter");
+const voiceDb = document.getElementById("voice-db");
+const spectrumEl = document.getElementById("spectrum");
+const logEl = document.getElementById("log");
+const typeField = document.getElementById("typefield");
+const hoverV = document.getElementById("hover-v");
+const keysV = document.getElementById("keys-v");
+const grainsV = document.getElementById("grains-v");
+const pitchV = document.getElementById("pitch-v");
+const distV = document.getElementById("dist-v");
+const stage = document.getElementById("stage");
+
+// Spectrum bars
+const BAR_N = 32;
+const bars = [];
+for(let i=0;i<BAR_N;i++){ const el=document.createElement("i"); el.style.height="3px"; spectrumEl.appendChild(el); bars.push(el); }
+
+// State
+let gl=null, prog=null, loc={}, geom={}, raf=0, t0=performance.now();
+let audio=null, analyser=null, convolver=null, masterGain=null, dryGain=null, wetGain=null;
+let choirBuffer=null, impulseBuffer=null;
+let micStream=null, micSource=null, synthOsc=null, synthGain=null;
+let bins=null, binsNorm=null; // Uint8Array + Float32 0..1
+let pitch=0, distortion=0, breath=0, hoverEnergy=0, keyCount=0, grainsPerSec=0;
+let muted=false, micActive=false, demoActive=false, reducedNoAudio=prefersReduced;
+let lastGrainT=0, grainCountWindow=0, grainWindowT=performance.now();
+let hoverProxy=0, typeProxy=0;
+
+// Reduced motion: no audio, static ribbon
+if(prefersReduced){
+  statusPill.classList.add("off");
+  statusPill.querySelector("span").textContent="reduced motion — static ribbon, no audio";
+  enableBtn.disabled=true; demoBtn.disabled=true; muteBtn.disabled=true;
+  typeField.placeholder="reduced motion — audio disabled";
+  typeField.disabled=true;
+}
+
+function log(msg){
+  const ts=new Date().toLocaleTimeString();
+  logEl.textContent += "\n["+ts+"] "+msg;
+  logEl.scrollTop=logEl.scrollHeight;
+  // cap
+  const lines=logEl.textContent.split("\n");
+  if(lines.length>90) logEl.textContent=lines.slice(-90).join("\n");
+}
+function setStatus(text,live){
+  statusPill.querySelector("span").textContent=text;
+  statusPill.classList.toggle("off", !live);
+  statusPill.classList.toggle("live", !!live);
+}
+
+// ---------- WebGL2 ribbon ----------
+function glErr(prefix){
+  const e=gl.getError();
+  if(e!==gl.NO_ERROR) console.warn(prefix, e);
+}
+function compile(type,src){
+  const s=gl.createShader(type);
+  gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){
+    console.error(gl.getShaderInfoLog(s), src.slice(0,400));
+    throw new Error("shader compile");
+  }
+  return s;
+}
+function initGL(){
+  const g=cvs.getContext("webgl2",{alpha:false,antialias:true,depth:false,stencil:false});
+  if(!g) throw new Error("WebGL2 unavailable");
+  gl=g;
+  const vert=`#version 300 es
+  precision highp float;
+  in vec2 aPos; in vec2 aUv;
+  uniform float uTime; uniform float uPitch; uniform float uDist; uniform float uBreath; uniform float uHover; uniform float uVol;
+  uniform float uBins[32];
+  out vec2 vUv; out float vHeight; out float vFray;
+  float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+  void main(){
+    vUv=aUv;
+    float x=aPos.x; // -1..1
+    float t=uTime*0.35;
+    float idx = clamp((x*0.5+0.5)*31.0, 0.0, 31.0);
+    int i0=int(floor(idx)); int i1=min(31,int(ceil(idx))); float f=fract(idx);
+    float b0=uBins[i0], b1=uBins[i1]; float bin=mix(b0,b1,f);
+    float low = (uBins[0]+uBins[1]+uBins[2]+uBins[3])*0.25;
+    float high= (uBins[24]+uBins[26]+uBins[28]+uBins[31])*0.25;
+    float sway = sin(x*1.7 + t*1.1 + low*4.0)* (0.18 + uPitch*0.42 + bin*0.22);
+    float second = sin(x*3.1 - t*0.9 + high*3.0)* (0.07 + uDist*0.16 + high*0.12);
+    float breathWave = sin(t*0.55 + x*0.6)* uBreath * 0.22;
+    float hoverTilt = uHover * sin(x*2.2 + t*1.6)*0.10;
+    float y = sway + second + breathWave + hoverTilt;
+    // widen at peaks, fray at distortion
+    float fray = uDist*0.42 + high*0.5 + hash(vec2(x*8.0, floor(t*2.0)))*uDist*0.18;
+    y += (hash(vec2(x*19.0, t*0.3))-0.5)*fray*0.06;
+    vHeight = y;
+    vFray = fray;
+    // y in -1..1 clip space; ribbon centered
+    float yy = y*0.52;
+    // perspective lean: ribbon recedes at edges
+    yy *= (0.92 + 0.08*cos(x*1.2));
+    gl_Position = vec4(x, yy, 0.0, 1.0);
+  }`;
+  const frag=`#version 300 es
+  precision highp float;
+  in vec2 vUv; in float vHeight; in float vFray;
+  uniform float uTime; uniform float uPitch; uniform float uDist; uniform float uVol;
+  out vec4 fragColor;
+  vec3 pal(float t){
+    vec3 c0=vec3(0.36,0.82,0.78); // teal
+    vec3 c1=vec3(0.66,0.55,0.98); // violet
+    vec3 c2=vec3(0.96,0.70,0.29); // amber error
+    vec3 c = mix(c0,c1, clamp(t,0.0,1.0));
+    c = mix(c, c2, smoothstep(0.55,0.95, t*0.9 + vFray*0.6));
+    return c;
+  }
+  void main(){
+    float t = fract(vUv.x*0.5+0.5 + uTime*0.02);
+    float h = clamp((vHeight*0.5+0.5),0.0,1.0);
+    float f = clamp(vFray,0.0,1.0);
+    // ribbon body: soft band around centerline vHeight
+    float d = abs(vUv.y - 0.5 - vHeight*0.18);
+    float band = 1.0 - smoothstep(0.06, 0.14, d);
+    float edge = 1.0 - smoothstep(0.14, 0.28, d);
+    float glow = band*0.92 + edge*0.22;
+    // moving highlights along ribbon length
+    float hi = sin(vUv.x*18.0 - uTime*2.2 + h*9.0)*0.5+0.5;
+    hi = pow(hi, 3.0)* (0.35 + uVol*0.6);
+    vec3 col = pal(h*0.9 + hi*0.22 + f*0.18);
+    col += vec3(1.0)* hi * 0.18 * glow;
+    // fray speckles when distortion high
+    float spark = step(0.985, fract(sin(vUv.x* 978.21 + vUv.y* 412.2 + uTime*0.8)* 43758.5));
+    col += spark * f * 0.7 * edge;
+    float alpha = glow * (0.88 + uVol*0.22);
+    alpha = clamp(alpha, 0.0, 1.0);
+    // vault fog
+    vec3 bg = vec3(0.05,0.05,0.07);
+    bg += vec3(0.08,0.04,0.10)* (1.0 - h)*0.4;
+    vec3 outc = mix(bg, col, alpha*0.92);
+    // subtle vignette inside shader for legibility
+    float vig = 1.0 - dot(vUv-0.5, vUv-0.5)*0.55;
+    outc *= vig;
+    fragColor = vec4(outc, 1.0);
+  }`;
+  const vs=compile(gl.VERTEX_SHADER, vert);
+  const fs=compile(gl.FRAGMENT_SHADER, frag);
+  prog=gl.createProgram();
+  gl.attachShader(prog,vs); gl.attachShader(prog,fs); gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  loc.uTime=gl.getUniformLocation(prog,"uTime");
+  loc.uPitch=gl.getUniformLocation(prog,"uPitch");
+  loc.uDist=gl.getUniformLocation(prog,"uDist");
+  loc.uBreath=gl.getUniformLocation(prog,"uBreath");
+  loc.uHover=gl.getUniformLocation(prog,"uHover");
+  loc.uVol=gl.getUniformLocation(prog,"uVol");
+  loc.uBins=[];
+  for(let i=0;i<32;i++) loc.uBins.push(gl.getUniformLocation(prog,"uBins["+i+"]"));
+  loc.aPos=gl.getAttribLocation(prog,"aPos");
+  loc.aUv=gl.getAttribLocation(prog,"aUv");
+
+  // Ribbon geometry: single triangle strip along x with height thickness in UV y
+  // We draw as TRIANGLE_STRIP with 2 rows (top/bottom of ribbon band) -> actually let frag do band, so vertices are a full-screen quad strip of many segments
+  const segs=220;
+  const verts=[]; const uvs=[]; const idx=[];
+  for(let i=0;i<=segs;i++){
+    const x = -1 + 2*(i/segs);
+    // two vertices per column: bottom (-1) and top (1) in aPos.y space, UV encodes x progress
+    verts.push(x,-1); uvs.push(i/segs,0);
+    verts.push(x, 1); uvs.push(i/segs,1);
+  }
+  for(let i=0;i<segs;i++){
+    const a=i*2, b=a+1, c=a+2, d=a+3;
+    idx.push(a,b,c, b,d,c);
+  }
+  const vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vbo); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(verts),gl.STATIC_DRAW);
+  const uvbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,uvbo); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(uvs),gl.STATIC_DRAW);
+  const ibo=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(idx),gl.STATIC_DRAW);
+  geom={vbo,uvbo,ibo,count:idx.length, segs};
+  // initial bins
+  bins=new Uint8Array(256);
+  binsNorm=new Float32Array(32);
+}
+function resizeGL(){
+  const dpr=Math.min(2, window.devicePixelRatio||1);
+  const w=stage.clientWidth, h=stage.clientHeight;
+  cvs.width=Math.max(1, Math.floor(w*dpr));
+  cvs.height=Math.max(1, Math.floor(h*dpr));
+  cvs.style.width=w+"px"; cvs.style.height=h+"px";
+  if(gl) gl.viewport(0,0,cvs.width,cvs.height);
+}
+function draw(){
+  if(!gl || !prog) return;
+  const now=performance.now();
+  const t=(now-t0)/1000;
+  // sample analyser into binsNorm if available, else synthesize from proxy
+  let vol=0;
+  if(analyser && !reducedNoAudio){
+    analyser.getByteFrequencyData(bins);
+    // downsample 256 -> 32 (avg groups of 8), focus 0..256
+    for(let i=0;i<32;i++){
+      let s=0; for(let k=0;k<8;k++) s+=bins[i*8+k];
+      const v=s/8/255; binsNorm[i]=v; vol+=v;
+      bars[i].style.height=(3+v*60)+"px";
+      bars[i].style.opacity=0.55+v*0.55;
+    }
+    vol/=32;
+    const low=(binsNorm[0]+binsNorm[1]+binsNorm[2]+binsNorm[3])/4;
+    const high=(binsNorm[24]+binsNorm[26]+binsNorm[28]+binsNorm[31])/4;
+    pitch=low*0.85 + vol*0.15;
+    distortion=high*0.75 + vol*0.25;
+    // breath proxy from low + vol swell
+    breath= Math.min(1, vol*1.25 + low*0.6 + hoverProxy*0.25 + typeProxy*0.35);
+  } else if(!prefersReduced){
+    // synthetic bins when no mic yet or demo mode
+    const synth = demoActive || (!micActive && (hoverProxy>0.01 || typeProxy>0.01 || true));
+    if(synth){
+      const baseT=t*0.9;
+      for(let i=0;i<32;i++){
+        const f=i/32;
+        const env = Math.exp(-f*2.2) * (0.55 + 0.45*Math.sin(baseT*0.7 + f*9.0));
+        const hoverAdd = hoverProxy* Math.exp(-Math.pow((f-0.18)/0.18,2))*0.9;
+        const typeAdd = typeProxy* Math.exp(-Math.pow((f-0.55)/0.28,2))*0.75;
+        const breathAdd = breath* Math.exp(-Math.pow((f-0.12)/0.14,2))*0.6;
+        const v=Math.min(1, env*0.42 + hoverAdd + typeAdd + breathAdd + Math.random()*0.02);
+        binsNorm[i]=v*0.92 + binsNorm[i]*0.08;
+        vol+=binsNorm[i];
+        bars[i].style.height=(3+binsNorm[i]*58)+"px";
+        bars[i].style.opacity=0.45+binsNorm[i]*0.6;
+      }
+      vol/=32;
+      const low=(binsNorm[0]+binsNorm[1]+binsNorm[2]+binsNorm[3])/4;
+      const high=(binsNorm[20]+binsNorm[24]+binsNorm[28]+binsNorm[31])/4;
+      pitch = Math.min(1, low*1.1 + hoverProxy*0.35);
+      distortion = Math.min(1, high*1.0 + typeProxy*0.45);
+      // decay proxies
+      hoverProxy*=0.985; typeProxy*=0.992; breath*=0.996;
+      breath = Math.min(1, Math.max(breath, vol*0.9 + hoverProxy*0.5 + typeProxy*0.6));
+    } else {
+      // idle drift
+      for(let i=0;i<32;i++){ binsNorm[i]*=0.97; bars[i].style.height="3px"; }
+      vol*=0.97; pitch*=0.98; distortion*=0.98; breath*=0.985;
+    }
+  } else {
+    // reduced motion static
+    for(let i=0;i<32;i++){ binsNorm[i]=0.08*Math.exp(-i/12); bars[i].style.height=(3+binsNorm[i]*22)+"px"; }
+    vol=0.08; pitch=0.12; distortion=0.06; breath=0.18; hoverProxy=0; typeProxy=0;
+  }
+  hoverEnergy = hoverProxy; // for meters
+
+  // update meters
+  const db = vol>0.0005? (20*Math.log10(vol)).toFixed(1) : "-∞";
+  voiceDb.textContent=db+" dB";
+  voiceMeter.style.right=(100 - Math.min(100, vol*140))+"%";
+  pitchV.textContent=(pitch*100).toFixed(0)+"%";
+  distV.textContent=(distortion*100).toFixed(0)+"%";
+  hoverV.textContent=(hoverEnergy*100).toFixed(0)+"%";
+  grainsV.textContent=grainsPerSec.toFixed(1);
+  // grain counter window
+  if(performance.now()-grainWindowT>500){
+    grainsPerSec = grainCountWindow*2; grainCountWindow=0; grainWindowT=performance.now();
+  }
+
+  // GL draw
+  gl.useProgram(prog);
+  gl.clearColor(0.06,0.06,0.08,1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bindBuffer(gl.ARRAY_BUFFER, geom.vbo); gl.enableVertexAttribArray(loc.aPos); gl.vertexAttribPointer(loc.aPos,2,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, geom.uvbo); gl.enableVertexAttribArray(loc.aUv); gl.vertexAttribPointer(loc.aUv,2,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, geom.ibo);
+  gl.uniform1f(loc.uTime, prefersReduced? 2.0 : t);
+  gl.uniform1f(loc.uPitch, prefersReduced? 0.12 : pitch);
+  gl.uniform1f(loc.uDist, prefersReduced? 0.06 : distortion);
+  gl.uniform1f(loc.uBreath, prefersReduced? 0.18 : breath);
+  gl.uniform1f(loc.uHover, hoverEnergy);
+  gl.uniform1f(loc.uVol, vol);
+  for(let i=0;i<32;i++) gl.uniform1f(loc.uBins[i], binsNorm[i]||0);
+  gl.drawElements(gl.TRIANGLES, geom.count, gl.UNSIGNED_SHORT, 0);
+  glErr("draw");
+
+  // auto-breath nudge when idle (visible even without input)
+  if(!prefersReduced && !micActive && !demoActive) breath = Math.max(breath, 0.08 + 0.06*Math.sin(t*0.22));
+
+  raf=requestAnimationFrame(draw);
+}
+
+// ---------- Audio ----------
+function genVaultImpulse(ctx){
+  const sr=ctx.sampleRate, len=Math.floor(sr*3.4), ch=2;
+  const buf=ctx.createBuffer(ch,len,sr);
+  for(let c=0;c<ch;c++){
+    const d=buf.getChannelData(c);
+    for(let i=0;i<len;i++){
+      const t=i/sr;
+      const decay=Math.exp(-t*1.05);
+      const early = (t<0.08? Math.exp(-t*22)*0.55 : 0) + (t>0.12&&t<0.22? Math.exp(-Math.abs(t-0.16)*40)*0.18 : 0);
+      const n=(Math.random()*2-1);
+      const filt = n*0.5 + (i>0? d[i-1]*0.45:0);
+      const mod = 1+0.06*Math.sin(2*Math.PI*0.7*t);
+      d[i]=(filt*decay*0.42 + early*(Math.random()*0.5+0.5))*mod;
+      // pre-delay 18ms silence
+      if(i< Math.floor(sr*0.018)) d[i]*= i/(sr*0.018);
+    }
+  }
+  return buf;
+}
+function genChoirBuffer(ctx){
+  const sr=ctx.sampleRate, len=Math.floor(sr*2.6), ch=1;
+  const buf=ctx.createBuffer(ch,len,sr);
+  const d=buf.getChannelData(0);
+  // pad: mix of 110Hz-ish harmonics with slow vibrato and breath noise
+  const f0=110; // A2 ~ vault
+  for(let i=0;i<len;i++){
+    const t=i/sr;
+    const vib=1+0.012*Math.sin(2*Math.PI*5.2*t)+0.006*Math.sin(2*Math.PI*7.1*t+1.3);
+    let s=0;
+    s+=Math.sin(2*Math.PI*f0*vib*t)*0.38;
+    s+=Math.sin(2*Math.PI*f0*2*vib*t+0.4)*0.22;
+    s+=Math.sin(2*Math.PI*f0*3*vib*t+1.1)*0.14;
+    s+=Math.sin(2*Math.PI*f0*4*vib*t+0.9)*0.08;
+    s+=Math.sin(2*Math.PI*f0*1.5*vib*t+2.0)*0.06;
+    // formant-ish
+    s+=Math.sin(2*Math.PI*620*t)*0.04*Math.sin(2*Math.PI*0.6*t);
+    s+= (Math.random()*2-1)*0.015*Math.sin(2*Math.PI*2*t);
+    // envelope in buffer itself (so grains crossfade nicely)
+    const env=Math.pow(Math.sin(Math.PI* (i/len)),0.9);
+    d[i]=s*env*0.72;
+  }
+  return buf;
+}
+async function ensureAudio(){
+  if(audio && audio.state) {
+    if(audio.state==="suspended") await audio.resume();
+    return;
+  }
+  audio=new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});
+  analyser=audio.createAnalyser(); analyser.fftSize=512; analyser.smoothingTimeConstant=0.82;
+  convolver=audio.createConvolver(); convolver.normalize=true;
+  masterGain=audio.createGain(); masterGain.gain.value= muted?0:0.72;
+  dryGain=audio.createGain(); dryGain.gain.value=0.55;
+  wetGain=audio.createGain(); wetGain.gain.value=0.48;
+  // bus: granular sources -> dry+wet -> master -> analyser -> destination
+  // we tap analyser after master so it sees convolved signal
+  wetGain.connect(convolver); convolver.connect(masterGain);
+  dryGain.connect(masterGain);
+  masterGain.connect(analyser); analyser.connect(audio.destination);
+  impulseBuffer=genVaultImpulse(audio);
+  convolver.buffer=impulseBuffer;
+  choirBuffer=genChoirBuffer(audio);
+  bins=new Uint8Array(analyser.frequencyBinCount);
+  binsNorm=new Float32Array(32);
+  if(audio.state==="suspended") await audio.resume();
+}
+function spawnGrain(pitchMul, vel){
+  if(!audio||!choirBuffer||muted||reducedNoAudio) return;
+  if(audio.state==="suspended") audio.resume();
+  const now=audio.currentTime;
+  if(now-lastGrainT<0.035) return;
+  lastGrainT=now;
+  const src=audio.createBufferSource(); src.buffer=choirBuffer;
+  const dur=0.07 + Math.random()*0.11;
+  const off=Math.random()*Math.max(0, choirBuffer.duration - dur - 0.02);
+  src.playbackRate.value= Math.max(0.5, Math.min(2.0, pitchMul));
+  const g=audio.createGain(); g.gain.value=0;
+  const pan=audio.createStereoPanner? audio.createStereoPanner(): null;
+  if(pan){ pan.pan.value=(Math.random()*2-1)*0.55; }
+  // Hann envelope
+  const peak = 0.18 + vel*0.42;
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(peak*0.45, now+dur*0.18);
+  g.gain.linearRampToValueAtTime(peak, now+dur*0.42);
+  g.gain.linearRampToValueAtTime(0, now+dur);
+  // route: each grain -> dry+wet split
+  const splitDry=audio.createGain(); splitDry.gain.value=0.62;
+  const splitWet=audio.createGain(); splitWet.gain.value=0.58;
+  if(pan){ src.connect(pan); pan.connect(g); g.connect(splitDry); g.connect(splitWet); }
+  else { src.connect(g); g.connect(splitDry); g.connect(splitWet); }
+  splitDry.connect(dryGain); splitWet.connect(wetGain);
+  src.start(now, off, dur);
+  src.stop(now+dur+0.02);
+  grainCountWindow++;
+}
+function scheduleFromActivity(){
+  // called from rAF-ish to keep grains flowing when voice/hover/type present
+  const v = breath*0.9 + hoverProxy*0.6 + typeProxy*0.9;
+  if(v<0.06 || reducedNoAudio) return;
+  // density scales with v and distortion (error makes it choppier)
+  const density = 3 + v*14 + distortion*6;
+  if(Math.random() < density/60){
+    const pm = 0.85 + pitch*0.75 + (Math.random()*0.18-0.09) + typeProxy*0.22;
+    spawnGrain(pm, Math.min(1, v*1.1));
+  }
+}
+
+// ---------- Interactions ----------
+let hoverTotal=0;
+stage.addEventListener("pointermove", (e)=>{
+  if(prefersReduced) return;
+  const r=stage.getBoundingClientRect();
+  const nx=(e.clientX - r.left)/Math.max(1,r.width);
+  hoverProxy=Math.min(1, hoverProxy*0.85 + (0.15 + Math.abs(nx-0.5)*0.5)*0.42 + 0.08);
+  hoverTotal++;
+  scheduleFromActivity();
+  // subtle breath nudge from hover velocity
+  breath=Math.min(1, breath+0.04);
+},{passive:true});
+stage.addEventListener("pointerenter", ()=>{ if(!prefersReduced) hoverProxy=Math.min(1,hoverProxy+0.18); },{passive:true});
+cvs.addEventListener("pointermove", (e)=>{
+  if(prefersReduced) return;
+  hoverProxy=Math.min(1, hoverProxy+0.02);
+},{passive:true});
+
+typeField.addEventListener("input", ()=>{
+  if(prefersReduced) return;
+  const v=typeField.value;
+  keyCount=v.length; keysV.textContent=String(keyCount);
+  typeProxy=Math.min(1, typeProxy+0.22);
+  // each keystroke spawns grain with char-driven pitch
+  const ch=v.slice(-1) || "a";
+  const code=ch.charCodeAt(0)||97;
+  const pm=0.72 + ((code%24)/24)*0.9 + pitch*0.4;
+  ensureAudio().then(()=> spawnGrain(pm, 0.55+typeProxy*0.45));
+  scheduleFromActivity();
+  breath=Math.min(1, breath+0.06);
+});
+typeField.addEventListener("keydown",(e)=>{
+  if(prefersReduced) return;
+  if(e.key.length===1){
+    typeProxy=Math.min(1,typeProxy+0.12);
+    ensureAudio().then(()=> spawnGrain(0.95+Math.random()*0.28, 0.5));
+  }
+  if(e.key==="Backspace"){ typeProxy=Math.min(1,typeProxy+0.08); distortion=Math.min(1,distortion+0.06); }
+});
+document.addEventListener("keydown",(e)=>{
+  if(prefersReduced) return;
+  if(e.target===typeField) return;
+  if(e.key.length===1 || e.key===" "){
+    typeProxy=Math.min(1,typeProxy+0.14);
+    hoverProxy=Math.min(1,hoverProxy+0.04);
+    ensureAudio().then(()=> spawnGrain(0.88+Math.random()*0.5, 0.45));
+    breath=Math.min(1, breath+0.05);
+  }
+});
+
+// Mic enable
+async function enableMic(){
+  if(prefersReduced) return;
+  try{
+    await ensureAudio();
+    if(audio.state==="suspended") await audio.resume();
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});
+    micStream=stream;
+    micSource=audio.createMediaStreamSource(stream);
+    // gentle input gain before analyser split
+    const inputGain=audio.createGain(); inputGain.gain.value=1.0;
+    micSource.connect(inputGain);
+    // mic -> master bus (so analyser sees it) and also direct granular excitation from mic energy
+    inputGain.connect(dryGain);
+    // light send to wet so breath already has vault
+    const micWet=audio.createGain(); micWet.gain.value=0.22;
+    inputGain.connect(micWet); micWet.connect(convolver);
+    // synth fallback off
+    if(synthOsc){ try{synthOsc.stop();}catch{} synthOsc=null; }
+    micActive=true; demoActive=false;
+    fallbackPill.hidden=true;
+    setStatus("breathing — mic + vault choir", true);
+    log("mic granted — breath drives Analyser → Convolver + granular.");
+    enableBtn.textContent="◎ breathing";
+    enableBtn.classList.add("live");
+    // mic energy also spawns grains via analyser pull in animation loop — hook an extra analyser tap
+  }catch(err){
+    console.warn(err);
+    fallbackPill.hidden=false;
+    setStatus("mic blocked — hover / type to breathe (pre-convolved)", false);
+    log("mic denied/blocked ("+(err.name||err.message)+") — fallback: hover + typing drive pre-convolved granular (no silence).");
+    // ensure audio still ready for proxy
+    await ensureAudio().catch(()=>{});
+    demoActive=true;
+    // soft pre-convolved demo swell
+    hoverProxy=0.35; typeProxy=0.25; breath=0.45;
+    for(let i=0;i<3;i++) setTimeout(()=> spawnGrain(0.9+i*0.12,0.6), i*120);
+  }
+}
+async function enableDemo(){
+  if(prefersReduced) return;
+  await ensureAudio().catch(()=>{});
+  if(audio && audio.state==="suspended") await audio.resume().catch(()=>{});
+  demoActive=true; micActive=false;
+  fallbackPill.hidden=false;
+  fallbackPill.textContent="demo breath — hover / type, vault pre-convolved";
+  setStatus("demo breath — no mic, vault + granular from hover/type", true);
+  log("demo breath — Analyser fed from proxy FFT (no mic), Convolver vault is synthetic pre-convolved impulse.");
+  hoverProxy=0.42; typeProxy=0.35; breath=0.55;
+  for(let i=0;i<4;i++) setTimeout(()=> spawnGrain(0.86+i*0.1,0.62), i*110);
+}
+
+enableBtn.addEventListener("click", enableMic);
+demoBtn.addEventListener("click", enableDemo);
+muteBtn.addEventListener("click", async ()=>{
+  muted=!muted;
+  muteBtn.textContent= muted? "🔇 muted" : "🔊 sound on";
+  muteBtn.setAttribute("aria-pressed", String(muted));
+  muteBtn.classList.toggle("ghost", !muted);
+  if(audio && masterGain) masterGain.gain.value= muted?0:0.72;
+  if(muted) log("muted — ribbon still dances (visual only).");
+  else { log("unmuted — vault choir on."); if(audio && audio.state==="suspended") await audio.resume(); }
+});
+
+// Init
+try{ initGL(); }catch(e){ log("WebGL2 unavailable — "+e.message); }
+resizeGL();
+window.addEventListener("resize", resizeGL, {passive:true});
+if(!prefersReduced){
+  // idle grains tick
+  setInterval(scheduleFromActivity, 42);
+  // gentle idle demo if user never interacts for 2.5s
+  setTimeout(()=>{ if(!micActive && !demoActive && !reducedNoAudio){ hoverProxy=0.18; breath=0.22; } }, 2500);
+}
+t0=performance.now();
+binsNorm = binsNorm || new Float32Array(32);
+draw();
+
+// a11y: expose that mic is optional
+log("tip: enable mic for true breath, or just hover the vault and type — both are first-class breath.");
+})();
+</script>
+</body>
+</html>
