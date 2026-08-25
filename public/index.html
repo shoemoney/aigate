@@ -675,6 +675,28 @@ main.shake{animation:seismo-shake .38s ease}
 .turing-pulse{position:absolute;right:12px;top:10px;pointer-events:none;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(180,232,220,.62);background:rgba(5,9,10,.55);border:1px solid rgba(126,200,184,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px}
 .turing-pulse i{width:7px;height:7px;border-radius:50%;background:#7ec8b8;box-shadow:0 0 8px rgba(126,200,184,.6);animation:turing-breathe 2.8s ease-in-out infinite}
 @keyframes turing-breathe{0%,100%{transform:scale(.88);opacity:.72}50%{transform:scale(1.2);opacity:1}}
+/* <!-- IMPL: Interference Lace --> — 14 plane waves Schrödinger interference + thin-film iridescence (OPD) + velocity-grid persistence — single canvas 2D, no SDF/raymarch */
+#lace-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #2a2440;border-radius:6px;overflow:hidden;background:#07080f;box-shadow:0 4px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05)}
+.lace-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#14122a 0%,#0e0c1a 55%,#07080f 100%);border-bottom:1px solid #2a2440;flex-wrap:wrap}
+.lace-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#b8a8ff}
+.lace-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.lace-head .lace-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.lace-head .lace-note b{color:#d8ccff;font-weight:600}
+.lace-head .lace-actions{display:flex;align-items:center;gap:6px}
+.lace-canvas-wrap{position:relative;height:160px;background:
+  radial-gradient(ellipse 560px 120px at 38% 28%,rgba(168,140,255,.10),transparent 68%),
+  radial-gradient(ellipse 420px 110px at 82% 84%,rgba(120,200,255,.07),transparent 70%),
+  radial-gradient(ellipse 320px 90px at 15% 78%,rgba(255,160,200,.06),transparent 70%),
+  linear-gradient(180deg,#070a14 0%,#07080f 100%);overflow:hidden;cursor:crosshair;touch-action:none}
+#lace{display:block;width:100%;height:100%;pointer-events:auto}
+.lace-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0c0a14;border-top:1px solid #2a2440;font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.lace-meta .mode{color:#d8ccff}
+.lace-meta .hint{opacity:.75}
+.lace-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(200,180,255,.52);background:rgba(7,8,15,.55);border:1px solid rgba(168,140,255,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+.lace-pulse{position:absolute;right:12px;top:10px;pointer-events:none;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(200,180,255,.62);background:rgba(7,8,15,.55);border:1px solid rgba(168,140,255,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px}
+.lace-pulse i{width:7px;height:7px;border-radius:50%;background:#a88cff;box-shadow:0 0 8px rgba(168,140,255,.6);animation:lace-breathe 3s ease-in-out infinite}
+@keyframes lace-breathe{0%,100%{transform:scale(.88);opacity:.72}50%{transform:scale(1.2);opacity:1}}
+@media (prefers-reduced-motion:reduce){#lace-sec{display:none!important}}
 /* <!-- IMPL: Spectral Vault --> — SDF vault door: torus-knot keyhole, depth tumblers, volumetric shafts, BREACH shockwave */
 #vault-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #23262a;border-radius:6px;overflow:hidden;background:#06090c;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
 .vault-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#13191c 0%,#0c1012 55%,#06090c 100%);border-bottom:1px solid #23262a}
@@ -1286,6 +1308,26 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="turing-meta">
         <span class="mode">▸ <span id="turing-readout">Du 0.16 · Dv 0.08 · double-buffered · pure fragment math</span></span>
         <span class="hint">pure fragment math · zero SDF · 1 canvas</span>
+      </div>
+    </section>
+    <!-- IMPL: Interference Lace — 14 plane waves Schrödinger interference + thin-film iridescence (OPD) + velocity-grid persistence · single canvas 2D · no SDF/raymarch · 4s breath -->
+    <section id="lace-sec" class="lace-sec" aria-label="Interference Lace — Thin-Film Wave Superposition">
+      <div class="lace-head">
+        <span class="sec-num">00</span><h2>Interference Lace</h2>
+        <span class="lace-note"><b id="lace-mode">14 waves · lace veil</b> · OPD <b id="lace-opd">1.42 µm</b> · <span id="lace-caustic">moiré 0.71×</span> · click = warp · drag = shear</span>
+        <span class="lace-actions">
+          <button id="lace-shuffle" class="btn sm" type="button" aria-label="shuffle wave field">↻ shuffle</button>
+          <button id="lace-freeze" class="btn sm" type="button" aria-label="freeze motion">❚❚ freeze</button>
+        </span>
+      </div>
+      <div class="lace-canvas-wrap" id="lace-wrap">
+        <canvas id="lace" width="1200" height="160" aria-label="Interference Lace — thin-film wave superposition, 14 plane waves interfering, iridescent lace veils and moiré caustics breathe with time" role="img"></canvas>
+        <span class="lace-spec">◎ 14 plane waves · sin/cos superposition · |ψ|² · OPD iridescence · velocity glow</span>
+        <span class="lace-pulse" id="lace-pulse" aria-hidden="true"><i></i><span id="lace-pulse-label">lace 0.72×</span></span>
+      </div>
+      <div class="lace-meta">
+        <span class="mode">▸ <span id="lace-readout">14 waves · domain warped · OPD spectral · 132×40 grid</span></span>
+        <span class="hint">pure sin/cos · no SDF · no raymarch · 1 canvas · DPR≤2</span>
       </div>
     </section>
 
@@ -8001,6 +8043,372 @@ function startMonsoon(){
     io.observe(sec);
   }catch(_){}
   window.__turing={start,stop,get running(){return running}, inject, get F(){return curF}, get k(){return curK}, get health(){return healthSmooth}, get sim(){return {w:simW,h:simH}}};
+})();
+</script>
+<!-- IMPL: Interference Lace -->
+<script>
+/* <!-- IMPL: Interference Lace --> — 14 plane waves Schrödinger-style |ψ|² + thin-film OPD iridescence + domain warping + velocity-grid glow — single canvas 2D, no SDF/raymarch, 60fps iGPU */
+(function(){
+  'use strict';
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('lace-sec');
+  const cv=document.getElementById('lace');
+  const wrap=document.getElementById('lace-wrap');
+  if(!sec||!cv||!wrap) return;
+  const ctx=cv.getContext('2d',{alpha:false});
+  if(!ctx) return;
+  let dpr=Math.min(window.devicePixelRatio||1,2), cssW=0, cssH=0;
+  let simW=0, simH=0, N=0;
+  let off=null, offCtx=null, img=null;
+  let persist=null;
+  let raf=0, running=false, frozen=false, t=0;
+  const TAU=Math.PI*2;
+  // ---- 14 plane waves: Schrödinger-style complex superposition ----
+  const WAVE_N=14;
+  let waves=[];
+  function mkWaves(seed){
+    waves=[];
+    let rng=seed||0.73;
+    function rnd(){ rng=(rng*1664525+1013904223)>>>0; return (rng>>>8)/16777216; }
+    for(let i=0;i<WAVE_N;i++){
+      const ang = (i/WAVE_N)*TAU + (rnd()-0.5)*0.62;
+      const k = 2.8 + rnd()*5.2 + (i<4?1.2:0);
+      const kx = Math.cos(ang)*k;
+      const ky = Math.sin(ang)*k;
+      const omega = 0.52 + rnd()*0.95 + (i%3)*0.18;
+      const phase = rnd()*TAU;
+      const amp = 0.72 + rnd()*0.52;
+      const drift = (rnd()-0.5)*0.35;
+      waves.push({kx,ky,omega,phase,amp,drift});
+    }
+  }
+  mkWaves(Math.random());
+  // warp params — breathed with time
+  let warpA=0.17, warpB=0.11;
+  let shearX=0, shearY=0, shearTgtX=0, shearTgtY=0;
+  let lastProbe=0, health=0.64, healthS=0.64;
+  function alloc(w,h){
+    simW=w; simH=h; N=w*h;
+    off=document.createElement('canvas'); off.width=w; off.height=h;
+    offCtx=off.getContext('2d',{alpha:false});
+    img=offCtx.createImageData(w,h);
+    persist=new Float32Array(N);
+  }
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const r=wrap.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(r.width));
+    cssH=Math.max(1,Math.floor(r.height));
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+    const cols=Math.max(110, Math.min(200, Math.floor(cssW/6.2)));
+    const rows=Math.max(28, Math.min(44, Math.floor(cssH/4.1)));
+    if(simW!==cols||simH!==rows||!persist) alloc(cols,rows);
+  }
+  function isHidden(){
+    if(sec.hidden) return true;
+    if(sec.style.display==='none') return true;
+    if(document.hidden) return true;
+    const r=sec.getBoundingClientRect();
+    if(r.bottom<0||r.top>innerHeight+140) return true;
+    return false;
+  }
+  function start(){ if(running) return; if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; running=true; cancelAnimationFrame(raf); loop(); }
+  function stop(){ running=false; cancelAnimationFrame(raf); raf=0; }
+  function probeHealth(){
+    const now=performance.now();
+    if(now-lastProbe<700) return;
+    lastProbe=now;
+    let h=0.64, got=false;
+    try{
+      const vueApp=window.app || document.getElementById('app')?.__vue_app__ || null;
+      const proxy=vueApp && vueApp._instance && vueApp._instance.proxy;
+      if(proxy && Array.isArray(proxy.accounts) && proxy.accounts.length){
+        let sum=0, elig=0;
+        for(let i=0;i<proxy.accounts.length;i++){
+          const a=proxy.accounts[i];
+          const w=Math.max(0,Math.min(100, Math.max(a.five_hour_pct||0, a.seven_day_pct||0)));
+          sum+= (1 - w/100);
+          const dis=a.disabled||a.reauth_needed||!a.has_token||a.parked;
+          if(!dis && w<95) elig++;
+        }
+        const avg=sum/proxy.accounts.length;
+        const eligR=elig/proxy.accounts.length;
+        h= avg*0.60 + eligR*0.40;
+        got=true;
+        if(Array.isArray(proxy.keys) && proxy.keys.length){
+          let wk=0; for(const k of proxy.keys) if(k.status==='working') wk++;
+          h= h*0.70 + (wk/proxy.keys.length)*0.30;
+        }
+      }
+    }catch(_){}
+    if(got){ health=Math.max(0.08,Math.min(0.98,h)); }
+    else { health=0.56+Math.sin(now*0.00013)*0.14 + Math.cos(now*0.00007)*0.08; health=Math.max(0.12,Math.min(0.94,health)); }
+  }
+  // spectral palette — OPD iridescence via tri-cosine (pearl, not neon)
+  function spectral(opd){
+    // opd 0..1 loops ~1.35 cycles for rich but not frantic hue travel
+    const ph = opd * TAU * 1.35;
+    let r = 0.5 + 0.5*Math.cos(ph);
+    let g = 0.5 + 0.5*Math.cos(ph + 2.0943951);
+    let b = 0.5 + 0.5*Math.cos(ph + 4.1887902);
+    // pearl tonemap: lift darks, soften brights
+    r = Math.pow(r,0.78)*0.94+0.06;
+    g = Math.pow(g,0.78)*0.94+0.06;
+    b = Math.pow(b,0.78)*0.94+0.06;
+    // faint gold bias for thin-film warmth
+    r = r*0.98 + 0.02;
+    g = g*0.99 + 0.01;
+    return [r,g,b];
+  }
+  let frame=0;
+  let lastCaustic=0.5, lastOPD=0.45;
+  function renderFrame(){
+    const d=img.data;
+    const time = frozen ? frame*16.6 : performance.now();
+    const tb = time*0.001;
+    // breathe warp with health + time
+    const breath = 0.85 + 0.28*Math.sin(tb*0.62) + 0.12*Math.cos(tb*0.31);
+    const wa = (warpA + healthS*0.06)*breath;
+    const wb = (warpB + healthS*0.04)*breath*0.72;
+    const shearAmp = 0.08;
+    shearX += (shearTgtX - shearX)*0.045;
+    shearY += (shearTgtY - shearY)*0.045;
+    // wave drift nudge
+    const driftPhase = tb*0.22;
+    let maxProb=0, sumLum=0;
+    // precompute inv for domain mapping
+    const invW = 1/simW, invH = 1/simH;
+    const aspect = cssW/cssH;
+    for(let y=0;y<simH;y++){
+      const y01 = (y*invH -0.5)*2; // -1..1
+      for(let x=0;x<simW;x++){
+        const x01 = (x*invW -0.5)*2 * aspect;
+        // ---- domain warping ----
+        const wx = x01 + Math.sin(y01*2.22 + tb*0.52)*wa*0.52 + Math.cos(y01*1.68 - tb*0.31)*wb*0.38 + shearX*shearAmp;
+        const wy = y01 + Math.cos(x01*2.38 + tb*0.44)*wa*0.48 + Math.sin(x01*1.92 + tb*0.37)*wb*0.34 + shearY*shearAmp;
+        // second warp octave for lace filamentation
+        const w2 = 0.045*Math.sin(wx*3.8 + wy*2.1 + tb*0.72);
+        const wx2 = wx + w2;
+        const wy2 = wy + w2*0.62;
+        // ---- complex superposition: psi = sum amp*exp(i(k·r - ωt + φ)) ; prob = |psi|² ----
+        let sumR=0, sumI=0;
+        for(let i=0;i<WAVE_N;i++){
+          const wv=waves[i];
+          const kdot = wv.kx*wx2 + wv.ky*wy2;
+          const phi = kdot - wv.omega*tb + wv.phase + wv.drift*driftPhase + (i<2? shearX*0.14:0);
+          // slight non-linear warp for waves 0..3 to break symmetry
+          sumR += wv.amp * Math.cos(phi);
+          sumI += wv.amp * Math.sin(phi);
+        }
+        const prob = sumR*sumR + sumI*sumI;
+        if(prob>maxProb) maxProb=prob;
+        // normalize prob to 0..1 for display: prob scales ~ (sum amp)² ~ up to ~140, map via soft knee
+        const ampSum = 14.2; // approx sum amp
+        const norm = prob / (ampSum*ampSum*0.55);
+        const lin = 1 - Math.exp(-norm*2.2); // compress highlights, keep lace low contrast
+        // phase angle and OPD (optical path difference) — thin-film iridescence
+        const ang = Math.atan2(sumI, sumR); // -pi..pi
+        const ang01 = (ang/TAU + 0.5); // 0..1
+        let opd = (prob*0.013 + ang01*0.52 + wx*0.08 + wy*0.06*aspect) % 1;
+        if(opd<0) opd+=1;
+        if(opd>1) opd%=1;
+        // palette
+        const sp = spectral(opd*0.92 + lin*0.08);
+        // luminance envelope: need lace veils (mid prob) + caustics (high prob) + aurora membranes (gradient)
+        const veil = Math.pow(Math.max(0, lin*1.15 - 0.08), 0.88);
+        const caustic = Math.pow(Math.max(0, lin*1.45 - 0.62), 2.0);
+        // persistence (velocity-grid glow) — cheap light trail
+        const idx = y*simW + x;
+        const prev = persist[idx];
+        const glowIn = veil*0.42 + caustic*0.85;
+        const next = prev*0.84 + glowIn*0.34;
+        persist[idx]=next>1?1:next;
+        const glow = next*0.55;
+        // aurora membrane: slight vertical gradient veil based on wy (simulates thin film sag)
+        const sag = 0.5+0.5*Math.sin(wy*1.18 + tb*0.22);
+        const sagBoost = sag*0.08*veil;
+        // final
+        let r = sp[0]* (veil*0.88 + 0.06 + sagBoost) + caustic*0.96 + glow*0.42*sp[0];
+        let g = sp[1]* (veil*0.88 + 0.06 + sagBoost) + caustic*0.98 + glow*0.42*sp[1];
+        let b = sp[2]* (veil*0.90 + 0.06 + sagBoost) + caustic*1.00 + glow*0.42*sp[2];
+        // faint film thickness darkening for depth
+        const film = 0.94 + opd*0.06;
+        r*=film; g*=film; b*=film;
+        // base void absorption when veil low — let dark show through for lace holes
+        const hole = 1 - veil;
+        // add subtle cool void so lace floats on deep indigo, not black
+        const voidR = 0.04*hole, voidG=0.05*hole, voidB=0.11*hole;
+        r = r + voidR; g = g + voidG; b = b + voidB;
+        // film on glass highlight
+        r = Math.min(1, r); g=Math.min(1,g); b=Math.min(1,b);
+        // gamma approx
+        r = Math.pow(r, 0.94); g=Math.pow(g,0.94); b=Math.pow(b,0.94);
+        const j=idx*4;
+        d[j]= (r*255)|0;
+        d[j+1]=(g*255)|0;
+        d[j+2]=(b*255)|0;
+        d[j+3]=255;
+        sumLum += veil;
+        if((x=== (simW>>1) && y=== (simH>>1))){ lastOPD=opd; lastCaustic=caustic; }
+      }
+    }
+    offCtx.putImageData(img,0,0);
+    // composite to main with crisp upscale (no smoothing) then subtle bloom layer via additive
+    ctx.save(); ctx.scale(dpr,dpr);
+    ctx.imageSmoothingEnabled=false;
+    // slight fade of previous css canvas via dark veil before draw creates extra persistence at css scale
+    // we draw offscreen stretched; imageSmoothing false keeps lace crisp
+    ctx.globalCompositeOperation='source-over';
+    ctx.globalAlpha=1;
+    ctx.drawImage(off,0,0,cssW,cssH);
+    ctx.imageSmoothingEnabled=true;
+    // gentle vignette
+    const vg=ctx.createRadialGradient(cssW*0.5,cssH*0.5,0,cssW*0.5,cssH*0.5,Math.max(cssW,cssH)*0.88);
+    vg.addColorStop(0,'rgba(7,8,15,0)');
+    vg.addColorStop(0.62,'rgba(7,8,15,0)');
+    vg.addColorStop(1,'rgba(3,4,10,0.52)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,cssW,cssH);
+    // film sheen — faint diagonal pearlescent streak that breathes (cheap, adds thin-film read)
+    ctx.globalCompositeOperation='screen';
+    ctx.globalAlpha=0.06 + 0.03*Math.sin(tb*0.41);
+    const sheenH= cssH*0.55;
+    const sheenY= cssH*0.42 + Math.sin(tb*0.33)*cssH*0.12;
+    const sg=ctx.createLinearGradient(0,sheenY, cssW, sheenY+sheenH*0.35);
+    sg.addColorStop(0,'rgba(168,140,255,0)');
+    sg.addColorStop(0.38,'rgba(180,160,255,0.22)');
+    sg.addColorStop(0.52,'rgba(140,200,255,0.16)');
+    sg.addColorStop(0.68,'rgba(255,160,200,0.14)');
+    sg.addColorStop(1,'rgba(168,140,255,0)');
+    ctx.fillStyle=sg; ctx.fillRect(0,sheenY-cssH*0.18,cssW,cssH*0.36);
+    // hairline scan for lace texture
+    ctx.globalCompositeOperation='source-over';
+    ctx.globalAlpha=1;
+    ctx.fillStyle='rgba(168,140,255,0.015)';
+    for(let y=0;y<cssH;y+=3) ctx.fillRect(0,y,cssW,1);
+    ctx.restore();
+    // stats
+    lastCaustic = Math.min(1, lastCaustic*1.6);
+  }
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    if(!frozen) t += 16.6;
+    frame++;
+    if(frame%2===0) probeHealth();
+    healthS += (health - healthS)*0.02;
+    renderFrame();
+    if(frame%18===0){
+      const modeEl=document.getElementById('lace-mode');
+      const opdEl=document.getElementById('lace-opd');
+      const caustEl=document.getElementById('lace-caustic');
+      const pulseEl=document.getElementById('lace-pulse-label');
+      const readEl=document.getElementById('lace-readout');
+      const veilLabel = healthS>0.62? 'lace veil' : healthS>0.36? 'aurora membrane' : 'moiré caustic';
+      if(modeEl) modeEl.textContent= WAVE_N+' waves · '+veilLabel;
+      if(opdEl) opdEl.textContent= (0.92 + lastOPD*0.88).toFixed(2)+' µm';
+      if(caustEl) caustEl.textContent='moiré '+(0.42 + lastCaustic*0.86).toFixed(2)+'×';
+      if(pulseEl) pulseEl.textContent='lace '+(0.52+healthS*0.48).toFixed(2)+'×';
+      if(readEl) readEl.textContent= WAVE_N+' waves · domain warped · OPD spectral · '+simW+'×'+simH+' grid · '+(frozen?'frozen':'breathing');
+    }
+    raf=requestAnimationFrame(loop);
+  }
+  // interactions — click warps / drag shears field
+  function pos01(e){
+    const r=cv.getBoundingClientRect();
+    return [Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)), Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))];
+  }
+  let dragging=false, lastPos=null;
+  cv.addEventListener('pointerdown', e=>{
+    dragging=true; cv.setPointerCapture(e.pointerId);
+    const [x,y]=pos01(e);
+    shearTgtX += (x-0.5)*1.8;
+    shearTgtY += (y-0.5)*1.2;
+    // warp burst — shove 3 waves
+    for(let i=0;i<3;i++){ const w=waves[i*4|0]; w.phase += (x-0.5)*2.1 + (y-0.5)*1.4; w.drift += (Math.random()-0.5)*0.25; }
+    warpA = Math.min(0.42, warpA+0.08); setTimeout(()=>{ warpA=Math.max(0.12, warpA-0.06); }, 420);
+    cv.style.filter='brightness(1.10)'; setTimeout(()=>cv.style.filter='',180);
+    lastPos=[x,y];
+    // decay shear back
+    setTimeout(()=>{ shearTgtX*=0.42; shearTgtY*=0.42; }, 900);
+  });
+  cv.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const [x,y]=pos01(e);
+    if(lastPos){
+      const dx=x-lastPos[0], dy=y-lastPos[1];
+      shearTgtX += dx*3.2;
+      shearTgtY += dy*3.2;
+      shearTgtX=Math.max(-1.2,Math.min(1.2,shearTgtX));
+      shearTgtY=Math.max(-1.2,Math.min(1.2,shearTgtY));
+    }
+    lastPos=[x,y];
+  });
+  cv.addEventListener('pointerup', e=>{
+    dragging=false; lastPos=null;
+    try{ cv.releasePointerCapture(e.pointerId);}catch(_){}
+    setTimeout(()=>{ shearTgtX*=0.55; shearTgtY*=0.55; }, 220);
+  });
+  cv.addEventListener('pointercancel', ()=>{ dragging=false; lastPos=null; });
+  cv.addEventListener('pointerleave', ()=>{ if(!dragging) lastPos=null; });
+  wrap.addEventListener('wheel', e=>{
+    e.preventDefault();
+    const d=Math.sign(e.deltaY);
+    warpA=Math.max(0.08,Math.min(0.42, warpA - d*0.02));
+    warpB=Math.max(0.06,Math.min(0.28, warpB - d*0.012));
+  }, {passive:false});
+  document.getElementById('lace-shuffle')?.addEventListener('click', ()=>{
+    mkWaves(Math.random());
+    persist.fill(0);
+    shearTgtX=(Math.random()-0.5)*0.9; shearTgtY=(Math.random()-0.5)*0.6;
+    warpA=0.14+Math.random()*0.12;
+    cv.style.filter='brightness(1.14)'; setTimeout(()=>cv.style.filter='',200);
+  });
+  document.getElementById('lace-freeze')?.addEventListener('click', function(){
+    frozen=!frozen;
+    this.textContent = frozen ? '▶ thaw' : '❚❚ freeze';
+    this.setAttribute('aria-label', frozen ? 'thaw motion' : 'freeze motion');
+    cv.style.filter='brightness(1.08)'; setTimeout(()=>cv.style.filter='',160);
+  });
+  // 401 fracture-like nudge — reuse fetch hook pattern
+  (function hookFetch(){
+    const orig=window.fetch;
+    if(!orig||orig.__laceHooked) return;
+    const hooked=function(input,init){
+      const p=orig.apply(this,arguments);
+      p.then(res=>{
+        try{
+          const url= typeof input==='string'?input:(input&&input.url)||'';
+          if(res && res.status===401){
+            health=Math.max(0.08, health-0.18);
+            warpA=Math.min(0.42, warpA+0.10);
+            shearTgtX+=(Math.random()-0.5)*1.2; shearTgtY+=(Math.random()-0.5)*0.9;
+            for(let k=0;k<3;k++) setTimeout(()=>{ const w=waves[(Math.random()*WAVE_N)|0]; w.phase+= (Math.random()-0.5)*2.2; }, k*70);
+            setTimeout(()=>{ warpA=Math.max(0.12, warpA-0.08); shearTgtX*=0.35; shearTgtY*=0.35; }, 1100);
+          }
+          if(url.includes('/api/keys') && res && res.ok){ health=Math.min(0.96, health+0.07); }
+        }catch(_){}
+      }).catch(()=>{});
+      return p;
+    };
+    hooked.__laceHooked=true;
+    try{ window.fetch=hooked; window.fetch.__laceHooked=true; }catch(_){}
+  })();
+  // init
+  resize(); start();
+  window.addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) return; if(!running) start(); });
+  try{
+    const mq=window.matchMedia('(prefers-reduced-motion: reduce)');
+    mq.addEventListener('change', e=>{ if(e.matches) stop(); else start(); });
+  }catch(_){}
+  try{
+    const io=new IntersectionObserver(ents=>{ for(const en of ents) if(en.target===sec && en.isIntersecting) start(); },{threshold:0});
+    io.observe(sec);
+  }catch(_){}
+  window.__lace={start,stop,get running(){return running && !frozen}, shuffle:()=>{mkWaves(Math.random()); persist.fill(0);}, get waves(){return waves.length}, get sim(){return {w:simW,h:simH}}};
 })();
 </script>
 <!-- IMPL: Ghost Fleet -->
