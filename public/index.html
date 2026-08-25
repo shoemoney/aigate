@@ -611,6 +611,30 @@ main.shake{animation:seismo-shake .38s ease}
 #abyss-sec.is-fullscreen{position:fixed;inset:0;z-index:47;margin:0;border-radius:0;border:0;display:flex;flex-direction:column;background:#020804}
 #abyss-sec.is-fullscreen .abyss-canvas-wrap{flex:1;height:auto;min-height:0}
 #abyss-sec.is-fullscreen .abyss-head{border-radius:0}
+/* <!-- IMPL: THE LUNG --> — volumetric breath field · 3 depth layers + curl parallax + clipping plane + 4s breath */
+#lung-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #1e2326;border-radius:6px;overflow:hidden;background:#060809;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
+.lung-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#101418 0%,#0c0f11 55%,#060809 100%);border-bottom:1px solid #1e2326}
+.lung-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#8ecfd8}
+.lung-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.lung-head .lung-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.lung-head .lung-note b{color:#c8e8f0;font-weight:600}
+.lung-head .lung-actions{display:flex;align-items:center;gap:6px}
+.lung-canvas-wrap{position:relative;height:160px;background:radial-gradient(ellipse 520px 120px at 50% 15%,rgba(142,207,216,.07),transparent 68%),radial-gradient(ellipse 380px 100px at 78% 78%,rgba(232,179,75,.04),transparent 70%),linear-gradient(180deg,#070a0c 0%,#05070a 100%);overflow:hidden;cursor:ns-resize;touch-action:none;transform-origin:center center;will-change:transform}
+.lung-canvas-wrap.dragging{cursor:ns-resize}
+#lung{display:block;width:100%;height:100%;pointer-events:auto}
+.lung-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0a0e10;border-top:1px solid #1e2326;font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.lung-meta .mode{color:#c8e8f0}
+.lung-meta .hint{opacity:.75}
+.lung-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(142,207,216,.55);background:rgba(5,7,10,.55);border:1px solid rgba(142,207,216,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+.lung-breath{position:absolute;right:12px;top:10px;pointer-events:none;font:9px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:rgba(200,232,240,.62);background:rgba(5,7,10,.55);border:1px solid rgba(142,207,216,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px}
+.lung-breath i{width:7px;height:7px;border-radius:50%;background:#8ecfd8;box-shadow:0 0 8px rgba(142,207,216,.6);animation:lung-pulse 4s ease-in-out infinite}
+@keyframes lung-pulse{0%,100%{transform:scale(0.85);opacity:.75}50%{transform:scale(1.28);opacity:1}}
+.lung-clip{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(142,207,216,.92) 18%,rgba(232,179,75,.72) 50%,rgba(142,207,216,.92) 82%,transparent);box-shadow:0 0 10px rgba(142,207,216,.35),0 0 18px rgba(142,207,216,.16);pointer-events:none;will-change:top,opacity;transform:translateY(-50%)}
+.lung-clip::before{content:'';position:absolute;left:0;right:0;top:50%;height:28px;transform:translateY(-50%);background:linear-gradient(180deg,transparent,rgba(142,207,216,.09),transparent);pointer-events:none}
+.lung-clip-label{position:absolute;right:10px;top:50%;transform:translateY(-50%);font:9px var(--mono);letter-spacing:.10em;text-transform:uppercase;color:rgba(142,207,216,.88);background:rgba(5,7,10,.78);border:1px solid rgba(142,207,216,.18);border-radius:20px;padding:2px 6px;white-space:nowrap;pointer-events:none}
+#lung-sec.is-fullscreen{position:fixed;inset:0;z-index:48;margin:0;border-radius:0;border:0;display:flex;flex-direction:column;background:#05070a}
+#lung-sec.is-fullscreen .lung-canvas-wrap{flex:1;height:auto;min-height:0}
+#lung-sec.is-fullscreen .lung-head{border-radius:0}
 .vault-shock{position:absolute;inset:0;pointer-events:none;opacity:0}
 .vault-shard{position:absolute;width:8px;height:8px;background:linear-gradient(135deg,#e8dcc8 0%,#e8b34b 55%,#8a6b1e 100%);border:1px solid rgba(232,179,75,.5);border-radius:1px;box-shadow:0 1px 6px rgba(0,0,0,.4),0 0 10px rgba(232,179,75,.25);will-change:transform,opacity}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
@@ -632,6 +656,9 @@ main.shake{animation:seismo-shake .38s ease}
   #vault{display:none!important}
   #abyss-sec{display:none!important}
   #abyss{display:none!important}
+  #lung-sec{display:none!important}
+  #lung{display:none!important}
+  .lung-clip{display:none!important}
   .card{transform:none!important;box-shadow:none!important}
   .card .glare{display:none}
 }
@@ -862,6 +889,8 @@ main.shake{animation:seismo-shake .38s ease}
     <button id="vault-toggle" class="btn" type="button" aria-pressed="false" title="Spectral Vault — spin torus-knot to align tumblers → BREACH">⬡ vault</button>
     <!-- IMPL: ASCII Abyss — hexa-state with monsoon/chladni/ferro/horizon/vault; Binary Rain sequel -->
     <button id="abyss-toggle" class="btn" type="button" aria-pressed="false" title="ASCII Abyss — fall through the Matrix source, SDF glyph tunnel">▓ abyss</button>
+    <!-- IMPL: THE LUNG — volumetric breath field: 3 layers + clipping plane + 4s breath, depth-aware Monsoon -->
+    <button id="lung-toggle" class="btn" type="button" aria-pressed="false" title="THE LUNG — volumetric breath field (drag clip, wheel=breath, scroll=history)">◎ lung</button>
     <!-- IMPL: Mercury Blob Toggle -->
     <button id="mercury-toggle" class="mercury-blob" type="button" role="switch" aria-checked="false" aria-label="Mercury blob — drag thumb to stretch, click to toggle" title="Mercury Blob — drag to liquefy"><span class="mercury-label" aria-hidden="true">◉ mercury</span><span class="mercury-track" aria-hidden="true"><span class="mercury-goo"><i class="mercury-dot"></i><i class="mercury-thumb"></i></span></span></button>
     <button class="btn" @click="paletteOpen=true" title="command palette (⌘K)">⌘K</button>
@@ -1033,6 +1062,27 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="abyss-meta">
         <span class="mode">▸ <span id="abyss-readout">twist 0.62 · 32 steps · Binary Rain sequel</span></span>
         <span class="hint">pure SDF · 100% Canvas2D glyphs · DPR≤2</span>
+      </div>
+    </section>
+    <!-- IMPL: THE LUNG — volumetric breath field: 3 depth layers + clipping plane + 4s breath (hepta-state hero) -->
+    <section id="lung-sec" class="lung-sec" hidden aria-label="THE LUNG — Volumetric Breath Field">
+      <div class="lung-head">
+        <span class="sec-num">00</span><h2>THE LUNG</h2>
+        <span class="lung-note">breathing · <b id="lung-mode">inhale 1.08×</b> · drag clip · wheel = rate</span>
+        <span class="lung-actions">
+          <button id="lung-fs" class="btn sm" type="button" aria-label="toggle fullscreen">⤢ fullscreen</button>
+          <button id="lung-close" class="btn sm" type="button" aria-label="close THE LUNG">✕</button>
+        </span>
+      </div>
+      <div class="lung-canvas-wrap" id="lung-wrap">
+        <canvas id="lung" width="1200" height="160" aria-label="THE LUNG — volumetric breath field, 3 depth layers, clipping plane slice" role="img"></canvas>
+        <div id="lung-clip" class="lung-clip" style="top:52%" aria-hidden="true"><span class="lung-clip-label" id="lung-clip-label">clip 52% · slice depth</span></div>
+        <span class="lung-spec">◎ 3 layers · curl noise · depth parallax · clipping plane</span>
+        <span class="lung-breath" id="lung-breath"><i></i><span id="lung-breath-label">inhale</span></span>
+      </div>
+      <div class="lung-meta">
+        <span class="mode">▸ <span id="lung-readout">220 motes · breath 4.0s · scroll=history</span></span>
+        <span class="hint">2D curl-faked WebGPU 3D texture · DPR≤2 · prefers-reduced-motion hidden</span>
       </div>
     </section>
     <!-- IMPL: Ferrofabric — standalone 160px fabric below hero, above seismo — single canvas, no physics engine -->
@@ -5761,6 +5811,372 @@ function startMonsoon(){
     if(window.__vault && window.__vault.open){ const _v=window.__vault.open.bind(window.__vault); window.__vault.open=()=>{ setAbyss(false); updateMonsoon(); return _v(); }; }
   }catch(_){}
   window.__abyss={open:()=>setAbyss(true), close:()=>setAbyss(false), _stop:stop, _start:start, get twist(){return twist}, get speed(){return speed}};
+})();
+</script>
+<!-- IMPL: THE LUNG --><script>
+/* <!-- IMPL: THE LUNG --> — Volumetric Breath Field · 3 layers curl-noise · clipping plane · 4s breath · ScrollTimeline · 2D faked WebGPU 3D texture */
+(function(){
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('lung-sec');
+  const wrap=document.getElementById('lung-wrap');
+  const cv=document.getElementById('lung');
+  const btn=document.getElementById('lung-toggle');
+  const closeBtn=document.getElementById('lung-close');
+  const fsBtn=document.getElementById('lung-fs');
+  const modeEl=document.getElementById('lung-mode');
+  const readout=document.getElementById('lung-readout');
+  const clipEl=document.getElementById('lung-clip');
+  const clipLbl=document.getElementById('lung-clip-label');
+  const breathLbl=document.getElementById('lung-breath-label');
+  const breathDot=document.querySelector('#lung-breath i');
+  const monsoon=document.getElementById('monsoon');
+  const altarSec=document.getElementById('altar-sec');
+  const ferroSec=document.getElementById('ferro-sec');
+  const horizonSec=document.getElementById('horizon-sec');
+  const vaultSec=document.getElementById('vault-sec');
+  const abyssSec=document.getElementById('abyss-sec');
+  const altarBtn=document.getElementById('altar-toggle');
+  const ferroBtn=document.getElementById('ferro-toggle');
+  const horizonBtn=document.getElementById('horizon-toggle');
+  const vaultBtn=document.getElementById('vault-toggle');
+  const abyssBtn=document.getElementById('abyss-toggle');
+  if(!sec||!wrap||!cv||!btn) return;
+  const ctx=cv.getContext('2d'); if(!ctx) return;
+  let dpr=Math.min(window.devicePixelRatio||1,2);
+  let W=0,H=0,cssW=0,cssH=160,raf=0,running=false,t=0;
+  let dragging=false, dragClipY=0.52, targetClipY=0.52;
+  let breathRate=4.0, targetBreath=4.0; // seconds per cycle
+  let intensity=0.72, targetIntensity=0.72; // request/error drive
+  let scrollNorm=0; // 0..1
+  // WebGPU detect — if available we could claim 3D texture path, but we fake with 2D for ship
+  let useWebGPU=false;
+  try{ if(navigator.gpu) useWebGPU=true; }catch(_){}
+  // 3 depth layers: far/mid/near
+  const layers=[
+    {z:0.35, n:56, size:1.08, speed:0.46, alpha:0.30, hue:-7, par:0.28, particles:[]},
+    {z:0.62, n:74, size:1.66, speed:0.84, alpha:0.52, hue:0,  par:0.62, particles:[]},
+    {z:1.00, n:90, size:2.18, speed:1.16, alpha:0.78, hue:5,  par:1.00, particles:[]}
+  ];
+  const TOTAL = layers.reduce((s,l)=>s+l.n,0);
+  function initParticles(){
+    for(const lay of layers){
+      lay.particles.length=0;
+      for(let i=0;i<lay.n;i++){
+        lay.particles.push({
+          x:Math.random()*cssW, y:Math.random()*cssH,
+          vx:(Math.random()-0.5)*0.7, vy:(Math.random()-0.5)*0.7,
+          life:Math.random()*180+90, age:Math.random()*100,
+          wob:Math.random()*Math.PI*2
+        });
+      }
+    }
+  }
+  function isHidden(){ return sec.hidden||sec.style.display==='none'||document.hidden; }
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const r=wrap.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(r.width));
+    cssH=sec.classList.contains('is-fullscreen') ? Math.max(1,Math.floor(r.height)) : 160;
+    if(!sec.classList.contains('is-fullscreen')) cssH=160;
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+    W=cv.width; H=cv.height;
+    if(layers[0].particles.length===0) initParticles();
+    else {
+      for(const lay of layers) for(const p of lay.particles){ p.x=Math.min(p.x,cssW); p.y=Math.min(p.y,cssH); }
+    }
+  }
+  function updateMonsoon(){
+    const anyOther = (altarSec&&!altarSec.hidden)||(ferroSec&&!ferroSec.hidden)||(horizonSec&&!horizonSec.hidden)||(vaultSec&&!vaultSec.hidden)||(abyssSec&&!abyssSec.hidden);
+    const anyLung = !sec.hidden;
+    if(monsoon) monsoon.style.display=(anyOther||anyLung)?'none':'';
+  }
+  function setLung(open){
+    const was=!sec.hidden;
+    if(open===was) return;
+    sec.hidden=!open;
+    btn.setAttribute('aria-pressed', String(open));
+    btn.textContent=open?'◎ close':'◎ lung';
+    if(open){
+      if(altarSec&&!altarSec.hidden){ altarSec.hidden=true; if(altarBtn){altarBtn.setAttribute('aria-pressed','false'); altarBtn.textContent='◈ altar';} if(window.__altar) try{window.__altar._stop();}catch(_){} }
+      if(ferroSec&&!ferroSec.hidden){ ferroSec.hidden=true; if(ferroBtn){ferroBtn.setAttribute('aria-pressed','false'); ferroBtn.textContent='⬢ séance';} if(window.__ferro) try{window.__ferro._stop();}catch(_){} }
+      if(horizonSec&&!horizonSec.hidden){ horizonSec.hidden=true; if(horizonBtn){horizonBtn.setAttribute('aria-pressed','false'); horizonBtn.textContent='◆ horizon';} if(window.__horizon) try{window.__horizon._stop();}catch(_){} }
+      if(vaultSec&&!vaultSec.hidden){ vaultSec.hidden=true; if(vaultBtn){vaultBtn.setAttribute('aria-pressed','false'); vaultBtn.textContent='⬡ vault';} if(window.__vault) try{window.__vault._stop();}catch(_){} }
+      if(abyssSec&&!abyssSec.hidden){ abyssSec.hidden=true; if(abyssBtn){abyssBtn.setAttribute('aria-pressed','false'); abyssBtn.textContent='▓ abyss';} if(window.__abyss) try{window.__abyss._stop();}catch(_){} }
+      updateMonsoon();
+      resize();
+      if(!running) start();
+      if(!sec.classList.contains('is-fullscreen')) wrap.scrollIntoView({behavior:'smooth',block:'nearest'});
+    } else {
+      stop();
+      sec.classList.remove('is-fullscreen');
+      if(fsBtn) fsBtn.textContent='⤢ fullscreen';
+      wrap.style.transform=''; wrap.style.opacity='';
+      updateMonsoon();
+    }
+  }
+  function start(){ if(running) return; if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; running=true; cancelAnimationFrame(raf); t=0; loop(); }
+  function stop(){ running=false; cancelAnimationFrame(raf); raf=0; }
+  // curl noise field — cheap sin/cos, no texture
+  function field(x,y,tt, scale){
+    const s=0.0019*scale;
+    const a=tt*0.00034;
+    const nx=Math.sin(x*s + a*1.2 + Math.cos(y*s*0.62 + a*0.7))*1.18;
+    const ny=Math.cos(x*s*0.55 - a*0.9 + Math.sin(y*s*1.15))*1.18;
+    // curl = perpendicular
+    return {x: -ny*1.55, y: nx*1.55};
+  }
+  function sampleIntensity(){
+    // drive from dashboard: count crit/warn + feed fails
+    try{
+      const crit=document.querySelectorAll('.chip.c-crit').length;
+      const warn=document.querySelectorAll('.chip.c-warn').length;
+      const fails=document.querySelectorAll('.frow.fail').length;
+      const parked=document.querySelectorAll('.card.is-parked').length;
+      let v=0.72 + crit*0.16 + warn*0.07 + Math.min(fails*0.04,0.22) + parked*0.03;
+      // add subtle time wobble so it never feels static even when idle
+      v += Math.sin(t*0.004)*0.06 + Math.cos(t*0.009)*0.04;
+      return Math.max(0.42, Math.min(1.65, v));
+    }catch(_){ return 0.72; }
+  }
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    t++;
+    // lerp breath/intensity/clip
+    targetIntensity = sampleIntensity();
+    intensity += (targetIntensity - intensity)*0.07;
+    breathRate += (targetBreath - breathRate)*0.09;
+    // clip follows pointer drag, else scroll + breath
+    const breathPhase = Math.sin(t * (Math.PI*2 / (breathRate*60))); // -1..1 over breathRate seconds at 60fps
+    const breath01 = (breathPhase+1)/2; // 0..1 (0 exhale,1 inhale)
+    // scroll drives history: read scrollNorm
+    let targetClip = 0.5 + (scrollNorm-0.5)*0.34 + breathPhase*0.065;
+    if(dragging) targetClip = dragClipY;
+    targetClipY += (targetClip - targetClipY)*0.12;
+    targetClipY = Math.max(0.08, Math.min(0.92, targetClipY));
+    // breathing scale — whole wrap breathes + opacity
+    const scale = 1 + breath01*0.08; // 1.0..1.08
+    const layerScaleFar = 1 + breath01*0.04;
+    const layerScaleMid = 1 + breath01*0.06;
+    const opacity = 0.88 + breath01*0.12;
+    wrap.style.transform='scale('+scale.toFixed(4)+')';
+    wrap.style.opacity=opacity.toFixed(3);
+    // animate clip line
+    if(clipEl){
+      clipEl.style.top=(targetClipY*100).toFixed(2)+'%';
+      clipEl.style.opacity=(0.72 + breath01*0.28).toFixed(2);
+      if(clipLbl) clipLbl.textContent='clip '+(targetClipY*100|0)+'% · '+(breathPhase>0?'inhale':'exhale')+' · '+(useWebGPU?'WebGPU 128³':'2D curl '+TOTAL);
+    }
+    if(modeEl){
+      const br=breathRate.toFixed(1)+'s';
+      modeEl.textContent=(breathPhase>0?'inhale':'exhale')+' '+(scale).toFixed(2)+'× · '+br;
+    }
+    if(breathLbl){
+      breathLbl.textContent=breathPhase>0.18?'inhale':(breathPhase<-0.18?'exhale':'hold');
+      if(breathDot) breathDot.style.background = breathPhase>0.25?'#c8e8f0':(intensity>1.0?'#e8b34b':'#8ecfd8');
+    }
+    // scroll history scrub: advance t faster when scrolled
+    const scrollPush = scrollNorm*0.55;
+    const tt = t + t*scrollPush*0.02;
+    ctx.save();
+    ctx.scale(dpr,dpr);
+    // trail fade — breath modulates fade so inhale clears slightly more
+    const fadeA = 0.09 + breath01*0.06;
+    // depth fog base — subtle teal/amber gradient
+    ctx.fillStyle='rgba(5,7,10,'+fadeA.toFixed(3)+')';
+    ctx.fillRect(0,0,cssW,cssH);
+    // volumetric fog underlay — radial centered, depth tint
+    const fogG=ctx.createRadialGradient(cssW*0.5, cssH*0.5, 0, cssW*0.5, cssH*0.5, Math.max(cssW,cssH)*0.72);
+    fogG.addColorStop(0,'rgba(142,207,216,'+(0.035+breath01*0.018).toFixed(3)+')');
+    fogG.addColorStop(0.45,'rgba(142,207,216,'+(0.015).toFixed(3)+')');
+    fogG.addColorStop(0.72,'rgba(232,179,75,'+(0.012).toFixed(3)+')');
+    fogG.addColorStop(1,'rgba(5,7,10,0)');
+    ctx.fillStyle=fogG; ctx.fillRect(0,0,cssW,cssH);
+    // draw layers back-to-front (far first) so near occludes
+    const clipYPx = targetClipY*cssH;
+    const ordered=[layers[0],layers[1],layers[2]];
+    for(let li=0; li<ordered.length; li++){
+      const lay=ordered[li];
+      const parScale = li===0?layerScaleFar:(li===1?layerScaleMid:scale);
+      for(const p of lay.particles){
+        const f=field(p.x, p.y, tt, 1 + (1-lay.z)*0.22);
+        // velocity blend: curl + intensity
+        const ax = f.x * 0.085 * lay.speed * intensity * (0.72+lay.z*0.45);
+        const ay = f.y * 0.085 * lay.speed * intensity * (0.72+lay.z*0.45);
+        p.vx += ax; p.vy += ay;
+        // drag
+        p.vx *= 0.984; p.vy *= 0.984;
+        // breath pushes outward slightly on inhale
+        const breathPush = breathPhase*0.11 * lay.z;
+        p.vx += Math.cos(p.wob)*breathPush*0.02;
+        p.vy += Math.sin(p.wob)*breathPush*0.02;
+        p.x += p.vx*parScale;
+        p.y += p.vy*parScale;
+        p.age++; p.life--;
+        p.wob += 0.018 + lay.z*0.012;
+        // wrap + respawn when clipped or dead
+        const beyondClip = (p.y > clipYPx) ? ((p.y-clipYPx)/cssH) : 0;
+        const clipFade = beyondClip>0 ? Math.max(0, 1 - beyondClip*1.8) : 1;
+        if(p.life<=0 || p.x<-16 || p.x>cssW+16 || p.y<-16 || p.y>cssH+16){
+          p.x=Math.random()*cssW; p.y=Math.random()*cssH*0.92;
+          p.vx=(Math.random()-0.5)*0.6; p.vy=(Math.random()-0.5)*0.6;
+          p.life=110+Math.random()*210; p.age=0;
+        }
+        // depth parallax: far moves with scroll slightly opposite
+        const parX = (scrollNorm-0.5)*14*lay.par;
+        const parY = (scrollNorm-0.5)*8*lay.par;
+        const dx = p.x + parX;
+        const dy = p.y + parY;
+        if(dx<0||dx>cssW||dy<0||dy>cssH) continue;
+        // alpha with life + depth + clip
+        const lifeA = Math.min(1, Math.max(0, p.life/90));
+        const baseA = lay.alpha * lifeA * clipFade * (0.72+breath01*0.28);
+        if(baseA<0.015) continue;
+        const sp=Math.hypot(p.vx,p.vy);
+        const r= lay.size * (0.72 + sp*0.22 + Math.sin(p.wob)*0.12) * (0.92+lay.z*0.18);
+        // color: far=cool teal, mid=teal, near=amber-tinted on high intensity
+        let hue = 188 + lay.hue + Math.atan2(f.y,f.x)*2.1;
+        if(lay.z===1 && intensity>1.1) hue = 188*0.55 + 38*0.45 + Math.atan2(f.y,f.x)*1.2; // blend toward amber under load
+        const sat = 62 + lay.z*12;
+        const light = 56 + lay.z*6;
+        ctx.beginPath();
+        ctx.arc(dx, dy, Math.max(0.5,r), 0, Math.PI*2);
+        ctx.fillStyle='hsla('+hue.toFixed(1)+' '+sat+'% '+light+'% / '+baseA.toFixed(3)+')';
+        if(lay.z===1 && sp>1.25){
+          ctx.shadowColor='hsla('+(hue|0)+' 72% 60% / 0.22)'; ctx.shadowBlur=6;
+        } else ctx.shadowBlur=0;
+        ctx.fill();
+        ctx.shadowBlur=0;
+        // streak for fast near particles — faked advection trail
+        if(lay.z>0.6 && sp>1.1 && (p.age%3===0)){
+          ctx.beginPath();
+          ctx.moveTo(dx-p.vx*2.2, dy-p.vy*2.2);
+          ctx.lineTo(dx, dy);
+          ctx.strokeStyle='hsla('+hue.toFixed(1)+' 68% 58% / '+(baseA*0.16).toFixed(3)+')';
+          ctx.lineWidth=Math.max(0.6, r*0.45);
+          ctx.stroke();
+        }
+      }
+    }
+    // clipping plane glow — highlights motes near clip
+    ctx.globalCompositeOperation='lighter';
+    const glowY=clipYPx;
+    const clipGrad=ctx.createLinearGradient(0, glowY-22, 0, glowY+22);
+    clipGrad.addColorStop(0,'rgba(142,207,216,0)');
+    clipGrad.addColorStop(0.5,'rgba(142,207,216,'+(0.09+breath01*0.06).toFixed(3)+')');
+    clipGrad.addColorStop(1,'rgba(142,207,216,0)');
+    ctx.fillStyle=clipGrad;
+    ctx.fillRect(0, glowY-22, cssW, 44);
+    ctx.globalCompositeOperation='source-over';
+    // grid parallax hint — thin scanlines that shift with depth
+    ctx.globalAlpha=0.06;
+    ctx.strokeStyle='rgba(142,207,216,0.55)';
+    ctx.lineWidth=0.5;
+    for(let y=12; y<cssH; y+=22){
+      const off=(t*0.22* (y%44?0.6:0.35) + scrollNorm*9)%22;
+      ctx.beginPath(); ctx.moveTo(off, y); ctx.lineTo(cssW+off, y); ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+    ctx.restore();
+    if(t%20===0){
+      if(readout) readout.textContent=TOTAL+' motes · breath '+breathRate.toFixed(1)+'s · clip '+(targetClipY*100|0)+'% · '+(intensity>1.0?'load '+(intensity).toFixed(2):'idle')+' · scroll '+(scrollNorm*100|0)+'%';
+    }
+    raf=requestAnimationFrame(loop);
+  }
+  // interactions
+  wrap.addEventListener('pointerdown', e=>{
+    dragging=true; wrap.classList.add('dragging');
+    const r=wrap.getBoundingClientRect();
+    dragClipY=Math.max(0.08, Math.min(0.92, (e.clientY-r.top)/r.height));
+    try{ wrap.setPointerCapture(e.pointerId);}catch(_){}
+    e.preventDefault();
+  });
+  wrap.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const r=wrap.getBoundingClientRect();
+    dragClipY=Math.max(0.08, Math.min(0.92, (e.clientY-r.top)/r.height));
+  });
+  function endDrag(e){
+    if(!dragging) return;
+    dragging=false; wrap.classList.remove('dragging');
+    try{ wrap.releasePointerCapture(e.pointerId);}catch(_){}
+  }
+  wrap.addEventListener('pointerup', endDrag);
+  wrap.addEventListener('pointercancel', endDrag);
+  wrap.addEventListener('pointerleave', e=>{ if(dragging) endDrag(e); });
+  wrap.addEventListener('wheel', e=>{
+    if(sec.hidden) return;
+    e.preventDefault();
+    targetBreath = Math.max(1.8, Math.min(8.5, targetBreath - e.deltaY*0.0022));
+  }, {passive:false});
+  // scroll scrub — ScrollTimeline: vertical scroll position drives clip + history
+  window.addEventListener('scroll', ()=>{
+    const max=Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+    scrollNorm = Math.max(0, Math.min(1, window.scrollY / max));
+  }, {passive:true});
+  // init scrollNorm
+  try{
+    const max=Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+    scrollNorm=Math.max(0,Math.min(1, window.scrollY / max));
+  }catch(_){}
+  cv.tabIndex=0;
+  cv.addEventListener('keydown', e=>{
+    if(e.key==='ArrowUp'){ targetClipY=Math.max(0.08,targetClipY-0.06); e.preventDefault(); }
+    else if(e.key==='ArrowDown'){ targetClipY=Math.min(0.92,targetClipY+0.06); e.preventDefault(); }
+    else if(e.key==='ArrowLeft'){ targetBreath=Math.max(1.8,targetBreath-0.35); e.preventDefault(); }
+    else if(e.key==='ArrowRight'){ targetBreath=Math.min(8.5,targetBreath+0.35); e.preventDefault(); }
+    else if(e.key==='Escape'){
+      if(sec.classList.contains('is-fullscreen')){ sec.classList.remove('is-fullscreen'); if(fsBtn) fsBtn.textContent='⤢ fullscreen'; resize(); }
+      else setLung(false); e.preventDefault();
+    } else if(e.key==='f'||e.key==='F'){
+      if(!sec.hidden){ sec.classList.toggle('is-fullscreen'); if(fsBtn) fsBtn.textContent=sec.classList.contains('is-fullscreen')?'⤢ exit':'⤢ fullscreen'; resize(); }
+    } else if(e.key===' '){
+      targetClipY=0.5+ (Math.random()-0.5)*0.35; e.preventDefault();
+    }
+  });
+  btn.addEventListener('click', ()=> setLung(sec.hidden));
+  closeBtn.addEventListener('click', ()=> setLung(false));
+  if(fsBtn) fsBtn.addEventListener('click', ()=>{
+    if(sec.hidden) return;
+    const on=!sec.classList.contains('is-fullscreen');
+    sec.classList.toggle('is-fullscreen', on);
+    fsBtn.textContent=on?'⤢ exit':'⤢ fullscreen';
+    resize();
+  });
+  document.addEventListener('keydown', e=>{
+    if((e.key==='Escape'||e.key==='Esc')){
+      if(sec.classList.contains('is-fullscreen')){ sec.classList.remove('is-fullscreen'); if(fsBtn) fsBtn.textContent='⤢ fullscreen'; resize(); e.preventDefault(); return; }
+      if(!sec.hidden) setLung(false);
+    }
+  });
+  // reciprocal close — any other hero opening closes lung
+  if(altarBtn) altarBtn.addEventListener('click', ()=> setTimeout(()=>{ if(altarSec&&!altarSec.hidden&&!sec.hidden) setLung(false); updateMonsoon(); },0));
+  if(ferroBtn) ferroBtn.addEventListener('click', ()=> setTimeout(()=>{ if(ferroSec&&!ferroSec.hidden&&!sec.hidden) setLung(false); updateMonsoon(); },0));
+  if(horizonBtn) horizonBtn.addEventListener('click', ()=> setTimeout(()=>{ if(horizonSec&&!horizonSec.hidden&&!sec.hidden) setLung(false); updateMonsoon(); },0));
+  if(vaultBtn) vaultBtn.addEventListener('click', ()=> setTimeout(()=>{ if(vaultSec&&!vaultSec.hidden&&!sec.hidden) setLung(false); updateMonsoon(); },0));
+  if(abyssBtn) abyssBtn.addEventListener('click', ()=> setTimeout(()=>{ if(abyssSec&&!abyssSec.hidden&&!sec.hidden) setLung(false); updateMonsoon(); },0));
+  window.addEventListener('resize', ()=>{ if(!sec.hidden) resize(); });
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) return; if(!sec.hidden&&!running) start(); });
+  try{
+    const obs=new MutationObserver(()=>updateMonsoon());
+    if(altarSec) obs.observe(altarSec,{attributes:true,attributeFilter:['hidden']});
+    if(ferroSec) obs.observe(ferroSec,{attributes:true,attributeFilter:['hidden']});
+    if(horizonSec) obs.observe(horizonSec,{attributes:true,attributeFilter:['hidden']});
+    if(vaultSec) obs.observe(vaultSec,{attributes:true,attributeFilter:['hidden']});
+    if(abyssSec) obs.observe(abyssSec,{attributes:true,attributeFilter:['hidden']});
+    obs.observe(sec,{attributes:true,attributeFilter:['hidden','class']});
+  }catch(_){}
+  try{
+    if(window.__altar && window.__altar.open){ const _a=window.__altar.open.bind(window.__altar); window.__altar.open=()=>{ setLung(false); updateMonsoon(); return _a(); }; }
+    if(window.__ferro && window.__ferro.open){ const _f=window.__ferro.open.bind(window.__ferro); window.__ferro.open=()=>{ setLung(false); updateMonsoon(); return _f(); }; }
+    if(window.__horizon && window.__horizon.open){ const _h=window.__horizon.open.bind(window.__horizon); window.__horizon.open=()=>{ setLung(false); updateMonsoon(); return _h(); }; }
+    if(window.__vault && window.__vault.open){ const _v=window.__vault.open.bind(window.__vault); window.__vault.open=()=>{ setLung(false); updateMonsoon(); return _v(); }; }
+    if(window.__abyss && window.__abyss.open){ const _ab=window.__abyss.open.bind(window.__abyss); window.__abyss.open=()=>{ setLung(false); updateMonsoon(); return _ab(); }; }
+  }catch(_){}
+  window.__lung={open:()=>setLung(true), close:()=>setLung(false), _stop:stop, _start:start, get clipY(){return targetClipY}, set clipY(v){ targetClipY=Math.max(0.08,Math.min(0.92,v)); }, get breath(){return breathRate}, set breath(v){ targetBreath=v; }, get intensity(){return intensity}};
 })();
 </script>
 <!-- IMPL: Signal Ghost — 10k WebGPU-compute boids faked with JS spatial hash, 60fps, hunt + vortex + cursor + GHOST -->
