@@ -265,9 +265,54 @@ header,main,footer{position:relative}
   background:radial-gradient(420px 320px at var(--gx,50%) var(--gy,50%),rgba(255,255,255,.14),transparent 65%),
              radial-gradient(260px 200px at var(--gx,50%) var(--gy,50%),rgba(232,179,75,.10),transparent 70%)}
 
+/* ============ IMPL: Seismograph Audit Drum — endless paper under a fixed spring needle ============ */
+.seismo-wrap{position:relative;margin:0 0 18px;z-index:1;height:112px;border-radius:3px;overflow:hidden;
+  background:
+    radial-gradient(ellipse 180px 120px at 18% 42%,rgba(120,85,40,.09) 0%, transparent 68%),
+    radial-gradient(ellipse 140px 90px at 74% 68%,rgba(110,75,30,.07) 0%, transparent 62%),
+    radial-gradient(ellipse 90px 70px at 52% 18%,rgba(90,60,20,.05) 0%, transparent 60%),
+    repeating-linear-gradient(90deg, rgba(0,0,0,.018) 0 1px, transparent 1px 28px),
+    repeating-linear-gradient(0deg, rgba(0,0,0,.012) 0 1px, transparent 1px 22px),
+    linear-gradient(180deg,#f1ead6 0%,#ece5cf 18%,#e8dfc2 50%,#ece5cf 82%,#e8dfc2 100%);
+  border:1px solid #d6cdb1;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.9), inset 0 -7px 14px rgba(60,45,15,.10), inset 0 8px 10px rgba(255,255,255,.35),
+             0 2px 10px rgba(0,0,0,.18), 0 6px 22px rgba(0,0,0,.14);
+}
+.seismo-wrap::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:.9;
+  background:
+    radial-gradient(ellipse 44px 26px at 22% 38%,transparent 46%,rgba(110,85,40,.13) 48%,rgba(110,85,40,.13) 51%,transparent 53%),
+    radial-gradient(ellipse 58px 34px at 76% 72%,transparent 46%,rgba(110,85,40,.10) 48%,rgba(110,85,40,.10) 51%,transparent 53%),
+    radial-gradient(ellipse 32px 20px at 48% 82%,transparent 46%,rgba(110,85,40,.08) 48%,rgba(110,85,40,.08) 51%,transparent 53%);
+}
+.seismo-wrap::after{content:'';position:absolute;top:0;bottom:0;left:50%;width:2px;transform:translateX(-50%);
+  background:linear-gradient(180deg,transparent 0%,rgba(60,60,60,.18) 8%,#2b2b2b 12%,#1a1a1a 50%,#2b2b2b 88%,rgba(60,60,60,.18) 92%,transparent 100%);
+  box-shadow:0 0 6px rgba(0,0,0,.25), 1px 0 0 rgba(255,255,255,.6), -1px 0 0 rgba(0,0,0,.12);
+  pointer-events:none;z-index:2;
+}
+.seismo-needle{position:absolute;top:50%;left:50%;width:18px;height:18px;transform:translate(-50%,-50%);pointer-events:none;z-index:3;
+  background:radial-gradient(circle at 35% 30%,#6a6a6a 0%,#2a2a2a 55%,#111 100%);
+  border:1px solid #000;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.45), inset 0 1px 1px rgba(255,255,255,.35);
+}
+.seismo-needle::before{content:'';position:absolute;top:50%;left:50%;width:6px;height:6px;transform:translate(-50%,-50%);background:#e8b34b;border-radius:50%;box-shadow:0 0 6px rgba(232,179,75,.8)}
+.seismo-needle.wobble{animation:seismo-wobble .42s cubic-bezier(.34,1.56,.64,1)}
+@keyframes seismo-wobble{0%{transform:translate(-50%,-50%) rotate(0)}20%{transform:translate(-50%,-50%) rotate(-9deg) scale(1.08)}45%{transform:translate(-50%,-50%) rotate(7deg)}70%{transform:translate(-50%,-50%) rotate(-4deg)}100%{transform:translate(-50%,-50%) rotate(0)}}
+.seismo-sprocket{position:absolute;top:0;bottom:0;width:14px;pointer-events:none;z-index:1;opacity:.92;
+  background:repeating-linear-gradient(to bottom, transparent 0 8px, #0f120f 8px 18px, transparent 18px 20px);
+  border-left:1px solid rgba(0,0,0,.08);border-right:1px solid rgba(0,0,0,.08);
+}
+.seismo-sprocket.left{left:0;border-radius:3px 0 0 3px}
+.seismo-sprocket.right{right:0;border-radius:0 3px 3px 0}
+#seismo{display:block;width:100%;height:100%;position:relative;z-index:1}
+.seismo-label{position:absolute;top:6px;left:20px;z-index:2;font:10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:rgba(60,45,15,.55);pointer-events:none}
+.seismo-label b{color:rgba(60,45,15,.85)}
+.seismo-hint{position:absolute;bottom:5px;right:20px;z-index:2;font:10px var(--mono);letter-spacing:.08em;color:rgba(60,45,15,.38);pointer-events:none}
+.seismo-wrap:hover .seismo-hint{color:rgba(60,45,15,.62)}
+@keyframes seismo-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-2px) rotate(-.18deg)}30%{transform:translateX(3px) rotate(.22deg)}45%{transform:translateX(-3px) rotate(-.15deg)}60%{transform:translateX(2px)}75%{transform:translateX(-1px)}}
+main.shake{animation:seismo-shake .38s ease}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
   .spark svg polyline{stroke-dashoffset:0}   /* draw-in cut → show the full line, not a blank one */
   #monsoon{display:none}
+  #seismo,.seismo-wrap{display:none}
   .card{transform:none!important;box-shadow:none!important}
   .card .glare{display:none}
 }
@@ -468,6 +513,16 @@ header,main,footer{position:relative}
     <section>
       <div class="sec-head"><span class="sec-num">03</span><h2>Activity</h2>
         <span class="sec-note">{{ feedNote }}</span></div>
+
+      <!-- IMPL: Seismograph Audit Drum -->
+      <div id="seismo-wrap" class="seismo-wrap" aria-hidden="true">
+        <span class="seismo-label">▸ audit drum <b id="seismo-stat">flatline · dust</b></span>
+        <span class="seismo-hint">hover to scrub paper</span>
+        <div class="seismo-sprocket left"></div>
+        <div class="seismo-sprocket right"></div>
+        <canvas id="seismo" width="1200" height="112"></canvas>
+        <i class="seismo-needle" id="seismo-needle"></i>
+      </div>
 
       <div class="act-grid">
         <div>
@@ -1387,6 +1442,266 @@ function startMonsoon(){
   // stop on page hide to save battery
   document.addEventListener('visibilitychange',()=>{ if(document.hidden) cancelAnimationFrame(raf); else frame(); });
 }
+
+// ── IMPL: Seismograph Audit Drum — endless paper + fixed spring needle, no deps ──
+(function startSeismo(){
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const wrap=document.getElementById('seismo-wrap');
+  const cv=document.getElementById('seismo');
+  const needle=document.getElementById('seismo-needle');
+  const statEl=document.getElementById('seismo-stat');
+  if(!wrap||!cv) return;
+  const ctx=cv.getContext('2d'); if(!ctx) return;
+
+  // DPR + capped width (2× viewport, recycled — never grows)
+  let dpr=Math.min(devicePixelRatio||1,2), W=0, H=0, midY=0, raf=0, t=0;
+  let speed=1.55; // css px per frame, paper scoots left under fixed needle
+  let scrubOff=0, scrubTarget=0; // hover scrubs paper
+  let lastSpikeAt=performance.now();
+  const MAX_W_CSS=2200; // hard cap 2× typical viewport
+  // circular trace buffer: one sample per css px across capped width
+  let buf=[], bufLen=0;
+  // spike envelope: queue of impulses {amp, color, wobble, decay, phase}
+  const spikes=[];
+  // dust
+  const dust=[];
+  for(let i=0;i<28;i++) dust.push({x:Math.random(), y:Math.random(), r:0.6+Math.random()*1.1, a:0.12+Math.random()*0.18, drift:(Math.random()-0.5)*0.18});
+
+  function resize(){
+    dpr=Math.min(devicePixelRatio||1,2);
+    const cap=Math.min(wrap.clientWidth, MAX_W_CSS);
+    // keep canvas at wrapper's actual width so needle stays centered visually,
+    // but internal trace logically caps at MAX_W_CSS worth of samples
+    const cssW=wrap.clientWidth, cssH=112;
+    cv.width=Math.floor(cssW*dpr); cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px'; cv.style.height=cssH+'px';
+    W=cssW; H=cssH; midY=cssH/2;
+    bufLen=Math.min(Math.floor(cap), MAX_W_CSS);
+    if(buf.length!==bufLen){ buf=new Array(bufLen).fill(0); }
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  // spring for needle wobble (simple damped)
+  let vel=0, pos=0, target=0;
+  function spring(dt){
+    const k=0.22, d=0.82; // stiffness / damping tuned for snappy wobble
+    const f=(target-pos)*k;
+    vel=(vel+f)*d;
+    pos+=vel*dt;
+    return pos;
+  }
+
+  // scrub: mousemove maps to offset lerp
+  wrap.addEventListener('mousemove', e=>{
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const r=wrap.getBoundingClientRect();
+    const nx=(e.clientX - r.left)/r.width - 0.5; // -0.5..0.5
+    scrubTarget=nx*36; // ±36px pull — feels like tugging paper
+  });
+  wrap.addEventListener('mouseleave', ()=>{ scrubTarget=0; });
+
+  // hook into Vue feed: MutationObserver on .feed counts new .frow:not(.head)
+  let lastCount=0;
+  const feedEl=document.querySelector('.feed');
+  function pushSpike(kind){
+    // kind: 'p' = prompt/ok amber p-wave, 'fail' = red tremor
+    if(kind==='fail'){
+      spikes.push({amp:0.92, color:'#E05D44', w:7, decay:0.92, osc:4, t:0});
+      // needle wobble + dashboard shake
+      target=(Math.random()<0.5? -1:1)*13;
+      if(needle){ needle.classList.remove('wobble'); void needle.offsetWidth; needle.classList.add('wobble'); }
+      const main=document.querySelector('main');
+      if(main){ main.classList.remove('shake'); void main.offsetWidth; main.classList.add('shake'); setTimeout(()=>main.classList.remove('shake'),420); }
+      if(statEl) statEl.textContent='tremor · '+new Date().toLocaleTimeString();
+      // decay needle target back
+      setTimeout(()=>target=0, 260);
+    } else {
+      spikes.push({amp:0.34+Math.random()*0.12, color:'#E8B34B', w:3.2, decay:0.78, osc:1, t:0});
+      target=(Math.random()<0.5? -1:1)*(4+Math.random()*4);
+      if(needle){ needle.classList.remove('wobble'); void needle.offsetWidth; needle.classList.add('wobble'); setTimeout(()=>{ if(needle) needle.classList.remove('wobble'); },420); }
+      setTimeout(()=>target=0, 180);
+      if(statEl) statEl.textContent='p-wave · '+new Date().toLocaleTimeString();
+    }
+    lastSpikeAt=performance.now();
+  }
+  function observeFeed(){
+    const cur=feedEl ? feedEl.querySelectorAll('.frow:not(.head):not([key="empty"])').length : 0;
+    // count only real rows; TransitionGroup may keep leaving nodes briefly — use seen keys to avoid double-fire
+    // simpler: just diff count, but dedup via lastCount
+    if(cur>lastCount){
+      const diff=cur-lastCount;
+      // inspect last added rows for fail class
+      const rows=feedEl.querySelectorAll('.frow:not(.head)');
+      for(let i=0;i<diff && i<rows.length;i++){
+        const r=rows[i];
+        pushSpike(r.classList.contains('fail') ? 'fail' : 'p');
+      }
+    } else if(cur===0 && lastCount!==0){
+      // feed cleared
+      lastSpikeAt=performance.now();
+      if(statEl) statEl.textContent='flatline · dust';
+    }
+    lastCount=cur;
+  }
+  // also monkey-patch Vue addRows/feedEvent if available for instant spike without DOM lag
+  let vueHooked=false;
+  function tryHookVue(){
+    if(vueHooked) return;
+    // app is the Vue app instance; mounted proxy lives on #app.__vue_app__ or via _instance
+    const el=document.getElementById('app');
+    const inst=el && (el.__vue_app__ || el._vnode);
+    // fallback: poll for the component instance via global app
+    try{
+      // Vue 3 global: app._instance.proxy is the root component instance after mount
+      const proxy= (typeof app!=='undefined' && app._instance && app._instance.proxy) ? app._instance.proxy : null;
+      if(proxy && proxy.addRows){
+        const origAdd=proxy.addRows.bind(proxy);
+        proxy.addRows=function(rows){
+          for(const r of rows) pushSpike(r.fail ? 'fail' : 'p');
+          return origAdd(rows);
+        };
+        const origEv=proxy.feedEvent ? proxy.feedEvent.bind(proxy) : null;
+        if(origEv){
+          proxy.feedEvent=function(d,kind){
+            // when paused, Vue queues raw {d,kind} and spike should fire on resume (drain), not now.
+            // So only spike inside addRows hook; intercepting feedEvent would spike at arrival time.
+            return origEv(d,kind);
+          };
+        }
+        vueHooked=true;
+      }
+    }catch(_){}
+  }
+  const mo=feedEl ? new MutationObserver(()=>{ observeFeed(); tryHookVue(); }) : null;
+  if(mo) mo.observe(feedEl, {childList:true, subtree:false});
+  // poll hook attempt for a few seconds until Vue mounts
+  let hookTries=0;
+  const hookInt=setInterval(()=>{ tryHookVue(); if(vueHooked||++hookTries>40) clearInterval(hookInt); },150);
+  // also observe count via interval as safety when MutationObserver misses TransitionGroup quirks
+  setInterval(observeFeed, 600);
+
+  // trace generator: shift buffer left, push new sample from spike superposition + micro noise
+  function sampleAt(x){
+    // x is index in buf (0..bufLen-1) corresponds to horizontal position.
+    // For drawing we composite spikes anchored at center (needle). Each spike's envelope moves left at `speed`.
+    // Instead of storing world x, we store per-frame head sample and scroll buffer.
+    return 0; // not used directly — head sample computed in frame()
+  }
+  let scroll=0;
+  function headSample(){
+    let y=0;
+    const now=performance.now();
+    const idle=now-lastSpikeAt;
+    for(const s of spikes){
+      // s.t = age in frames since birth
+      const age=s.t;
+      // gaussian-ish envelope centered at age 0 moving left? In headSample, spike is born at head (right edge).
+      // As buffer scrolls left, its peak slides toward needle. We simulate by letting spike contribute
+      // most when age maps to distance from head.
+      // Simpler: each spike contributes an exponentially decaying oscillation at the head for a short window,
+      // then the buffer carries it left. So headSample just emits its current oscillation value.
+      if(age< s.w*11){
+        const env=Math.exp(-age/(s.w*3.2)) * s.decay;
+        const osc=Math.sin(age*0.62*s.osc) * Math.cos(age*0.18);
+        // first lobe is the sharp p-wave positive spike
+        const shape = age < s.w ? (1 - age/s.w) : osc*0.45;
+        y += s.amp * env * (s.osc===1 ? (age< s.w ? 1 : 0.35*osc) : shape);
+      }
+      s.t+=1;
+    }
+    // cull dead spikes
+    for(let i=spikes.length-1;i>=0;i--) if(spikes[i].t > spikes[i].w*14) spikes.splice(i,1);
+    // micro idle wobble / dust floor when flatline >3s: keep y near 0 with tiny noise
+    if(idle>3000){
+      y += (Math.sin(now*0.0011)+Math.sin(now*0.00053*1.7))*0.015;
+      if(statEl && idle>3200 && now%1200<16) statEl.textContent='flatline · dust';
+    } else {
+      y += (Math.random()-0.5)*0.02;
+    }
+    return Math.max(-1, Math.min(1, y));
+  }
+
+  function draw(){
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if(document.hidden){ raf=requestAnimationFrame(draw); return; }
+    t++;
+    scrubOff += (scrubTarget - scrubOff)*0.09;
+    scroll += speed;
+    // advance buffer
+    const hs=headSample();
+    // shift left by ~speed px: move array and push head sample(s)
+    const adv=Math.max(1, Math.round(speed));
+    for(let i=0;i<bufLen-adv;i++) buf[i]=buf[i+adv];
+    for(let i=bufLen-adv;i<bufLen;i++) buf[i]= hs * (i===bufLen-1?1:0.92);
+    // spring
+    const wob=spring(1);
+
+    // clear with paper (not full clear — preserves coffee texture from CSS bg, canvas is transparent)
+    ctx.clearRect(0,0,cv.width,cv.height);
+    ctx.save();
+    ctx.scale(dpr,dpr);
+    // subtle dust when idle
+    const idle=performance.now()-lastSpikeAt;
+    if(idle>3000){
+      ctx.fillStyle='rgba(90,70,30,.09)';
+      for(const p of dust){
+        p.x+=p.drift*0.35; p.y+=Math.sin(t*0.03+p.r)*0.04;
+        if(p.x<0) p.x+=1; if(p.x>1) p.x-=1;
+        if(p.y<0) p.y+=1; if(p.y>1) p.y-=1;
+        const px=p.x*W, py=p.y*H;
+        ctx.beginPath(); ctx.arc(px,py,p.r,0,Math.PI*2); ctx.fill();
+      }
+    }
+    // trace — map buf to screen with scrub offset
+    const off=Math.round(scrubOff);
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    // faint under-glow
+    ctx.beginPath();
+    for(let i=0;i<bufLen;i++){
+      const x=i+off;
+      if(x< -2 || x> W+2) continue;
+      const y=midY + buf[i]* (H*0.42) + wob*1.8;
+      if(i===0 || x<-1) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle='rgba(60,45,15,.08)'; ctx.lineWidth=5; ctx.stroke();
+    // main ink
+    ctx.beginPath();
+    let lastColor=null;
+    // we draw contiguous segments per color by checking recent spike color; simplest: draw twice — amber base then red overlays
+    // Do single path with current head color dominance: just stroke in amber, then overstroke red tremor segments
+    for(let i=0;i<bufLen;i++){
+      const x=i+off;
+      if(x< -2 || x> W+2) continue;
+      const y=midY + buf[i]* (H*0.42) + wob*1.4;
+      if(i===0 || x<-1) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    // color by most recent spike? Use amber as default, red where amplitude large
+    // simple: stroke amber then restroke peaks that exceed threshold in red
+    ctx.strokeStyle='#8a6b1e'; ctx.lineWidth=1.55; ctx.globalAlpha=0.95; ctx.stroke();
+    // red tremor peaks overlay
+    ctx.beginPath();
+    let inRed=false;
+    for(let i=0;i<bufLen;i++){
+      const v=buf[i];
+      const x=i+off;
+      if(x< -2 || x> W+2){ inRed=false; continue; }
+      const isRed=Math.abs(v)>0.42;
+      const y=midY + v*(H*0.42) + wob*1.4;
+      if(isRed){
+        if(!inRed){ ctx.moveTo(x,y); inRed=true; } else ctx.lineTo(x,y);
+      } else {
+        if(inRed){ ctx.strokeStyle='#b12f1f'; ctx.lineWidth=1.7; ctx.stroke(); ctx.beginPath(); inRed=false; }
+      }
+    }
+    if(inRed){ ctx.strokeStyle='#b12f1f'; ctx.lineWidth=1.7; ctx.stroke(); }
+    ctx.restore();
+    raf=requestAnimationFrame(draw);
+  }
+  draw();
+  // hook visibility
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden && !raf) draw(); });
+})();
 </script>
 </body>
 </html>
