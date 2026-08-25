@@ -36,6 +36,57 @@ button:focus-visible,input:focus-visible{outline:1px solid var(--accent);outline
 .login-card input::placeholder{color:var(--dim)}
 #loginmsg{font-family:var(--mono);font-size:12.5px;color:var(--crit);min-height:18px;margin-top:2px}
 
+/* <!-- IMPL: Vault Airlock --> — split-shutter login gateway: matte plates shear on focus, prismatic seam leak, slam on success */
+#login{overflow:hidden}
+.login-card{position:relative;z-index:2;transform:translateZ(0);transition:transform .42s cubic-bezier(.16,1,.3,1),opacity .38s ease,filter .38s ease}
+.airlock-shutters{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}
+.shutter{position:absolute;left:0;right:0;height:50.15%;background:
+  radial-gradient(ellipse 520px 120px at 28% 18%,rgba(255,255,255,.05),transparent 68%),
+  radial-gradient(ellipse 380px 90px at 78% 82%,rgba(0,0,0,.18),transparent 70%),
+  linear-gradient(180deg,rgba(23,25,22,.92) 0%,rgba(18,20,18,.98) 100%);
+  border:1px solid var(--line);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  will-change:transform;transition:transform .55s cubic-bezier(.16,1,.3,1);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 8px 28px rgba(0,0,0,.28)}
+.shutter-top{top:-1px;clip-path:polygon(0 0,100% 0,100% 50%,0 50%);border-bottom:none;transform:translateY(0)}
+.shutter-bottom{top:50%;clip-path:polygon(0 50%,100% 50%,100% 100%,0 100%);border-top:none;transform:translateY(0)}
+.shutter-top::after,.shutter-bottom::after{content:'';position:absolute;left:0;right:0;height:1px;background:var(--line);opacity:.9}
+.shutter-top::after{bottom:0}
+.shutter-bottom::after{top:0}
+.shutter-seam{position:absolute;left:0;right:0;top:50%;height:2px;transform:translateY(-50%);z-index:3;
+  background:conic-gradient(from 90deg at 50% 50%,#e8b34b 0deg,#5fae7a 92deg,#6ec1e4 184deg,#e8b34b 360deg);
+  box-shadow:0 0 12px rgba(232,179,75,.42),0 0 28px rgba(110,193,228,.28),0 0 44px rgba(95,174,122,.18);
+  opacity:0;filter:blur(.6px) saturate(1.2);transition:opacity .42s ease,filter .42s ease,transform .55s cubic-bezier(.16,1,.3,1);
+  pointer-events:none}
+.shutter-seam::before{content:'';position:absolute;left:0;right:0;top:50%;height:18px;transform:translateY(-50%);
+  background:linear-gradient(180deg,transparent,rgba(232,179,75,.10),rgba(110,193,228,.08),transparent);filter:blur(2px);pointer-events:none}
+#login:focus-within .shutter-top{transform:translateY(-18%)}
+#login:focus-within .shutter-bottom{transform:translateY(18%)}
+#login:focus-within .shutter-seam{opacity:1;filter:blur(.4px) saturate(1.35) brightness(1.1)}
+#login:focus-within .login-card{transform:translateY(-2px) scale(1.005)}
+/* slammed — doors slam shut then push dashboard through */
+#login.slammed .shutter{transition:transform .46s cubic-bezier(.34,1.56,.64,1)}
+#login.slammed .shutter-top{transform:translateY(0);animation:airlock-slam-top .52s cubic-bezier(.34,1.56,.64,1) both}
+#login.slammed .shutter-bottom{transform:translateY(0);animation:airlock-slam-bottom .52s cubic-bezier(.34,1.56,.64,1) both}
+#login.slammed .shutter-seam{opacity:1;filter:blur(.2px) saturate(1.4) brightness(1.18);animation:airlock-seam-flash .52s ease both}
+#login.slammed .login-card{transform:scale(.96);opacity:0;filter:blur(8px);pointer-events:none}
+#login.slammed{pointer-events:none}
+@keyframes airlock-slam-top{0%{transform:translateY(-18%)}55%{transform:translateY(2.2%)}78%{transform:translateY(-1.1%)}100%{transform:translateY(0)}}
+@keyframes airlock-slam-bottom{0%{transform:translateY(18%)}55%{transform:translateY(-2.2%)}78%{transform:translateY(1.1%)}100%{transform:translateY(0)}}
+@keyframes airlock-seam-flash{0%{opacity:1;filter:blur(.4px) brightness(1.1)}32%{opacity:1;filter:blur(1.8px) brightness(1.45);box-shadow:0 0 18px rgba(232,179,75,.62),0 0 40px rgba(110,193,228,.42)}100%{opacity:.92;filter:blur(.6px) brightness(1.12)}}
+#login.slammed::after{content:'';position:absolute;inset:0;z-index:4;pointer-events:none;background:radial-gradient(ellipse 520px 160px at 50% 50%,rgba(232,179,75,.12),transparent 68%);opacity:0;animation:airlock-afterglow .62s ease .08s both}
+@keyframes airlock-afterglow{0%{opacity:0}35%{opacity:1}100%{opacity:0}}
+/* dashboard push — View Transition friendly + fallback slide */
+::view-transition-old(root),::view-transition-new(root){animation-duration:.42s}
+@media (prefers-reduced-motion:reduce){
+  .shutter{transition:none!important;animation:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+  .shutter-seam{transition:none!important;animation:none!important;opacity:0!important}
+  #login:focus-within .shutter-top,#login:focus-within .shutter-bottom{transform:none!important}
+  #login:focus-within .login-card{transform:none!important}
+  #login.slammed .shutter-top,#login.slammed .shutter-bottom{animation:none!important;transform:none!important}
+  #login.slammed .login-card{transform:none!important;filter:none!important;opacity:0;transition:opacity .2s ease}
+  #login.slammed::after{display:none}
+}
+
 /* ---------- header ---------- */
 header{position:sticky;top:0;z-index:20;background:rgba(16,18,17,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
 .hwrap{max-width:1240px;margin:0 auto;padding:0 24px;min-height:62px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
@@ -860,7 +911,9 @@ main.shake{animation:seismo-shake .38s ease}
 <div id="app" v-cloak>
 
 <!-- ============ login overlay — #login / #loginmsg ids are load-bearing CSS (spec-css.md) ============ -->
+<!-- IMPL: Vault Airlock -->
 <div id="login" v-if="!authed">
+  <div class="airlock-shutters" aria-hidden="true"><div class="shutter shutter-top"></div><div class="shutter shutter-bottom"></div><div class="shutter-seam"></div></div>
   <form class="login-card" @submit.prevent="doLogin">
     <div class="logo"><span>🛡</span>AIGATE</div>
     <label for="tok">Master password</label>
@@ -1863,7 +1916,51 @@ const app=Vue.createApp({
       if(!this.loginPw){ this.loginMsg='enter the master password'; return; }
       this.loginMsg='signing in…';
       const r=await send('POST','/api/login',{password:this.loginPw});
-      if(r.status===200){ this.loginPw=''; TOKEN=''; localStorage.removeItem('aigate_token'); this.loginMsg=''; this.boot(); }
+      if(r.status===200){
+        const loginEl=document.getElementById('login');
+        const reduced=this.reducedMotion();
+        const finish=()=>{ this.loginPw=''; TOKEN=''; localStorage.removeItem('aigate_token'); this.loginMsg=''; if(document.startViewTransition && !reduced) document.startViewTransition(()=>this.boot()); else this.boot(); };
+        if(!loginEl || reduced){
+          finish(); return;
+        }
+        loginEl.classList.add('slammed');
+        // WebAudio thunk — low thud + metallic tick
+        try{
+          const AC=window.AudioContext||window.webkitAudioContext;
+          if(AC){
+            const ac=new AC();
+            if(ac.state==='suspended') ac.resume();
+            const now=ac.currentTime;
+            const o=ac.createOscillator(), g=ac.createGain();
+            o.type='sine'; o.frequency.setValueAtTime(180,now); o.frequency.exponentialRampToValueAtTime(38,now+0.24);
+            g.gain.setValueAtTime(0.26,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.30);
+            o.connect(g); g.connect(ac.destination); o.start(now); o.stop(now+0.32);
+            const o2=ac.createOscillator(), g2=ac.createGain();
+            o2.type='triangle'; o2.frequency.setValueAtTime(1100,now+0.08); o2.frequency.exponentialRampToValueAtTime(420,now+0.16);
+            g2.gain.setValueAtTime(0.09,now+0.08); g2.gain.exponentialRampToValueAtTime(0.001,now+0.18);
+            o2.connect(g2); g2.connect(ac.destination); o2.start(now+0.08); o2.stop(now+0.18);
+          }
+        }catch(_){}
+        // WAAPI slam emphasis on card (complements CSS shutter slam)
+        try{
+          const card=loginEl.querySelector('.login-card');
+          if(card && card.animate){
+            card.animate([
+              {transform:'scale(1)',offset:0},
+              {transform:'scale(1.02,.98)',offset:0.28},
+              {transform:'scale(.96)',offset:1}
+            ],{duration:520,easing:'cubic-bezier(.34,1.56,.64,1)',fill:'forwards'});
+          }
+          loginEl.animate([
+            {transform:'translateX(0)'},
+            {transform:'translateX(-1px)'},
+            {transform:'translateX(1px)'},
+            {transform:'translateX(0)'}
+          ],{duration:220,delay:360,easing:'ease-out'});
+        }catch(_){}
+        setTimeout(finish, 620);
+        return;
+      }
       else if(r.status===401) this.loginMsg='wrong password — try again';
       else if(r.status===429) this.loginMsg='too many attempts — locked out, try later';
       else if(r.status===400) this.loginMsg='password login is not enabled on the server';
