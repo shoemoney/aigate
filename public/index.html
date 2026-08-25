@@ -337,6 +337,24 @@ main.shake{animation:seismo-shake .38s ease}
 .ferro-meta .mode{color:#b8d0d8}
 .ferro-meta .hint{opacity:.75}
 .ferro-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(184,208,216,.55);background:rgba(6,8,10,.55);border:1px solid rgba(184,208,216,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+/* <!-- IMPL: Event Horizon --> — 10k stars + Schwarzschild 1/r lens — single canvas, DPR≤2, 60fps, quad-state */
+#horizon-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #1e2230;border-radius:6px;overflow:hidden;background:#04070c;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
+.horizon-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#141826 0%,#0c0e16 55%,#04070c 100%);border-bottom:1px solid #1e2230}
+.horizon-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#6ec6ff}
+.horizon-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.horizon-head .horizon-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.horizon-head .horizon-note b{color:#c8dff8;font-weight:600}
+.horizon-head .horizon-actions{display:flex;align-items:center;gap:6px}
+.horizon-canvas-wrap{position:relative;height:160px;background:#04060a;overflow:hidden;cursor:grab;touch-action:none}
+.horizon-canvas-wrap.dragging{cursor:grabbing}
+#horizon{display:block;width:100%;height:100%;pointer-events:auto}
+.horizon-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0c0e16;border-top:1px solid #1e2230;font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.horizon-meta .mode{color:#c8dff8}
+.horizon-meta .hint{opacity:.75}
+.horizon-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(200,223,248,.55);background:rgba(4,7,12,.55);border:1px solid rgba(110,198,255,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+#horizon-sec.is-fullscreen{position:fixed;inset:0;z-index:45;margin:0;border-radius:0;border:0;display:flex;flex-direction:column;background:#04060a}
+#horizon-sec.is-fullscreen .horizon-canvas-wrap{flex:1;height:auto;min-height:0}
+#horizon-sec.is-fullscreen .horizon-head{border-radius:0}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
   .spark svg polyline{stroke-dashoffset:0}   /* draw-in cut → show the full line, not a blank one */
   #monsoon{display:none}
@@ -345,6 +363,8 @@ main.shake{animation:seismo-shake .38s ease}
   #chladni{display:none!important}
   #ferro-sec{display:none!important}
   #ferro{display:none!important}
+  #horizon-sec{display:none!important}
+  #horizon{display:none!important}
   .card{transform:none!important;box-shadow:none!important}
   .card .glare{display:none}
 }
@@ -405,6 +425,8 @@ main.shake{animation:seismo-shake .38s ease}
     <button id="altar-toggle" class="btn" type="button" aria-pressed="false" title="Chladni Altar — black steel, bone powder (drag to sweep)">◈ altar</button>
     <!-- IMPL: Ferrofluid Séance — exclusive tri-state with Chladni + Monsoon -->
     <button id="ferro-toggle" class="btn" type="button" aria-pressed="false" title="Ferrofluid Séance — oil-black, thorns chase magnet (drag)">⬢ séance</button>
+    <!-- IMPL: Event Horizon — quad-state with monsoon/chladni/ferro; 10k lensed stars -->
+    <button id="horizon-toggle" class="btn" type="button" aria-pressed="false" title="Event Horizon — drag the black hole, bend starlight (◐ photon ring)">◆ horizon</button>
     <!-- IMPL: Mercury Blob Toggle -->
     <button id="mercury-toggle" class="mercury-blob" type="button" role="switch" aria-checked="false" aria-label="Mercury blob — drag thumb to stretch, click to toggle" title="Mercury Blob — drag to liquefy"><span class="mercury-label" aria-hidden="true">◉ mercury</span><span class="mercury-track" aria-hidden="true"><span class="mercury-goo"><i class="mercury-dot"></i><i class="mercury-thumb"></i></span></span></button>
     <button class="btn" @click="paletteOpen=true" title="command palette (⌘K)">⌘K</button>
@@ -484,6 +506,25 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="ferro-meta">
         <span class="mode">▸ <span id="ferro-readout">Φ 0.82 · η 0.18 · 47 thorns</span></span>
         <span class="hint">pure SDF spikes · 1/(dist+ε) · no fluid sim</span>
+      </div>
+    </section>
+    <!-- IMPL: Event Horizon — 00 hero quad-state (monsoon | chladni | ferro | horizon) — 160px slot, fullscreen expand -->
+    <section id="horizon-sec" class="horizon-sec" hidden aria-label="Event Horizon">
+      <div class="horizon-head">
+        <span class="sec-num">00</span><h2>Event Horizon</h2>
+        <span class="horizon-note">drag black hole · <b id="horizon-mode">Rs 28 px</b> · wheel = mass</span>
+        <span class="horizon-actions">
+          <button id="horizon-fs" class="btn sm" type="button" aria-label="toggle fullscreen">⤢ fullscreen</button>
+          <button id="horizon-close" class="btn sm" type="button" aria-label="close Event Horizon">✕</button>
+        </span>
+      </div>
+      <div class="horizon-canvas-wrap" id="horizon-wrap">
+        <canvas id="horizon" width="1200" height="160" aria-label="Event Horizon — drag the black hole, watch stars bend" role="img"></canvas>
+        <span class="horizon-spec">◆ lensed 10k · ring 1.5 Rs · disk Doppler</span>
+      </div>
+      <div class="horizon-meta">
+        <span class="mode">▸ <span id="horizon-readout">10 000 stars · lensing 1/r · photon ring</span></span>
+        <span class="hint">pure math · 1 canvas · Schwarzschild approx</span>
       </div>
     </section>
 
@@ -2531,6 +2572,446 @@ function startMonsoon(){
   btn.addEventListener('pointercancel', endDrag);
   // reduced-motion: ensure no goo/filter inline survives
   if(reduce()){ btn.style.touchAction='auto'; }
+})();
+/* <!-- IMPL: Event Horizon --> — 10k stars + Schwarzschild 1/r lens + photon ring + Doppler disk — single <canvas>, DPR≤2, 60fps */
+(function(){
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('horizon-sec');
+  const wrap=document.getElementById('horizon-wrap');
+  const cv=document.getElementById('horizon');
+  const btn=document.getElementById('horizon-toggle');
+  const closeBtn=document.getElementById('horizon-close');
+  const fsBtn=document.getElementById('horizon-fs');
+  const modeEl=document.getElementById('horizon-mode');
+  const readout=document.getElementById('horizon-readout');
+  const monsoon=document.getElementById('monsoon');
+  if(!sec||!wrap||!cv||!btn) return;
+  const ctx=cv.getContext('2d'); if(!ctx) return;
+  const altarSec=document.getElementById('altar-sec');
+  const ferroSec=document.getElementById('ferro-sec');
+  const altarBtn=document.getElementById('altar-toggle');
+  const ferroBtn=document.getElementById('ferro-toggle');
+
+  let dpr=Math.min(window.devicePixelRatio||1,2);
+  let W=0,H=0, cssW=0, cssH=160, raf=0, running=false, t=0;
+  let Rs=28, flare=0, flareTarget=0;
+  let dragging=false, hasPointer=false;
+  let bx=0, by=0, tx=0, ty=0;
+  let stars=[];
+  const N=10000;
+
+  function isHidden(){ return sec.hidden || sec.style.display==='none' || document.hidden; }
+
+  function buildStars(){
+    stars=new Array(N);
+    for(let i=0;i<N;i++){
+      const b=0.38+Math.random()*0.68;
+      const sz=Math.random()<0.82 ? 0.7+Math.random()*0.6 : 1.4+Math.random()*1.1;
+      const tw=Math.random()*Math.PI*2;
+      // subtle color jitter: most white, some warm/cool
+      const r=Math.random();
+      let col='w';
+      if(r>0.92) col = Math.random()<0.5 ? 'warm' : 'cool';
+      stars[i]={x:Math.random()*cssW, y:Math.random()*cssH, b:b, sz:sz, tw:tw, col:col, _lx:0,_ly:0};
+    }
+  }
+
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const rect=wrap.getBoundingClientRect();
+    cssW=Math.max(1, Math.floor(rect.width));
+    cssH=sec.classList.contains('is-fullscreen') ? Math.max(1, Math.floor(rect.height)) : 160;
+    // for non-fullscreen, rect.height is 160 already
+    if(!sec.classList.contains('is-fullscreen')) cssH=160;
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+    W=cv.width; H=cv.height;
+    Rs=Math.max(18, Math.min(64, Math.min(cssW,cssH)*0.17));
+    // re-center BH if out of bounds or first run
+    if(!hasPointer){ tx=cssW*0.5; ty=cssH*0.5; bx=tx; by=ty; }
+    else {
+      tx=Math.max(Rs+6, Math.min(cssW-Rs-6, tx));
+      ty=Math.max(Rs+6, Math.min(cssH-Rs-6, ty));
+    }
+    buildStars();
+  }
+
+  function updateMonsoon(){
+    const anyAlt = altarSec && !altarSec.hidden;
+    const anyFer = ferroSec && !ferroSec.hidden;
+    const anyHor = !sec.hidden;
+    if(monsoon) monsoon.style.display=(anyAlt||anyFer||anyHor)?'none':'';
+  }
+
+  function setHorizon(open){
+    const wasOpen=!sec.hidden;
+    if(open===wasOpen) return;
+    sec.hidden=!open;
+    btn.setAttribute('aria-pressed', String(open));
+    btn.textContent=open?'◆ close':'◆ horizon';
+    if(open){
+      if(altarSec&&!altarSec.hidden){
+        altarSec.hidden=true;
+        if(altarBtn){ altarBtn.setAttribute('aria-pressed','false'); altarBtn.textContent='◈ altar'; }
+        if(window.__altar) try{window.__altar._stop();}catch(_){}
+      }
+      if(ferroSec&&!ferroSec.hidden){
+        ferroSec.hidden=true;
+        if(ferroBtn){ ferroBtn.setAttribute('aria-pressed','false'); ferroBtn.textContent='⬢ séance'; }
+        if(window.__ferro) try{window.__ferro._stop();}catch(_){}
+      }
+      updateMonsoon();
+      resize();
+      if(!running) start();
+      hasPointer=true;
+      // don't scroll into view if fullscreen (fixed covers)
+      if(!sec.classList.contains('is-fullscreen')) wrap.scrollIntoView({behavior:'smooth',block:'nearest'});
+      flareTarget=0.55; setTimeout(()=>flareTarget=0, 420);
+    } else {
+      stop();
+      sec.classList.remove('is-fullscreen');
+      if(fsBtn) fsBtn.textContent='⤢ fullscreen';
+      updateMonsoon();
+    }
+  }
+
+  function start(){
+    if(running) return;
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    running=true;
+    cancelAnimationFrame(raf);
+    t=0;
+    loop();
+  }
+  function stop(){
+    running=false;
+    cancelAnimationFrame(raf); raf=0;
+  }
+
+  function updatePointer(e){
+    const r=wrap.getBoundingClientRect();
+    if(!r.width||!r.height) return;
+    hasPointer=true;
+    const nx=Math.max(Rs+6, Math.min(r.width-Rs-6, e.clientX - r.left));
+    const ny=Math.max(Rs+6, Math.min(r.height-Rs-6, e.clientY - r.top));
+    tx=nx; ty=ny;
+  }
+
+  // Wrap existing altar/ferro close helpers so they also hide horizon correctly and restore monsoon via updateMonsoon
+  // Patch buttons to ensure quad-state: when altar/ferro open, close horizon
+  if(altarBtn){
+    const _old=altarBtn.onclick;
+    // altar's own listener already inside IIFE uses addEventListener; we add capture listener that closes horizon when altar opens
+    altarBtn.addEventListener('click', ()=>{
+      // if altar will open (was hidden), close horizon
+      if(altarSec && altarSec.hidden){ /* will open */ }
+      // use timeout to let altar's setAltar run then fix horizon/monsoon
+      setTimeout(()=>{
+        if(altarSec && !altarSec.hidden && !sec.hidden) setHorizon(false);
+        updateMonsoon();
+      },0);
+    });
+  }
+  if(ferroBtn){
+    ferroBtn.addEventListener('click', ()=>{
+      setTimeout(()=>{
+        if(ferroSec && !ferroSec.hidden && !sec.hidden) setHorizon(false);
+        updateMonsoon();
+      },0);
+    });
+  }
+
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    t++;
+    // smooth BH chase
+    const dx=tx-bx, dy=ty-by;
+    const vel=Math.hypot(dx,dy);
+    bx+=(tx-bx)*0.18;
+    by+=(ty-by)*0.18;
+    // idle drift when not dragging and pointer idle-ish
+    if(!dragging && vel<0.35){
+      tx+=Math.sin(t*0.007)*0.22 + Math.cos(t*0.011)*0.14;
+      ty+=Math.cos(t*0.008)*0.18;
+      tx=Math.max(Rs+6, Math.min(cssW-Rs-6, tx));
+      ty=Math.max(Rs+6, Math.min(cssH-Rs-6, ty));
+    }
+    flareTarget=dragging ? Math.min(1, 0.45 + vel*0.04) : 0;
+    flare+=(flareTarget-flare)*0.14;
+
+    ctx.save();
+    ctx.scale(dpr,dpr);
+    // --- background: deep space ---
+    ctx.clearRect(0,0,cssW,cssH);
+    // subtle vignette + starfield base
+    ctx.fillStyle='#04060a';
+    ctx.fillRect(0,0,cssW,cssH);
+    const vg=ctx.createRadialGradient(cssW*0.5, cssH*0.5, 0, cssW*0.5, cssH*0.5, Math.max(cssW,cssH)*0.85);
+    vg.addColorStop(0,'rgba(14,22,42,0.55)');
+    vg.addColorStop(0.55,'rgba(8,12,24,0)');
+    vg.addColorStop(1,'rgba(0,0,0,0.62)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,cssW,cssH);
+    // faint milky band diagonal
+    ctx.globalAlpha=0.07;
+    ctx.fillStyle='#6e7aa2';
+    ctx.beginPath();
+    ctx.ellipse(cssW*0.42, cssH*0.62, cssW*0.55, cssH*0.28, -0.18, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha=1;
+
+    const cx=bx, cy=by;
+    const Rs2=Rs*Rs;
+    const ringR=Rs*1.5;
+    const innerDisk=Rs*1.62, outerDisk=Rs*2.95;
+    const tilt=0.48;
+    // halo around BH from lensed starlight + flare
+    const haloR=outerDisk+ 14 + flare*18;
+    const halo=ctx.createRadialGradient(cx,cy, Rs*1.02, cx,cy, haloR);
+    const haloA=(0.09+flare*0.13).toFixed(3);
+    halo.addColorStop(0,'rgba(110,198,255,'+haloA+')');
+    halo.addColorStop(0.35,'rgba(110,198,255,0.06)');
+    halo.addColorStop(1,'rgba(110,198,255,0)');
+    ctx.fillStyle=halo;
+    ctx.beginPath(); ctx.arc(cx,cy,haloR,0,Math.PI*2); ctx.fill();
+
+    // --- lensed stars (drawn first so disk/ring overlay where needed) ---
+    // fast path: draw stars as filled rects/circles with lensed pos
+    // color by twinkle
+    for(let i=0;i<N;i++){
+      const s=stars[i];
+      const dx0=cx - s.x, dy0=cy - s.y;
+      const dist=Math.sqrt(dx0*dx0+dy0*dy0);
+      let lx=s.x, ly=s.y;
+      let alpha=s.b;
+      let size=s.sz;
+      if(dist < Rs){
+        continue; // inside horizon — eclipsed
+      }
+      if(dist < 360){
+        const f=Rs/dist;
+        lx=s.x + dx0*f*0.96;
+        ly=s.y + dy0*f*0.96;
+        // check if lensed into horizon
+        const dx2=cx - lx, dy2=cy - ly;
+        if(dx2*dx2+dy2*dy2 < Rs2*1.02) continue;
+        // magnification near photon ring
+        const mag=1 + f*0.85;
+        alpha = Math.min(1, s.b * mag);
+        size = s.sz * (1 + f*0.22);
+        // chromatic twinkle near ring: slight blue boost
+        if(f>0.35) alpha=Math.min(1, alpha+0.08);
+      }
+      // subtle twinkle
+      const tw=0.92+0.08*Math.sin(t*0.045 + s.tw);
+      alpha*=tw;
+      // color
+      let r=255,g=255,b=255;
+      if(s.col==='warm'){ r=255; g=242; b=210; }
+      else if(s.col==='cool'){ r=210; g=226; b=255; }
+      else { const v=236+Math.random()*6; r=g=b=v; } // ~white but keep variance via b? we use b as base
+      // alpha threshold: skip ultra-dim offscreen lensed?
+      if(lx<-4||lx>cssW+4||ly<-4||ly>cssH+4) continue;
+      ctx.fillStyle='rgba('+r+','+g+','+b+','+alpha.toFixed(3)+')';
+      // shadow for bright magnified stars near ring
+      if(dist < Rs*2.2 && alpha>0.82){
+        ctx.shadowColor='rgba(180,210,255,0.55)';
+        ctx.shadowBlur=4;
+      } else ctx.shadowBlur=0;
+      if(size<1.05){
+        ctx.fillRect(lx,ly,size,size);
+      } else {
+        ctx.beginPath(); ctx.arc(lx,ly,size*0.58,0,Math.PI*2); ctx.fill();
+      }
+      ctx.shadowBlur=0;
+    }
+
+    // --- accretion disk (behind BH top half, in front bottom half — fake with full ellipse + BH shadow on top) ---
+    // we draw disk as tilted donut with Doppler gradient
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.scale(1, tilt);
+    // disk donut
+    const gDop=ctx.createLinearGradient(-outerDisk,0, outerDisk,0);
+    // left = approaching = blue
+    const flareBoost=flare*0.35;
+    gDop.addColorStop(0,'rgba(90,170,255,'+(0.95+flareBoost).toFixed(2)+')');
+    gDop.addColorStop(0.26,'rgba(140,195,255,0.92)');
+    gDop.addColorStop(0.5,'rgba(248,232,198,0.92)');
+    gDop.addColorStop(0.74,'rgba(255,150,90,0.92)');
+    gDop.addColorStop(1,'rgba(255,70,50,'+(0.96+flareBoost).toFixed(2)+')');
+    ctx.fillStyle=gDop;
+    ctx.beginPath();
+    ctx.arc(0,0,outerDisk,0,Math.PI*2);
+    ctx.arc(0,0,innerDisk,0,Math.PI*2,true);
+    ctx.fill();
+    // inner edge glow
+    ctx.strokeStyle='rgba(255,230,160,'+(0.22+flare*0.22).toFixed(3)+')';
+    ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.arc(0,0,innerDisk,0,Math.PI*2); ctx.stroke();
+    // tick marks for motion: orbiting clumps scintillate around disk
+    for(let k=0;k<3;k++){
+      const ang=(t*0.018 + k*2.094) % (Math.PI*2);
+      const rad=innerDisk + (outerDisk-innerDisk)* (0.28 + k*0.22);
+      const x=Math.cos(ang)*rad, y=Math.sin(ang)*rad;
+      const dop=(Math.sin(ang)*0.5+0.5); // 0 blue side, 1 red side
+      const clumpA=0.55+flare*0.3 + 0.15*Math.sin(t*0.08+k);
+      ctx.fillStyle=dop<0.5 ? 'rgba(120,190,255,'+clumpA.toFixed(2)+')' : 'rgba(255,120,70,'+clumpA.toFixed(2)+')';
+      ctx.beginPath(); ctx.arc(x,y,1.7,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+    // disk shadow on BH? disk behind BH top half should be occluded by BH — we draw BH shadow after, so that naturally clips the top
+
+    // --- photon ring ---
+    // outer glow
+    ctx.strokeStyle='rgba(255,236,180,0.18)';
+    ctx.lineWidth=ringR*0.42 + flare*3;
+    ctx.beginPath(); ctx.arc(cx,cy,ringR,0,Math.PI*2); ctx.stroke();
+    // bright core ring
+    const ringG=ctx.createRadialGradient(cx,cy, ringR-1.2, cx,cy, ringR+1.2);
+    ringG.addColorStop(0,'rgba(255,250,230,0)');
+    ringG.addColorStop(0.45,'rgba(255,242,190,0.95)');
+    ringG.addColorStop(0.55,'rgba(255,210,110,0.95)');
+    ringG.addColorStop(1,'rgba(255,210,110,0)');
+    ctx.strokeStyle=ringG;
+    ctx.lineWidth=2.2 + flare*1.4;
+    ctx.shadowColor='rgba(255,230,140,0.9)'; ctx.shadowBlur=8+flare*8;
+    ctx.beginPath(); ctx.arc(cx,cy,ringR,0,Math.PI*2); ctx.stroke();
+    ctx.shadowBlur=0;
+    // inner photon ring tick
+    ctx.strokeStyle='rgba(255,255,255,0.55)';
+    ctx.lineWidth=0.9;
+    ctx.beginPath(); ctx.arc(cx,cy,ringR,0,Math.PI*2); ctx.stroke();
+
+    // --- BH shadow (dark disk) ---
+    const bhGrad=ctx.createRadialGradient(cx- Rs*0.28, cy- Rs*0.32, Rs*0.2, cx, cy, Rs);
+    bhGrad.addColorStop(0,'#0d121c');
+    bhGrad.addColorStop(0.62,'#04060a');
+    bhGrad.addColorStop(1,'#000000');
+    ctx.fillStyle=bhGrad;
+    ctx.beginPath(); ctx.arc(cx,cy,Rs,0,Math.PI*2); ctx.fill();
+    // hard edge
+    ctx.strokeStyle='rgba(0,0,0,0.95)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(cx,cy,Rs+0.3,0,Math.PI*2); ctx.stroke();
+    // specular glint on photon ring occluded edge (subtle)
+    ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(cx,cy,Rs+0.9, Math.PI*0.18, Math.PI*0.62); ctx.stroke();
+
+    // drag handle hint when not dragging and near BH
+    if(!dragging){
+      ctx.strokeStyle='rgba(200,223,248,0.18)'; ctx.setLineDash([3,4]); ctx.lineWidth=0.9;
+      ctx.beginPath(); ctx.arc(cx,cy,Rs+7,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+    } else {
+      // flare rays when dragging
+      ctx.strokeStyle='rgba(110,198,255,'+(0.22+flare*0.16).toFixed(3)+')';
+      ctx.lineWidth=0.8; ctx.setLineDash([2,5]);
+      ctx.beginPath(); ctx.moveTo(cx-7,cy); ctx.lineTo(cx+7,cy); ctx.moveTo(cx,cy-7); ctx.lineTo(cx,cy+7); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle='rgba(110,198,255,0.12)'; ctx.beginPath(); ctx.arc(cx,cy,9,0,Math.PI*2); ctx.stroke();
+    }
+
+    ctx.restore();
+
+    if(t%4===0){
+      if(modeEl) modeEl.textContent='Rs '+Math.round(Rs)+' px'+(sec.classList.contains('is-fullscreen')?' · fullscreen':'');
+      if(readout) readout.textContent='10 000 stars · Rs '+Math.round(Rs)+' · ring '+(ringR|0)+' · flare '+Math.round(flare*100)+'%';
+    }
+
+    raf=requestAnimationFrame(loop);
+  }
+
+  wrap.addEventListener('pointerdown', e=>{
+    dragging=true;
+    wrap.classList.add('dragging');
+    try{ wrap.setPointerCapture(e.pointerId); }catch(_){}
+    updatePointer(e);
+    e.preventDefault();
+  });
+  wrap.addEventListener('pointermove', e=>{
+    if(dragging) updatePointer(e);
+    else if(!hasPointer){
+      // gentle attraction when idle?
+    }
+  });
+  const endDrag=e=>{
+    if(!dragging) return;
+    dragging=false;
+    wrap.classList.remove('dragging');
+    try{ wrap.releasePointerCapture(e.pointerId); }catch(_){}
+  };
+  wrap.addEventListener('pointerup', endDrag);
+  wrap.addEventListener('pointercancel', endDrag);
+  wrap.addEventListener('pointerleave', e=>{ if(dragging) endDrag(e); });
+
+  wrap.addEventListener('wheel', e=>{
+    if(sec.hidden) return;
+    e.preventDefault();
+    const delta = -e.deltaY * 0.0009;
+    const nextRs=Math.max(16, Math.min(72, Rs + delta*22));
+    // keep BH in bounds after Rs change
+    Rs=nextRs;
+    flareTarget=Math.min(1, Math.abs(e.deltaY)*0.0012 + 0.25);
+    setTimeout(()=>flareTarget=0, 380);
+    // rebuild readout next frame
+  }, {passive:false});
+
+  cv.tabIndex=0;
+  cv.addEventListener('keydown', e=>{
+    if(e.key==='ArrowLeft'){ tx=Math.max(Rs+6,tx-16); hasPointer=true; e.preventDefault(); }
+    else if(e.key==='ArrowRight'){ tx=Math.min(cssW-Rs-6,tx+16); hasPointer=true; e.preventDefault(); }
+    else if(e.key==='ArrowUp'){ ty=Math.max(Rs+6,ty-12); hasPointer=true; e.preventDefault(); }
+    else if(e.key==='ArrowDown'){ ty=Math.min(cssH-Rs-6,ty+12); hasPointer=true; e.preventDefault(); }
+    else if(e.key==='Escape'){
+      if(sec.classList.contains('is-fullscreen')){ sec.classList.remove('is-fullscreen'); if(fsBtn) fsBtn.textContent='⤢ fullscreen'; resize(); }
+      else setHorizon(false);
+      e.preventDefault();
+    }
+    else if(e.key==='f' || e.key==='F'){
+      if(!sec.hidden){ sec.classList.toggle('is-fullscreen'); if(fsBtn) fsBtn.textContent=sec.classList.contains('is-fullscreen')?'⤢ exit':'⤢ fullscreen'; resize(); }
+    }
+  });
+
+  btn.addEventListener('click', ()=> setHorizon(sec.hidden));
+  closeBtn.addEventListener('click', ()=> setHorizon(false));
+  if(fsBtn){
+    fsBtn.addEventListener('click', ()=>{
+      if(sec.hidden) return;
+      const on=!sec.classList.contains('is-fullscreen');
+      sec.classList.toggle('is-fullscreen', on);
+      fsBtn.textContent=on?'⤢ exit':'⤢ fullscreen';
+      resize();
+    });
+  }
+  document.addEventListener('keydown', e=>{
+    if((e.key==='Escape'||e.key==='Esc')){
+      if(sec.classList.contains('is-fullscreen')){ sec.classList.remove('is-fullscreen'); if(fsBtn) fsBtn.textContent='⤢ fullscreen'; resize(); e.preventDefault(); return; }
+      if(!sec.hidden) setHorizon(false);
+    }
+  });
+  window.addEventListener('resize', ()=>{ if(!sec.hidden) resize(); });
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden) return;
+    if(!sec.hidden && !running) start();
+  });
+
+  // ESC closes fullscreen before closing panel — handle via dedicated listener above
+
+  window.__horizon={open:()=>setHorizon(true), close:()=>setHorizon(false), _stop:stop, get Rs(){return Rs}, get dragging(){return dragging}};
+  // patch programmatic openers on altar/ferro so quad-state holds even when __altar.open() is called directly
+  try{
+    if(window.__altar && window.__altar.open){
+      const _ao=window.__altar.open.bind(window.__altar);
+      window.__altar.open=()=>{ setHorizon(false); updateMonsoon(); return _ao(); };
+    }
+    if(window.__ferro && window.__ferro.open){
+      const _fo=window.__ferro.open.bind(window.__ferro);
+      window.__ferro.open=()=>{ setHorizon(false); updateMonsoon(); return _fo(); };
+    }
+    // also keep monsoon correct if horizon observer fires
+    const _obs=new MutationObserver(()=>updateMonsoon());
+    if(altarSec) _obs.observe(altarSec,{attributes:true,attributeFilter:['hidden']});
+    if(ferroSec) _obs.observe(ferroSec,{attributes:true,attributeFilter:['hidden']});
+    _obs.observe(sec,{attributes:true,attributeFilter:['hidden','class']});
+  }catch(_){}
 })();
 </script>
 
