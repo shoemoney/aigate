@@ -658,6 +658,23 @@ main.shake{animation:seismo-shake .38s ease}
 .voronoi-pulse{position:absolute;right:12px;top:10px;pointer-events:none;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(200,232,240,.62);background:rgba(5,7,10,.55);border:1px solid rgba(142,207,216,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px}
 .voronoi-pulse i{width:7px;height:7px;border-radius:50%;background:#8ecfd8;box-shadow:0 0 8px rgba(142,207,216,.6);animation:voronoi-breathe 3.2s ease-in-out infinite}
 @keyframes voronoi-breathe{0%,100%{transform:scale(.88);opacity:.75}50%{transform:scale(1.22);opacity:1}}
+/* <!-- IMPL: Turing Tide --> — Gray-Scott reaction-diffusion · double-buffered FBO ping-pong · F/k drift with vault health · pure fragment math, zero SDF */
+#turing-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #1e2320;border-radius:6px;overflow:hidden;background:#06080a;box-shadow:0 4px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05)}
+.turing-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#121416 0%,#0c0e10 55%,#06080a 100%);border-bottom:1px solid #1e2320;flex-wrap:wrap}
+.turing-head .sec-num{font:11px var(--mono);letter-spacing:.14em;color:#7ec8b8}
+.turing-head h2{font:12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.turing-head .turing-note{margin-left:auto;font:11px var(--mono);letter-spacing:.08em;color:var(--dim);opacity:.9}
+.turing-head .turing-note b{color:#c8e8d8;font-weight:600}
+.turing-head .turing-actions{display:flex;align-items:center;gap:6px}
+.turing-canvas-wrap{position:relative;height:160px;background:radial-gradient(ellipse 620px 120px at 50% 0%,rgba(126,200,184,.07),transparent 68%),radial-gradient(ellipse 420px 110px at 84% 88%,rgba(232,179,75,.05),transparent 70%),linear-gradient(180deg,#060a0c 0%,#05070a 100%);overflow:hidden;cursor:crosshair;touch-action:none}
+#turing{display:block;width:100%;height:100%;pointer-events:auto}
+.turing-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;background:#0c0e10;border-top:1px solid #1e2320;font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.turing-meta .mode{color:#c8e8d8}
+.turing-meta .hint{opacity:.75}
+.turing-spec{position:absolute;left:12px;bottom:10px;pointer-events:none;font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(126,200,184,.52);background:rgba(6,10,12,.55);border:1px solid rgba(126,200,184,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px)}
+.turing-pulse{position:absolute;right:12px;top:10px;pointer-events:none;font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(180,232,220,.62);background:rgba(5,9,10,.55);border:1px solid rgba(126,200,184,.12);border-radius:20px;padding:4px 8px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px}
+.turing-pulse i{width:7px;height:7px;border-radius:50%;background:#7ec8b8;box-shadow:0 0 8px rgba(126,200,184,.6);animation:turing-breathe 2.8s ease-in-out infinite}
+@keyframes turing-breathe{0%,100%{transform:scale(.88);opacity:.72}50%{transform:scale(1.2);opacity:1}}
 /* <!-- IMPL: Spectral Vault --> — SDF vault door: torus-knot keyhole, depth tumblers, volumetric shafts, BREACH shockwave */
 #vault-sec{position:relative;z-index:1;margin:0 0 22px;border:1px solid #23262a;border-radius:6px;overflow:hidden;background:#06090c;box-shadow:0 4px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
 .vault-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:linear-gradient(180deg,#13191c 0%,#0c1012 55%,#06090c 100%);border-bottom:1px solid #23262a}
@@ -744,6 +761,8 @@ main.shake{animation:seismo-shake .38s ease}
   .lung-clip{display:none!important}
   .card{transform:none!important;box-shadow:none!important}
   .card .glare{display:none}
+  #turing-sec{display:none!important}
+  #turing{display:none!important}
   #voronoi-sec{display:none!important}
   #voronoi{display:none!important}
 }
@@ -1221,6 +1240,26 @@ main.shake{animation:seismo-shake .38s ease}
       <div class="voronoi-meta">
         <span class="mode">▸ <span id="voronoi-readout">40 cells · Lloyd relaxing · 8px grid</span></span>
         <span class="hint">pure 2D distance field · 1 canvas · click to divide</span>
+      </div>
+    </section>
+    <!-- IMPL: Turing Tide — Gray-Scott reaction-diffusion · double-buffered FBO ping-pong · F/k drift with vault health (healthy=spots, degraded=labyrinth) · pure fragment math, zero SDF -->
+    <section id="turing-sec" class="turing-sec" aria-label="Turing Tide — Living Reaction-Diffusion">
+      <div class="turing-head">
+        <span class="sec-num">00</span><h2>Turing Tide</h2>
+        <span class="turing-note"><b id="turing-mode">spots</b> · F <b id="turing-F">0.035</b> · k <b id="turing-k">0.065</b> · click = seed · drag = paint</span>
+        <span class="turing-actions">
+          <button id="turing-seed" class="btn sm" type="button" aria-label="seed Turing pattern">＋ seed</button>
+          <button id="turing-reset" class="btn sm" type="button" aria-label="reset Turing field">↻ reset</button>
+        </span>
+      </div>
+      <div class="turing-canvas-wrap" id="turing-wrap">
+        <canvas id="turing" width="1200" height="160" aria-label="Turing Tide — Gray-Scott reaction-diffusion, patterns drift with vault health" role="img"></canvas>
+        <span class="turing-spec">⬡ Gray-Scott F+k · ping-pong · health→pattern</span>
+        <span class="turing-pulse" id="turing-pulse" aria-hidden="true"><i></i><span id="turing-pulse-label">tide 0.50×</span></span>
+      </div>
+      <div class="turing-meta">
+        <span class="mode">▸ <span id="turing-readout">Du 0.16 · Dv 0.08 · double-buffered · pure fragment math</span></span>
+        <span class="hint">pure fragment math · zero SDF · 1 canvas</span>
       </div>
     </section>
 
@@ -7520,6 +7559,401 @@ function startMonsoon(){
     io.observe(sec);
   }catch(_){}
   window.__voronoi={start,stop,get running(){return running}, divideAt, fractureRandom, get seeds(){return seeds}, get reqRate(){return reqRate}};
+})();
+</script>
+<!-- IMPL: Turing Tide -->
+<script>
+/* <!-- IMPL: Turing Tide --> — Gray-Scott reaction-diffusion · double-buffered FBO ping-pong · F/k drift with vault health · pure fragment math, zero SDF */
+(function(){
+  'use strict';
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const sec=document.getElementById('turing-sec');
+  const cv=document.getElementById('turing');
+  const wrap=document.getElementById('turing-wrap');
+  if(!sec||!cv||!wrap) return;
+  const ctx=cv.getContext('2d',{alpha:false});
+  if(!ctx) return;
+  // sim grid — small so 6 steps/frame is cheap (~7k cells)
+  let dpr=Math.min(window.devicePixelRatio||1,2), cssW=0, cssH=0;
+  let simW=0, simH=0, N=0;
+  let uA=null, vA=null, uB=null, vB=null; // double-buffered
+  let curU=null, curV=null, nxtU=null, nxtV=null;
+  let off=null, offCtx=null, img=null; // offscreen at sim resolution
+  let t=0, raf=0, running=false;
+  let stepsPerFrame=6;
+  const Du=0.16, Dv=0.08, dt=1.0;
+  // Gray-Scott params drift with vault health
+  let curF=0.035, curK=0.065, tgtF=0.035, tgtK=0.065;
+  let health=0.62, healthSmooth=0.62;
+  let lastProbe=0;
+  // palette — map V (0..0.45) → rgba via small LUT inline
+  function vColor(v){
+    // 0 = deep void #06080a, mid = teal, high = cyan/white crest
+    v=Math.max(0,Math.min(0.55,v));
+    const t=v/0.55;
+    // cubic easing for contrast
+    const e=Math.pow(t,0.72);
+    // interpolate deep → teal → pale
+    // deep 6,8,10 → teal 58,190,170 → pale 220,245,245
+    let r,g,b;
+    if(e<0.42){
+      const u=e/0.42;
+      r= 6 + (58-6)*u;
+      g= 8 + (90-8)*u;
+      b=10 + (52-10)*u;
+    } else if(e<0.78){
+      const u=(e-0.42)/0.36;
+      r=58 + (110-58)*u;
+      g=90 + (190-90)*u;
+      b=52 + (190-52)*u;
+    } else {
+      const u=(e-0.78)/0.22;
+      r=110 + (222-110)*u;
+      g=190 + (242-190)*u;
+      b=190 + (242-190)*u;
+    }
+    return [r|0,g|0,b|0];
+  }
+  function healthToFK(h){
+    // h 0..1: 0 degraded labyrinth, 1 healthy spots
+    h=Math.max(0,Math.min(1,h));
+    if(h>=0.66){
+      const u=(h-0.66)/0.34; // 0→1
+      // degraded-mid → healthy spots: lerp (0.039,0.058) → (0.035,0.065)
+      return {F: 0.039*(1-u)+0.035*u, k: 0.058*(1-u)+0.065*u, label:'spots'};
+    } else if(h>=0.33){
+      const u=(h-0.33)/0.33;
+      // labyrinth → maze: (0.025,0.050) → (0.039,0.058)
+      return {F: 0.025*(1-u)+0.039*u, k: 0.050*(1-u)+0.058*u, label:(u>0.62?'maze':'worms')};
+    } else {
+      const u=h/0.33;
+      // deep labyrinth: (0.014,0.054) → (0.025,0.050)
+      const F=0.014*(1-u)+0.025*u;
+      const k=0.054*(1-u)+0.050*u;
+      return {F, k, label:'labyrinth'};
+    }
+  }
+  function probeHealth(){
+    const now=performance.now();
+    if(now-lastProbe<650) return;
+    lastProbe=now;
+    let h=0.62, got=false;
+    try{
+      const vueApp=window.app || document.getElementById('app')?.__vue_app__ || null;
+      const proxy=vueApp && vueApp._instance && vueApp._instance.proxy;
+      if(proxy && Array.isArray(proxy.accounts)){
+        const accs=proxy.accounts;
+        if(accs.length){
+          let sum=0, elig=0;
+          for(let i=0;i<accs.length;i++){
+            const a=accs[i];
+            const w=Math.max(0,Math.min(100, (a.five_hour_pct||0) > (a.seven_day_pct||0) ? (a.five_hour_pct||0) : (a.seven_day_pct||0)));
+            const s=1 - w/100;
+            sum+=s;
+            const dis=a.disabled||a.reauth_needed||!a.has_token||a.parked;
+            if(!dis && w<95) elig++;
+          }
+          const avg=sum/accs.length;
+          const eligRatio=elig/accs.length;
+          h= avg*0.62 + eligRatio*0.38;
+          got=true;
+        }
+        if(Array.isArray(proxy.keys) && proxy.keys.length){
+          let wk=0; for(const k of proxy.keys) if(k.status==='working') wk++;
+          const kr=wk/proxy.keys.length;
+          h = h*0.72 + kr*0.28;
+          got=true;
+        }
+      }
+      if(!got){
+        // DOM fallback: count inbox crit vs total
+        const inbox=document.getElementById('inbox');
+        if(inbox){
+          const txt=inbox.textContent||'';
+          const crit=(txt.match(/CRIT/g)||[]).length;
+          const tot=(txt.match(/open/gi)||[]).length||crit;
+          if(crit || tot){ h=Math.max(0.12, 1 - crit*0.22); got=true; }
+        }
+      }
+    }catch(_){}
+    if(got){
+      health=Math.max(0.06,Math.min(0.98,h));
+      const fk=healthToFK(health);
+      tgtF=fk.F; tgtK=fk.k;
+    } else {
+      // slow breathe when no signal
+      health=0.55+Math.sin(now*0.00012)*0.12;
+      const fk=healthToFK(health);
+      tgtF=fk.F; tgtK=fk.k;
+    }
+  }
+  function alloc(w,h){
+    simW=w; simH=h; N=w*h;
+    uA=new Float32Array(N); vA=new Float32Array(N);
+    uB=new Float32Array(N); vB=new Float32Array(N);
+    off=document.createElement('canvas'); off.width=w; off.height=h;
+    offCtx=off.getContext('2d',{alpha:false});
+    img=offCtx.createImageData(w,h);
+    for(let i=0;i<N;i++){ uA[i]=1; vA[i]=0; }
+    // seed: 3 random blobs + central noisy square — pure fragment math, zero SDF
+    const seeds=3 + (Math.random()*2|0);
+    for(let s=0;s<seeds;s++){
+      const cx=(Math.random()*0.55+0.22)*w;
+      const cy=(Math.random()*0.62+0.18)*h;
+      const rad= (6 + Math.random()*8);
+      const rad2=rad*rad;
+      for(let y=Math.max(0,(cy-rad)|0); y<Math.min(h,(cy+rad+1)|0); y++){
+        for(let x=Math.max(0,(cx-rad)|0); x<Math.min(w,(cx+rad+1)|0); x++){
+          const dx=x-cx, dy=y-cy; const d2=dx*dx+dy*dy;
+          if(d2<=rad2){
+            const j=y*w+x;
+            const e=1 - Math.sqrt(d2)/rad;
+            vA[j]=Math.max(vA[j], 0.22 + e*0.35 + Math.random()*0.08);
+            uA[j]=Math.min(uA[j], 0.50 - e*0.18);
+          }
+        }
+      }
+    }
+    // central 22×10 noisy rectangle like Pearson's initial condition
+    const rx=(w*0.5)|0, ry=(h*0.5)|0, rw=22, rh=10;
+    for(let yy=-rh;yy<=rh;yy++){
+      for(let xx=-rw;xx<=rw;xx++){
+        const x=rx+xx, y=ry+yy;
+        if(x<0||x>=w||y<0||y>=h) continue;
+        if(Math.random()<0.62){
+          const j=y*w+x;
+          vA[j]=0.25 + Math.random()*0.08;
+          uA[j]=0.48 + Math.random()*0.06;
+        }
+      }
+    }
+    curU=uA; curV=vA; nxtU=uB; nxtV=vB;
+  }
+  function resize(){
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    const r=wrap.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(r.width));
+    cssH=Math.max(1,Math.floor(r.height));
+    cv.width=Math.floor(cssW*dpr);
+    cv.height=Math.floor(cssH*dpr);
+    cv.style.width=cssW+'px';
+    cv.style.height=cssH+'px';
+    // sim grid — keep ~140..200 x ~28..42 for aspect 7.5:1, capped ~7k cells
+    const targetCols=Math.max(96, Math.min(220, Math.floor(cssW/6)));
+    const targetRows=Math.max(28, Math.min(48, Math.floor(cssH/4.2)));
+    if(simW!==targetCols||simH!==targetRows||!curU) alloc(targetCols,targetRows);
+  }
+  function isHidden(){
+    if(sec.hidden) return true;
+    if(sec.style.display==='none') return true;
+    if(document.hidden) return true;
+    const r=sec.getBoundingClientRect();
+    if(r.bottom<0||r.top>innerHeight+120) return true;
+    return false;
+  }
+  function start(){ if(running) return; if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; running=true; cancelAnimationFrame(raf); loop(); }
+  function stop(){ running=false; cancelAnimationFrame(raf); raf=0; }
+  function inject(cx01, cy01, radSim, strength){
+    if(!curU||!curV) return;
+    const cx=cx01*simW, cy=cy01*simH;
+    const rad=radSim||7;
+    const rad2=rad*rad;
+    for(let y=Math.max(0,(cy-rad)|0); y<Math.min(simH,(cy+rad+1)|0); y++){
+      for(let x=Math.max(0,(cx-rad)|0); x<Math.min(simW,(cx+rad+1)|0); x++){
+        const dx=x-cx, dy=y-cy; const d2=dx*dx+dy*dy;
+        if(d2<=rad2){
+          const j=y*simW+x;
+          const e=1 - Math.sqrt(d2)/rad;
+          curV[j]=Math.min(0.85, curV[j] + (strength||0.42)*e);
+          curU[j]=Math.max(0.05, curU[j] - (strength||0.18)*e);
+          nxtV[j]=curV[j]; nxtU[j]=curU[j];
+        }
+      }
+    }
+  }
+  function step(){
+    // Du*lapU - U*V^2 + F*(1-U) ; Dv*lapV + U*V^2 - (F+k)*V  — 5-point Laplacian, toroidal wrap
+    const w=simW, h=simH;
+    for(let y=0;y<h;y++){
+      const yUp=(y-1+h)%h, yDn=(y+1)%h;
+      for(let x=0;x<w;x++){
+        const xLe=(x-1+w)%w, xRi=(x+1)%w;
+        const i=y*w+x;
+        const u=curU[i], v=curV[i];
+        const uUp=curU[yUp*w+x], uDn=curU[yDn*w+x], uLe=curU[y*w+xLe], uRi=curU[y*w+xRi];
+        const vUp=curV[yUp*w+x], vDn=curV[yDn*w+x], vLe=curV[y*w+xLe], vRi=curV[y*w+xRi];
+        const lapU= uUp+uDn+uLe+uRi -4*u;
+        const lapV= vUp+vDn+vLe+vRi -4*v;
+        const uvv=u*v*v;
+        let du= Du*lapU - uvv + curF*(1-u);
+        let dv= Dv*lapV + uvv - (curF+curK)*v;
+        let nu=u+du*dt;
+        let nv=v+dv*dt;
+        // kill NaNs, clamp
+        if(nu!==nu) nu=u; if(nv!==nv) nv=v;
+        if(nu<0) nu=0; else if(nu>1) nu=1;
+        if(nv<0) nv=0; else if(nv>1) nv=1;
+        nxtU[i]=nu; nxtV[i]=nv;
+      }
+    }
+    // swap ping-pong
+    let tu=curU; curU=nxtU; nxtU=tu;
+    let tv=curV; curV=nxtV; nxtV=tv;
+  }
+  function render(){
+    // draw V field into offscreen ImageData, then stretch to main canvas
+    const d=img.data;
+    for(let i=0;i<N;i++){
+      const v=curV[i];
+      const c=vColor(v);
+      const j=i*4;
+      d[j]=c[0]; d[j+1]=c[1]; d[j+2]=c[2]; d[j+3]=255;
+    }
+    offCtx.putImageData(img,0,0);
+    ctx.save(); ctx.scale(dpr,dpr);
+    ctx.imageSmoothingEnabled=false;
+    // letterbox-ish: draw offscreen stretched to cssW×cssH
+    ctx.drawImage(off,0,0,cssW,cssH);
+    ctx.imageSmoothingEnabled=true;
+    // subtle vignette + scan
+    const vg=ctx.createRadialGradient(cssW*0.5,cssH*0.5,0,cssW*0.5,cssH*0.5,Math.max(cssW,cssH)*0.9);
+    vg.addColorStop(0,'rgba(10,14,18,0)'); vg.addColorStop(0.58,'rgba(8,12,16,0)'); vg.addColorStop(1,'rgba(0,0,0,0.46)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,cssW,cssH);
+    // faint horizontal scan for living texture
+    ctx.fillStyle='rgba(126,200,184,0.018)';
+    for(let y=0;y<cssH;y+=4) ctx.fillRect(0,y,cssW,1);
+    // health tint — degraded reddish wash, healthy teal stays clean
+    const tint = 1-healthSmooth; // 0 healthy → 1 labyrinth
+    if(tint>0.08){
+      ctx.fillStyle='rgba(96,72,58,'+(tint*0.11).toFixed(3)+')';
+      ctx.fillRect(0,0,cssW,cssH);
+    }
+    // micro-noise when worms
+    if(tint>0.28 && (t%2===0)){
+      ctx.fillStyle='rgba(255,255,255,'+(0.012+tint*0.015).toFixed(3)+')';
+      for(let k=0;k<22;k++){
+        const x=Math.random()*cssW, y=Math.random()*cssH;
+        ctx.fillRect(x,y,1,1);
+      }
+    }
+    ctx.restore();
+  }
+  function loop(){
+    if(!running) return;
+    if(isHidden()){ raf=requestAnimationFrame(loop); return; }
+    t++;
+    // health drift — slowly chase target F/k (so pattern morphs, not snaps)
+    healthSmooth += (health - healthSmooth)*0.018;
+    curF += (tgtF - curF)*0.014;
+    curK += (tgtK - curK)*0.014;
+    // add breathing jitter to F so spots pulse without changing class
+    curF += Math.sin(t*0.011)*0.00022;
+    probeHealth();
+    // adaptive steps: when labyrinth, push one extra step for crawl
+    const sAdd = healthSmooth<0.38 ? 2 : (healthSmooth<0.58 ? 1 : 0);
+    const sps = stepsPerFrame + sAdd + (t%7===0?1:0);
+    for(let s=0;s<sps;s++) step();
+    render();
+    if(t%22===0){
+      const fk=healthToFK(healthSmooth);
+      const modeEl=document.getElementById('turing-mode');
+      const fEl=document.getElementById('turing-F');
+      const kEl=document.getElementById('turing-k');
+      const pulse=document.getElementById('turing-pulse-label');
+      const readout=document.getElementById('turing-readout');
+      if(modeEl) modeEl.textContent=fk.label;
+      if(fEl) fEl.textContent=curF.toFixed(3);
+      if(kEl) kEl.textContent=curK.toFixed(3);
+      if(pulse) pulse.textContent='tide '+(healthSmooth).toFixed(2)+'×';
+      if(readout) readout.textContent='Du 0.16 · Dv 0.08 · '+(simW+'×'+simH)+' · '+fk.label+' · '+(healthSmooth>0.66?'stable spots':healthSmooth>0.33?'maze':'writhing');
+    }
+    raf=requestAnimationFrame(loop);
+  }
+  // interactions — click/drag to paint V
+  function pos01(e){
+    const r=cv.getBoundingClientRect();
+    const x=(e.clientX - r.left)/r.width;
+    const y=(e.clientY - r.top)/r.height;
+    return [Math.max(0,Math.min(1,x)), Math.max(0,Math.min(1,y))];
+  }
+  let dragging=false, lastPos=null;
+  cv.addEventListener('pointerdown', (e)=>{
+    dragging=true; cv.setPointerCapture(e.pointerId);
+    const [x,y]=pos01(e);
+    inject(x,y,9,0.62);
+    lastPos=[x,y];
+    cv.style.filter='brightness(1.08)'; setTimeout(()=>cv.style.filter='',140);
+  });
+  cv.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    const [x,y]=pos01(e);
+    if(lastPos){
+      const dx=x-lastPos[0], dy=y-lastPos[1];
+      const d=Math.hypot(dx,dy);
+      const n=Math.max(1, Math.ceil(d*simW/2));
+      for(let i=0;i<=n;i++){
+        const u=i/n;
+        inject(lastPos[0]+dx*u, lastPos[1]+dy*u, 7, 0.44);
+      }
+    } else inject(x,y,7,0.44);
+    lastPos=[x,y];
+  });
+  cv.addEventListener('pointerup', (e)=>{
+    dragging=false; lastPos=null;
+    try{ cv.releasePointerCapture(e.pointerId);}catch(_){}
+  });
+  cv.addEventListener('pointercancel', ()=>{ dragging=false; lastPos=null; });
+  cv.addEventListener('pointerleave', ()=>{ if(!dragging) lastPos=null; });
+  document.getElementById('turing-seed')?.addEventListener('click', ()=>{
+    inject(Math.random()*0.6+0.2, Math.random()*0.5+0.2, 10, 0.58);
+    cv.style.filter='brightness(1.10)'; setTimeout(()=>cv.style.filter='',160);
+  });
+  document.getElementById('turing-reset')?.addEventListener('click', ()=>{
+    alloc(simW,simH);
+    curF=tgtF; curK=tgtK;
+    cv.style.filter='brightness(1.12)'; setTimeout(()=>cv.style.filter='',180);
+  });
+  // fetch snooping for vault activity — reuse pattern from voronoi but lighter
+  (function hookFetch(){
+    const orig=window.fetch;
+    if(!orig||orig.__turingHooked) return;
+    window.fetch=function(input,init){
+      const p=orig.apply(this,arguments);
+      p.then(res=>{
+        try{
+          const url= typeof input==='string'?input:(input&&input.url)||'';
+          if(res && res.status===401){
+            health=Math.max(0.08, health-0.16);
+            const fk=healthToFK(health); tgtF=fk.F; tgtK=fk.k;
+            for(let k=0;k<2;k++) setTimeout(()=>inject(Math.random()*0.7+0.15, Math.random()*0.6+0.2, 11, 0.62), k*90);
+          }
+          if(url.includes('/api/keys') && res && res.ok){
+            health=Math.min(0.96, health+0.06);
+            const fk=healthToFK(health); tgtF=fk.F; tgtK=fk.k;
+          }
+        }catch(_){}
+      }).catch(()=>{});
+      return p;
+    };
+    window.fetch.__turingHooked=true;
+  })();
+  // also nudge on WS 401 like voronoi
+  setInterval(probeHealth, 700);
+  // init
+  resize(); start();
+  window.addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) return; if(!running) start(); });
+  try{
+    const mq=window.matchMedia('(prefers-reduced-motion: reduce)');
+    mq.addEventListener('change', e=>{ if(e.matches) stop(); else start(); });
+  }catch(_){}
+  try{
+    const io=new IntersectionObserver((ents)=>{
+      for(const en of ents) if(en.target===sec && en.isIntersecting) start();
+    },{threshold:0});
+    io.observe(sec);
+  }catch(_){}
+  window.__turing={start,stop,get running(){return running}, inject, get F(){return curF}, get k(){return curK}, get health(){return healthSmooth}, get sim(){return {w:simW,h:simH}}};
 })();
 </script>
 <!-- IMPL: Ghost Fleet -->
