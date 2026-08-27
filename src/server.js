@@ -398,11 +398,20 @@ function logAccess(account, host, ip, action, result) {
   q.insAccess.run(account, host, ip, action, result);
   broadcast('access', { account, host, ip, action, result });
 }
-// one-pass count of unusable accounts — shared by /health and the reasoned select-503
-const tally = (list) => {
-  let parked = 0, reauth = 0, disabled = 0;
-  for (const a of list) { parked += a.parked; reauth += a.reauth_needed; disabled += a.disabled; }
-  return { parked, reauth, disabled };
+// one-pass count of unusable accounts — shared by /health and the reasoned select-503.
+// over_cutoff counts the accounts that clear EVERY other gate and are excluded purely
+// for being out of quota. Without it, a routine "two accounts are over their 7-day
+// window" reads on /health as selectable<accounts with parked/reauth/disabled all 0 —
+// an unexplained gap that gets escalated as a suspected outage every time it happens.
+const tally = (list, cutoff = CUTOFF) => {
+  let parked = 0, reauth = 0, disabled = 0, over_cutoff = 0;
+  for (const a of list) {
+    parked += a.parked; reauth += a.reauth_needed; disabled += a.disabled;
+    // mirrors pickRanked's WHERE exactly: the other gates first, then the usage test
+    if (!a.disabled && !a.reauth_needed && a.has_token && !a.parked
+        && Math.max(a.five_hour_pct, a.seven_day_pct) >= cutoff) over_cutoff++;
+  }
+  return { parked, reauth, disabled, over_cutoff };
 };
 // fire-and-forget outbound alert; never throws into a request path
 function alert(text, extra = {}) {
@@ -522,7 +531,7 @@ const server = http.createServer(async (req, res) => {
       // same query /api/select uses — a hand-rolled filter here once ignored parked_until
       // and reported selectable>0 while select 503'd, so autoheal never restarted anything.
       const selectable = q.pickRanked.all(CUTOFF).length;
-      const { parked, reauth, disabled } = tally(accts);
+      const { parked, reauth, disabled, over_cutoff } = tally(accts);
       // newest aigate-*.db backup mtime → age; numbers only, safe on this unauth endpoint
       let backup_age_s = null;
       if (existsSync(BACKUP_DIR)) {
@@ -532,7 +541,7 @@ const server = http.createServer(async (req, res) => {
         if (mtimes.length) backup_age_s = Math.round((Date.now() - Math.max(...mtimes)) / 1000);
       }
       return json(res, 200, { ok: true, uptime_s: Math.round(process.uptime()), accounts: accts.length, selectable,
-        poll_age_s: q.pollAge.get().s, backup_age_s, parked, reauth, disabled,
+        poll_age_s: q.pollAge.get().s, backup_age_s, parked, reauth, disabled, over_cutoff,
         // last poller cycle health — surfaces poll degradation (all tokens erroring) that
         // usage staleness alone wouldn't flag; numbers only, safe on this unauth endpoint
         poll_ok: lastPoll.ok, poll_failed: lastPoll.failed.length });
@@ -783,10 +792,10 @@ const server = http.createServer(async (req, res) => {
         // reasoned 503: WHY is nothing servable — one account may tick several counters.
         // Tally BEFORE the audit so the feed AND /api/access record the reason, not a bare 'none-available'.
         const all = q.listAccounts.all();
-        const { parked, reauth, disabled } = tally(all);
-        logAccess(null, host, ip, 'select', `none-available · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off)`);
-        noteSelectable(0, { via: 'select', accounts: all.length, parked, reauth, disabled });   // edge-alert on first outage
-        return json(res, 503, { error: 'no account with headroom', accounts: all.length, parked, reauth, disabled });
+        const { parked, reauth, disabled, over_cutoff } = tally(all);
+        logAccess(null, host, ip, 'select', `none-available · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off, ${over_cutoff} over cutoff)`);
+        noteSelectable(0, { via: 'select', accounts: all.length, parked, reauth, disabled, over_cutoff });   // edge-alert on first outage
+        return json(res, 503, { error: 'no account with headroom', accounts: all.length, parked, reauth, disabled, over_cutoff });
       }
       noteSelectable(1, { via: 'select' });   // a real handout means selection is up → clears the outage latch
       logAccess(picked.account, host, ip, 'select', 'ok');
@@ -853,7 +862,7 @@ const server = http.createServer(async (req, res) => {
     // it can alert on 0 selectable / rising decrypt or poll failures). Numbers only.
     if (p === '/api/metrics' && req.method === 'GET') {
       const accts = q.listAccounts.all();
-      const { parked, reauth, disabled } = tally(accts);
+      const { parked, reauth, disabled, over_cutoff } = tally(accts);
       const keyc = Object.fromEntries(q.keyStatusCounts.all().map((r) => [r.status || 'unknown', r.c]));
       const L = [
         '# aigate metrics',
@@ -863,6 +872,7 @@ const server = http.createServer(async (req, res) => {
         `aigate_accounts_parked ${parked}`,
         `aigate_accounts_reauth ${reauth}`,
         `aigate_accounts_disabled ${disabled}`,
+        `aigate_accounts_over_cutoff ${over_cutoff}`,
         `aigate_poll_ok ${lastPoll.ok}`,
         `aigate_poll_failed ${lastPoll.failed.length}`,
         `aigate_provider_keys_working ${keyc.working || 0}`,

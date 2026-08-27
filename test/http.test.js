@@ -393,6 +393,43 @@ test('/health selectable drops to 0 when no account is usable', async () => {
   db.prepare('UPDATE accounts SET disabled=0').run();
 });
 
+test('/health explains an over-quota gap: over_cutoff, not a silent selectable<accounts', async () => {
+  // the real 2026-08-27 shape: every account polls fine, none is parked/re-auth/disabled,
+  // but two are out of their 7-day window. Before over_cutoff this read as an unexplained
+  // gap and got escalated as a suspected outage on two consecutive ops runs.
+  db.prepare("UPDATE accounts SET disabled=0,reauth_needed=0,parked_until=NULL,five_hour_pct=0,seven_day_pct=100,usage_updated=datetime('now') WHERE account=?").run('alice');
+  db.prepare("UPDATE accounts SET disabled=0,reauth_needed=0,parked_until=NULL,five_hour_pct=2,seven_day_pct=24,usage_updated=datetime('now') WHERE account=?").run('bob');
+  const j = await (await fetch(base + '/health')).json();
+  assert.equal(j.accounts, 2);
+  assert.equal(j.selectable, 1);                    // bob only
+  assert.equal(j.parked, 0);
+  assert.equal(j.reauth, 0);
+  assert.equal(j.disabled, 0);
+  assert.equal(j.over_cutoff, 1);                   // ← the gap now names itself
+  assert.equal(j.selectable + j.over_cutoff, j.accounts);
+});
+
+test('over_cutoff does not double-count an account already excluded for another reason', async () => {
+  // parked AND over quota → counted as parked, not as an unexplained second exclusion
+  db.prepare("UPDATE accounts SET disabled=0,reauth_needed=0,seven_day_pct=100,parked_until=datetime('now','+1 hour') WHERE account=?").run('alice');
+  const j = await (await fetch(base + '/health')).json();
+  assert.equal(j.parked, 1);
+  assert.equal(j.over_cutoff, 0);                   // parked already explains it
+  db.prepare("UPDATE accounts SET parked_until=NULL,five_hour_pct=1,seven_day_pct=1,usage_updated=datetime('now') WHERE account=?").run('alice');
+});
+
+test('select-503 names the over-quota reason instead of a bare no-headroom', async () => {
+  db.prepare("UPDATE accounts SET disabled=0,reauth_needed=0,parked_until=NULL,five_hour_pct=0,seven_day_pct=100,usage_updated=datetime('now')").run();
+  const r = await fetch(base + '/api/select?host=t', { headers: H });
+  assert.equal(r.status, 503);
+  const j = await r.json();
+  assert.equal(j.parked, 0);
+  assert.equal(j.reauth, 0);
+  assert.equal(j.disabled, 0);
+  assert.equal(j.over_cutoff, 2);                   // both accounts, and it says so
+  db.prepare("UPDATE accounts SET five_hour_pct=1,seven_day_pct=1,usage_updated=datetime('now')").run();
+});
+
 test('GET /api/providers returns the catalog (>=50, well-formed)', async () => {
   const r = await fetch(base + '/api/providers', { headers: H });
   assert.equal(r.status, 200);
