@@ -456,6 +456,10 @@ function sweepAuthFails() {
 const authed = (req) => {
   const h = req.headers.authorization || '';
   if (h.startsWith('Bearer ') && tokenMatches(h.slice(7), TOKEN)) return true;   // machine clients
+  // the real `claude` binary sends x-api-key (not Authorization) when launched with
+  // ANTHROPIC_API_KEY rather than ANTHROPIC_AUTH_TOKEN — same shared secret, timing-safe,
+  // so accepting it here doesn't add a second credential, just a second header shape.
+  if (tokenMatches(String(req.headers['x-api-key'] || ''), TOKEN)) return true;
   // browser: a signed session cookie from a password login (only when configured)
   return !!DASH_PW && verifySession(SESS_SECRET, parseCookie(req.headers.cookie, SESS_COOKIE));
 };
@@ -480,6 +484,10 @@ const body = (req) => new Promise((resolve) => {
   req.on('error', () => done({}));
 });
 const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(obj)); };
+// Anthropic Messages-protocol error shape — a claude-binary or SDK client parses THIS,
+// not aigate's plain {error}. Same headers as json() so nothing downstream (caches, XSS
+// sniffing) treats a proxy error differently from any other aigate response.
+const aerr = (res, code, type, message) => { res.writeHead(code, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify({ type: 'error', error: { type, message } })); };
 // prefix-shaped secrets only (sk-…, ghp…, xoxb…) — no generic long-hex rule, git SHAs must survive
 const scrub = (s) => String(s || '').replace(/\b((?:sk-ant-|sk-or-|sk_car_|nvapi-|esecret_|gsk_|xai-|csk-|fw_|jina_|r8_|hf_|ghp_|gho_|luma-|key_|pa-|AKIA|sk_|AIza|sk-|ghp|gho|xox[bp]|tvly|pplx|fc)[A-Za-z0-9_-]{12,})\b/g, (m) => m.slice(0, 8) + '…[redacted]');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
@@ -497,6 +505,12 @@ function vaultOneKey(raw) {
   const qm = /^(['"])([\s\S]*)\1$/.exec(key); if (qm) key = qm[2];   // strip one layer of matching quotes
   if (!key || /\s/.test(key) || /^(export\s|\w+=)/.test(key))
     return { error: 'key looks malformed (whitespace or an export/NAME= prefix — send the raw value only)' };
+  // THE compliance invariant, store-time half: a setup-token belongs on an account
+  // (the selector path), never in the provider-key vault the proxy reads from —
+  // otherwise it would eventually get handed to /v1/messages and relayed, which is
+  // exactly the spoofing pattern COMPLIANCE.md says aigate must never be.
+  if (provider === 'anthropic' && key.startsWith('sk-ant-oat'))
+    return { error: "that's a Claude Code OAuth token (setup-token), not an API key — vault it as an ACCOUNT via POST /api/accounts; the proxy only serves real API keys" };
   const hint = key.slice(0, 8) + '…' + key.slice(-4) + '#' + createHash('sha256').update(key).digest('hex').slice(0, 8);
   const status = (raw.status === 'working' || raw.status === 'disabled') ? raw.status : 'working';
   q.addKey.run(provider, raw.label || '', encrypt(key), hint, status);
@@ -506,6 +520,64 @@ function vaultOneKey(raw) {
   else if (meta.prefix && !key.startsWith(meta.prefix))
     warning = `key doesn't start with the expected ${provider} prefix "${meta.prefix}" — did you paste the right key into the right slot?`;
   return { ok: true, provider, hint, warning };
+}
+
+// ---- /v1/messages proxy (API-key providers only) -------------------------
+// Claude subscription OAuth NEVER flows through this path — it reads only from
+// provider_keys (q.rankedKeys), never accounts. See COMPLIANCE.md.
+// base() is a lazy getter (same pattern as allowCidr() above) so a test can override
+// the upstream via env without a process restart, and removing the override must make
+// a test fail — the getter reads process.env on every call, never caches it.
+const PROXY_UPSTREAMS = {
+  openrouter: { base: () => (process.env.AIGATE_PROXY_UPSTREAM_OPENROUTER || 'https://openrouter.ai/api').replace(/\/+$/, ''), auth: 'bearer' },
+  kimi:       { base: () => (process.env.AIGATE_PROXY_UPSTREAM_KIMI || 'https://api.kimi.com/coding').replace(/\/+$/, ''), auth: 'bearer' },
+  anthropic:  { base: () => (process.env.AIGATE_PROXY_UPSTREAM_ANTHROPIC || 'https://api.anthropic.com').replace(/\/+$/, ''), auth: 'x-api-key' },
+};
+// Route an incoming model name to {provider, model}. Rules are tried in order; the
+// last one always matches, so this only returns null for a non-string/empty model.
+// claude-* tiers exist because the real claude binary fires background haiku calls
+// (title gen, compaction) on a tier the caller never picked explicitly — leaving those
+// unmapped presents as random flakiness rather than a config error.
+function resolveRoute(model) {
+  if (typeof model !== 'string' || !model.trim()) return null;
+  const colon = model.indexOf(':');
+  if (colon > 0 && PROXY_UPSTREAMS[model.slice(0, colon)])
+    return { provider: model.slice(0, colon), model: model.slice(colon + 1) };
+  if (/^claude-/i.test(model)) {
+    // ?: binds looser than || — without the parens, `a ? b : c || ''` reads as
+    // `a ? b : (c || '')`, so an unset AIGATE_PROXY_SMALL on a haiku-shaped model
+    // would throw on undefined.trim() instead of falling through to anthropic.
+    const alias = ((/haiku/i.test(model) ? process.env.AIGATE_PROXY_SMALL : process.env.AIGATE_PROXY_MAIN) || '').trim();
+    const ac = alias.indexOf(':');
+    if (ac > 0 && PROXY_UPSTREAMS[alias.slice(0, ac)])
+      return { provider: alias.slice(0, ac), model: alias.slice(ac + 1) };
+    // alias env unset (or malformed) → passthrough to anthropic unchanged; a real vaulted
+    // API key serves it, or the no-working-key 529 downstream says what's missing
+    return { provider: 'anthropic', model };
+  }
+  if (model.includes('/')) return { provider: 'openrouter', model };
+  if (model.startsWith('kimi')) return { provider: 'kimi', model };
+  return { provider: 'openrouter', model };
+}
+const PROXY_BODY_MAX = 32 * 1024 * 1024;
+// Real Messages payloads (big contexts, base64 images) blow past body()'s 1MB cap, and
+// body() swallows a parse error into {} — silently forwarding garbage to a paid upstream
+// is worse than a 1MB-scoped tool ever risked. This one settles the SAME way on
+// close/error (slow-loris note above body()) but reports oversize/bad-json instead of
+// guessing.
+function rawJsonBody(req, maxBytes = PROXY_BODY_MAX) {
+  return new Promise((resolve) => {
+    const chunks = []; let n = 0, settled = false;
+    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+    req.on('data', (c) => { n += c.length; if (n > maxBytes) { req.pause(); return done({ oversized: true }); } chunks.push(c); });
+    req.on('end', () => {
+      if (!chunks.length) return done({ badjson: true });
+      try { done({ body: JSON.parse(Buffer.concat(chunks).toString('utf8')) }); }
+      catch { done({ badjson: true }); }
+    });
+    req.on('close', () => done({ aborted: true }));
+    req.on('error', () => done({ aborted: true }));
+  });
 }
 
 // ---- routes -------------------------------------------------------------
@@ -552,8 +624,9 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // static dashboard (index gated at load; API gated per-request)
-  if (req.method === 'GET' && !p.startsWith('/api')) {
+  // static dashboard (index gated at load; API gated per-request). /v1 is also excluded —
+  // GET /v1/models would otherwise 404 in this branch before auth ever runs.
+  if (req.method === 'GET' && !p.startsWith('/api') && !p.startsWith('/v1')) {
     const fp = safeStaticPath(PUBLIC, p);
     // regular files only: GET // resolves to PUBLIC itself → readFile(dir) rejects
     // outside the try/catch → socket hangs forever (pre-auth DoS)
@@ -605,7 +678,13 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({ ok: true }));
   }
 
-  if (!authed(req)) { authFail(clientAddr); console.error('[auth] denied', clientAddr, req.method, p); return json(res, 401, { error: 'unauthorized' }); }
+  if (!authed(req)) {
+    authFail(clientAddr); console.error('[auth] denied', clientAddr, req.method, p);
+    // an Anthropic-protocol client (the real claude binary, or any Messages-API caller)
+    // expects the Anthropic error envelope, not aigate's plain {error} shape
+    if (p.startsWith('/v1')) return aerr(res, 401, 'authentication_error', 'unauthorized');
+    return json(res, 401, { error: 'unauthorized' });
+  }
   authOk(clientAddr);
 
   try {
@@ -997,6 +1076,99 @@ const server = http.createServer(async (req, res) => {
       if (!dead) return json(res, 404, { error: 'unknown card' });
       broadcast('board', q.listCards.all());
       return json(res, 200, { ok: true });
+    }
+
+    // --- Anthropic Messages-protocol proxy (API-key providers only) ---
+    if (p === '/v1/models' && req.method === 'GET') {
+      const caps = new Map(q.capabilities.all().map((r) => [r.provider, r]));
+      const data = [];
+      const mainAlias = (process.env.AIGATE_PROXY_MAIN || '').trim();
+      const smallAlias = (process.env.AIGATE_PROXY_SMALL || '').trim();
+      if (mainAlias) data.push({ type: 'model', id: mainAlias, display_name: `claude-* (non-haiku) → ${mainAlias}` });
+      if (smallAlias) data.push({ type: 'model', id: smallAlias, display_name: `claude-*haiku* → ${smallAlias}` });
+      for (const provider of Object.keys(PROXY_UPSTREAMS))
+        if (caps.has(provider)) data.push({ type: 'model', id: `${provider}:<model-id>`, display_name: `${provider} (vaulted key ready)` });
+      return json(res, 200, { data, has_more: false });
+    }
+    if (p === '/v1/messages' && req.method === 'POST') {
+      const raw = await rawJsonBody(req);
+      if (raw.oversized) { res.writeHead(413, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', connection: 'close' }); return res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'body too large (32MB cap)' } })); }
+      if (raw.aborted) return;   // client already gone — socket is closing, nothing to answer
+      if (raw.badjson) return aerr(res, 400, 'invalid_request_error', 'invalid JSON body');
+      const reqBody = raw.body;
+      if (!reqBody || typeof reqBody !== 'object' || Array.isArray(reqBody)) return aerr(res, 400, 'invalid_request_error', 'body must be a JSON object');
+      const model = reqBody.model;
+      if (model === undefined || model === null) return aerr(res, 400, 'invalid_request_error', 'model is required');
+      if (typeof model !== 'string' || !model.trim()) return aerr(res, 400, 'invalid_request_error', 'model must be a non-empty string');
+      const route = resolveRoute(model);
+      if (!route) return aerr(res, 404, 'not_found_error', `model not found: ${model}`);
+      const upstream = PROXY_UPSTREAMS[route.provider];
+      const anthropicVersion = req.headers['anthropic-version'] || '2023-06-01';
+      const anthropicBeta = req.headers['anthropic-beta'];
+      const forwardBody = JSON.stringify({ ...reqBody, model: route.model });
+      const ip = reqIp(req);
+      const label = `${model}→${route.model}`;
+
+      const controller = new AbortController();
+      const onClose = () => controller.abort();
+      req.on('close', onClose);
+      let upstreamRes = null, networkFault = null;
+      try {
+        for (const row of q.rankedKeys.all(route.provider)) {
+          let key;
+          try { key = decrypt(row.key_enc); }
+          catch { logAccess(route.provider, '', ip, 'proxy', 'decrypt-fail'); continue; }
+          // THE compliance invariant: a Claude Code setup-token must never serve a proxied
+          // request — vault it as an account instead. Refuse the key, keep walking the list.
+          if (route.provider === 'anthropic' && key.startsWith('sk-ant-oat')) {
+            logAccess(route.provider, '', ip, 'proxy', 'oauth-token-refused'); continue;
+          }
+          const headers = { 'content-type': 'application/json', 'anthropic-version': anthropicVersion };
+          if (anthropicBeta) headers['anthropic-beta'] = anthropicBeta;
+          if (upstream.auth === 'bearer') headers.authorization = 'Bearer ' + key; else headers['x-api-key'] = key;
+          let r;
+          try {
+            r = await fetch(upstream.base() + '/v1/messages', { method: 'POST', headers, body: forwardBody, redirect: 'error', signal: controller.signal });
+          } catch (e) {
+            if (controller.signal.aborted) return;   // client left mid-flight — nothing to answer
+            networkFault = e; break;                 // a network-level failure isn't a key problem — don't fail over
+          }
+          if (r.status === 401 || r.status === 403) {
+            // mirror the keypoll idiom (line ~1164): flip status + alert, no extra audit row —
+            // the request's one summary row (below) already carries the final outcome.
+            q.setKeyStatus.run('dead', row.id);
+            console.warn('[proxy] E_KEY_DEAD', route.provider, 'id', row.id, 'status', r.status);
+            alert(`aigate: provider key went dead — ${route.provider}`, { provider: route.provider, id: row.id, status: r.status });
+            r.body?.cancel().catch(() => {});
+            continue;   // try the next usable key once through the list
+          }
+          upstreamRes = r; break;
+        }
+      } finally { req.off('close', onClose); }
+
+      if (networkFault) {
+        logAccess(route.provider, '', ip, 'proxy', `${label} network-error`);
+        return aerr(res, 502, 'api_error', 'upstream request failed: ' + String((networkFault && networkFault.message) || networkFault));
+      }
+      if (!upstreamRes) {
+        logAccess(route.provider, '', ip, 'proxy', `${label} 529`);
+        return aerr(res, 529, 'overloaded_error', `no working key for ${route.provider}`);
+      }
+      logAccess(route.provider, '', ip, 'proxy', `${label} ${upstreamRes.status}`);
+      const respHeaders = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
+      for (const h of ['content-type', 'retry-after', 'request-id']) {
+        const v = upstreamRes.headers.get(h);
+        if (v) respHeaders[h] = v;
+      }
+      for (const [k, v] of upstreamRes.headers.entries()) if (k.startsWith('anthropic-')) respHeaders[k] = v;
+      res.writeHead(upstreamRes.status, respHeaders);
+      if (!upstreamRes.body) return res.end();
+      try {
+        for await (const chunk of upstreamRes.body) {
+          if (!res.write(chunk)) await new Promise((r2) => res.once('drain', r2));
+        }
+      } catch (e) { res.destroy(e); return; }
+      return res.end();
     }
 
     return json(res, 404, { error: 'not found' });
