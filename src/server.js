@@ -18,6 +18,8 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSy
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { WebSocketServer } from 'ws';
 import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
@@ -1163,12 +1165,14 @@ const server = http.createServer(async (req, res) => {
       for (const [k, v] of upstreamRes.headers.entries()) if (k.startsWith('anthropic-')) respHeaders[k] = v;
       res.writeHead(upstreamRes.status, respHeaders);
       if (!upstreamRes.body) return res.end();
-      try {
-        for await (const chunk of upstreamRes.body) {
-          if (!res.write(chunk)) await new Promise((r2) => res.once('drain', r2));
-        }
-      } catch (e) { res.destroy(e); return; }
-      return res.end();
+      // pipeline, not a hand-rolled write/drain loop: a client that vanishes mid-stream
+      // destroys res → pipeline destroys the upstream reader too (billing stops). The
+      // loop version had two daemon-level faults: write-after-destroy emits an unhandled
+      // res 'error' (→ uncaughtException → the whole vault restarts), and a drain promise
+      // on a destroyed res never resolves, pinning the upstream connection forever.
+      try { await pipeline(Readable.fromWeb(upstreamRes.body), res); }
+      catch { if (!res.destroyed) res.destroy(); }
+      return;
     }
 
     return json(res, 404, { error: 'not found' });

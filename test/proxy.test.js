@@ -252,6 +252,27 @@ test('SSE: chunks stream incrementally to the client, content-type passthrough, 
   assert.ok(arrivals.at(-1) - arrivals[0] >= 20, 'reads should be spread over time, proving no full-body buffering');
 });
 
+test('SSE: client abort mid-stream tears down the upstream request (billing stops, daemon survives)', async () => {
+  await postKey('openrouter', 'sk-or-abortstream-FFFF');
+  const upstreamClosed = new Promise((resolve) => {
+    currentHandler = (req, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write('event: message_start\ndata: {}\n\n');
+      // never ends on its own — only abort propagation from aigate can stop it
+      const t = setInterval(() => res.write('data: {"tick":1}\n\n'), 50);
+      res.on('close', () => { clearInterval(t); resolve(); });
+    };
+  });
+  const ac = new AbortController();
+  const r = await fetch(base + '/v1/messages', { method: 'POST', headers: H, body: messages('moonshotai/kimi-k2', { stream: true }), signal: ac.signal });
+  assert.equal(r.status, 200);
+  await r.body.getReader().read();   // stream is live — first chunk arrived
+  ac.abort();
+  await upstreamClosed;              // hangs here (until test timeout) if the abort doesn't propagate
+  const h = await fetch(base + '/health');
+  assert.equal(h.status, 200, 'daemon must survive a mid-stream disconnect');
+});
+
 test('no working key for the routed provider -> 529 overloaded_error naming the provider', async () => {
   // kimi got one working key from the earlier explicit-route test and nothing after
   // this needs it — clear it so the provider is genuinely keyless for this assertion.
