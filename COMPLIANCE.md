@@ -136,12 +136,14 @@ aigate keeps the **architecture** compliant; it can't stop you from **using** it
 
 ## 🔀 The non-Claude half (API keys are different)
 
-The prohibition above is about **Claude subscription OAuth**. Ordinary **API keys** (OpenAI, OpenRouter, Gemini, Groq, fal, …) are *meant* for programmatic use — so aigate's roadmap **secure proxy** injects those server-side freely. That's a normal API gateway and carries none of the subscription-OAuth restrictions.
+The prohibition above is about **Claude subscription OAuth**. Ordinary **API keys** (OpenAI, OpenRouter, Gemini, Groq, fal, …) are *meant* for programmatic use — so aigate's **secure proxy** (`POST /v1/messages`, `GET /v1/models`) injects those server-side freely. That's a normal API gateway and carries none of the subscription-OAuth restrictions.
+
+The proxy is structurally incapable of crossing the line above: it reads only from the API-key registry (`provider_keys`), never from the Claude-account vault (`accounts`) — the two tables, two code paths never touch. A key that *looks* like a Claude Code setup-token (`sk-ant-oat…`) is refused both at store-time (vaulting it under the `anthropic` provider 400s, telling you to add it as an account instead) and at fetch-time (a poisoned row that slipped in some other way is skipped, audited, and the next real key is tried) — so even a mistake can't relay a subscription token through this path.
 
 | Provider type | aigate mode | In the request path? | Compliance |
 |---|---|---|---|
 | **Claude subscriptions** (OAuth) | 🎯 Selector — official binary | ❌ never | ✅ accepted architecture |
-| **API-key providers** | 🔀 Secure proxy *(roadmap)* | ✅ standard | ✅ normal for API keys |
+| **API-key providers** | 🔀 Secure proxy — `openrouter`, `kimi`, `anthropic` (API keys only) | ✅ standard | ✅ normal for API keys |
 
 ---
 
