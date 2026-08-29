@@ -3,6 +3,8 @@ services:
     build: .
     container_name: aigate
     restart: unless-stopped
+    # bypass docker embedded DNS: its first upstream (pihole via docker-proxy) drops container-subnet queries, costing ~9s/request in retries
+    dns: ["1.1.1.1", "8.8.8.8"]
     ports: ["20200:20200"]
     env_file: .env
     volumes: ["./data:/app/data"]
@@ -11,7 +13,6 @@ services:
     # labeled autoheal=true when it goes unhealthy.
     labels: ["autoheal=true"]
     logging:
-      driver: json-file
+      driver: journald
       options:
-        max-size: "10m"
-        max-file: "3"
+        tag: aigate
