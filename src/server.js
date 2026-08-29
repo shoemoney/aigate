@@ -490,6 +490,8 @@ const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'applic
 // not aigate's plain {error}. Same headers as json() so nothing downstream (caches, XSS
 // sniffing) treats a proxy error differently from any other aigate response.
 const aerr = (res, code, type, message) => { res.writeHead(code, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify({ type: 'error', error: { type, message } })); };
+// OpenAI-protocol error shape — codex/opencode parse {error:{message,type,code}}.
+const oerr = (res, code, message, type = 'invalid_request_error') => { res.writeHead(code, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify({ error: { message, type, code: String(code) } })); };
 // prefix-shaped secrets only (sk-…, ghp…, xoxb…) — no generic long-hex rule, git SHAs must survive
 const scrub = (s) => String(s || '').replace(/\b((?:sk-ant-|sk-or-|sk_car_|nvapi-|esecret_|gsk_|xai-|csk-|fw_|jina_|r8_|hf_|ghp_|gho_|luma-|key_|pa-|AKIA|sk_|AIza|sk-|ghp|gho|xox[bp]|tvly|pplx|fc)[A-Za-z0-9_-]{12,})\b/g, (m) => m.slice(0, 8) + '…[redacted]');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
@@ -567,6 +569,39 @@ function resolveRoute(model) {
   if (model.startsWith('muse')) return { provider: 'muse', model };
   // bare qwen3-* names only — 'qwen/...' already went to openrouter via the slash rule
   if (/^qwen/i.test(model)) return { provider: 'qwen', model };
+  return { provider: 'openrouter', model };
+}
+// ---- /v1/chat/completions proxy (OpenAI scheme — codex, opencode, any OAI client) -
+// Same posture as /v1/messages: vaulted API keys only, same failover/audit/streaming,
+// different wire shape. Bases differ from the Anthropic map (openrouter's OAI root is
+// /api/v1, not /api), so this is its own table — every entry mirrors a catalog oaiCompat
+// provider and all of them authenticate Authorization: Bearer. Vault names match 1:1.
+const OAI_UPSTREAMS = {
+  openai:     { base: () => (process.env.AIGATE_OAI_UPSTREAM_OPENAI || 'https://api.openai.com/v1').replace(/\/+$/, '') },
+  openrouter: { base: () => (process.env.AIGATE_OAI_UPSTREAM_OPENROUTER || 'https://openrouter.ai/api/v1').replace(/\/+$/, '') },
+  qwencloud:  { base: () => (process.env.AIGATE_OAI_UPSTREAM_QWENCLOUD || 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1').replace(/\/+$/, '') },
+  groq:       { base: () => (process.env.AIGATE_OAI_UPSTREAM_GROQ || 'https://api.groq.com/openai/v1').replace(/\/+$/, '') },
+  deepseek:   { base: () => (process.env.AIGATE_OAI_UPSTREAM_DEEPSEEK || 'https://api.deepseek.com').replace(/\/+$/, '') },
+  xai:        { base: () => (process.env.AIGATE_OAI_UPSTREAM_XAI || 'https://api.x.ai/v1').replace(/\/+$/, '') },
+  together:   { base: () => (process.env.AIGATE_OAI_UPSTREAM_TOGETHER || 'https://api.together.xyz/v1').replace(/\/+$/, '') },
+  fireworks:  { base: () => (process.env.AIGATE_OAI_UPSTREAM_FIREWORKS || 'https://api.fireworks.ai/inference/v1').replace(/\/+$/, '') },
+  venice:     { base: () => (process.env.AIGATE_OAI_UPSTREAM_VENICE || 'https://api.venice.ai/api/v1').replace(/\/+$/, '') },
+  perplexity: { base: () => (process.env.AIGATE_OAI_UPSTREAM_PERPLEXITY || 'https://api.perplexity.ai').replace(/\/+$/, '') },
+};
+// Model → {provider, model}. Colon prefix wins; a slash means the caller picked an
+// openrouter-style id outright, so it beats every bare-name rule (openai/gpt-5 stays
+// an openrouter call). The last rule always matches — null only for non-strings.
+function resolveOaiRoute(model) {
+  if (typeof model !== 'string' || !model.trim()) return null;
+  const colon = model.indexOf(':');
+  if (colon > 0 && OAI_UPSTREAMS[model.slice(0, colon)])
+    return { provider: model.slice(0, colon), model: model.slice(colon + 1) };
+  if (model.includes('/')) return { provider: 'openrouter', model };
+  if (/^(gpt|chatgpt|o[1-9]|codex)/i.test(model)) return { provider: 'openai', model };
+  if (/^qwen/i.test(model)) return { provider: 'qwencloud', model };
+  if (/^deepseek/i.test(model)) return { provider: 'deepseek', model };
+  if (/^(grok|xai)/i.test(model)) return { provider: 'xai', model };
+  if (/^(sonar|pplx)/i.test(model)) return { provider: 'perplexity', model };
   return { provider: 'openrouter', model };
 }
 const PROXY_BODY_MAX = 32 * 1024 * 1024;
@@ -692,6 +727,7 @@ const server = http.createServer(async (req, res) => {
     authFail(clientAddr); console.error('[auth] denied', clientAddr, req.method, p);
     // an Anthropic-protocol client (the real claude binary, or any Messages-API caller)
     // expects the Anthropic error envelope, not aigate's plain {error} shape
+    if (p === '/v1/chat/completions' || p === '/v1/responses') return oerr(res, 401, 'unauthorized', 'authentication_error');
     if (p.startsWith('/v1')) return aerr(res, 401, 'authentication_error', 'unauthorized');
     return json(res, 401, { error: 'unauthorized' });
   }
@@ -1094,10 +1130,17 @@ const server = http.createServer(async (req, res) => {
       const data = [];
       const mainAlias = (process.env.AIGATE_PROXY_MAIN || '').trim();
       const smallAlias = (process.env.AIGATE_PROXY_SMALL || '').trim();
-      if (mainAlias) data.push({ type: 'model', id: mainAlias, display_name: `claude-* (non-haiku) → ${mainAlias}` });
-      if (smallAlias) data.push({ type: 'model', id: smallAlias, display_name: `claude-*haiku* → ${smallAlias}` });
+      // entries are a SUPERSET of the Anthropic ({type,display_name}) and OpenAI
+      // ({object,created,owned_by}) model shapes — /v1/messages and /v1/chat/completions
+      // clients share this one listing, and each scheme reads only its own fields.
+      const modelEntry = (id, display_name) => ({ type: 'model', object: 'model', id, created: 0, owned_by: 'aigate', display_name });
+      if (mainAlias) data.push(modelEntry(mainAlias, `claude-* (non-haiku) → ${mainAlias}`));
+      if (smallAlias) data.push(modelEntry(smallAlias, `claude-*haiku* → ${smallAlias}`));
       for (const [provider, up] of Object.entries(PROXY_UPSTREAMS))
-        if (caps.has(up.vault || provider)) data.push({ type: 'model', id: `${provider}:<model-id>`, display_name: `${provider} (vaulted key ready)` });
+        if (caps.has(up.vault || provider)) data.push(modelEntry(`${provider}:<model-id>`, `${provider} (vaulted key ready)`));
+      const emitted = new Set(data.map((m) => m.id));
+      for (const provider of Object.keys(OAI_UPSTREAMS))
+        if (caps.has(provider) && !emitted.has(`${provider}:<model-id>`)) data.push(modelEntry(`${provider}:<model-id>`, `${provider} (oai, vaulted key ready)`));
       return json(res, 200, { data, has_more: false });
     }
     if (p === '/v1/messages' && req.method === 'POST') {
@@ -1187,6 +1230,78 @@ const server = http.createServer(async (req, res) => {
       catch { if (!res.destroyed) res.destroy(); }
       return;
     }
+
+    // --- OpenAI-scheme proxy (codex → /responses; opencode et al → /chat/completions) ---
+    // Mirror of the /v1/messages handler on the OpenAI wire: same ranked-key failover,
+    // dead-key flip, audit row, abort propagation and SSE pipeline — OpenAI envelopes.
+    // One body serves both suffixes; a provider without a Responses endpoint just has
+    // its upstream 404 pass through, which is the honest signal for codex to show.
+    const oaiProxy = async (upstreamPath) => {
+      const raw = await rawJsonBody(req);
+      if (raw.oversized) { res.writeHead(413, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', connection: 'close' }); return res.end(JSON.stringify({ error: { message: 'body too large (32MB cap)', type: 'invalid_request_error', code: '413' } })); }
+      if (raw.aborted) return;
+      if (raw.badjson) return oerr(res, 400, 'invalid JSON body');
+      const reqBody = raw.body;
+      if (!reqBody || typeof reqBody !== 'object' || Array.isArray(reqBody)) return oerr(res, 400, 'body must be a JSON object');
+      const model = reqBody.model;
+      if (model === undefined || model === null) return oerr(res, 400, 'model is required');
+      if (typeof model !== 'string' || !model.trim()) return oerr(res, 400, 'model must be a non-empty string');
+      const route = resolveOaiRoute(model);
+      if (!route) return oerr(res, 404, `model not found: ${model}`, 'not_found_error');
+      const upstream = OAI_UPSTREAMS[route.provider];
+      const forwardBody = JSON.stringify({ ...reqBody, model: route.model });
+      const ip = reqIp(req);
+      const label = `${model}→${route.model}`;
+
+      const controller = new AbortController();
+      const onClose = () => controller.abort();
+      req.on('close', onClose);
+      let upstreamRes = null, networkFault = null;
+      try {
+        for (const row of q.rankedKeys.all(route.provider)) {
+          let key;
+          try { key = decrypt(row.key_enc); }
+          catch { logAccess(route.provider, '', ip, 'proxy', 'decrypt-fail'); continue; }
+          let r;
+          try {
+            r = await fetch(upstream.base() + upstreamPath, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + key }, body: forwardBody, redirect: 'error', signal: controller.signal });
+          } catch (e) {
+            if (controller.signal.aborted) return;
+            networkFault = e; break;   // network-level failure isn't a key problem
+          }
+          if (r.status === 401 || r.status === 403) {
+            q.setKeyStatus.run('dead', row.id);
+            console.warn('[oai-proxy] E_KEY_DEAD', route.provider, 'id', row.id, 'status', r.status);
+            alert(`aigate: provider key went dead — ${route.provider}`, { provider: route.provider, id: row.id, status: r.status });
+            r.body?.cancel().catch(() => {});
+            continue;
+          }
+          upstreamRes = r; break;
+        }
+      } finally { req.off('close', onClose); }
+
+      if (networkFault) {
+        logAccess(route.provider, '', ip, 'proxy', `${label} network-error`);
+        return oerr(res, 502, 'upstream request failed: ' + String((networkFault && networkFault.message) || networkFault), 'api_error');
+      }
+      if (!upstreamRes) {
+        logAccess(route.provider, '', ip, 'proxy', `${label} 529`);
+        return oerr(res, 529, `no working key for ${route.provider}`, 'overloaded_error');
+      }
+      logAccess(route.provider, '', ip, 'proxy', `${label} ${upstreamRes.status}`);
+      const respHeaders = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
+      for (const h of ['content-type', 'retry-after', 'request-id']) {
+        const v = upstreamRes.headers.get(h);
+        if (v) respHeaders[h] = v;
+      }
+      res.writeHead(upstreamRes.status, respHeaders);
+      if (!upstreamRes.body) return res.end();
+      try { await pipeline(Readable.fromWeb(upstreamRes.body), res); }
+      catch { if (!res.destroyed) res.destroy(); }
+      return;
+    };
+    if (p === '/v1/chat/completions' && req.method === 'POST') return oaiProxy('/chat/completions');
+    if (p === '/v1/responses' && req.method === 'POST') return oaiProxy('/responses');
 
     return json(res, 404, { error: 'not found' });
   } catch (e) {

@@ -438,6 +438,7 @@ All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`**
 | `GET` | `/api/capabilities` | 🧭 read-only **registry slice** — per-provider **key counts** + Claude **selectability** (accounts + how many are pickable) + server **version**; a machine-readable "what can I reach?" for agents (**never secrets**) |
 | `WS` | `/ws` | 📡 live event stream — auth via the **`bearer.<token>` WebSocket subprotocol** (token never lands in URL/access logs; a `?token=` query param is **ignored** — header/subprotocol only) |
 | `POST` | `/v1/messages` · `GET` | 🔀 **Anthropic Messages-protocol proxy — API-key providers only** (`openrouter` / `kimi` / `muse` / `qwen` / `anthropic`). Auth also accepts `x-api-key` (the shape the real `claude` binary sends with `ANTHROPIC_API_KEY`). See below. |
+| `POST` | `/v1/chat/completions` · `/v1/responses` | 🔀 **OpenAI-scheme proxy — same vaulted-key machinery on the OAI wire** (`openai` / `openrouter` / `qwencloud` / `groq` / `deepseek` / `xai` / `together` / `fireworks` / `venice` / `perplexity`). `chat/completions` for opencode & OAI clients, `responses` for codex ≥0.96 (chat support was removed upstream). See below. |
 
 ---
 
@@ -448,7 +449,15 @@ Set `ANTHROPIC_BASE_URL=http://<aigate>/v1` and `ANTHROPIC_AUTH_TOKEN=$AIGATE_TO
 - 🧭 **Routing** — `kimi:kimi-k3` (explicit `provider:model`) wins outright. A bare `claude-*` model maps through `AIGATE_PROXY_MAIN` / `AIGATE_PROXY_SMALL` (haiku-shaped names → `SMALL`) so the binary's background title-gen/compaction calls don't 404 on a tier nobody picked; no alias set → falls back to a vaulted real `anthropic` key, model unchanged. Otherwise a `/` in the model → `openrouter`, a `kimi` prefix → `kimi`, a `muse` prefix → `muse` (api.meta.ai), a bare `qwen*` name → `qwen` (dashscope claude-code-proxy — keys vault under `qwencloud`, and `role:"system"` messages are rewritten to `user` because its pydantic gate 500s on them), anything else → `openrouter`.
 - 🚫 **Claude OAuth never flows through this — structurally.** The proxy reads only `provider_keys`, never `accounts`. A `sk-ant-oat…` setup-token is refused at store-time (`POST /api/keys` 400s it — vault it as an account instead) *and* at fetch-time (a poisoned row is skipped + audited, next key tried).
 - 🔁 A dead/401ing key flips `status='dead'` and the next ranked key is tried once; `429` passes through verbatim (client owns backoff); streaming is piped chunk-by-chunk both ways, never buffered.
-- `GET /v1/models` lists the configured aliases + any provider with a working vaulted key, in the Anthropic list shape.
+- `GET /v1/models` lists the configured aliases + any provider with a working vaulted key. Entries carry BOTH the Anthropic (`type`/`display_name`) and OpenAI (`object`/`created`/`owned_by`) fields, so one listing serves both client schemes; a provider vaulted for both appears exactly once.
+
+### 🔀 `/v1/chat/completions` + `/v1/responses` — codex, opencode, any OAI client
+
+Same posture on the OpenAI wire: point the client at `http://<aigate>/v1` with the vault bearer as its API key and the request rides the newest working key vaulted for the routed provider — failover, dead-key flips, audit rows, and unbuffered SSE are identical to `/v1/messages`, only the envelopes are OpenAI-shaped (`{error:{message,type,code}}`).
+
+- 🧭 **Routing** — `provider:model` wins; a `/` in the name is an explicit openrouter id (`openai/gpt-5` stays an openrouter call). Bare names: `gpt-*`/`o1-9*`/`codex-*` → `openai`, `qwen*` → `qwencloud` (dashscope compatible-mode), `deepseek*` → `deepseek`, `grok*`/`xai*` → `xai`, `sonar*`/`pplx*` → `perplexity`, anything else → `openrouter`. Bases are env-overridable per provider as `AIGATE_OAI_UPSTREAM_<NAME>`.
+- 🤖 **codex** (≥0.96 — `wire_api = "chat"` was removed upstream, Responses is the only wire): custom provider with `base_url = "http://<aigate>/v1"`, `wire_api = "responses"`, and `env_key` pointing at a var holding the vault bearer (or `experimental_bearer_token`). Verified live: `openai/gpt-5` via openrouter's Responses endpoint → `pong`. A provider without a Responses endpoint just has its upstream 404 pass through — the honest signal.
+- 🎛️ **opencode**: an `@ai-sdk/openai-compatible` provider with `baseURL: http://<aigate>/v1` and `apiKey: <vault bearer>` — verified live with `aigate/qwen3-coder-plus` → `pong`, audit row `qwencloud proxy qwen3-coder-plus→qwen3-coder-plus 200`.
 
 ## ⚙️ Config
 
