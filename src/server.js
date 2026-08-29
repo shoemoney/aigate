@@ -533,6 +533,11 @@ function vaultOneKey(raw) {
 const PROXY_UPSTREAMS = {
   openrouter: { base: () => (process.env.AIGATE_PROXY_UPSTREAM_OPENROUTER || 'https://openrouter.ai/api').replace(/\/+$/, ''), auth: 'bearer' },
   kimi:       { base: () => (process.env.AIGATE_PROXY_UPSTREAM_KIMI || 'https://api.kimi.com/coding').replace(/\/+$/, ''), auth: 'bearer' },
+  muse:       { base: () => (process.env.AIGATE_PROXY_UPSTREAM_MUSE || 'https://api.meta.ai').replace(/\/+$/, ''), auth: 'bearer' },
+  // dashscope's "claude-code-proxy" Anthropic gate (keys vault under qwencloud). Its
+  // pydantic validator 500s on role:"system" INSIDE messages[] — claude 2.1.x injects
+  // exactly those (verified 2026-08-27 + 2026-08-29) — so systemToUser rewrites them.
+  qwen:       { base: () => (process.env.AIGATE_PROXY_UPSTREAM_QWEN || 'https://dashscope-intl.aliyuncs.com/api/v2/apps/claude-code-proxy').replace(/\/+$/, ''), auth: 'bearer', vault: 'qwencloud', systemToUser: true },
   anthropic:  { base: () => (process.env.AIGATE_PROXY_UPSTREAM_ANTHROPIC || 'https://api.anthropic.com').replace(/\/+$/, ''), auth: 'x-api-key' },
 };
 // Route an incoming model name to {provider, model}. Rules are tried in order; the
@@ -559,6 +564,9 @@ function resolveRoute(model) {
   }
   if (model.includes('/')) return { provider: 'openrouter', model };
   if (model.startsWith('kimi')) return { provider: 'kimi', model };
+  if (model.startsWith('muse')) return { provider: 'muse', model };
+  // bare qwen3-* names only — 'qwen/...' already went to openrouter via the slash rule
+  if (/^qwen/i.test(model)) return { provider: 'qwen', model };
   return { provider: 'openrouter', model };
 }
 const PROXY_BODY_MAX = 32 * 1024 * 1024;
@@ -1088,8 +1096,8 @@ const server = http.createServer(async (req, res) => {
       const smallAlias = (process.env.AIGATE_PROXY_SMALL || '').trim();
       if (mainAlias) data.push({ type: 'model', id: mainAlias, display_name: `claude-* (non-haiku) → ${mainAlias}` });
       if (smallAlias) data.push({ type: 'model', id: smallAlias, display_name: `claude-*haiku* → ${smallAlias}` });
-      for (const provider of Object.keys(PROXY_UPSTREAMS))
-        if (caps.has(provider)) data.push({ type: 'model', id: `${provider}:<model-id>`, display_name: `${provider} (vaulted key ready)` });
+      for (const [provider, up] of Object.entries(PROXY_UPSTREAMS))
+        if (caps.has(up.vault || provider)) data.push({ type: 'model', id: `${provider}:<model-id>`, display_name: `${provider} (vaulted key ready)` });
       return json(res, 200, { data, has_more: false });
     }
     if (p === '/v1/messages' && req.method === 'POST') {
@@ -1107,7 +1115,12 @@ const server = http.createServer(async (req, res) => {
       const upstream = PROXY_UPSTREAMS[route.provider];
       const anthropicVersion = req.headers['anthropic-version'] || '2023-06-01';
       const anthropicBeta = req.headers['anthropic-beta'];
-      const forwardBody = JSON.stringify({ ...reqBody, model: route.model });
+      // dashscope's pydantic gate only accepts role 'user'|'assistant' in messages[];
+      // rewrite claude's injected system messages in place so position is preserved.
+      const outBody = (upstream.systemToUser && Array.isArray(reqBody.messages))
+        ? { ...reqBody, messages: reqBody.messages.map((m) => (m && m.role === 'system' ? { ...m, role: 'user' } : m)) }
+        : reqBody;
+      const forwardBody = JSON.stringify({ ...outBody, model: route.model });
       const ip = reqIp(req);
       const label = `${model}→${route.model}`;
 
@@ -1116,7 +1129,7 @@ const server = http.createServer(async (req, res) => {
       req.on('close', onClose);
       let upstreamRes = null, networkFault = null;
       try {
-        for (const row of q.rankedKeys.all(route.provider)) {
+        for (const row of q.rankedKeys.all(upstream.vault || route.provider)) {
           let key;
           try { key = decrypt(row.key_enc); }
           catch { logAccess(route.provider, '', ip, 'proxy', 'decrypt-fail'); continue; }

@@ -26,6 +26,8 @@ export const PROVIDERS = [
   { id: 'moonshot',     name: 'Moonshot (Kimi)',      cat: 'llm',     prefix: 'sk-',       base: 'https://api.moonshot.cn/v1',           docs: 'https://platform.moonshot.cn', oaiCompat: true },
   { id: 'zhipu',        name: 'Zhipu (GLM)',          cat: 'llm',     prefix: '',          base: 'https://open.bigmodel.cn/api/paas/v4', docs: 'https://open.bigmodel.cn', oaiCompat: true },
   { id: 'alibaba',      name: 'Alibaba (Qwen)',       cat: 'llm',     prefix: 'sk-',       base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', docs: 'https://help.aliyun.com/dashscope', oaiCompat: true },
+  { id: 'qwencloud',    name: 'Qwen (DashScope intl)', cat: 'llm',    prefix: 'sk-',       base: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', docs: 'https://www.alibabacloud.com/help/en/model-studio', oaiCompat: true },
+  { id: 'muse',         name: 'Meta Muse',            cat: 'llm',     prefix: 'LLM|',      base: 'https://api.meta.ai',                    docs: 'https://ai.meta.com' },
   { id: 'baidu',        name: 'Baidu (ERNIE)',        cat: 'llm',     prefix: '',          base: 'https://qianfan.baidubce.com',         docs: 'https://cloud.baidu.com/product/wenxinworkshop' },
   { id: 'minimax',      name: 'MiniMax',              cat: 'llm',     prefix: '',          base: 'https://api.minimax.chat',             docs: 'https://www.minimaxi.com' },
   { id: '01ai',         name: '01.AI (Yi)',           cat: 'llm',     prefix: '',          base: 'https://api.lingyiwanwu.com/v1',       docs: 'https://platform.lingyiwanwu.com', oaiCompat: true },

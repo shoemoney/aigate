@@ -55,6 +55,8 @@ before(async () => {
   // provider's override actually got read, not whether two servers can coexist.
   process.env.AIGATE_PROXY_UPSTREAM_OPENROUTER = upstreamBase;
   process.env.AIGATE_PROXY_UPSTREAM_KIMI = upstreamBase;
+  process.env.AIGATE_PROXY_UPSTREAM_MUSE = upstreamBase;
+  process.env.AIGATE_PROXY_UPSTREAM_QWEN = upstreamBase;
   process.env.AIGATE_PROXY_UPSTREAM_ANTHROPIC = upstreamBase;
 });
 after(() => {
@@ -298,4 +300,60 @@ test('GET /v1/models returns the Anthropic list shape', async () => {
   assert.ok(j.data.some((m) => m.id === 'openrouter:some/small-model'));
   assert.ok(j.data.some((m) => m.id.startsWith('openrouter:') && m.display_name.includes('vaulted')), 'a provider with a working key is listed');
   delete process.env.AIGATE_PROXY_MAIN; delete process.env.AIGATE_PROXY_SMALL;
+});
+
+test('bare muse-* model routes to the muse upstream, bearer auth, model unchanged', async () => {
+  await postKey('muse', 'LLM|test-muse-key-0001');
+  currentHandler = (req, res, { bodyJson }) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true, model: bodyJson.model })); };
+  const r = await fetch(base + '/v1/messages', { method: 'POST', headers: H, body: messages('muse-spark-1.2-contributor') });
+  assert.equal(r.status, 200);
+  const last = hits.at(-1);
+  assert.equal(last.bodyJson.model, 'muse-spark-1.2-contributor');
+  assert.equal(last.headers.authorization, 'Bearer LLM|test-muse-key-0001');
+});
+
+test('muse: explicit prefix strips the prefix from the forwarded model', async () => {
+  currentHandler = (req, res, { bodyJson }) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true, model: bodyJson.model })); };
+  const r = await fetch(base + '/v1/messages', { method: 'POST', headers: H, body: messages('muse:muse-spark-1.2') });
+  assert.equal(r.status, 200);
+  assert.equal(hits.at(-1).bodyJson.model, 'muse-spark-1.2');
+});
+
+test('bare qwen3-* model routes to qwen upstream but reads the key vaulted under qwencloud', async () => {
+  await postKey('qwencloud', 'sk-dashscope-test-0001');
+  currentHandler = (req, res, { bodyJson }) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true, model: bodyJson.model })); };
+  const r = await fetch(base + '/v1/messages', { method: 'POST', headers: H, body: messages('qwen3-coder-plus') });
+  assert.equal(r.status, 200);
+  const last = hits.at(-1);
+  assert.equal(last.bodyJson.model, 'qwen3-coder-plus');
+  assert.equal(last.headers.authorization, 'Bearer sk-dashscope-test-0001');   // proof the vault name decoupled
+});
+
+test('qwen/qwen3-coder-plus (slash form) still routes to openrouter, model unchanged', async () => {
+  currentHandler = (req, res, { bodyJson }) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true, model: bodyJson.model })); };
+  const r = await fetch(base + '/v1/messages', { method: 'POST', headers: H, body: messages('qwen/qwen3-coder-plus') });
+  assert.equal(r.status, 200);
+  const last = hits.at(-1);
+  assert.equal(last.bodyJson.model, 'qwen/qwen3-coder-plus');
+  assert.match(last.headers.authorization, /^Bearer sk-or-/);   // an openrouter key, not the dashscope one
+});
+
+test('systemToUser: role:"system" inside messages[] is rewritten to "user" for qwen, untouched for muse', async () => {
+  const withSystem = { messages: [{ role: 'system', content: 'be terse' }, { role: 'user', content: 'hi' }] };
+  currentHandler = (req, res, { bodyJson }) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true, got: bodyJson.messages })); };
+  const rq = await fetch(base + '/v1/messages', { method: 'POST', headers: H, body: messages('qwen3-coder-plus', withSystem) });
+  assert.equal(rq.status, 200);
+  assert.deepEqual(hits.at(-1).bodyJson.messages.map((m) => m.role), ['user', 'user']);   // gate only accepts user|assistant
+  assert.equal(hits.at(-1).bodyJson.messages[0].content, 'be terse');                     // content + position preserved
+  const rm = await fetch(base + '/v1/messages', { method: 'POST', headers: H, body: messages('muse-spark-1.2-contributor', withSystem) });
+  assert.equal(rm.status, 200);
+  assert.deepEqual(hits.at(-1).bodyJson.messages.map((m) => m.role), ['system', 'user']); // muse passes through verbatim
+});
+
+test('GET /v1/models lists qwen from a vaulted qwencloud key', async () => {
+  const r = await fetch(base + '/v1/models', { headers: H });
+  assert.equal(r.status, 200);
+  const j = await r.json();
+  assert.ok(j.data.some((m) => m.id.startsWith('qwen:') && m.display_name.includes('vaulted')), 'qwen listed via its qwencloud vault key');
+  assert.ok(j.data.some((m) => m.id.startsWith('muse:')), 'muse listed');
 });
