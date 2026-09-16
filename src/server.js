@@ -494,7 +494,7 @@ const aerr = (res, code, type, message) => { res.writeHead(code, { 'content-type
 const oerr = (res, code, message, type = 'invalid_request_error') => { res.writeHead(code, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify({ error: { message, type, code: String(code) } })); };
 // prefix-shaped secrets only (sk-…, ghp…, xoxb…) — no generic long-hex rule, git SHAs must survive
 const scrub = (s) => String(s || '').replace(/\b((?:sk-ant-|sk-or-|sk_car_|nvapi-|esecret_|gsk_|xai-|csk-|fw_|jina_|r8_|hf_|ghp_|gho_|luma-|key_|pa-|AKIA|sk_|AIza|sk-|ghp|gho|xox[bp]|tvly|pplx|fc)[A-Za-z0-9_-]{12,})\b/g, (m) => m.slice(0, 8) + '…[redacted]');
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff' };
 
 // Sanitize + vault ONE provider key. Shared by POST /api/keys and the bulk import so
 // the paste-mistake guards (quote-strip, export/NAME= reject) live in exactly one place.
@@ -672,7 +672,12 @@ const server = http.createServer(async (req, res) => {
   // static dashboard (index gated at load; API gated per-request). /v1 is also excluded —
   // GET /v1/models would otherwise 404 in this branch before auth ever runs.
   if (req.method === 'GET' && !p.startsWith('/api') && !p.startsWith('/v1')) {
-    const fp = safeStaticPath(PUBLIC, p);
+    // Retire standalone visual experiments into the single supported app shell.
+    if (['/prism-vault.html', '/splat-attic.html', '/the-vault-watches-back.html', '/choir-lung.html'].includes(p)) {
+      res.writeHead(302, { location: '/', 'Cache-Control': 'no-store' });
+      return res.end();
+    }
+    const fp = safeStaticPath(PUBLIC, p === '/board' || p === '/board/' ? '/board.html' : p);
     // regular files only: GET // resolves to PUBLIC itself → readFile(dir) rejects
     // outside the try/catch → socket hangs forever (pre-auth DoS)
     try {
@@ -681,6 +686,7 @@ const server = http.createServer(async (req, res) => {
         const ext = extname(fp);
         const headers = { 'content-type': MIME[ext] || 'application/octet-stream' };
         if (ext === '.html') {
+          headers['Cache-Control'] = 'no-cache';
           headers['X-Frame-Options'] = 'DENY';
           // dashboard is a single-file Vue app: inline <style>/<script> need 'unsafe-inline', the full Vue build
           // compiles in-DOM templates via new Function() so script-src also needs 'unsafe-eval';
@@ -701,6 +707,12 @@ const server = http.createServer(async (req, res) => {
   // + the docker healthcheck path shouldn't be able to lock themselves out).
   const clientAddr = reqIp(req);
   if (authLocked(clientAddr)) { console.warn('[auth] locked', clientAddr); return json(res, 429, { error: 'too many auth failures — try again later' }); }
+
+  // A public session probe lets the entry page boot without failed protected
+  // requests or a pre-auth WebSocket. It never exposes vault contents.
+  if (p === '/api/session' && req.method === 'GET') {
+    return json(res, 200, { authenticated: authed(req), passwordEnabled: !!DASH_PW });
+  }
 
   // dashboard password login → signed HttpOnly session cookie (no token in the browser).
   // Pre-auth on purpose, but throttled by the same lockout so a guess loop isn't free.
@@ -769,7 +781,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/capabilities' && req.method === 'GET') {
       const providers = {};
       for (const r of q.capabilities.all()) providers[r.provider] = { keys: r.keys, label: r.label, last_checked: r.last_checked };
-      return json(res, 200, { version: VERSION, providers, claude: { selectable: q.pickRanked.all(CUTOFF).length, accounts: q.listAccounts.all().length } });
+      return json(res, 200, { version: VERSION, cutoff: CUTOFF, providers, claude: { selectable: q.pickRanked.all(CUTOFF).length, accounts: q.listAccounts.all().length } });
     }
     // on-demand liveness check for ONE key (mirror of /api/accounts/:name/refresh)
     if (p.startsWith('/api/keys/') && p.endsWith('/refresh') && req.method === 'POST') {

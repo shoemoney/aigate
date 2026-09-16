@@ -1,0 +1,35 @@
+/* Board keeps its operational interactions; the AIGate shell owns its identity. */
+body.aigate-board{zoom:1;background:#030b16;color:#eef8fc;font:20px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;--bg:#030b16;--bg2:#071522;--panel:rgba(8,24,39,.92);--panel2:#102536;--ink:#eef8fc;--dim:#aac2d2;--faint:#a1b7c7;--accent:#67efd6;--line:#284050;--todo:#79b5fb;--run:#ffc980;--done:#67efd6;--err:#ff94a0}
+body.aigate-board::before{content:'';position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 80% 10%,#0b51474d,transparent 52%),radial-gradient(ellipse at 10% 85%,#194d7040,transparent 48%)}
+.aigate-board #app{position:relative;z-index:1}
+.aigate-board .site-header{display:block;padding:0;background:rgba(3,11,22,.94);border-bottom:1px solid var(--line)}
+.aigate-board .site-header .brand{font-size:28px;letter-spacing:-1px;color:var(--fg);text-decoration:none}
+.aigate-board .brand-mark{position:relative;display:inline-flex;align-items:center;justify-content:center;width:48px;height:54px;color:var(--accent)}
+.aigate-board .brand-mark i{font-size:44px}.aigate-board .brand-mark b{position:absolute;top:27px;color:#061423;font-size:18px;line-height:1}
+.aigate-board .brand-light{font-weight:450}
+.aigate-board .board-heading{max-width:1600px;margin:0 auto;padding:52px 32px 28px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+.aigate-board h1{font-size:clamp(32px,4vw,48px);line-height:1.18;letter-spacing:-1.4px;margin:10px 0 14px}
+.aigate-board .board-heading p{color:var(--dim);margin:0;font-size:20px}.aigate-board .board-heading .board-eyebrow{font-size:18px;color:var(--accent);letter-spacing:2px;font-weight:650}
+.aigate-board .board-toolbar{max-width:1536px;margin:0 auto 14px;padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--panel);display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.aigate-board .board-toolbar input{flex:1;min-width:220px;padding:12px 16px;border:1px solid var(--line);border-radius:10px;background:var(--bg2);font:inherit;color:var(--ink)}
+.aigate-board .board-live{display:flex;gap:10px;align-items:center}.aigate-board .board-live .dot{width:9px;height:9px;background:var(--done);border-radius:50%;box-shadow:0 0 15px var(--done)}.aigate-board .board-live .dot.off{background:var(--err)}
+.aigate-board .magnet-chips{max-width:none;width:100%;margin:0;gap:9px}.aigate-board .magnet-chip{font-size:18px;padding:10px 14px;line-height:1.4;letter-spacing:0}.aigate-board .magnet-chip[aria-pressed=true]{color:#061522;background:var(--accent)}
+.aigate-board .btn{font-family:inherit;font-size:20px;font-weight:600;line-height:1.4;padding:11px 17px;min-height:46px;gap:10px}
+.aigate-board .btn.primary{background:var(--accent);color:#061522;box-shadow:0 0 24px #67efd61c}
+.aigate-board .board{padding:18px 32px 36px;gap:20px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.aigate-board .col{min-width:0;padding:18px;background:var(--panel)}
+.aigate-board .col h2{font-size:20px;gap:14px;letter-spacing:.6px;padding:10px 4px 18px;background:none}
+.aigate-board .col h2 .glyph{background:none!important;color:var(--dim);width:auto;height:auto;font-size:20px}
+.aigate-board .col .count{height:auto;min-height:30px;line-height:1.5;font-size:18px}.aigate-board .col .list{max-height:none;mask-image:none;-webkit-mask-image:none;contain:none}
+.aigate-board .card{padding:18px;background:linear-gradient(140deg,#132a3a,#0b1b2a)}
+.aigate-board .card .head{flex-wrap:wrap;gap:10px}.aigate-board .card .ttl{min-width:140px;font-size:20px;white-space:normal;overflow-wrap:anywhere}.aigate-board .card .prompt{font-size:20px;max-height:90px;line-height:1.5}.aigate-board .card.open .prompt{max-height:none}
+.aigate-board .card .rank{width:28px;height:28px;font-size:18px}.aigate-board .meta{gap:8px}.aigate-board .tag{font-size:18px;max-width:100%;height:auto;line-height:1.5;white-space:normal;overflow-wrap:anywhere}
+.aigate-board .status{font-size:18px;line-height:1.4}.aigate-board .empty{padding:28px 10px;font-size:20px;color:var(--dim)}
+.aigate-board .workerbar{position:relative;margin:0 auto 40px;max-width:1536px;border:1px solid var(--line);border-radius:16px;flex-wrap:wrap;background:var(--panel);padding:20px}.aigate-board .wboxes{flex-wrap:wrap}.aigate-board .wbox{min-width:200px;max-width:100%}.aigate-board .wcap{height:auto;min-height:32px}
+.aigate-board .modal{width:min(760px,calc(100vw - 32px));max-height:90dvh;overflow:auto;padding:28px;background:#091c2c}.aigate-board .modal h3{font-size:28px}.aigate-board .field input,.aigate-board .field select,.aigate-board .field textarea{font-size:20px;padding:12px}.aigate-board .field label{font-size:20px;line-height:1.5}.aigate-board .row2{min-width:0}.aigate-board .field{min-width:0}
+.aigate-board .actions,.aigate-board .followrow{flex-wrap:wrap}.aigate-board .followrow input{min-width:150px;font-size:20px}.aigate-board .kbd{font-size:18px;line-height:1.5}.aigate-board .breathe{display:none}
+.aigate-board .board-boot{position:relative;z-index:1;margin:25vh auto;max-width:620px;padding:32px;font-size:24px;text-align:center}.aigate-board .board-boot[hidden]{display:none}
+.aigate-board .board-notice{position:fixed;z-index:50;bottom:20px;left:20px;right:20px;padding:18px 24px;color:var(--err);background:var(--bg2);border:1px solid var(--err);border-radius:12px}
+@media(min-width:1600px){.aigate-board .board{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:700px){.aigate-board .board{grid-template-columns:1fr;padding:16px}.aigate-board .board-heading{padding:32px 20px 20px;align-items:flex-start;flex-direction:column}.aigate-board .board-toolbar{margin:0 16px 10px;padding:16px}.aigate-board .board-toolbar input{width:100%;min-width:0;flex-basis:100%}.aigate-board .workerbar{margin:0 16px 28px}.aigate-board .row2{display:flex;flex-direction:column}.aigate-board .modal{padding:20px}.aigate-board .card .timer{white-space:normal}.aigate-board .site-header{position:relative}}
+@media(prefers-reduced-motion:reduce){.aigate-board *, .aigate-board *::before,.aigate-board *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

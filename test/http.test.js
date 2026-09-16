@@ -45,6 +45,30 @@ test('GET / serves the dashboard', async () => {
   assert.match(r.headers.get('content-type'), /text\/html/);
 });
 
+test('session probe is public, reveals no vault data, and recognizes a bearer', async () => {
+  let r = await fetch(base + '/api/session');
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { authenticated: false, passwordEnabled: true });
+  r = await fetch(base + '/api/session', { headers: H });
+  assert.deepEqual(await r.json(), { authenticated: true, passwordEnabled: true });
+});
+
+test('board route and shared renderer assets load with correct content types', async () => {
+  for (const [path, type] of [['/board', 'text/html'], ['/board/', 'text/html'], ['/assets/token-field.js', 'text/javascript'], ['/assets/fontawesome/webfonts/fa-solid-900.woff2', 'font/woff2']]) {
+    const r = await fetch(base + path);
+    assert.equal(r.status, 200, path);
+    assert.equal(r.headers.get('content-type'), type, path);
+  }
+});
+
+test('retired visual experiments return to the supported branded entry', async () => {
+  for (const path of ['/prism-vault.html', '/splat-attic.html', '/the-vault-watches-back.html', '/choir-lung.html']) {
+    const r = await fetch(base + path, { redirect: 'manual' });
+    assert.equal(r.status, 302);
+    assert.equal(r.headers.get('location'), '/');
+  }
+});
+
 test('GET /api/accounts without token → 401 with JSON body', async () => {
   const r = await fetch(base + '/api/accounts');
   assert.equal(r.status, 401);
@@ -829,6 +853,7 @@ test('GET /api/capabilities is a read-only registry slice: counts + selectabilit
   assert.equal(j.providers.capco.keys, 1);
   assert.equal(typeof j.claude.selectable, 'number');
   assert.equal(typeof j.claude.accounts, 'number');
+  assert.equal(j.cutoff, 95);
   const blob = JSON.stringify(j);
   assert.ok(!blob.includes('sk-'), 'capability map leaked a secret');   // counts only, never the key value
 });
