@@ -1,0 +1,79 @@
+{
+  "site": "https://aigate.shoemoney.ai",
+  "release": "a63ded6",
+  "screenshots": [
+    {
+      "file": "01-entry-desktop.png",
+      "title": "Password entry",
+      "device": "Desktop",
+      "url": "https://aigate.shoemoney.ai/",
+      "captured": "2026-09-16T03:11:21.950687+00:00",
+      "sha256": "5510eb83930e3f2273ed985c95d9dd5cced110638e84362aa25990d190e886e4"
+    },
+    {
+      "file": "02-entry-mobile.png",
+      "title": "Password entry",
+      "device": "Mobile",
+      "url": "https://aigate.shoemoney.ai/",
+      "captured": "2026-09-16T03:11:22.019770+00:00",
+      "sha256": "6f3033c3148d90491e2c79e60ff6180a1d49422f1c266fc42daa34b0bcc5fcd5"
+    },
+    {
+      "file": "03-control-room-desktop.png",
+      "title": "Control room",
+      "device": "Desktop",
+      "url": "https://aigate.shoemoney.ai/#overview",
+      "captured": "2026-09-16T03:17:26.744137+00:00",
+      "sha256": "ccab77a7a2961fa3bec30601d8db3fa8df16d95b227800c4b87d114ebae42251"
+    },
+    {
+      "file": "04-accounts-desktop.png",
+      "title": "AI accounts",
+      "device": "Desktop",
+      "url": "https://aigate.shoemoney.ai/#accounts",
+      "captured": "2026-09-16T03:17:27.545141+00:00",
+      "sha256": "230fa8a8939498a8c6e31443aaf99d35faeaab99ae8b2b339d10888d48ea8923"
+    },
+    {
+      "file": "05-api-keys-desktop.png",
+      "title": "Provider API keys",
+      "device": "Desktop",
+      "url": "https://aigate.shoemoney.ai/#keys",
+      "captured": "2026-09-16T03:19:54.213459+00:00",
+      "sha256": "cfacc5c1c2c4b83d9be96a204485e5c225d013b856901c6089b00f40b9bbeeb8"
+    },
+    {
+      "file": "06-activity-desktop.png",
+      "title": "Live activity",
+      "device": "Desktop",
+      "url": "https://aigate.shoemoney.ai/#activity",
+      "captured": "2026-09-16T03:19:36.625637+00:00",
+      "sha256": "6f14419fcd27d577a88ab619e8aa6377b38c02ad47a33e6087afb8cab3bcbd3b"
+    },
+    {
+      "file": "07-task-board-desktop.png",
+      "title": "Task board",
+      "device": "Desktop",
+      "url": "https://aigate.shoemoney.ai/board",
+      "captured": "2026-09-16T03:14:11.520080+00:00",
+      "sha256": "e4c2e118d825d146e99aa58ccb2e55c364e0bdaf3261ac2d4a29d219990be8b0"
+    },
+    {
+      "file": "08-task-board-mobile.png",
+      "title": "Task board",
+      "device": "Mobile",
+      "url": "https://aigate.shoemoney.ai/board",
+      "captured": "2026-09-16T03:14:11.563941+00:00",
+      "sha256": "8819653626ba0aa8b33995562992ce2d67df609eb949f336152dd9371fc9b927"
+    },
+    {
+      "file": "09-control-room-mobile.png",
+      "title": "Control room",
+      "device": "Mobile",
+      "url": "https://aigate.shoemoney.ai/#overview",
+      "captured": "2026-09-16T03:17:29.615652+00:00",
+      "sha256": "9faf6b07e541f58babca39b42b158bc99c9cf26ffa16b2939687eded4e386654"
+    }
+  ],
+  "gallery_preview": "gallery-desktop.png"
+}

@@ -1,272 +1,170 @@
 <div align="center">
 
-# 🛡️ aigate
+<img src="public/assets/aigate-icon.svg" width="96" height="96" alt="AIGate AI lock logo">
 
-### **The compliant AI credential vault & account selector**
+# AIGate
 
-<sub>*(a secure proxy / load balancer is the roadmap — today aigate is **NOT** a proxy: it never sits in Anthropic's request path, it **picks** the best account/key and records usage.)*</sub>
+### Your AI. Your keys. Your control.
 
-*One self-hosted place that holds every AI credential you own, hands them out **the compliant way**, balances by **real rate-limit headroom**, and shows you **live what's using what** — so nothing runs away at 2am.*
+**A self-hosted control room for AI credentials, account headroom, and machine activity.**
 
-![status](https://img.shields.io/badge/status-v1_shipped_%26_fleet--verified-brightgreen)
-![node](https://img.shields.io/badge/node-%E2%89%A524-339933?logo=node.js&logoColor=white)
-![db](https://img.shields.io/badge/db-SQLite-003B57?logo=sqlite&logoColor=white)
-![deps](https://img.shields.io/badge/runtime_deps-1_(ws)-lightgrey)
-[![compliant](https://img.shields.io/badge/Claude_multi--account-no--proxy_%C2%B7_accepted-8A2BE2)](COMPLIANCE.md)
-![license](https://img.shields.io/badge/license-MIT-blue)
-![PRs](https://img.shields.io/badge/PRs-welcome-ff69b4)
+[Explore the interface](#screenshots) · [Quick start](#quick-start) · [Connect a machine](#connect-a-machine) · [API reference](#api-reference) · [Configuration](#configuration)
+
+Node.js 24+ · SQLite · One runtime dependency · MIT
 
 </div>
 
----
+[![AIGate master-password entry: mint AI lock branding over a navy flying-token background](docs/screenshots/live-2026-09-15/01-entry-desktop.png)](docs/screenshots/live-2026-09-15/01-entry-desktop.png)
 
-<div align="center">
+**One vault. A clear view of what is using it.** AIGate stores your credentials, selects Claude accounts by available headroom, proxies requests for supported API-key providers, and brings usage and activity into one live workspace.
 
-## 💛 Shoutout to Theo
+Claude subscription requests run through the official Claude client directly. API-key proxy requests use the provider-key vault. These are separate paths; see [credential boundaries](#credential-boundaries).
 
-**This one's for [Theo Browne](https://t3.gg) — [@t3dotgg](https://x.com/theo).**
-
-If you found this repo through his channel: **welcome in.** 🎬 I build the way I build because of people who make it fun to watch someone care about their craft — and Theo is at the top of that list. The bias for shipping, the "just self-host it," the allergy to over-engineered nonsense — a lot of that rubbed off from years of his videos. **Thank you, genuinely. I owe you a ton.** 🙏
-
-[🌐 t3.gg](https://t3.gg) · [💬 t3.chat](https://t3.chat) · [▶️ YouTube](https://youtube.com/@t3dotgg) · [🐦 @theo](https://x.com/theo) · [⚡ create.t3.gg](https://create.t3.gg) · [📦 UploadThing](https://uploadthing.com)
-
-</div>
-
----
-
-> [!NOTE]
-> **Status: v1 shipped, fleet-verified.** The daemon — encrypted vault, **headroom-aware Claude account selector**, **server-side usage poller**, **provider-key registry**, WebSocket dashboard, full audit — is real and running on live machines. The **secure proxy for API-key providers** and **latching budget breaker** are the roadmap → see **[VISION.md](VISION.md)**. Nothing below is vaporware; the ⬜ rows just aren't built yet.
-
-Built by someone who woke up to a **$500 OpenRouter bill** from a rogue loop and had **no idea which of 35 machines did it.** aigate is the tool that would've caught it at 2am. 😴💸
-
----
-
-## 🧭 Contents
-
-| | | |
+| Vault | Observe | Operate |
 |---|---|---|
-| [🤔 Why](#-why-not-just-a-proxy) | [⚖️ Compliance](#️-compliance-the-whole-point) | [🧠 Concepts](#-core-concepts) |
-| [🏗️ Architecture](#️-architecture) | [🔁 How it works](#-how-it-works) | [✨ Features](#-features-v1) |
-| [🚀 Quick start](#-quick-start) | [🔌 Wire up a box](#-wire-up-a-box-client-side) | [🧪 Prove it switches](#-prove-it-actually-switches) |
-| [📡 API](#-api-reference) | [⚙️ Config](#️-config) | [🗺️ Roadmap](#️-roadmap) |
+| Encrypted account credentials and provider keys, with audited retrieval. | Real usage charts, account limits, connected machines, and streaming activity. | Headroom-aware selection, API-key routing, and a live task board. |
 
----
+## Screenshots
 
-## 🤔 Why (not just a proxy?)
+Captured from the deployed application on **September 15, 2026**. These are live states, including actual limit warnings and an empty task board. Click any screenshot to open the full-resolution PNG.
 
-Multiple Claude Max subscriptions are **not against ToS** — Anthropic's Claude Code team [said so on the record](https://x.com/trq212/status/2024212378402095389) and told The New Stack they *"will not be canceling accounts."* What gets accounts **banned** is [relaying subscription tokens through a harness that spoofs the official client](https://x.com/trq212/status/2009689809875591565). aigate stays firmly on the **accepted** side of that line for Claude, and uses a normal secure proxy only where it's safe:
+### The control room
 
-| Provider type | aigate mode | In Anthropic's request path? | Safe? |
-|---|---|---|---|
-| **Claude subscriptions** (OAuth) | 🎯 **Selector** — runs the *official* `claude` binary with the best account's token | ❌ **never** | ✅ accepted architecture |
-| **API-key providers** (OpenRouter, OpenAI, Gemini…) | 🔀 **Secure proxy** — injects the real key, meters spend *(roadmap)* | ✅ (standard) | ✅ normal for API keys |
+Unlock once to reveal the top menu: **Overview · Accounts · API keys · Activity · Task board**. The master-password entry page stays focused on access, without workspace navigation.
 
-**Clients only ever hold an aigate token — never a raw provider key.** 🔐
+[![AIGate control room showing live usage, account availability, and vault totals](docs/screenshots/live-2026-09-15/03-control-room-desktop.png)](docs/screenshots/live-2026-09-15/03-control-room-desktop.png)
 
----
-
-## ⚖️ Compliance (the whole point)
-
-> Most "multi-account Claude" tools get this **wrong** and get people banned. aigate is built specifically to get it **right.** Here's the line, in Anthropic's own words, and where every tool falls.
->
-> 📋 **Full policy analysis + every primary-source receipt → [COMPLIANCE.md](COMPLIANCE.md).**
-
-Anthropic's [Claude Code legal & compliance page](https://code.claude.com/docs/en/legal-and-compliance) is unusually explicit. The banned pattern is **routing requests through Free/Pro/Max plan credentials on behalf of users via a harness that spoofs the official client** — in Anthropic's own words ([Thariq Shihipar, Claude Code @ Anthropic — Jan 9, 2026](https://x.com/trq212/status/2009689809875591565)): *"we tightened our safeguards against spoofing the Claude Code harness … third-party harnesses using Claude subscriptions … are prohibited by our Terms of Service."* Running **your own** multiple accounts through the **official** client is a different thing entirely — he [confirmed on Feb 19, 2026](https://x.com/trq212/status/2024212378402095389) *"Nothing is changing about how you can use the Agent SDK and MAX subscriptions,"* and Anthropic itself acknowledges [`CLAUDE_CONFIG_DIR`](https://github.com/anthropics/claude-code/issues/261) as the sanctioned multi-account isolation mechanism. aigate never spoofs the harness — it runs the **real `claude` binary** — so it stays on the accepted side.
-
-```mermaid
-flowchart TB
-  subgraph banned["❌ BANNED — the relay pattern"]
-    direction LR
-    B1["your app"] --> B2["🚨 proxy impersonates<br/>the official client"] --> B3["Anthropic"]
-    note1["ccflare · claude-relay-service · teamclaude<br/>relay OAuth tokens, spoof headers,<br/>sit IN the request path"]
-  end
-  subgraph ok["✅ ACCEPTED — the selector pattern (aigate)"]
-    direction LR
-    A1["aigate<br/>pick account w/ headroom"] -.only picks.-> A2["official claude binary"] --> A3["Anthropic<br/><i>direct · real telemetry</i>"]
-    note2["no proxy · own accounts only ·<br/>CLAUDE_CODE_OAUTH_TOKEN (sanctioned)"]
-  end
-```
-
-**Three tests aigate passes:**
-
-| Test | Banned tools | aigate |
-|---|---|---|
-| **Who makes the request?** | a proxy spoofing the client | the **official `claude` binary** ✅ |
-| **Whose accounts?** | routes on behalf of *other users* / resells | **only your own** ✅ |
-| **Evading limits?** | sticky sessions *designed* to dodge caps | picks headroom for *ordinary individual use* ✅ |
-
-> [!WARNING]
-> **The one soft spot — respect it.** Keep aigate **single-tenant** and each account's usage within *ordinary individual* bounds. Do **not** shard one heavy 24/7 workload across N accounts to beat the weekly cap — that's *limit evasion*, bannable even with the official binary. Prefer an **API-key fallback** (Console pay-go) over over-draining a subscription. Never ship a token to a machine used by a different person.
-
-### 📎 Receipts — read the primary sources yourself
-
-Don't take my word for it. Here's the line, from Anthropic directly:
-
-| Source | What it establishes |
-|---|---|
-| ⚖️ [Anthropic — Claude Code Legal & Compliance](https://code.claude.com/docs/en/legal-and-compliance) | The authoritative policy: OAuth is for *"ordinary use of Claude Code and other native Anthropic applications"*; developers routing subscription creds **on behalf of their users** must use API keys. |
-| 🐦 [Thariq Shihipar (@trq212), Claude Code @ Anthropic — Jan 9, 2026](https://x.com/trq212/status/2009689809875591565) | Names the **banned** pattern: *harnesses that **spoof** the Claude Code client* using subscription tokens. aigate runs the real binary — it doesn't spoof. |
-| 🐦 [Thariq Shihipar — Feb 19, 2026](https://x.com/trq212/status/2024212378402095389) | *"Nothing is changing about how you can use the Agent SDK and MAX subscriptions."* |
-| 🧩 [anthropics/claude-code #261](https://github.com/anthropics/claude-code/issues/261) · [#33430](https://github.com/anthropics/claude-code/issues/33430) | Anthropic's **own repo** acknowledging **`CLAUDE_CONFIG_DIR`** for per-account isolation — the exact mechanism aigate uses. |
-
-> The through-line: **who makes the request matters.** A harness spoofing the client = banned. The official `claude` binary, your own accounts = accepted. aigate is architected to always be the second thing.
-
----
-
-## 🧠 Core concepts
-
-```mermaid
-mindmap
-  root(("🛡️ aigate"))
-    🔐 Vault
-      AES-256-GCM at rest
-      Claude OAuth tokens
-      provider API keys
-      clients hold aigate token only
-    ⚖️ Selection
-      most headroom first
-      auto-skip ≥95%
-      auto-recover after reset
-      🔁 exclude + retry on over-limit
-    📈 Usage poller
-      reads Anthropic rate-limit headers
-      every 10 min · no proxy
-      per-account 5h + 7d %
-    🩺 Self-heal
-      /health DB-backed probe
-      watchdog exits→restart
-      Docker HEALTHCHECK + autoheal
-    🧾 Audit
-      every handout - IP + host
-      every prompt - via hooks
-    📊 Live
-      WebSocket dashboard
-      🚨 runaway detection
-      🔑 add/remove provider keys
-    🛑 Guards _(roadmap)_
-      per model x key caps
-      latching breaker
-```
-
----
-
-## 🏗️ Architecture
-
-**No proxy in Anthropic's path.** The daemon only *picks* the account, *records* activity, and *polls* real usage. The official client talks to Anthropic directly.
-
-```mermaid
-flowchart LR
-  subgraph box["🖥️ each box (official claude)"]
-    R["🎯 cc wrapper (aigate-run)<br/>pick best account · retry on limit"]
-    C(["claude ↔ Anthropic<br/><i>direct, your token</i>"])
-    S["🛡 statusline badge<br/>account · wk %"]
-    R --> C
-  end
-  D[["🛡️ aigate daemon<br/>SQLite vault + selector + poller"]]
-  W(["📊 dashboard"])
-  AN(["🤖 Anthropic<br/>rate-limit headers"])
-  R -- "GET /api/select" --> D
-  D -- "poll every 10m" --> AN
-  AN -- "5h% / 7d% utilization" --> D
-  D == "WebSocket push" ==> W
-```
-
----
-
-## 🔁 How it works
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant Box as 🖥️ box
-  participant AG as 🛡️ aigate
-  participant AN as 🤖 Anthropic
-  Note over AG,AN: every 10 min, per account
-  AG->>AN: tiny call w/ account's token
-  AN-->>AG: anthropic-ratelimit-unified-{5h,7d}-utilization
-  AG->>AG: write real usage → auto-skip ≥95%
-  Note over Box,AN: on demand
-  Box->>AG: GET /api/select?host=pi-17
-  AG->>AG: ORDER BY max(5h%,7d%) ASC, skip disabled/over-cutoff
-  AG-->>Box: { account, setup_token }  📝 (logs access + IP)
-  Box->>AN: run OFFICIAL claude w/ token 🔑
-  Note over Box,AG: every prompt turn (UserPromptSubmit hook)
-  Box->>AG: re-check current account headroom
-  AG-->>Box: exhausted? → park it (fleet-wide reroute)
-  Note over Box,AN: on exhaustion — auto, no [Y/n]
-  Box->>AG: GET /api/select?exclude=drained
-  AG-->>Box: { next account, setup_token }
-  Box->>AN: relaunch claude --continue 🔁 (same convo)
-```
-
----
-
-## ✨ Features (v1)
-
-| | Feature | Notes |
-|---|---|---|
-| 🔐 | **Encrypted vault** | AES-256-GCM at rest — Claude OAuth tokens **and** provider API keys; the **list** endpoints never return secrets (only `has_token` / `key_hint`), while the selector/fetch routes hand the decrypted value to an authenticated, audited caller |
-| ⚖️ | **Headroom-aware selection** | hands out the account with the **most headroom** (lowest of `max(5h%,7d%)`), skips anything ≥ cutoff |
-| 📈 | **Server-side usage poller** | reads each account's **real** rate-limit headroom straight from Anthropic every 10 min → auto-skip maxed, **auto-recover after reset**, zero manual seeding |
-| 🔑 | **Provider-key registry** | encrypted store + `/api/keys` for a **65-provider catalog** (OpenAI / OpenRouter / Gemini / Groq / Together / fal / ElevenLabs / …); **sanitized intake** (trims + un-quotes pastes, **400s** `export`/`NAME=` blobs, provider lowercased) + collision-proof **`first8…last4#hash8`** hints; `GET /api/providers` feeds a dashboard **add-key form** with per-provider key-format hints |
-| 🔁 | **Over-limit detect + retry** | headless `cc -p` classifies claude's failure — a **real per-account usage limit** → **TTL-parks** that account (`/api/events/limit` — **15m** default, real usage untouched) and **retries the next-best** via `/api/select?exclude=` (up to 3); a **transient 529/overload** → **waits 10s and retries the SAME account** (no park — 529 is global load-shedding; parking/hopping just drains the pool) |
-| 🔄 | **Continuous auto-switch** | account choice is **re-checked every prompt turn** — the `UserPromptSubmit` hook **parks the current account the instant it's exhausted** (fleet-wide reroute), and interactive sessions **auto-switch with no `[Y/n]`**: relaunch `claude --continue` on the next account, same conversation. Fires only on **genuine exhaustion** (not a fixed cadence — that'd be cap-sharding); the token swaps at process boundaries, so aigate stays a selector, **never in Anthropic's path** |
-| 🩺 | **Self-healing daemon** | unauthenticated **`/health`** (DB-backed; `selectable` uses the **exact selection query**, so parked accounts don't mask an outage) + internal **watchdog** (exits→restart on a wedged DB) + Docker `HEALTHCHECK` wired to **autoheal** — three recovery layers |
-| 🐤 | **Boot canary + daily backups** | wrong `AIGATE_ENCRYPTION_KEY` = **loud FATAL at boot** (not a decrypt blow-up mid-request); daily `VACUUM INTO` snapshot → `data/backups/` w/ **14-day retention** (ciphertext only — `.env` never copied) |
-| 🧾 | **Full audit trail** | every **handout, key-fetch, and mutation** (account add/overwrite/delete/disable/enable · key add/delete · limit-park) logged with **timestamp + IP + host**; every prompt is **secret-scrubbed** (`sk-`/`ghp`/`AIza`-shaped tokens redacted) **before** storage then capped at **400 chars**; all readable at **`/api/access`**; auto-pruned after **30 days** (daily, piggybacked on the backup pass) |
-| 📊 | **Live dashboard** | account cards w/ usage bars (🚨 runaway, 🔑 re-auth), **provider-key manager**, streaming activity feed, per-host/device stats — WS auth rides a **`bearer.<token>` subprotocol**, never the URL |
-| 🗂️ | **Kanban board — internal/unstable** | **TODO / RUNNING / DONE / ERROR** columns, drag-reorder, atomic `claim`, heartbeat `activity`, `result`/`followup`/`retry` turns — WS live; see [screenshots](#️-board--kanban-for-agents) |
-| 🎯 | **No-proxy Claude mode** | official binary + `cc` wrapper — won't flag accounts |
-| 🧪 | **Tested — 149 tests, CI on every push** | unit + HTTP (`node --test` on a throwaway DB — 403 gate, limit clamps, and a raw-socket mid-emoji UTF-8 split) **+ client-behavior tests** (drives `prompt-hook.sh` against a mock aigate to prove **per-turn parking** + **no-prompt switching**) and a **fleet switching test** on a real Pi — GitHub Actions runs the suite on Node 24 for every push/PR — see [docs/TESTING.md](docs/TESTING.md) |
-| 🐳 | **1 runtime dep** | `ws`. SQLite is Node's built-in `node:sqlite`. Buildless. Docker-ready. |
-
----
-
-## 🗂️ Board — kanban for agents
-
-> Agents don't read logs — they read a board. `TODO → RUNNING → DONE / ERROR` with live workers, atomic claims, and audited turns.
-
-```mermaid
-flowchart LR
-  T["📋 TODO<br/>queued · drag-reorder"] -->|claim atomically| R["🏃 RUNNING<br/>worker heartbeat"]
-  R -->|result ok| D["✅ DONE<br/>audited turns"]
-  R -->|error| E["❌ ERROR<br/>retry / followup"]
-  E -->|retry| T
-  R -->|followup| T
-  W["👷 workers<br/>liveHosts heartbeat"] -.-> R
-  B["📡 WS broadcast"] --- T & R & D & E
-```
-
-**How it works:** any box `POST /api/board {title,prompt,cwd,model,effort,host}` → appears in `TODO`. A worker `POST /api/board/claim {worker,host}` atomically grabs the next card → `RUNNING` (heartbeat via `/activity`). `POST /api/board/:id/result {ok,result,session_id}` flips to `DONE`/`ERROR` with an audited turn; `followup` re-queues. The dashboard polls `/api/board/workers` every 2s + WS push — see the live 5-min sweep that now bounds the `workers` Map.
+A shared WebGPU token field runs across the entry page, dashboard, and board. Live events trigger visual pulses; the ambient token words are decorative. Canvas 2D provides a fallback, reduced-motion preferences are respected, and animation pauses in hidden tabs. The screenshots capture a frame of that moving background.
 
 <details>
-<summary>📸 Fresh screenshots — dashboard + board (2026-08-15, throwaway DB on :3033)</summary>
+<summary><strong>Accounts — headroom and availability</strong></summary>
 
-| Dashboard — live usage + activity | Board — kanban |
-|---|---|
-| ![dashboard](docs/screenshots/dashboard.png) | ![board](docs/screenshots/board.png) |
-| `demo_max` at 0% · `NEXT TO BE PICKED` · weekly/5h bars · `Provider API keys · 1` collapsed | `TODO 2 · RUNNING 0 · DONE 0 · ERROR 0` · 2 demo cards queued · `+ New task` · filter bar |
+### Know which account can work
 
-> Seeded with `demo_max` (0%) + one `openai` key (`sk-proj-…AAAA#hash8`) + 2 demo cards so you see the real empty vs live states — not lorem.
+Inspect usage, refresh headroom, and manage account availability from the same workspace.
+
+[![AIGate Accounts view with real account usage and availability controls](docs/screenshots/live-2026-09-15/04-accounts-desktop.png)](docs/screenshots/live-2026-09-15/04-accounts-desktop.png)
 
 </details>
 
-**API:** `GET /api/board` · `POST /api/board` · `GET /api/board/hosts|workers` · `POST /api/board/claim|activity|reorder` · `POST/PATCH/DELETE /api/board/:id/*` — all **internal/unstable** (shape may shift), bearer-gated, audited. See [📡 API reference](#-api-reference) for the full table.
+<details>
+<summary><strong>API keys — the provider vault</strong></summary>
+
+### See what is stored and what is working
+
+Browse provider keys with masked hints, status, and management controls. List responses do not expose complete secrets.
+
+[![AIGate API keys view with provider registry, masked key hints, and status](docs/screenshots/live-2026-09-15/05-api-keys-desktop.png)](docs/screenshots/live-2026-09-15/05-api-keys-desktop.png)
+
+</details>
+
+<details>
+<summary><strong>Activity — a live view across machines</strong></summary>
+
+### Follow the work
+
+Filter and pause the activity feed to inspect the events arriving from your machines.
+
+[![AIGate Activity view with live machine events and feed controls](docs/screenshots/live-2026-09-15/06-activity-desktop.png)](docs/screenshots/live-2026-09-15/06-activity-desktop.png)
+
+</details>
+
+<details>
+<summary><strong>Task board — queue, run, review</strong></summary>
+
+### A shared board for agent work
+
+Create tasks, track worker activity, and review results through TODO, RUNNING, DONE, and ERROR columns. The board API remains internal and unstable.
+
+[![AIGate task board with its four workflow columns and task controls](docs/screenshots/live-2026-09-15/07-task-board-desktop.png)](docs/screenshots/live-2026-09-15/07-task-board-desktop.png)
+
+</details>
+
+<details>
+<summary><strong>Mobile — password entry, control room, and task board</strong></summary>
+
+### Password entry
+
+<a href="docs/screenshots/live-2026-09-15/02-entry-mobile.png"><img src="docs/screenshots/live-2026-09-15/02-entry-mobile.png" width="390" alt="AIGate master-password entry on mobile"></a>
+
+### Control room
+
+<a href="docs/screenshots/live-2026-09-15/09-control-room-mobile.png"><img src="docs/screenshots/live-2026-09-15/09-control-room-mobile.png" width="390" alt="AIGate control room on mobile"></a>
+
+### Task board
+
+<a href="docs/screenshots/live-2026-09-15/08-task-board-mobile.png"><img src="docs/screenshots/live-2026-09-15/08-task-board-mobile.png" width="390" alt="AIGate task board on mobile"></a>
+
+</details>
+
+**[All screenshot files](docs/screenshots/live-2026-09-15/) · [Download the PNG collection](docs/screenshots/live-2026-09-15/aigate-live-screenshots.zip) · [Capture metadata](docs/screenshots/live-2026-09-15/capture-info.json)**
+
+The folder also includes an [interactive gallery](docs/screenshots/live-2026-09-15/index.html) with thumbnails, favorites, full-size previews, and side-by-side comparison. Download or clone the repository and open that HTML file locally; GitHub displays its source. [Preview the gallery](docs/screenshots/live-2026-09-15/gallery-desktop.png).
+
+## What ships
+
+| Capability | Implemented behavior |
+|---|---|
+| **Encrypted vault** | AES-256-GCM storage for Claude account tokens and provider API keys. List endpoints return metadata; authenticated selection and key-fetch routes return the requested credential and record access. |
+| **Account selection** | Ranks accounts by their worst usage window, skips disabled, parked, and over-cutoff accounts, and recovers eligibility as limits reset. The default cutoff is 95%. |
+| **Usage polling** | Reads real five-hour and seven-day rate-limit utilization every ten minutes. Unchecked usage is shown as unknown rather than a fabricated zero. |
+| **Provider registry** | A 65-provider catalog, add-key controls, bulk import, normalized key intake, liveness probes where supported, and masked key hints. |
+| **API-key proxy** | Anthropic Messages, OpenAI Chat Completions, and Responses endpoints with provider routing, server-side key injection, streaming, and audited key failover. |
+| **Claude client integration** | The `cc` wrapper runs the official binary, checks account headroom, parks exhausted accounts, and retries with the next eligible account. Global overload responses retry the same account. |
+| **Live interface** | WebSocket updates, interactive usage charts, account and key management, a filtered activity feed, responsive navigation, and the shared token background. |
+| **Task board** | Atomic task claims, worker heartbeats, drag reordering, results, follow-ups, and retries. Its API is internal and may change. |
+| **Audit and recovery** | Credential access and mutations are logged; prompts are scrubbed before storage. DB-backed health checks, a watchdog, a boot encryption canary, and daily snapshots support operations. |
+| **Verification** | **200 automated tests passed** for the September 15 release, including HTTP and client behavior checks. Desktop/mobile rendering and WebGPU were also checked in a browser. See [testing](docs/TESTING.md) and [UI implementation notes](docs/UI-REDESIGN.md). |
+| **Small runtime** | Node.js 24+, built-in `node:sqlite`, and `ws` as the single runtime dependency. No frontend build step. |
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Client["Your machines"] -->|"select account"| Vault["AIGate<br/>Encrypted vault + usage poller"]
+  Vault -->|"selected credential"| Claude["Official Claude client"]
+  Claude -->|"direct request"| Anthropic["Anthropic"]
+  Client -->|"API-key request"| Proxy["AIGate API-key proxy"]
+  Vault --- Proxy
+  Proxy -->|"vaulted provider key"| Providers["API providers"]
+  Vault -->|"WebSocket events"| UI["Live control room + task board"]
+  style Vault fill:#071825,color:#e9fff9,stroke:#67efd6,stroke-width:2px
+  style Proxy fill:#071825,color:#e9fff9,stroke:#67efd6
+  style UI fill:#071825,color:#e9fff9,stroke:#67efd6
+```
+
+The daemon polls usage and records activity independently of Claude's request stream. The client requests an eligible account, then launches the official `claude` binary with that credential. Prompt hooks re-check headroom and record activity; a genuine account-limit response can park the account temporarily and continue on the next eligible account.
+
+For API-key requests, AIGate is in the request path: it selects a working provider key, injects it server-side, and streams the upstream response. The supported routes and model mappings are documented in the [API reference](#api-reference).
+
+### Credential boundaries
+
+Claude OAuth setup tokens belong in **accounts**. Provider API keys belong in **provider_keys**. The proxy reads the provider-key vault and rejects Claude setup tokens at intake and retrieval. The selector returns credentials to authenticated callers, so clients using selection or explicit key retrieval do receive those credentials; proxy clients use the AIGate bearer instead.
+
+For the project's policy analysis and source references, read [COMPLIANCE.md](COMPLIANCE.md). The software's routing architecture does not guarantee an account's policy status.
+
+### Task lifecycle
+
+Create a card with `POST /api/board`. A worker claims it atomically with `POST /api/board/claim`, sends `/api/board/activity` heartbeats, and posts a result to move it into DONE or ERROR. Follow-up and retry operations re-queue work. The UI combines WebSocket updates with worker polling; stale workers are pruned after five minutes.
 
 ---
 
-## 🚀 Quick start
+## Quick start
 
 ```bash
 git clone https://github.com/shoemoney/aigate && cd aigate
 cp .env.example .env
-#   → set AIGATE_TOKEN  (any long random string)
-#   → set AIGATE_ENCRYPTION_KEY=$(openssl rand -hex 32)
+# Edit .env and set:
+# AIGATE_TOKEN: a long random bearer token
+# AIGATE_ENCRYPTION_KEY: the output of openssl rand -hex 32
+# AIGATE_DASHBOARD_PASSWORD: your master password
 npm install          # installs ws
-npm start            # → http://localhost:20200
+npm start            # http://localhost:20200
 ```
 
-🐳 **Docker:** `docker compose up -d`
+ **Requires Node.js 24 or newer.** Open [localhost:20200](http://localhost:20200) and unlock with your master password.
+
+**Docker:** `docker compose up -d`
 
 Add a Claude account (mint the token with `claude setup-token` while logged into that account):
 
@@ -277,7 +175,7 @@ curl -X POST http://localhost:20200/api/accounts \
 ```
 
 <details>
-<summary>💡 <b>The <code>setup-token</code> gotcha that trips everyone</b></summary>
+<summary><b>The <code>setup-token</code> gotcha that trips everyone</b></summary>
 
 `claude setup-token` shows **two** screens. The browser **"Authentication Code"** page (`code#state`, *"Paste this into Claude Code"*) is **not** the token — it goes back into the waiting terminal, which then prints the real **`sk-ant-oat01-…`**. *That* line is what aigate stores.
 </details>
@@ -290,11 +188,11 @@ curl -X POST http://localhost:20200/api/keys \
   -d '{"provider":"openrouter","key":"sk-or-v1-…","label":"prod"}'
 ```
 
-…or just open the **dashboard** → **Provider API keys** → pick from the 65-provider dropdown, paste, **Add key**. 🖥️ (Paste hygiene is handled server-side: quotes get stripped, and an accidental `export NAME=…` blob is rejected with a 400 instead of vaulting garbage.)
+You can also open **API keys** in the dashboard, choose a provider, and add the key. The server trims quoted pastes and rejects accidental `export NAME=…` assignments with a `400` response.
 
 ---
 
-## 🔌 Wire up a box (client side)
+## Connect a machine
 
 **One installer sets up the `cc` command.** It routes the official `claude`
 through aigate's selector, unsets stray `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` /
@@ -304,7 +202,7 @@ headless `-p` mode) detects over-limit and retries the next account — with **c
 
 ```bash
 AIGATE_URL='https://aigate.example.com' AIGATE_TOKEN='…' bash clients/install.sh
-cc -p 'hi'          # → Claude replies, on the account with the most headroom
+cc -p 'hi'          # Claude replies using the account with the most headroom
 ```
 
 The installer writes `~/.claude/aigate/{aigate-run.sh,hydrate.sh,env}` + `~/.local/bin/cc`
@@ -321,13 +219,13 @@ and auto-detects the `claude` binary.
 | `aigate-run.sh` | the `cc` wrapper — select → set token → unset stray `ANTHROPIC_*` (incl. `BASE_URL`) → run `claude`; **interactive sessions auto-switch** on exhaustion — relaunch `claude --continue` on the next account, **no `[Y/n]`**, same conversation; **retry-on-limit** in `-p` mode (real limit → **15m park** + next account; transient **529 → wait 10s, retry the SAME account, no park**) w/ clean stdout; preflight-warns **shadow logins** + `BASE_URL` hijacks |
 | `aigate-kimi.sh` | **[Kimi K3 only]** — run the official `claude` binary against Kimi's Anthropic-compatible endpoint; fetches the `sk-kimi` key from the vault (audited, host+IP); atomic-writes a cache (mode 600) so parallel swarms survive vault blips; maps every model tier onto Kimi; adds `--dangerously-skip-permissions` in `-p` headless mode; bypasses the Claude-account warden (Kimi has no OAuth) but **stays a selector** — still the real binary, your own vaulted key, **never a proxy** |
 | `hydrate.sh` | MCP-key hydration — vault → `~/.claude/aigate/mcp-keys.env` so `${BRAVE_API_KEY}`-style MCP configs resolve at launch; **merges** partial fetches (a blip never wipes cached keys); `cc` **foreground-freshens** when missing/stale (>12h) so *this* launch gets keys |
-| `prompt-hook.sh` | Claude Code `UserPromptSubmit` hook → **re-evaluates the current account every turn** (parks it fleet-wide the instant it's exhausted) + logs the prompt; backgrounded & **stdio-detached** = zero turn latency |
+| `prompt-hook.sh` | Claude Code `UserPromptSubmit` hook → **re-evaluates the current account every turn** (parks it fleet-wide the instant it's exhausted) + logs the prompt; backgrounded & **stdio-detached** = does not block the prompt turn |
 | `statusline-feed.sh` | statusline badge (account · wk %) → also feeds real usage back |
 | `test-switching.sh` | end-to-end switching test (below) |
 
-### 🔑 `/add-key` — teach every Claude to use the key vault
+### `/add-key` — teach every Claude to use the key vault
 
-The repo ships a Claude Code **skill** at [`.claude/skills/add-key/`](.claude/skills/add-key/SKILL.md). Any Claude working in this repo (or with the skill synced into `~/.claude/skills/`) can type **`/add-key`** to vault a provider key and fetch it back to *use* it — no hardcoded secrets:
+The repo includes a Claude Code **skill** at [`.claude/skills/add-key/`](.claude/skills/add-key/SKILL.md). Any Claude working in this repo (or with the skill synced into `~/.claude/skills/`) can type **`/add-key`** to vault a provider key and fetch it back to *use* it — no hardcoded secrets:
 
 ```text
 /add-key        → store an OpenAI/fal/Gemini/… key, list what's vaulted,
@@ -346,7 +244,7 @@ It knows the auth flow (source `~/.claude/aigate/env`), the 65-provider catalog,
 > every request. `cc` unsets the env var and **preflight-warns** when
 > `~/.claude/settings*.json` carries one — strip the key where it points.
 
-### 🥝 `cc kimi` — Kimi K3 via aigate
+### `cc kimi` — Kimi K3 via aigate
 
 Kimi K3 ("Kimi for Coding") has an Anthropic-compatible API endpoint. To run the official `claude` binary against Kimi:
 
@@ -372,6 +270,7 @@ cc kimi -p "explain this repo"
    The installer now installs both `aigate-run.sh` and `aigate-kimi.sh` alongside `cc`.
 
 **Env overrides** (optional):
+
 - `CC_KIMI_MODEL` — default `k3` (the Kimi model to use)
 - `CC_KIMI_FAST_MODEL` — default `kimi-for-coding-highspeed`
 - `CC_KIMI_BASE_URL` — default `https://api.kimi.com/coding`
@@ -381,24 +280,23 @@ cc kimi -p "explain this repo"
 
 ---
 
-## 🧪 Prove it actually switches
+## Verify account switching
 
-Don't trust a router you haven't watched. `test-switching.sh` flips each account
-`disabled` and asserts `cc -p` follows — with a real Claude `PONG` every time:
+`test-switching.sh` temporarily changes account availability and asserts that `cc -p` follows the selector, with a real Claude `PONG` at each step:
 
 ```bash
 bash clients/test-switching.sh <accountWithMoreHeadroom> <otherAccount>
 ```
 
 <details>
-<summary>✅ <b>Verified run — Pi <code>twojeffs</code> → <code>aigate.shoemoney.ai</code> (2026-07-08)</b></summary>
+<summary><b>Verified run — Pi <code>twojeffs</code> → <code>aigate.shoemoney.ai</code> (2026-07-08)</b></summary>
 
 | State | Expected | Picked | `cc -p` |
 |---|---|---|---|
-| both enabled | shoemoney (1% vs 19%) | **shoemoney** | `PONG` ✅ |
-| shoemoney disabled | personal | **personal** | `PONG` ✅ |
-| personal disabled | shoemoney | **shoemoney** | `PONG` ✅ |
-| both enabled | shoemoney | **shoemoney** | `PONG` ✅ |
+| both enabled | shoemoney (1% vs 19%) | **shoemoney** | `PONG` |
+| shoemoney disabled | personal | **personal** | `PONG` |
+| personal disabled | shoemoney | **shoemoney** | `PONG` |
+| both enabled | shoemoney | **shoemoney** | `PONG` |
 
 Every switch landed in `access_log` (`select`/`ok`) + `request_log`. Full test
 matrix in **[docs/TESTING.md](docs/TESTING.md)**.
@@ -406,79 +304,81 @@ matrix in **[docs/TESTING.md](docs/TESTING.md)**.
 
 ---
 
-## 📡 API reference
+## API reference
 
-All endpoints require `Authorization: Bearer $AIGATE_TOKEN` **except `/health`** (so supervisors can probe it).
+Use `Authorization: Bearer $AIGATE_TOKEN` for machine clients. The dashboard uses its signed session cookie. Health checks, the session probe, and login/logout do not require a bearer; network restrictions still apply.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` · `/healthz` | 🩺 **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` plus observability numbers `poll_age_s, backup_age_s, poll_ok, poll_failed` + a `parked` / `reauth` / `disabled` tally (all numbers, no secrets; autoheal reads only the status) (generic 503 if the DB is wedged) |
-| `GET` | `/api/select?host=&exclude=a,b` | 🎯 best account + token (logs access w/ IP); `exclude` skips accounts on retry |
+| `GET` | `/health` · `/healthz` | **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` plus observability numbers `poll_age_s, backup_age_s, poll_ok, poll_failed` + a `parked` / `reauth` / `disabled` tally (all numbers, no secrets; autoheal reads only the status) (generic 503 if the DB is wedged) |
+| `GET` | `/api/session` | Public session state: `{authenticated, passwordEnabled}`; no vault contents |
+| `GET` | `/api/select?host=&exclude=a,b` | best account + token (logs access w/ IP); `exclude` skips accounts on retry |
 | `GET` / `POST` | `/api/accounts` | list (usage, **no tokens**) / add `{account, setup_token, label}` |
 | `DELETE` | `/api/accounts/:name` | remove |
 | `POST` | `/api/accounts/:name/disabled` | `{disabled: true/false}` |
-| `POST` | `/api/accounts/:name/refresh` | 🔄 **live re-poll** ONE account's real headroom right now (not the 10-min cache) → `{five, seven, alive, maxed}`; 404 on unknown account |
-| `POST` | `/api/events/usage` | 📈 set an account's 5h/7d % — the **client statusline-feed** path (the server-side poller writes usage straight to the DB); **404 on unknown account** |
-| `POST` | `/api/events/limit` | 🔁 `{account, minutes?}` — **TTL-park** an over-limit account (default **15m**, `minutes` clamped 1–360; real usage untouched, auto-unparks when the TTL passes); **404 on unknown account** |
-| `POST` | `/api/events/prompt` | 🧾 log a prompt `{account, host, cwd, model, prompt}` |
-| `GET` | `/api/providers` | 📇 the 65-provider catalog (id, name, key prefix, base URL) |
+| `POST` | `/api/accounts/:name/refresh` | **live re-poll** ONE account's real headroom right now (not the 10-min cache) → `{five, seven, alive, maxed}`; 404 on unknown account |
+| `POST` | `/api/events/usage` | set an account's 5h/7d % — the **client statusline-feed** path (the server-side poller writes usage straight to the DB); **404 on unknown account** |
+| `POST` | `/api/events/limit` | `{account, minutes?}` — **TTL-park** an over-limit account (default **15m**, `minutes` clamped 1–360; real usage untouched, auto-unparks when the TTL passes); **404 on unknown account** |
+| `POST` | `/api/events/prompt` | log a prompt `{account, host, cwd, model, prompt}` |
+| `GET` | `/api/providers` | the 65-provider catalog (id, name, key prefix, base URL) |
 | `GET` / `POST` | `/api/keys` | list (**no secrets**, `first8…last4` hints, `stale` flag) / add `{provider, key, label}` — **sanitized**: trims + un-quotes, **400** on `export`/`NAME=` pastes, provider lowercased, non-fatal `warning` for uncataloged providers **or a key that doesn't match the catalog prefix** |
-| `POST` | `/api/keys/import` | 📥 **bulk import** `[{provider,key,label}]` (or `{keys:[…]}`) — one result row per key so a bad entry doesn't sink the batch (max 200) |
-| `GET` | `/api/keys/:provider?exclude=` | 🔑 newest working key for a provider (audited; name normalized — `BRAVE ` finds `brave`); `exclude=<hint>` skips a just-failed key and serves the next |
-| `POST` | `/api/keys/:id/refresh` | 💓 **liveness probe** ONE key (oaiCompat: `GET <base>/models`; anthropic: 1-token `POST /v1/messages`) → flips `status` working/dead; 200 `{checked:false}` for providers with no probe |
+| `POST` | `/api/keys/import` | **bulk import** `[{provider,key,label}]` (or `{keys:[…]}`) — one result row per key so a bad entry doesn't sink the batch (max 200) |
+| `GET` | `/api/keys/:provider?exclude=` | newest working key for a provider (audited; name normalized — `BRAVE ` finds `brave`); `exclude=<hint>` skips a just-failed key and serves the next |
+| `POST` | `/api/keys/:id/refresh` | **liveness probe** ONE key (oaiCompat: `GET <base>/models`; anthropic: 1-token `POST /v1/messages`) → flips `status` working/dead; 200 `{checked:false}` for providers with no probe |
 | `DELETE` | `/api/keys/:id` | remove a provider key |
-| `GET` | `/api/metrics` | 📈 **Prometheus** text (bearer-gated) — `aigate_selectable`, `aigate_accounts_*`, `aigate_poll_ok/failed`, `aigate_provider_keys_working/dead`, … |
+| `GET` | `/api/metrics` | **Prometheus** text (bearer-gated) — `aigate_selectable`, `aigate_accounts_*`, `aigate_poll_ok/failed`, `aigate_provider_keys_working/dead`, … |
 | `GET` | `/api/logs?limit=` · `/api/stats` | prompt log · dashboard rollups |
-| `GET` | `/api/access?limit=` | 🧾 **audit trail** — every handout, mutation & key-fetch (account · host · IP · action · result; **no secrets**) for post-incident review; `limit` default 100, capped **1000** |
-| `POST` | `/api/login` · `/api/logout` | 🔒 **dashboard password auth** (requires `AIGATE_DASHBOARD_PASSWORD`) — `login {password}` → signed HttpOnly `__Host-aigate` cookie (`SameSite=Strict`), `logout` clears it; pre-auth but **throttled** (`429` after too many fails; loopback exempt) |
-| `GET` / `POST` | `/api/board` | 🗂️ **kanban board — internal/unstable** — `GET` list cards · `POST {title,prompt,cwd,model,effort,host}` create (prompt required, `effort` low/medium/high/max) |
-| `GET` | `/api/board/hosts` · `/api/board/workers` | 🖥️ **internal/unstable** — live worker hosts for the create-modal picker · full roster `{worker,host,cardId,activity,ageMs,idle}` (prunes >5 min, live <60s) |
-| `POST` | `/api/board/activity` · `/api/board/claim` · `/api/board/reorder` | ⚡ **internal/unstable** — `activity {worker,host,cardId,activity}` heartbeat · `claim {host,worker}` atomically claim next todo (`204` if none) · `reorder {ids:[]}` drag-reorder |
-| `POST` / `PATCH` / `DELETE` | `/api/board/:id/*` | 🔧 **internal/unstable** — `POST /result {ok,result,error,session_id}` (append turn, flip done/error) · `POST /followup {prompt}` re-queue · `POST /retry` · `PATCH {title,position}` rename/reorder (prompt immutable) · `DELETE` remove |
-| `GET` | `/api/capabilities` | 🧭 read-only **registry slice** — per-provider **key counts** + Claude **selectability** (accounts + how many are pickable) + server **version**; a machine-readable "what can I reach?" for agents (**never secrets**) |
-| `WS` | `/ws` | 📡 live event stream — auth via the **`bearer.<token>` WebSocket subprotocol** (token never lands in URL/access logs; a `?token=` query param is **ignored** — header/subprotocol only) |
-| `POST` | `/v1/messages` · `GET` | 🔀 **Anthropic Messages-protocol proxy — API-key providers only** (`openrouter` / `kimi` / `muse` / `qwen` / `anthropic`). Auth also accepts `x-api-key` (the shape the real `claude` binary sends with `ANTHROPIC_API_KEY`). See below. |
-| `POST` | `/v1/chat/completions` · `/v1/responses` | 🔀 **OpenAI-scheme proxy — same vaulted-key machinery on the OAI wire** (`openai` / `openrouter` / `qwencloud` / `groq` / `deepseek` / `xai` / `together` / `fireworks` / `venice` / `perplexity`). `chat/completions` for opencode & OAI clients, `responses` for codex ≥0.96 (chat support was removed upstream). See below. |
+| `GET` | `/api/access?limit=` | **audit trail** — every handout, mutation & key-fetch (account · host · IP · action · result; **no secrets**) for post-incident review; `limit` default 100, capped **1000** |
+| `POST` | `/api/login` · `/api/logout` | **dashboard password auth** (requires `AIGATE_DASHBOARD_PASSWORD`) — `login {password}` → signed HttpOnly `__Host-aigate` cookie (`SameSite=Strict`; `Secure` when served through HTTPS), `logout` clears it; pre-auth but **throttled** (`429` after too many fails; loopback exempt) |
+| `GET` / `POST` | `/api/board` | **kanban board — internal/unstable** — `GET` list cards · `POST {title,prompt,cwd,model,effort,host}` create (prompt required, `effort` low/medium/high/max) |
+| `GET` | `/api/board/hosts` · `/api/board/workers` | **internal/unstable** — live worker hosts for the create-modal picker · full roster `{worker,host,cardId,activity,ageMs,idle}` (prunes >5 min, live <60s) |
+| `POST` | `/api/board/activity` · `/api/board/claim` · `/api/board/reorder` | **internal/unstable** — `activity {worker,host,cardId,activity}` heartbeat · `claim {host,worker}` atomically claim next todo (`204` if none) · `reorder {ids:[]}` drag-reorder |
+| `POST` / `PATCH` / `DELETE` | `/api/board/:id/*` | **internal/unstable** — `POST /result {ok,result,error,session_id}` (append turn, flip done/error) · `POST /followup {prompt}` re-queue · `POST /retry` · `PATCH {title,position}` rename/reorder (prompt immutable) · `DELETE` remove |
+| `GET` | `/api/capabilities` | read-only **registry slice** — per-provider **key counts**, Claude **selectability**, configured **cutoff**, and server **version**; a machine-readable "what can I reach?" for agents (**never secrets**) |
+| `WS` | `/ws` | live event stream — auth via the **`bearer.<token>` WebSocket subprotocol** (token never lands in URL/access logs; a `?token=` query param is **ignored** — header/subprotocol only) |
+| `GET` | `/v1/models` | Available model aliases and providers with working vaulted keys; Anthropic and OpenAI listing fields |
+| `POST` | `/v1/messages` | **Anthropic Messages-protocol proxy — API-key providers only** (`openrouter` / `kimi` / `muse` / `qwen` / `anthropic`). Auth also accepts `x-api-key` (the shape the real `claude` binary sends with `ANTHROPIC_API_KEY`). See below. |
+| `POST` | `/v1/chat/completions` · `/v1/responses` | **OpenAI-scheme proxy — same vaulted-key machinery on the OAI wire** (`openai` / `openrouter` / `qwencloud` / `groq` / `deepseek` / `xai` / `together` / `fireworks` / `venice` / `perplexity`). `chat/completions` for opencode & OAI clients, `responses` for codex ≥0.96 (chat support was removed upstream). See below. |
 
 ---
 
-### 🔀 `/v1/messages` — point the real `claude` binary at a vaulted API key
+### `/v1/messages` — point the real `claude` binary at a vaulted API key
 
-Set `ANTHROPIC_BASE_URL=http://<aigate>/v1` and `ANTHROPIC_AUTH_TOKEN=$AIGATE_TOKEN` and the **official** `claude` binary runs against whatever's vaulted in `provider_keys` — the key is injected server-side and never leaves the vault. This is the *other* half of aigate: Claude subscriptions stay a selector (never a proxy — see [Compliance](#️-compliance-the-whole-point)), while ordinary API keys get a real proxy because that's what API keys are for.
+Set `ANTHROPIC_BASE_URL=http://<aigate>/v1` and `ANTHROPIC_AUTH_TOKEN=$AIGATE_TOKEN` to send the official `claude` binary's requests through the API-key proxy. AIGate injects the provider key server-side, keeping it out of the client's configuration. This route uses `provider_keys`; Claude subscription tokens remain on the separate [account-selection path](#credential-boundaries).
 
-- 🧭 **Routing** — `kimi:kimi-k3` (explicit `provider:model`) wins outright. A bare `claude-*` model maps through `AIGATE_PROXY_MAIN` / `AIGATE_PROXY_SMALL` (haiku-shaped names → `SMALL`) so the binary's background title-gen/compaction calls don't 404 on a tier nobody picked; no alias set → falls back to a vaulted real `anthropic` key, model unchanged. Otherwise a `/` in the model → `openrouter`, a `kimi` prefix → `kimi`, a `muse` prefix → `muse` (api.meta.ai), a bare `qwen*` name → `qwen` (dashscope claude-code-proxy — keys vault under `qwencloud`, and `role:"system"` messages are rewritten to `user` because its pydantic gate 500s on them), anything else → `openrouter`.
-- 🚫 **Claude OAuth never flows through this — structurally.** The proxy reads only `provider_keys`, never `accounts`. A `sk-ant-oat…` setup-token is refused at store-time (`POST /api/keys` 400s it — vault it as an account instead) *and* at fetch-time (a poisoned row is skipped + audited, next key tried).
-- 🔁 A dead/401ing key flips `status='dead'` and the next ranked key is tried once; `429` passes through verbatim (client owns backoff); streaming is piped chunk-by-chunk both ways, never buffered.
+- **Routing** — `kimi:kimi-k3` (explicit `provider:model`) wins outright. A bare `claude-*` model maps through `AIGATE_PROXY_MAIN` / `AIGATE_PROXY_SMALL` (haiku-shaped names → `SMALL`) so the binary's background title-gen/compaction calls don't 404 on a tier nobody picked; no alias set → falls back to a vaulted real `anthropic` key, model unchanged. Otherwise a `/` in the model → `openrouter`, a `kimi` prefix → `kimi`, a `muse` prefix → `muse` (api.meta.ai), a bare `qwen*` name → `qwen` (dashscope claude-code-proxy — keys vault under `qwencloud`, and `role:"system"` messages are rewritten to `user` because its pydantic gate 500s on them), anything else → `openrouter`.
+- **Claude OAuth never flows through this — structurally.** The proxy reads only `provider_keys`, never `accounts`. A `sk-ant-oat…` setup-token is refused at store-time (`POST /api/keys` 400s it — vault it as an account instead) *and* at fetch-time (a poisoned row is skipped + audited, next key tried).
+- A dead/401ing key flips `status='dead'` and the next ranked key is tried once; `429` passes through verbatim (client owns backoff); streaming is piped chunk-by-chunk both ways, never buffered.
 - `GET /v1/models` lists the configured aliases + any provider with a working vaulted key. Entries carry BOTH the Anthropic (`type`/`display_name`) and OpenAI (`object`/`created`/`owned_by`) fields, so one listing serves both client schemes; a provider vaulted for both appears exactly once.
 
-### 🔀 `/v1/chat/completions` + `/v1/responses` — codex, opencode, any OAI client
+### `/v1/chat/completions` + `/v1/responses` — codex, opencode, any OAI client
 
 Same posture on the OpenAI wire: point the client at `http://<aigate>/v1` with the vault bearer as its API key and the request rides the newest working key vaulted for the routed provider — failover, dead-key flips, audit rows, and unbuffered SSE are identical to `/v1/messages`, only the envelopes are OpenAI-shaped (`{error:{message,type,code}}`).
 
-- 🧭 **Routing** — `provider:model` wins; a `/` in the name is an explicit openrouter id (`openai/gpt-5` stays an openrouter call). Bare names: `gpt-*`/`o1-9*`/`codex-*` → `openai`, `qwen*` → `qwencloud` (dashscope compatible-mode), `deepseek*` → `deepseek`, `grok*`/`xai*` → `xai`, `sonar*`/`pplx*` → `perplexity`, anything else → `openrouter`. Bases are env-overridable per provider as `AIGATE_OAI_UPSTREAM_<NAME>`.
-- 🤖 **codex** (≥0.96 — `wire_api = "chat"` was removed upstream, Responses is the only wire): custom provider with `base_url = "http://<aigate>/v1"`, `wire_api = "responses"`, and `env_key` pointing at a var holding the vault bearer (or `experimental_bearer_token`). Verified live: `openai/gpt-5` via openrouter's Responses endpoint → `pong`. A provider without a Responses endpoint just has its upstream 404 pass through — the honest signal.
-- 🎛️ **opencode**: an `@ai-sdk/openai-compatible` provider with `baseURL: http://<aigate>/v1` and `apiKey: <vault bearer>` — verified live with `aigate/qwen3-coder-plus` → `pong`, audit row `qwencloud proxy qwen3-coder-plus→qwen3-coder-plus 200`.
+- **Routing** — `provider:model` wins; a `/` in the name is an explicit openrouter id (`openai/gpt-5` stays an openrouter call). Bare names: `gpt-*`/`o1-9*`/`codex-*` → `openai`, `qwen*` → `qwencloud` (dashscope compatible-mode), `deepseek*` → `deepseek`, `grok*`/`xai*` → `xai`, `sonar*`/`pplx*` → `perplexity`, anything else → `openrouter`. Bases are env-overridable per provider as `AIGATE_OAI_UPSTREAM_<NAME>`.
+- **codex** (≥0.96 — `wire_api = "chat"` was removed upstream, Responses is the only wire): custom provider with `base_url = "http://<aigate>/v1"`, `wire_api = "responses"`, and `env_key` pointing at a var holding the vault bearer (or `experimental_bearer_token`). Verified live: `openai/gpt-5` via openrouter's Responses endpoint → `pong`. A provider without a Responses endpoint just has its upstream 404 pass through — the honest signal.
+- **opencode**: an `@ai-sdk/openai-compatible` provider with `baseURL: http://<aigate>/v1` and `apiKey: <vault bearer>` — verified live with `aigate/qwen3-coder-plus` → `pong`, audit row `qwencloud proxy qwen3-coder-plus→qwen3-coder-plus 200`.
 
-## ⚙️ Config
+## Configuration
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `AIGATE_TOKEN` | — *(required)* | bearer gating API + dashboard |
+| `AIGATE_TOKEN` | — *(required)* | bearer authentication for machine clients |
+| `AIGATE_DASHBOARD_PASSWORD` | *(empty = disabled)* | master password for browser access; empty leaves bearer authentication only |
 | `AIGATE_ENCRYPTION_KEY` | — *(required)* | 32-byte hex (AES-256-GCM). `openssl rand -hex 32` |
 | `PORT` / `HOST` | `20200` / `0.0.0.0` | bind |
 | `AIGATE_DB` | `./data/aigate.db` | SQLite path |
 | `AIGATE_HEADROOM_CUTOFF` | `95` | skip accounts whose worst-window % ≥ this |
 | `AIGATE_POLL_MS` | `600000` | usage-poll interval (ms); `0` disables the poller |
-| `AIGATE_WATCHDOG_MS` | `30000` | 🩺 self-heal watchdog — pings the DB; exits→restart if wedged. `0` disables |
-| `AIGATE_ALLOW_CIDR` | *(empty = all)* | 🌐 network gate — CIDRs + single IPs. Loopback always OK. |
+| `AIGATE_WATCHDOG_MS` | `30000` | self-heal watchdog — pings the DB; exits→restart if wedged. `0` disables |
+| `AIGATE_ALLOW_CIDR` | *(empty = all)* | network gate — CIDRs + single IPs. Loopback always OK. |
 | `AIGATE_TRUST_PROXY` | `0` | trust `X-Forwarded-For` for client IP — set `1` **only** behind a proxy you control (else the gate/audit see the proxy IP) |
 
 <details>
-<summary>🔧 Advanced env vars (tuning, auth, alerts)</summary>
+<summary>Advanced env vars (tuning, auth, alerts)</summary>
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `AIGATE_DASHBOARD_PASSWORD` | *(empty = disabled)* | human-friendly dashboard login — `POST /api/login` → signed HttpOnly cookie so browsers use a password, not the raw bearer. Empty = bearer only. Cookie signed by `TOKEN|PASSWORD`. |
 | `AIGATE_SESSION_TTL_MS` | `315360000000` (~10y) | session cookie TTL — how long a dashboard password login stays valid. |
 | `AIGATE_TRUSTED_PROXIES` | *(empty = any peer)* | comma-separated proxy IPs allowed to set `X-Forwarded-For`. Defense-in-depth over `TRUST_PROXY`; empty = honor XFF from any peer. |
 | `AIGATE_KEY_POLL_MS` | `3600000` (1h) | provider-key liveness probe interval (ms); `GET <base>/models` or anthropic probe, flips `working`→`dead`. `0` disables. |
@@ -492,64 +392,53 @@ See `.env.example` for the fully-commented list.
 
 </details>
 
-### 🔄 Rotating the encryption key
+### Rotate the encryption key
 
-If you suspect an `.env` compromise or want to rotate keys for routine security hygiene, **`scripts/rotate-key.js`** re-encrypts the entire vault under a new `AIGATE_ENCRYPTION_KEY`:
+[`scripts/rotate-key.js`](scripts/rotate-key.js) re-encrypts account tokens, provider keys, and the boot canary in one SQLite transaction. Stop the daemon and keep a consistent database backup, such as a completed snapshot from `data/backups/`, together with the old encryption key before rotating.
 
 ```bash
-# Back up first (or copy from data/backups/)
-cp data/aigate.db data/aigate.db.backup
-
-# Generate a new key
+# The current key is read from .env or the environment.
 NEW_KEY=$(openssl rand -hex 32)
-
-# Rotate (current key must still be in env)
-AIGATE_ENCRYPTION_KEY=<current_hex> node scripts/rotate-key.js $NEW_KEY
-
-# Update .env
-echo "AIGATE_ENCRYPTION_KEY=$NEW_KEY" >> .env
-
-# Restart aigate
-docker compose up -d  # or your own restart
+node scripts/rotate-key.js "$NEW_KEY"
 ```
 
-The rotation runs inside a **single transaction** — if it crashes mid-flight, everything rolls back and nothing changes. All accounts + provider keys are re-encrypted at once; the canary cell updates so the next boot proves the new key works. **See the script's header comments for full details.**
+Replace the existing `AIGATE_ENCRYPTION_KEY` entry in `.env` with the new key, then restart the daemon. For Docker, recreate the service to load the changed environment:
+
+```bash
+docker compose up -d --force-recreate aigate
+```
+
+The script rolls back if re-encryption fails. Retain the old key with backups created before rotation; the new key will not decrypt those older snapshots. See the script header for the supported arguments.
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
-```mermaid
-flowchart TD
-  v1["✅ <b>v1</b> — selector · vault · <b>usage poller</b> · <b>key registry</b> · dashboard · per-host audit"] --> r2
-  r2["🔨 <b>Round 2</b> — API-key <b>secure proxy</b> + per-model<br/>latching <b>budget breaker</b> + Redis hot layer"] --> r3
-  r3["⬜ <b>Round 3</b> — universal key registry +<br/>quota-aware, cost-first routing"] --> r4
-  r4["⬜ <b>Round 4</b> — 📨 inbox discovery + 🤖 agent capability registry"]
-```
+The vault, account selector, provider-key proxy, live dashboard, task board, and read-only capability registry are implemented. The following work remains on the roadmap:
 
-| Ring | Ships | Kills the pain of… |
-|---|---|---|
-| ✅ **v1** | headroom selector · **continuous per-turn re-select + auto-switch (no `[Y/n]`)** · **over-limit retry (TTL parks)** · encrypted vault (**boot canary** + daily backups) · **10-min usage poller** · **65-provider key registry + dashboard add-key UI** · **self-heal (`/health` + watchdog + autoheal)** · WS dashboard | "which of my 35 boxes is that?" + manual usage babysitting + re-login churn |
-| 🔨 **R2** | secure proxy for API providers · per-`model×key` **latching budget breaker** · Redis | the **$500 nano-banana loop** |
-| ⬜ **R3** | universal `keys(provider)` registry · **cost-first routing** (included quota → prepaid → paid) | paying twice for quota you already own |
-| ⬜ **R4** | inbox account discovery · fuller **agent capability registry** — the read-only `GET /api/capabilities` slice (counts + selectability + version) **already ships**; R4 is the metered, on-demand-handout registry layered on top | keys too annoying to use → agents just use them |
+| Planned work | Purpose |
+|---|---|
+| Per-model and per-key budgets with a latching breaker | Stop runaway spend when an enforced budget is reached. |
+| A Redis hot layer | Support future routing and metering workloads. |
+| Quota-aware, cost-first routing | Choose between included quota, prepaid capacity, and paid usage. |
+| Account discovery and expanded agent capabilities | Make available services easier for agents to find and use. |
 
-> 🔨 = the one "next" pointer. Nothing gets a ✅ until it exists in code and runs on real machines.
+See [VISION.md](VISION.md) for the longer design direction. Budget-breaker behavior should not be assumed from the current usage dashboard.
 
----
+## Security and operations
 
-## 🔒 Security
+- Account tokens and provider keys are encrypted with AES-256-GCM at rest. Authenticated selector and key-fetch endpoints intentionally return credentials; list endpoints return metadata and hints.
+- Credential handouts and mutations are audited with account/provider, host, IP, and timestamp. Audit history is pruned after 30 days.
+- Prompt text is scrubbed for recognized secret patterns before storage and capped at 400 characters.
+- Daily `VACUUM INTO` snapshots go to `data/backups/` with 14-day retention. These contain ciphertext; `.env` is not included. Keep the encryption key backed up separately.
+- The boot canary detects an incorrect encryption key before serving vault requests. Health probes test the database, and selectable-account counts use the same query as selection.
+- Keep real keys, tokens, and `.env` out of Git. Configure network restrictions and trusted proxies for your deployment.
 
-- 🔑 Credentials **AES-256-GCM** encrypted at rest; clients hold only the aigate bearer.
-- 🧾 Every handout **audited** (account · host · IP · timestamp).
-- 🧯 `.env` is git-ignored; **never** commit real tokens/keys.
-- ⚖️ **Personal, honest, visible.** Multiple *personal* subs via the official client is fine — pooling/reselling for others is not. aigate gives you the visibility to stay honest.
+### Content Security Policy
 
-### 🔐 Security Headers (CSP)
+HTML responses use this policy:
 
-The dashboard HTTP responses include a strict **Content-Security-Policy** header:
-
-```
+```text
 default-src 'self'
 style-src 'self' 'unsafe-inline'
 script-src 'self' 'unsafe-inline' 'unsafe-eval'
@@ -558,40 +447,36 @@ img-src 'self' data:
 frame-ancestors 'none'
 ```
 
-**Why `unsafe-eval` is necessary:**  
-The dashboard is a **single-file Vue app** compiled with the full Vue build, which compiles in-DOM `<template>` elements at runtime using `new Function()`. This requires `script-src 'unsafe-eval'`.
+The Vue full build compiles in-DOM templates at runtime, which requires `unsafe-eval`. Inline scripts and styles require `unsafe-inline`. Removing those exceptions would require precompiled templates and externalized application code. The server also sends `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff` for HTML.
 
-**Why `unsafe-inline` for styles and scripts:**  
-Inline `<style>` and `<script>` tags are embedded directly in the HTML to keep it self-contained.
-
-**How to remove `unsafe-eval` (if desired):**  
-Pre-compile templates using Vue's **build-time compilation** (build to a `.js` file during the deploy step) or switch to the **runtime-only build** with externalized template files. Both eliminate the need for `new Function()`. WebSocket connections require explicit `connect-src ws: wss:` directives since CSP2 browsers don't treat WebSocket URLs as matching `'self'` for script-src.
-
----
-
-## 🤝 Contributing
-
-PRs welcome! 💜 Early and opinionated — read **[VISION.md](VISION.md)** first so a PR lands in the right ring. Keep the **no-relay-for-Claude** guardrail sacred.
+## Development
 
 ```bash
 npm start                     # daemon
-node --watch src/server.js    # hot reload
-npm test                      # unit + HTTP tests (node --test, no deps)
+node --watch src/server.js    # development reload
+npm test                      # automated suite
 ```
 
-## 📜 License
+Read [VISION.md](VISION.md) before proposing changes, preserve the separation between Claude account selection and API-key proxying, and include verification relevant to the change. [docs/TESTING.md](docs/TESTING.md) covers the test workflows.
 
-MIT © shoemoney — do whatever, just don't get people's accounts banned. 🛡️
+## Thanks, Theo
+
+This project is dedicated to **[Theo Browne](https://t3.gg)**. His enthusiasm for shipping, self-hosting, and caring about the craft helped shape the way this project gets built. If you found AIGate through his channel, welcome—and Theo, thank you.
+
+[t3.gg](https://t3.gg) · [t3.chat](https://t3.chat) · [YouTube](https://youtube.com/@t3dotgg) · [@theo](https://x.com/theo) · [Create T3 App](https://create.t3.gg) · [UploadThing](https://uploadthing.com)
+
+## License
+
+[MIT](LICENSE) © shoemoney.
 
 ---
 
 <div align="center">
 
-**Born from a "damn ADHD, what was that tool called?" moment.** 🧠⚡
-*If it saves you one $500 morning, it paid for itself infinitely (it's free).* 😄
+<img src="public/assets/aigate-icon.svg" width="48" height="48" alt="">
 
-Once more, for the person who made building look worth caring about — **thank you, [Theo](https://t3.gg).** 💛
+**AIGate — Your AI. Your keys. Your control.**
 
-`included quota → prepaid → paid` · never the other way around
+[Interface](#screenshots) · [Installation](#quick-start) · [API](#api-reference) · [Configuration](#configuration)
 
 </div>
