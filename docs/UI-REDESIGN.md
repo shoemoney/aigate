@@ -38,6 +38,13 @@ Verified locally on September 15, 2026:
 - The mobile unlock button is visible in the initial 844px viewport.
 
 The local preview uses an isolated database under `.tmp/aigate-redesign/`, with
-upstream polling disabled. Production has not been deployed or modified. A
-production rollout must preserve the existing `.env` and `data/` together;
-the encryption key must continue to match the encrypted vault.
+upstream polling disabled. Production was deployed to https://aigate.shoemoney.ai on September 15, 2026.
+All 200 tests also passed in the production Node 24 image. A consistent copy of
+the live database passed integrity and unchanged-vault checks before rollout.
+The existing password, encryption key, and vault data were preserved. Login,
+API protection, WebSocket connectivity, and the new public session endpoint
+were verified after deployment. Live desktop/mobile captures are saved locally
+under `reports/aigate-live-2026-09-15/`. Screenshot review also corrected an
+overflow from the decorative overview halo; checks compare against the document
+client width, including scrollbar space. The rollback image and quiescent data
+backup remain on the server under `aigate-releases/20260916T030700Z/`.
