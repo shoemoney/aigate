@@ -16,7 +16,15 @@ CLAUDE_BIN="${AIGATE_CLAUDE_BIN:-claude}"
 
 # auth header lives in a mode-600 file, not argv — argv is visible to any local user via `ps`
 AUTHF="$(mktemp)"; chmod 600 "$AUTHF"; printf 'Authorization: Bearer %s\n' "$AIGATE_TOKEN" > "$AUTHF"
-trap 'rm -f "$AUTHF" "${errf:-}"' EXIT INT TERM
+# A caller's timeout kills THIS wrapper; it must take claude with it. Capturing via
+# out="$(claude ...)" orphaned the child: a claude -p hung on dead sockets outlived
+# its caller's 180s cap by 20 min (2026-09-29). Print mode runs it in the background
+# and `wait`s (interruptible) so TERM/INT are forwarded. See aigate-run-supervise.test.sh
+cpid=""
+reap(){ [ -n "$cpid" ] && kill -TERM "$cpid" 2>/dev/null; rm -f "$AUTHF" "${errf:-}" "${outf:-}"; }
+trap reap EXIT
+trap 'reap; exit 143' TERM
+trap 'reap; exit 130' INT
 
 jget(){ python3 -c 'import sys,json;print(json.load(sys.stdin).get("'"$1"'",""))' 2>/dev/null; }
 select_acct(){ curl -s -m8 -H "@$AUTHF" "$AIGATE_URL/api/select?host=$HOST&exclude=$1"; }
@@ -138,9 +146,11 @@ for attempt in 1 2 3; do
   report_prompt "$acct" "$prompt"
   # split streams: stdout stays CLEAN for consuming scripts, stderr banners don't
   # pollute it and don't false-trigger the limit classifier on success
-  errf="$(mktemp)"
-  out="$("$CLAUDE_BIN" "${skip[@]}" "$@" 2>"$errf")"; rc=$?
-  err="$(cat "$errf"; rm -f "$errf")"
+  errf="$(mktemp)"; outf="$(mktemp)"
+  # <&0 explicitly: a background job's stdin is otherwise /dev/null, breaking piped prompts
+  "$CLAUDE_BIN" ${skip[@]+"${skip[@]}"} "$@" <&0 >"$outf" 2>"$errf" & cpid=$!
+  wait "$cpid"; rc=$?; cpid=""
+  out="$(cat "$outf")"; err="$(cat "$errf" 2>/dev/null)"; rm -f "$errf" "$outf"
   if [ $rc -eq 0 ]; then printf '%s\n' "$out"; exit 0; fi
   # 529 is Anthropic-GLOBAL load shedding, not a per-account limit — don't park
   # or hop (that drains the pool); wait and retry the SAME account
