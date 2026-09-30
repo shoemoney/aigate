@@ -51,29 +51,70 @@ print("aigate: no account available — {} accts ({} parked, {} re-auth, {} off)
   esac
 }
 
-# Preflight alert (NOT auto-fix): a stored Claude login OUTRANKS the token aigate
-# injects, so the session silently serves the WRONG account — the "why is it stuck
-# on one account / random re-login loop" trap. aigate injects a fresh token per
-# run and needs no stored login, so if one exists we just warn how to clear it.
-warn_shadow_login(){
-  local hit="" mac=0
-  if [ "$(uname -s)" = "Darwin" ]; then
-    mac=1
-    security find-generic-password -s "Claude Code-credentials" >/dev/null 2>&1 \
-      && hit="a macOS Keychain login ('Claude Code-credentials')"
-  elif [ -f "$HOME/.claude/.credentials.json" ]; then
-    hit="$HOME/.claude/.credentials.json"
+# True only for a genuine "no headroom" response from the server (valid JSON with
+# an "accounts" field) — NOT for an unreachable server or a rejected token, so a
+# broken config fails loud instead of silently rerouting to Kimi.
+is_capacity_exhausted(){
+  case "$1" in "") return 1;; *unauthorized*) return 1;; esac
+  printf '%s' "$1" | python3 -c 'import sys,json
+try: d=json.loads(sys.stdin.read())
+except Exception: sys.exit(1)
+sys.exit(0 if "accounts" in d else 1)' 2>/dev/null
+}
+# Every Claude account is out of headroom → hand the SAME args to the official
+# binary against Kimi K3 (1M ctx) instead. Still no proxy: aigate-kimi.sh points
+# the real `claude` binary at Kimi's own Anthropic-compatible endpoint with your
+# own kimi.com key.
+# Last rung below Kimi: Meta's `muse --yolo`. Not the claude binary and not
+# Anthropic-compatible — a DIFFERENT agent with its own OAuth (auth.meta.com), so
+# claude's flags can't ride along. We keep only the prompt: headless becomes
+# `muse exec --yolo <prompt>`, interactive becomes a bare `muse --yolo` TUI.
+fallback_to_muse(){
+  local reason="$1"; shift
+  local M; M="$(command -v muse || echo "$HOME/.local/bin/muse")"
+  [ -x "$M" ] || { echo "aigate: $reason, and no Kimi key, and no muse — no route left. Vault one: /add-key kimi <sk-kimi-…>" >&2; exit 1; }
+  local prompt="" want=0
+  for a in "$@"; do
+    if [ "$want" = 1 ]; then prompt="$a"; want=0; continue; fi
+    case "$a" in
+      -p|--print) want=1;;
+      -*) ;;                                   # every other claude flag is meaningless to muse
+      *) [ -z "$prompt" ] && prompt="$a";;
+    esac
+  done
+  local mdl="${MUSE_MODEL:-muse-spark-1.2-contributor}"   # ~/.config/muse/settings.json is per-box; pin it
+  echo "aigate: $reason → falling back to muse --yolo ($mdl)" >&2
+  rm -f "$AUTHF"   # exec skips the EXIT trap
+  [ -n "$prompt" ] && exec "$M" exec --yolo --model "$mdl" "$prompt"
+  exec "$M" --yolo --model "$mdl"
+}
+fallback_to_kimi(){
+  local reason="$1"; shift
+  # The gpt rung retired 2026-08-04 with the OpenAI plan (aigate-gpt.sh now just
+  # 402s, "workspace is out of credits"), so with no Kimi key we drop to muse.
+  if [ ! -s "$HOME/.claude/aigate/kimi-key" ] && ! curl -s -m8 -o /dev/null -w '%{http_code}' \
+       -H "@$AUTHF" "${AIGATE_URL:-}/api/keys/kimi" 2>/dev/null | grep -q 200; then
+    fallback_to_muse "$reason, and no Kimi key" "$@"
   fi
-  [ -z "$hit" ] && return 0
-  {
-    echo "⚠️  aigate: $hit will OVERRIDE the account aigate picks —"
-    echo "    sessions may silently run the WRONG account. Clear it once (aigate needs no stored login):"
-    if [ "$mac" = 1 ]; then
-      echo '      while security delete-generic-password -s "Claude Code-credentials" 2>/dev/null; do :; done'
-    else
-      echo '      rm -f ~/.claude/.credentials.json'
-    fi
-  } >&2
+  echo "aigate: $reason → falling back to Kimi K3 (1M ctx)" >&2
+  rm -f "$AUTHF"   # exec skips the EXIT trap
+  exec "$HOME/.claude/aigate/aigate-kimi.sh" "$@"
+}
+
+
+# Preflight FIX: a stored Claude login OUTRANKS the token aigate injects, and the
+# claude binary REWRITES the Keychain entry ~1s after every launch — so a manual
+# clear can never stick (delete → launch → rewritten, forever). aigate needs no
+# stored login: delete it before each run so every session starts on exactly the
+# account aigate picked. Warn only if the delete itself fails.
+clear_shadow_login(){
+  if [ "$(uname -s)" = "Darwin" ]; then
+    while security delete-generic-password -s "Claude Code-credentials" >/dev/null 2>&1; do :; done
+    security find-generic-password -s "Claude Code-credentials" >/dev/null 2>&1 \
+      && echo "⚠️  aigate: could NOT clear the Keychain login ('Claude Code-credentials') — session may run the WRONG account" >&2
+  else
+    rm -f "$HOME/.claude/.credentials.json"
+  fi
 }
 
 # Preflight alert (warn, don't edit): a stale ANTHROPIC_BASE_URL in settings*.json
@@ -95,7 +136,7 @@ esac; done
 skip=()
 [ "$is_print" = 1 ] && [ "$has_skip" = 0 ] && skip=(--dangerously-skip-permissions)
 
-warn_shadow_login   # alert if a stored login would shadow aigate's picked account
+clear_shadow_login   # delete any stored login that would shadow aigate's picked account
 warn_base_url       # alert if settings*.json would redirect requests off-Anthropic
 
 if [ "$is_print" != 1 ]; then
@@ -107,14 +148,17 @@ if [ "$is_print" != 1 ]; then
   while :; do
     resp="$(select_acct "$tried")"
     acct="$(printf '%s' "$resp" | jget account)"; tok="$(printf '%s' "$resp" | jget setup_token)"
-    [ -n "$tok" ] || { no_token_diag "$resp"; exit 1; }
+    # after the first account, --continue resumes the same conversation on the next
+    cont=(); [ "$first" = 0 ] && cont=(--continue)
+    if [ -z "$tok" ]; then
+      is_capacity_exhausted "$resp" && fallback_to_kimi "no Claude account has headroom" "${cont[@]}" "$@"
+      no_token_diag "$resp"; exit 1
+    fi
     echo "aigate → using account: $acct" >&2
     unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
     export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
-    warn_shadow_login
+    clear_shadow_login
     report_prompt "$acct" "interactive session"
-    # after the first account, --continue resumes the conversation on the new one
-    cont=(); [ "$first" = 0 ] && cont=(--continue)
     "$CLAUDE_BIN" "${cont[@]}" "$@"; rc=$?; first=0
     # On exit: cheap CACHED usage check first; only pay for a live re-poll when usage
     # is already near the cap, so a normal quit stays instant.
@@ -139,7 +183,10 @@ prompt="$*"; tried=""
 for attempt in 1 2 3; do
   resp="$(select_acct "$tried")"
   acct="$(printf '%s' "$resp" | jget account)"; tok="$(printf '%s' "$resp" | jget setup_token)"
-  [ -n "$tok" ] || { no_token_diag "$resp"; exit 1; }
+  if [ -z "$tok" ]; then
+    is_capacity_exhausted "$resp" && fallback_to_kimi "no Claude account has headroom" "$@"
+    no_token_diag "$resp"; exit 1
+  fi
   echo "aigate → account: $acct (attempt $attempt)" >&2
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
   export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
@@ -164,4 +211,4 @@ for attempt in 1 2 3; do
   fi
   printf '%s\n' "$out"; printf '%s\n' "$err" >&2; exit $rc   # genuine error, surface both streams
 done
-echo "aigate: all accounts exhausted (tried: $tried)" >&2; exit 1
+fallback_to_kimi "all accounts exhausted (tried: $tried)" "$@"

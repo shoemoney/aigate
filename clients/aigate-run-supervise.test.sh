@@ -67,4 +67,28 @@ alive="$(kill -0 "$child" 2>/dev/null && echo 1 || echo 0)"
 check "TERM reaches the claude it launched" 0 "$alive"
 [ "$alive" = 1 ] && kill -9 "$child" 2>/dev/null
 
+# No-headroom select → hand off to the Kimi rung with the same args, token file gone.
+nohead_port=$((port + 1))
+python3 - "$nohead_port" >/dev/null 2>&1 <<'EOF' &
+import sys, http.server
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(503 if self.path.startswith('/api/select') else 200); self.end_headers()
+        self.wfile.write(b'{"accounts":2,"parked":2}' if self.path.startswith('/api/select') else b'{}')
+    def log_message(self, *a): pass
+http.server.HTTPServer(('127.0.0.1', int(sys.argv[1])), H).serve_forever()
+EOF
+srv2=$!
+for _ in $(seq 50); do curl -s -m1 "http://127.0.0.1:$nohead_port/" >/dev/null && break; sleep 0.1; done
+mkdir -p "$tmp/home/.claude/aigate"; echo sk-test > "$tmp/home/.claude/aigate/kimi-key"
+printf '#!/bin/sh\necho "KIMI:$*"\n' > "$tmp/home/.claude/aigate/aigate-kimi.sh"; chmod +x "$tmp/home/.claude/aigate/aigate-kimi.sh"
+# macOS mktemp ignores TMPDIR without a template, so shim it to land in a dir we can inspect
+mkdir -p "$tmp/t" "$tmp/tbin"
+printf '#!/bin/sh\nexec /usr/bin/mktemp "%s/t/XXXXXX"\n' "$tmp" > "$tmp/tbin/mktemp"; chmod +x "$tmp/tbin/mktemp"
+out="$(env HOME="$tmp/home" PATH="$tmp/tbin:$tmp/bin:$PATH" AIGATE_URL="http://127.0.0.1:$nohead_port" AIGATE_TOKEN=test \
+    bash "$here/aigate-run.sh" -p hi </dev/null 2>/dev/null)"
+kill $srv2 2>/dev/null
+check "no headroom falls back to Kimi with the same args" "KIMI:-p hi" "$out"
+check "token file removed before the exec" 0 "$(ls "$tmp/t" | wc -l | tr -d ' ')"
+
 [ $fail -eq 0 ] && echo "all ok" || exit 1
