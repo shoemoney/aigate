@@ -12,6 +12,24 @@ services:
     # /health fails; the willfarrell/autoheal container restarts anything
     # labeled autoheal=true when it goes unhealthy.
     labels: ["autoheal=true"]
+    # tini as PID 1: node was PID 1 and never reaped orphaned grandchildren,
+    # leaking a zombie roughly every 40 min (reproduced 2026-10-02 with
+    # `docker exec aigate sh -c "(sleep 1 &); true"` -> zombie sleep under node).
+    init: true
+    # override the Dockerfile HEALTHCHECK: under NAS load average >18 this
+    # container takes 63-105s to boot, but start-period was 10s, so docker
+    # graded it unhealthy mid-boot and autoheal SIGTERMed it while it was
+    # still starting - a self-inflicted restart loop (measured 2026-09-27
+    # 09:31-09:49 UTC: 3 restarts, app healthy and serving between each).
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:'+(process.env.PORT||20200)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 15s
+      start_period: 180s
+      retries: 3
     logging:
       driver: journald
       options:
