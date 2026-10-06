@@ -77,4 +77,4 @@ export ANTHROPIC_SMALL_FAST_MODEL="$MODEL" ANTHROPIC_DEFAULT_HAIKU_MODEL="$MODEL
 # assumes 200k for unknown models and auto-compacts 5x too early.
 export CLAUDE_CODE_MAX_CONTEXT_TOKENS="${CC_MUSE_MAX_CONTEXT:-1007997}"
 echo "aigate-muse → $MODEL @ $BASE" >&2
-exec "$CLAUDE_BIN" "${skip[@]}" "${st[@]}" "$@"
+exec "$CLAUDE_BIN" ${skip[@]+"${skip[@]}"} ${st[@]+"${st[@]}"} "$@"

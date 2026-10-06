@@ -5,10 +5,22 @@
 #   env:   AIGATE_URL, AIGATE_TOKEN (sourced from ~/.claude/aigate/env if unset)
 #   opt:   AIGATE_CODEX_BIN, AIGATE_CODEX_HOME / CODEX_HOME, AI_GPT_MODEL
 #          (default gpt-6.1-sol), AI_GPT_EFFORT (default high), AI_GPT_YOLO=0,
-#          AI_CODEX_FORCE=1 (silence the "another codex is running" warning)
-#   usage: aigate-codex [codex args...]   Claude-Code-style flags are translated
+#          AI_CODEX_FORCE=1 (switch even while a codex is running)
+#   usage: aigate-codex [codex args...]   Claude-Code-style flags are translated:
+#            -p/--print → `codex exec`;  -c/--continue (bare) → `codex resume --last`;
+#            -p with -c → `codex exec resume --last`;  `-c key=value` and --config are
+#            CODEX's config flag and pass through untouched;  codex's profile flag
+#            is only reachable as --profile (-p is Claude-style print here).
 #          aigate-codex --write-only      select + pre-sync + write auth.json, exit 0
 #          aigate-codex --adopt           POST the local auth.json to /api/codex/sync
+#          aigate-codex --keep            KEEPER: bring auth.json in step with the vault
+#                                         (never picks, never switches account); fail-open
+#
+# The keeper step also runs at the start of every invocation. STICKY: while a codex
+# process for this CODEX_HOME is alive the on-disk account is never switched (the
+# keeper just keeps it current) unless that account is exhausted/re-auth/disabled, or
+# AI_CODEX_FORCE=1. OpenAI refresh tokens rotate with reuse detection: a long-lived
+# codex spending a token the vault already rotated would log out every box.
 #
 # Print mode (-p/--print → `codex exec`) keeps stdout CLEAN, detects a usage limit,
 # parks the account and retries on the next one (max 3). Interactive is a single
@@ -50,21 +62,26 @@ resolve_codex(){
   return 1
 }
 
-write_only=0 adopt=0 sub=() args=() yolo=1 is_print=0 has_model=0
+write_only=0 adopt=0 keep=0 sub=() args=() yolo=1 is_print=0 is_cont=0 has_model=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --write-only) write_only=1;;
     --adopt) adopt=1;;
-    -p|--print) sub=(exec); is_print=1;;
+    --keep) keep=1;;
+    -p|--print) is_print=1;;
+    # -c key=value is CODEX's config flag → untouched; bare -c / --continue = continue
+    -c) case "${2:-}" in *=*) args+=("$1" "$2"); shift;; *) is_cont=1;; esac;;
+    --continue) is_cont=1;;
     -m|--model|--model=*) has_model=1; args+=("$1");;
     # caller took the wheel on approvals/sandbox → don't also force ours
     -s|--sandbox|-a|--ask-for-approval|--full-auto) yolo=0; args+=("$1");;
     --dangerously-skip-permissions) ;;
-    --continue|-c) sub=(resume); args+=(--last);;
     *) args+=("$1");;
   esac
   shift
 done
+[ "$is_print" = 1 ] && sub=(exec)
+[ "$is_cont" = 1 ] && { sub+=(resume); args=(--last ${args[@]+"${args[@]}"}); }
 [ "${sub[0]:-}" = exec ] && args+=(--skip-git-repo-check)
 [ "$yolo" = 1 ] && [ "${AI_GPT_YOLO:-1}" = 1 ] && args+=(--dangerously-bypass-approvals-and-sandbox)
 mdl=()
@@ -72,16 +89,31 @@ mdl=()
 
 TMPD="$(mktemp -d)"; chmod 700 "$TMPD"
 AUTHF="$TMPD/auth.hdr"; RESPF="$TMPD/resp.json"; OUTF="$TMPD/out"; ERRF="$TMPD/err"
-BODYF="$TMPD/body.json"; SYNCF="$TMPD/sync.json"
+BODYF="$TMPD/body.json"; SYNCF="$TMPD/sync.json"; KEEPF="$TMPD/keep.json"; ACCTF="$TMPD/accts.json"
+HTTPF="$TMPD/http"; STDINF=""
 umask 077
 [ -n "${AIGATE_TOKEN:-}" ] && printf 'Authorization: Bearer %s\n' "$AIGATE_TOKEN" > "$AUTHF"
-cpid=""
-reap(){ [ -n "$cpid" ] && kill -TERM "$cpid" 2>/dev/null; rm -rf "$TMPD"; }
+# codex reads CODEX_HOME, we write AUTH under the resolved one: keep them the same
+export CODEX_HOME
+
+cpid=""; bgp=""; got_term=0
+reap(){
+  [ -n "$cpid" ] && kill -TERM "$cpid" 2>/dev/null
+  [ -n "$bgp" ] && kill -TERM "$bgp" 2>/dev/null
+  rm -rf "$TMPD"
+}
 trap reap EXIT
-# forward, don't die: codex must exit first so the post-sync still runs
-trap '[ -n "$cpid" ] && kill -TERM "$cpid" 2>/dev/null; got_term=1' TERM
-trap ':' INT
-got_term=0
+# Before codex exists a TERM/INT must END us (143/130) — never fall through to launching
+# a yolo codex. After launch: forward TERM and let codex exit first so the post-sync
+# still runs; INT is left to codex (it shares the tty's process group).
+trap 'got_term=1; if [ -n "$cpid" ]; then kill -TERM "$cpid" 2>/dev/null; else exit 143; fi' TERM
+trap '[ -n "$cpid" ] || exit 130' INT
+
+# Run a command in the background and `wait`: unlike a foreground child, `wait` is
+# interrupted by a trapped signal at once, so Ctrl-C/TERM never sits out a 15s curl.
+bgwait(){ "$@" <&0 & bgp=$!; wait "$bgp"; local rc=$?; bgp=""; return $rc; }
+# a curl killed by a signal (rc>=128) is the user interrupting, NOT "aigate unreachable"
+die_if_signaled(){ [ "$1" -ge 128 ] && exit "$1"; return 0; }
 
 jp(){ python3 -c 'import sys,json
 try:
@@ -95,9 +127,15 @@ except Exception:
 # one manual retry on a transport failure (timeout / refused). NOT curl --retry: that also
 # retries a 503 and APPENDS the second body, leaving two JSON documents glued together.
 select_codex(){ # $1 = exclude csv → response body in RESPF
-  local u="$AIGATE_URL/api/select?kind=codex&host=$HOST&exclude=$1"
-  curl -s -m15 -H "@$AUTHF" "$u" > "$RESPF" 2>/dev/null \
-    || { sleep 2; curl -s -m15 -H "@$AUTHF" "$u" > "$RESPF" 2>/dev/null || : > "$RESPF"; }
+  local u="$AIGATE_URL/api/select?kind=codex&host=$HOST&exclude=$1" rc
+  bgwait curl -s -m15 -H "@$AUTHF" "$u" > "$RESPF" 2>/dev/null; rc=$?
+  die_if_signaled "$rc"
+  if [ "$rc" -ne 0 ]; then
+    sleep 2
+    bgwait curl -s -m15 -H "@$AUTHF" "$u" > "$RESPF" 2>/dev/null; rc=$?
+    die_if_signaled "$rc"
+    [ "$rc" -eq 0 ] || : > "$RESPF"
+  fi
 }
 resp_ok(){ [ -n "$(jp "$RESPF" auth_json.tokens.refresh_token)" ] || [ -n "$(jp "$RESPF" auth_json.OPENAI_API_KEY)" ]; }
 diag(){
@@ -113,8 +151,10 @@ print("aigate: no codex account available — {} accts ({} parked, {} re-auth, {
   esac
 }
 post_json(){ # $1 path  $2 body file  → response in SYNCF
-  curl -s -m15 -X POST -H "@$AUTHF" -H 'content-type: application/json' --data "@$2" \
-    "$AIGATE_URL$1" > "$SYNCF" 2>/dev/null || : > "$SYNCF"
+  local rc
+  bgwait curl -s -m15 -X POST -H "@$AUTHF" -H 'content-type: application/json' --data "@$2" \
+    "$AIGATE_URL$1" > "$SYNCF" 2>/dev/null; rc=$?
+  [ "$rc" -eq 0 ] || : > "$SYNCF"
 }
 sync_file(){ # POST {auth_json: <file>} to /api/codex/sync
   python3 -c 'import sys,json
@@ -124,6 +164,151 @@ print(json.dumps({"auth_json":json.load(open(sys.argv[1]))}))' "$1" > "$BODYF" 2
 report_limit(){
   python3 -c 'import sys,json;print(json.dumps({"account":sys.argv[1],"host":sys.argv[2]}))' "$1" "$HOST" > "$BODYF"
   post_json /api/events/limit "$BODYF"
+}
+
+# ── keeper ───────────────────────────────────────────────────────────────────
+# Keep $AUTH in step with the vault for the account it is ALREADY logged in as.
+# Never picks, never switches account. Fail-open: any aigate trouble → return 0.
+# Sets KEEP_STATE (skip|down|error|unknown|reauth|ok|changed) and KEEP_NAME.
+KEEP_STATE=skip KEEP_NAME="" KEEP_NOISY=0
+keep_say(){ echo "aigate-keeper: $*" >&2; }
+iso_cmp(){ # $1 vault last_refresh  $2 local last_refresh → newer|older|same|unknown (vault vs local)
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || echo unknown
+import sys, re
+from datetime import datetime, timezone
+def p(s):
+    if not s: return None
+    s = s.strip().replace("Z", "+00:00")
+    s = re.sub(r"(\.\d{6})\d+", r"\1", s)
+    try:
+        d = datetime.fromisoformat(s)
+    except Exception:
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+a, b = p(sys.argv[1]), p(sys.argv[2])
+print("unknown" if a is None or b is None else "newer" if a > b else "older" if a < b else "same")
+PY
+}
+keep(){
+  KEEP_STATE=skip; KEEP_NAME=""
+  [ -n "${AIGATE_URL:-}" ] && [ -n "${AIGATE_TOKEN:-}" ] || return 0
+  [ -f "$AUTH" ] || return 0
+  local id idq http lrt vrt vid cmp vrf lrf
+  id="$(jp "$AUTH" tokens.account_id)"; [ -n "$id" ] || return 0
+  idq="$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$id" 2>/dev/null)"
+  [ -n "$idq" ] || return 0
+  : > "$KEEPF"; : > "$HTTPF"
+  bgwait curl -s -m15 -H "@$AUTHF" -o "$KEEPF" -w '%{http_code}' \
+    "$AIGATE_URL/api/codex/auth?account_id=$idq&host=$HOST" > "$HTTPF" 2>/dev/null
+  die_if_signaled $?
+  http="$(cat "$HTTPF" 2>/dev/null)"
+  case "$http" in
+    200) ;;
+    404) KEEP_STATE=unknown; return 0;;
+    ""|000) KEEP_STATE=down; [ "$KEEP_NOISY" = 1 ] && keep_say "cannot reach the server"; return 0;;
+    401) KEEP_STATE=error; [ "$KEEP_NOISY" = 1 ] && keep_say "AIGATE_TOKEN rejected (401)"; return 0;;
+    *) KEEP_STATE=error; [ "$KEEP_NOISY" = 1 ] && keep_say "server answered HTTP $http"; return 0;;
+  esac
+  KEEP_NAME="$(jp "$KEEPF" account)"
+  KEEP_STATE=ok
+  case "$(jp "$KEEPF" reauth_needed)" in 1|True|true) KEEP_STATE=reauth; return 0;; esac
+  vid="$(jp "$KEEPF" auth_json.tokens.account_id)"
+  [ -z "$vid" ] || [ "$vid" = "$id" ] || return 0        # never cross to a different account
+  vrt="$(jp "$KEEPF" auth_json.tokens.refresh_token)"; [ -n "$vrt" ] || return 0
+  lrt="$(jp "$AUTH" tokens.refresh_token)"
+  [ "$vrt" != "$lrt" ] || return 0
+  vrf="$(jp "$KEEPF" last_refresh)"; [ -n "$vrf" ] || vrf="$(jp "$KEEPF" auth_json.last_refresh)"
+  lrf="$(jp "$AUTH" last_refresh)"
+  cmp="$(iso_cmp "$vrf" "$lrf")"
+  case "$cmp" in
+    newer)
+      write_auth "$KEEPF" && { WROTE_RT="$vrt"; KEEP_STATE=changed
+        keep_say "auth.json updated from the vault (${KEEP_NAME:-$id}, newer token)"; }
+      ;;
+    older)
+      if sync_file "$AUTH"; then KEEP_STATE=changed
+        keep_say "pushed the newer local token to the vault (${KEEP_NAME:-$id}: $(jp "$SYNCF" reason))"; fi
+      ;;
+  esac
+  return 0
+}
+
+# Is a codex process for THIS $CODEX_HOME alive (excluding our own pid tree)?
+codex_live(){
+  python3 - "$CODEX_HOME" "$$" "$HOME" <<'PY' 2>/dev/null
+import os, re, subprocess, sys
+ch = os.path.realpath(sys.argv[1]); me = int(sys.argv[2]); home = sys.argv[3]
+out = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True).stdout
+rows = {}
+for l in out.splitlines():
+    f = l.split(None, 2)
+    if len(f) < 3: continue
+    try: rows[int(f[0])] = (int(f[1]), f[2])
+    except ValueError: pass
+mine = {me}; grew = True
+while grew:
+    grew = False
+    for pid, (pp, _) in rows.items():
+        if pp in mine and pid not in mine: mine.add(pid); grew = True
+def is_codex(cmd):
+    t = cmd.split()
+    if not t: return False
+    b = os.path.basename(t[0])
+    if b == "codex": return True
+    return b in ("node", "bun") and len(t) > 1 and os.path.basename(t[1]) in ("codex", "codex.js")
+for pid, (_, cmd) in rows.items():
+    if pid in mine or not is_codex(cmd): continue
+    env = subprocess.run(["ps", "eww", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout
+    if not env.strip(): continue
+    m = re.search(r"(?:^|\s)CODEX_HOME=(\S+)", env)
+    eff = m.group(1) if m else os.path.join(home, ".codex")
+    if os.path.realpath(eff) == ch: sys.exit(0)
+sys.exit(1)
+PY
+}
+
+# Is the account the vault knows as $1 unusable right now (parked/re-auth/disabled/over cutoff)?
+account_exhausted(){
+  [ -n "$1" ] || return 1
+  : > "$ACCTF"
+  bgwait curl -s -m15 -H "@$AUTHF" "$AIGATE_URL/api/accounts" > "$ACCTF" 2>/dev/null
+  die_if_signaled $?
+  python3 - "$ACCTF" "$1" "${AIGATE_HEADROOM_CUTOFF:-95}" <<'PY' 2>/dev/null
+import sys, json
+try: rows = json.load(open(sys.argv[1]))
+except Exception: sys.exit(1)
+cut = float(sys.argv[3])
+for r in rows if isinstance(rows, list) else []:
+    if r.get("account") != sys.argv[2]: continue
+    pct = max(float(r.get("five_hour_pct") or 0), float(r.get("seven_day_pct") or 0))
+    bad = r.get("parked") or r.get("reauth_needed") or r.get("disabled") or pct >= cut
+    sys.exit(0 if bad else 1)
+sys.exit(1)
+PY
+}
+
+# STICKY: a codex for this CODEX_HOME is alive → do NOT switch the on-disk account; the
+# keeper already refreshed it. Switch (and say so) only if that account is unusable.
+# Returns 0 = reuse the on-disk account (name in KEEP_NAME), 1 = go select/switch.
+sticky_reuse(){
+  [ "${AI_CODEX_FORCE:-0}" = 1 ] && return 1
+  [ -f "$AUTH" ] || return 1
+  [ -n "$(jp "$AUTH" tokens.account_id)" ] || return 1
+  codex_live || return 1
+  case "$KEEP_STATE" in
+    unknown) return 1;;                                  # not an aigate-managed login
+    reauth) echo "aigate: on-disk codex account ${KEEP_NAME:-?} needs re-auth while another codex is running — switching its login on disk" >&2; return 1;;
+  esac
+  case "$(jp "$KEEPF" disabled)" in 1|True|true)
+    echo "aigate: on-disk codex account ${KEEP_NAME:-?} is disabled while another codex is running — switching its login on disk" >&2; return 1;;
+  esac
+  if [ "$KEEP_STATE" != down ] && [ "$KEEP_STATE" != error ] && account_exhausted "$KEEP_NAME"; then
+    echo "aigate: on-disk codex account ${KEEP_NAME:-?} is exhausted while another codex is running — switching its login on disk" >&2
+    return 1
+  fi
+  WROTE_RT="$(jp "$AUTH" tokens.refresh_token)"
+  echo "aigate → codex account: ${KEEP_NAME:-on-disk login} (kept: another codex is running; AI_CODEX_FORCE=1 to switch)" >&2
+  return 0
 }
 
 # A token codex rotated locally (refresh tokens are single-use) must reach the vault
@@ -152,22 +337,27 @@ warn_concurrent(){
   [ -f "$AUTH" ] || return 0
   local lacct nacct; lacct="$(jp "$AUTH" tokens.account_id)"; nacct="$(jp "$RESPF" auth_json.tokens.account_id)"
   [ -n "$lacct" ] && [ -n "$nacct" ] && [ "$lacct" != "$nacct" ] || return 0
-  pgrep -x codex >/dev/null 2>&1 \
+  codex_live \
     && echo "aigate: another codex is running — switching its account on disk (AI_CODEX_FORCE=1 silences)" >&2
   return 0
 }
 
-write_auth(){ # atomic: temp in the same dir, mode 600, rename
+write_auth(){ # $1 = response file holding {auth_json} (default RESPF). atomic: temp in the same dir, 0600 BEFORE content, rename
   mkdir -p "$CODEX_HOME"
-  python3 - "$RESPF" "$AUTH" <<'PY'
+  python3 - "${1:-$RESPF}" "$AUTH" <<'PY'
 import sys, json, os, tempfile
 d = json.load(open(sys.argv[1]))["auth_json"]
 dest = sys.argv[2]
 fd, tmp = tempfile.mkstemp(dir=os.path.dirname(dest), prefix=".auth.json.")
-with os.fdopen(fd, "w") as f:
-    json.dump(d, f, indent=2); f.write("\n")
-os.chmod(tmp, 0o600)
-os.replace(tmp, dest)
+try:
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(d, f, indent=2); f.write("\n")
+    os.replace(tmp, dest)
+except Exception:
+    try: os.unlink(tmp)
+    except OSError: pass
+    raise
 PY
 }
 
@@ -205,11 +395,20 @@ plain_codex(){ # no aigate route → plain codex on whatever auth.json exists
   local why="$1"; echo "aigate: $why → running plain codex on the existing login" >&2
   [ "$write_only" = 1 ] && exit 1
   local C; C="$(resolve_codex)" || { echo "aigate-codex: no codex binary found" >&2; exit 127; }
+  [ -n "$STDINF" ] && exec <"$STDINF"     # replay the buffered prompt; the open fd outlives the rm
   rm -rf "$TMPD"; trap - EXIT
   exec "$C" ${sub[@]+"${sub[@]}"} ${mdl[@]+"${mdl[@]}"} ${args[@]+"${args[@]}"}
 }
 
-CODEX="$(resolve_codex)" || { [ "$write_only" = 1 ] || { echo "aigate-codex: no codex binary found (set AIGATE_CODEX_BIN)" >&2; exit 127; }; CODEX=""; }
+# ── mode: keeper (launchd) ───────────────────────────────────────────────────
+if [ "$keep" = 1 ]; then
+  KEEP_NOISY=1
+  if [ -z "${AIGATE_URL:-}" ] || [ -z "${AIGATE_TOKEN:-}" ]; then keep_say "no aigate env — nothing to do"; exit 0; fi
+  keep
+  exit 0
+fi
+
+CODEX="$(resolve_codex)" || { [ "$write_only" = 1 ] || [ "$adopt" = 1 ] || { echo "aigate-codex: no codex binary found (set AIGATE_CODEX_BIN)" >&2; exit 127; }; CODEX=""; }
 
 if [ -z "${AIGATE_URL:-}" ] || [ -z "${AIGATE_TOKEN:-}" ]; then
   [ "$adopt" = 1 ] && { echo "aigate: AIGATE_URL/AIGATE_TOKEN not set" >&2; exit 1; }
@@ -222,6 +421,9 @@ if [ "$adopt" = 1 ]; then
   r="$(cat "$SYNCF")"; echo "aigate: codex adopt → ${r:-no response}"
   [ "$(jp "$SYNCF" ok)" = "True" ]; exit $?
 fi
+
+# keeper step first, every invocation: never spend a token the vault already rotated
+keep
 
 # pick (+ at most one re-pick after a pre-sync that changed the vault)
 pick(){ # $1 exclude
@@ -239,14 +441,17 @@ install_pick(){
 }
 
 if [ "$write_only" = 1 ]; then
+  sticky_reuse && exit 0
   pick "" || { diag; exit 1; }
   install_pick || exit 1
   exit 0
 fi
 
 if [ "$is_print" != 1 ]; then
-  pick "" || { diag; plain_codex "no codex account from aigate"; }
-  install_pick || plain_codex "could not install the picked account"
+  if ! sticky_reuse; then
+    pick "" || { diag; plain_codex "no codex account from aigate"; }
+    install_pick || plain_codex "could not install the picked account"
+  fi
   "$CODEX" ${sub[@]+"${sub[@]}"} ${mdl[@]+"${mdl[@]}"} ${args[@]+"${args[@]}"} <&0 & cpid=$!
   rc=0
   while kill -0 "$cpid" 2>/dev/null; do wait "$cpid"; rc=$?; done
@@ -256,13 +461,31 @@ if [ "$is_print" != 1 ]; then
   exit "$rc"
 fi
 
+# print mode: buffer a piped prompt ONCE so every retry attempt replays it
+if [ ! -t 0 ]; then
+  STDINF="$TMPD/stdin"
+  bgwait cat > "$STDINF" 2>/dev/null
+fi
+run_print(){
+  if [ -n "$STDINF" ]; then
+    "$CODEX" ${sub[@]+"${sub[@]}"} ${mdl[@]+"${mdl[@]}"} ${args[@]+"${args[@]}"} <"$STDINF" >"$OUTF" 2>"$ERRF" & cpid=$!
+  else
+    # <&0 because a bg job's stdin is /dev/null otherwise
+    "$CODEX" ${sub[@]+"${sub[@]}"} ${mdl[@]+"${mdl[@]}"} ${args[@]+"${args[@]}"} <&0 >"$OUTF" 2>"$ERRF" & cpid=$!
+  fi
+}
+
 tried=""
 for attempt in 1 2 3; do
-  pick "$tried" || { diag; [ -z "$tried" ] && plain_codex "no codex account from aigate"; exit 1; }
-  acct="$(jp "$RESPF" account)"
-  install_pick || plain_codex "could not install the picked account"
-  # split streams: stdout stays CLEAN; <&0 because a bg job's stdin is /dev/null otherwise
-  "$CODEX" ${sub[@]+"${sub[@]}"} ${mdl[@]+"${mdl[@]}"} ${args[@]+"${args[@]}"} <&0 >"$OUTF" 2>"$ERRF" & cpid=$!
+  acct=""
+  if [ "$attempt" = 1 ] && sticky_reuse; then
+    acct="$KEEP_NAME"
+  else
+    pick "$tried" || { diag; [ -z "$tried" ] && plain_codex "no codex account from aigate"; exit 1; }
+    acct="$(jp "$RESPF" account)"
+    install_pick || plain_codex "could not install the picked account"
+  fi
+  run_print
   rc=0
   while kill -0 "$cpid" 2>/dev/null; do wait "$cpid"; rc=$?; done
   cpid=""
@@ -270,8 +493,10 @@ for attempt in 1 2 3; do
   [ "$got_term" = 1 ] && exit 143
   if [ "$rc" -eq 0 ]; then cat "$OUTF"; cat "$ERRF" >&2; exit 0; fi
   if cat "$OUTF" "$ERRF" | grep -qiE 'usage limit|rate limit|429|quota|limit reached'; then
-    echo "aigate: codex account $acct over limit/unavailable → retrying next" >&2
-    report_limit "$acct"; tried="${tried:+$tried,}$acct"; continue
+    echo "aigate: codex account ${acct:-?} over limit/unavailable → retrying next" >&2
+    [ -n "$acct" ] && { report_limit "$acct"; tried="${tried:+$tried,}$acct"; }
+    [ -n "$acct" ] || { cat "$OUTF"; cat "$ERRF" >&2; exit "$rc"; }
+    continue
   fi
   cat "$OUTF"; cat "$ERRF" >&2; exit "$rc"
 done

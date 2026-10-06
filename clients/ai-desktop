@@ -19,6 +19,24 @@ HOST="$(hostname -s)"
 CODEX_BUNDLE_ID="${AIGATE_CODEX_BUNDLE_ID:-com.openai.codex}"
 CLAUDE_APP="${AIGATE_DESKTOP_APP:-/Applications/Claude.app}"
 
+# ChatGPT.app's bundle path: Spotlight by bundle id, then /Applications. Process matching
+# is by THIS path only — T3 and VS Code run their own `codex app-server` that must survive.
+codex_app_path(){
+  local p="${AIGATE_CODEX_APP_PATH:-}"
+  [ -z "$p" ] && p="$(mdfind "kMDItemCFBundleIdentifier == '$CODEX_BUNDLE_ID'" 2>/dev/null | head -1)"
+  { [ -n "$p" ] && [ -d "$p" ]; } || p=/Applications/ChatGPT.app
+  printf '%s' "${p%/}"
+}
+app_server_pids(){ # $1 = app bundle path → pids of app-server processes whose executable lives inside it
+  [ -n "$1" ] || return 0
+  ps -axo pid=,command= 2>/dev/null | python3 -c 'import sys
+app=sys.argv[1].rstrip("/")+"/"
+for l in sys.stdin:
+    f=l.strip().split(None,1)
+    if len(f)<2: continue
+    c=f[1]
+    if c.startswith(app) and "app-server" in c: print(f[0])' "$1"
+}
 dry_pick(){ # $1 = query prefix ("" | "kind=codex&")
   [ -n "${AIGATE_URL:-}" ] && [ -n "${AIGATE_TOKEN:-}" ] || return 1
   local hf; hf="$(mktemp)"; chmod 600 "$hf"; printf 'Authorization: Bearer %s\n' "$AIGATE_TOKEN" > "$hf"
@@ -38,18 +56,21 @@ case "${1:-}" in
   codex)
     WRITER="$AIGATE_DIR/aigate-codex.sh"
     [ -x "$WRITER" ] || { echo "ai-desktop: $WRITER missing — run aigate's clients/install.sh" >&2; exit 1; }
-    "$WRITER" --write-only || { echo "ai-desktop: could not select/write a codex account — not restarting the app" >&2; exit 1; }
+    APP="$(codex_app_path)"
     osascript -e "quit app id \"$CODEX_BUNDLE_ID\"" >/dev/null 2>&1 || true
-    # wait up to ~20s for the bundled app-server to let go of the old login
-    for _ in $(seq 40); do
-      pgrep -f 'codex.* app-server' >/dev/null 2>&1 || break
+    # wait up to ~20s for THIS app's bundled app-server (never T3's or VS Code's) to let go
+    for _ in $(seq $(( ${AIGATE_DESKTOP_WAIT_S:-20} * 2 ))); do
+      [ -n "$(app_server_pids "$APP")" ] || break
       sleep 0.5
     done
-    if pgrep -f 'codex.* app-server' >/dev/null 2>&1; then
-      echo "ai-desktop: codex app-server still running → TERM" >&2
-      pkill -TERM -f 'codex.* app-server' 2>/dev/null || true
+    left="$(app_server_pids "$APP")"
+    if [ -n "$left" ]; then
+      echo "ai-desktop: ChatGPT's codex app-server still running → TERM" >&2
+      for p in $left; do kill -TERM "$p" 2>/dev/null || true; done
       sleep 1
     fi
+    # keeper + select + write (STICKY: another live codex on this CODEX_HOME keeps its account)
+    "$WRITER" --write-only || { echo "ai-desktop: could not select/write a codex account — not restarting the app" >&2; exit 1; }
     open -b "$CODEX_BUNDLE_ID" || { echo "ai-desktop: could not open $CODEX_BUNDLE_ID" >&2; exit 1; }
     echo "ai-desktop: ChatGPT/Codex relaunched on $(dry_pick 'kind=codex&' | fmt_pick)"
     ;;

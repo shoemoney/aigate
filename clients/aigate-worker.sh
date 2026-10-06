@@ -145,7 +145,7 @@ while :; do
   # card would look stuck. This posts elapsed every few seconds so the panel always shows it alive.
   ( hb0=$(date +%s); while :; do sleep 4; post_activity "$id" "working $(( $(date +%s) - hb0 ))s"; done ) & hbpid=$!
   # run it (stream-json) to a file; tail posts tool/thinking activity as the stream flushes
-  ( cd "${cwd:-$PWD}" && "$AI_CMD" "${PRE[@]}" -p --output-format stream-json --verbose "${resume[@]}" "${modelarg[@]}" "$full_prompt" ) >"$tmpf" 2>/dev/null &
+  ( cd "${cwd:-$PWD}" && "$AI_CMD" ${PRE[@]+"${PRE[@]}"} -p --output-format stream-json --verbose ${resume[@]+"${resume[@]}"} ${modelarg[@]+"${modelarg[@]}"} "$full_prompt" ) >"$tmpf" 2>/dev/null &
   aipid=$!
   ( tail -n +1 -F "$tmpf" 2>/dev/null | while IFS= read -r line; do
       act="$(printf '%s' "$line" | activity_of)"; [ -n "$act" ] && post_activity "$id" "$act"

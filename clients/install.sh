@@ -46,6 +46,43 @@ if [ -e "$DIR/aigate-gpt.sh" ]; then
   echo "retired aigate-gpt.sh (moved to .bak-removed-*)"
 fi
 
+# Codex keeper (macOS): hourly `aigate-codex.sh --keep` keeps ~/.codex/auth.json in step
+# with the vault so a long-lived codex (ChatGPT.app, T3) reloads the vault's rotated
+# token instead of spending a dead one. The plist always lands under $ROOT; launchctl is
+# only touched for a real install (not AIGATE_NO_LAUNCHD=1, not a scratch AIGATE_INSTALL_ROOT).
+if [ "$(uname -s)" = "Darwin" ]; then
+  KLABEL="ai.shoemoney.aigate-codex-keeper"
+  KPLIST="$ROOT/Library/LaunchAgents/$KLABEL.plist"
+  mkdir -p "$ROOT/Library/LaunchAgents"
+  cat > "$KPLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$KLABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>$DIR/aigate-codex.sh</string>
+    <string>--keep</string>
+  </array>
+  <key>StartInterval</key><integer>3600</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>$DIR/codex-keeper.log</string>
+  <key>StandardErrorPath</key><string>$DIR/codex-keeper.log</string>
+</dict>
+</plist>
+EOF
+  chmod 644 "$KPLIST"
+  if [ "${AIGATE_NO_LAUNCHD:-0}" != 1 ] && [ -z "${AIGATE_INSTALL_ROOT:-}" ]; then
+    UIDN="$(id -u)"
+    launchctl bootout "gui/$UIDN/$KLABEL" >/dev/null 2>&1 || true
+    launchctl bootstrap "gui/$UIDN" "$KPLIST" >/dev/null 2>&1 \
+      && echo "loaded launchd agent $KLABEL (hourly codex keeper)" \
+      || echo "NOTE: could not load $KLABEL — run: launchctl bootstrap gui/$UIDN $KPLIST" >&2
+  fi
+fi
+
 CLAUDE_BIN=""
 for p in "$ROOT/.local/bin/claude" /usr/bin/claude /usr/local/bin/claude /opt/homebrew/bin/claude; do
   [ -x "$p" ] && CLAUDE_BIN="$p" && break

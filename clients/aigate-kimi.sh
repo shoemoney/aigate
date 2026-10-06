@@ -72,4 +72,4 @@ export ANTHROPIC_MODEL="$MODEL" ANTHROPIC_DEFAULT_OPUS_MODEL="$MODEL" ANTHROPIC_
 export ANTHROPIC_SMALL_FAST_MODEL="$FAST" ANTHROPIC_DEFAULT_HAIKU_MODEL="$FAST"
 export CLAUDE_CODE_MAX_CONTEXT_TOKENS="$CTX"
 echo "aigate-kimi → $MODEL @ $BASE ($((CTX/1024))k ctx)" >&2
-exec "$CLAUDE_BIN" "${skip[@]}" "${effort[@]}" "$@"
+exec "$CLAUDE_BIN" ${skip[@]+"${skip[@]}"} ${effort[@]+"${effort[@]}"} "$@"

@@ -7,6 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, exist
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
+import { BASH, bash32Path } from './helpers/bash32.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CLIENTS = join(ROOT, 'clients');
@@ -28,8 +29,8 @@ function sandbox() {
 }
 
 function ai(sb, args, env = {}) {
-  return new Promise((res) => execFile('bash', [AI, ...args], {
-    env: { PATH: `${join(sb.home, '.local', 'bin')}:${process.env.PATH}`, HOME: sb.home, AI_NO_RTK: '1', AI_DESKTOP_BIN: sb.desk,
+  return new Promise((res) => execFile(BASH, [AI, ...args], {
+    env: { PATH: bash32Path(`${join(sb.home, '.local', 'bin')}:${process.env.PATH}`), HOME: sb.home, AI_NO_RTK: '1', AI_DESKTOP_BIN: sb.desk,
       AIGATE_URL: 'http://127.0.0.1:1', AIGATE_TOKEN: 'tok', ...env },
     timeout: 20_000,
   }, (err, stdout, stderr) => res({ code: err ? (err.code ?? 1) : 0, stdout, stderr })));
@@ -167,8 +168,8 @@ test('install.sh into a scratch root: ai, ai-desktop, wrappers, t3 symlinks; ret
   mkdirSync(bin, { recursive: true }); mkdirSync(ag, { recursive: true });
   writeFileSync(join(ag, 'aigate-gpt.sh'), '#!/bin/bash\n# old\n');
   writeFileSync(join(bin, 'cc'), '#!/usr/bin/env bash\n# cc — run claude through aigate (account picked by the warden)\n');
-  const env = { PATH: process.env.PATH, HOME: dir, AIGATE_INSTALL_ROOT: dir, AIGATE_URL: 'http://127.0.0.1:1', AIGATE_TOKEN: 'tok', ZDOTDIR: dir };
-  const r = spawnSync('bash', [join(CLIENTS, 'install.sh')], { env, encoding: 'utf8' });
+  const env = { PATH: bash32Path(), HOME: dir, AIGATE_INSTALL_ROOT: dir, AIGATE_NO_LAUNCHD: '1', AIGATE_URL: 'http://127.0.0.1:1', AIGATE_TOKEN: 'tok', ZDOTDIR: dir };
+  const r = spawnSync(BASH, [join(CLIENTS, 'install.sh')], { env, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   for (const f of ['ai', 'ai-desktop']) assert.ok(existsSync(join(bin, f)), f);
   for (const f of ['aigate-run.sh', 'aigate-codex.sh', 'aigate-kimi.sh', 'aigate-muse.sh', 't3-claude.sh', 't3-codex.sh', 't3-opencode.sh', 't3-anthropic-compat.sh', 'cmux-claude.sh', 'version'])
@@ -182,7 +183,7 @@ test('install.sh into a scratch root: ai, ai-desktop, wrappers, t3 symlinks; ret
   assert.ok(!existsSync(join(bin, 'cc')), "installer's own old cc removed");
   // a foreign cc is left alone
   writeFileSync(join(bin, 'cc'), '#!/bin/sh\necho my compiler\n');
-  assert.equal(spawnSync('bash', [join(CLIENTS, 'install.sh')], { env, encoding: 'utf8' }).status, 0);
+  assert.equal(spawnSync(BASH, [join(CLIENTS, 'install.sh')], { env, encoding: 'utf8' }).status, 0);
   assert.match(readFileSync(join(bin, 'cc'), 'utf8'), /my compiler/);
   assert.ok(existsSync(join(dir, '.claude', 'settings.json')), 'hooks wired under the scratch root');
 });
@@ -204,7 +205,7 @@ test('every clients/ shell script passes bash -n', () => {
   for (const f of scripts) {
     const first = readFileSync(f, 'utf8').split('\n')[0];
     if (!/bash|sh/.test(first)) continue;
-    const r = spawnSync('bash', ['-n', f], { encoding: 'utf8' });
+    const r = spawnSync(BASH, ['-n', f], { encoding: 'utf8' });
     assert.equal(r.status, 0, `${f}: ${r.stderr}`);
   }
 });
@@ -222,4 +223,23 @@ test('bash 3.2 hygiene: no associative arrays / mapfile in new scripts', () => {
     const s = readFileSync(join(CLIENTS, f), 'utf8');
     assert.ok(!/declare -A|\bmapfile\b|\breadarray\b/.test(s), f);
   }
+});
+
+test('bash 3.2: every "${arr[@]}" in clients/ is guarded (${a[@]+"${a[@]}"}) or provably non-empty', () => {
+  // arrays non-empty at their expansion site: AUTH (always -H @file), filtered (length-checked)
+  const allow = new Set(['AUTH', 'filtered']);
+  const bad = [];
+  for (const f of scripts) {
+    const src = readFileSync(f, 'utf8');
+    if (!/bash|sh/.test(src.split('\n')[0])) continue;
+    src.split('\n').forEach((line, i) => {
+      if (/^\s*#/.test(line)) return;
+      for (const m of line.matchAll(/"\$\{(\w+)\[@\]\}"/g)) {
+        const pre = line.slice(0, m.index);
+        if (pre.endsWith(`\${${m[1]}[@]+`) || allow.has(m[1])) continue;
+        bad.push(`${f}:${i + 1} ${m[0]}`);
+      }
+    });
+  }
+  assert.deepEqual(bad, []);
 });

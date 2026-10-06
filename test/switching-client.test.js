@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
+import { BASH, bash32Path } from './helpers/bash32.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -53,8 +54,8 @@ function startMock(handlers) {
 // immediately — the HTTP calls land shortly AFTER. Poll the mock, don't assume ordering.
 function runHook(url, account, payload) {
   return new Promise((res, rej) => {
-    const child = execFile('bash', [PROMPT_HOOK], {
-      env: { ...process.env, AIGATE_URL: url, AIGATE_TOKEN: 'test-token', AIGATE_ACCOUNT: account },
+    const child = execFile(BASH, [PROMPT_HOOK], {
+      env: { ...process.env, PATH: bash32Path(), AIGATE_URL: url, AIGATE_TOKEN: 'test-token', AIGATE_ACCOUNT: account },
       timeout: 10_000,
     }, (err) => (err ? rej(err) : res()));
     child.stdin.end(JSON.stringify(payload));
@@ -119,4 +120,70 @@ test('prompt-hook.sh: non-cc session (no AIGATE_ACCOUNT) never parks anything', 
 
   assert.ok(!hit(mock.calls, '/api/accounts', 'GET'), 'no account set → skip the per-turn check entirely');
   assert.ok(!hit(mock.calls, '/api/events/limit'), 'fail-open: no account set → no selection side effects');
+});
+
+// ── bash 3.2 + piped-prompt behavior of aigate-run.sh, against a mock aigate ─────
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, readFileSync as rf, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+
+function runSandbox() {
+  const dir = mkdtempSync(join(tmpdir(), 'arun-'));
+  const home = join(dir, 'home'); mkdirSync(join(home, '.claude'), { recursive: true });
+  const shim = join(dir, 'shim'); mkdirSync(shim);
+  // the real script deletes the macOS Keychain login: never let a test reach it
+  writeFileSync(join(shim, 'security'), '#!/bin/sh\nexit 1\n'); chmodSync(join(shim, 'security'), 0o755);
+  const log = join(dir, 'claude.log');
+  const claude = join(dir, 'fake-claude');
+  writeFileSync(claude, `#!/bin/bash
+echo "RUN tok=$CLAUDE_CODE_OAUTH_TOKEN" >> "${log}"
+printf 'ARG %s\\n' "$@" >> "${log}"
+if [ -n "\${FAKE_READ_STDIN:-}" ]; then echo "STDIN $(cat)" >> "${log}"; fi
+case ",\${FAKE_FAIL_TOKS:-}," in *",$CLAUDE_CODE_OAUTH_TOKEN,"*) echo "rate limit reached" >&2; exit 1;; esac
+echo claude-out
+`);
+  chmodSync(claude, 0o755);
+  return { dir, home, shim, log, claude, cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    runs: () => (existsSync(log) ? rf(log, 'utf8') : '').split('RUN ').slice(1).map((r) => ({
+      tok: /tok=(.*)/.exec(r)[1], args: [...r.matchAll(/^ARG (.*)$/gm)].map((m) => m[1]), stdin: (/^STDIN (.*)$/m.exec(r) || [])[1] })) };
+}
+function runRun(sb, url, args, env = {}, stdin = '') {
+  return new Promise((res) => {
+    const c = execFile(BASH, [AIGATE_RUN, ...args], {
+      env: { PATH: bash32Path(`${sb.shim}:${process.env.PATH}`), HOME: sb.home, AIGATE_URL: url, AIGATE_TOKEN: 'bt', AIGATE_CLAUDE_BIN: sb.claude, ...env },
+      timeout: 30_000,
+    }, (err, stdout, stderr) => res({ code: err ? (err.code ?? 1) : 0, stdout, stderr }));
+    c.stdin.end(stdin);
+  });
+}
+
+test('aigate-run.sh interactive first launch on bash 3.2: empty --continue array is not "unbound variable"', async (t) => {
+  const sb = runSandbox(); t.after(sb.cleanup);
+  const mock = await startMock({
+    'GET /api/select': { body: { account: 'a1', setup_token: 'tok-a1', five_hour_pct: 5, seven_day_pct: 5 } },
+    'GET /api/accounts': { body: [{ account: 'a1', five_hour_pct: 5, seven_day_pct: 5 }] },
+    'POST /api/events/prompt': { body: {} },
+  });
+  t.after(() => mock.server.close());
+  const r = await runRun(sb, mock.url, ['hello']);
+  assert.ok(!/unbound variable/.test(r.stderr), r.stderr);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(sb.runs().map((x) => [x.tok, x.args]), [['tok-a1', ['hello']]]);
+});
+
+test('aigate-run.sh print mode: a piped prompt is replayed to the retry attempt', async (t) => {
+  const sb = runSandbox(); t.after(sb.cleanup);
+  const server = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    let body = {};
+    if (u.pathname === '/api/select') body = (u.searchParams.get('exclude') || '').includes('a1')
+      ? { account: 'a2', setup_token: 'tok-a2' } : { account: 'a1', setup_token: 'tok-a1' };
+    res.writeHead(200, { 'content-type': 'application/json' }); req.resume(); res.end(JSON.stringify(body));
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r)); t.after(() => server.close());
+  const r = await runRun(sb, `http://127.0.0.1:${server.address().port}`, ['-p'], { FAKE_FAIL_TOKS: 'tok-a1', FAKE_READ_STDIN: '1' }, 'the piped prompt');
+  assert.equal(r.code, 0, r.stderr);
+  const runs = sb.runs();
+  assert.deepEqual(runs.map((x) => x.tok), ['tok-a1', 'tok-a2']);
+  assert.deepEqual(runs.map((x) => x.stdin), ['the piped prompt', 'the piped prompt']);
+  assert.equal(r.stdout, 'claude-out\n');
 });

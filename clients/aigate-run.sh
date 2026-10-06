@@ -21,7 +21,7 @@ AUTHF="$(mktemp)"; chmod 600 "$AUTHF"; printf 'Authorization: Bearer %s\n' "$AIG
 # its caller's 180s cap by 20 min (2026-09-29). Print mode runs it in the background
 # and `wait`s (interruptible) so TERM/INT are forwarded. See aigate-run-supervise.test.sh
 cpid=""
-reap(){ [ -n "$cpid" ] && kill -TERM "$cpid" 2>/dev/null; rm -f "$AUTHF" "${errf:-}" "${outf:-}"; }
+reap(){ [ -n "$cpid" ] && kill -TERM "$cpid" 2>/dev/null; rm -f "$AUTHF" "${errf:-}" "${outf:-}" "${stdinf:-}"; }
 trap reap EXIT
 trap 'reap; exit 143' TERM
 trap 'reap; exit 130' INT
@@ -101,6 +101,7 @@ fallback_to_muse(){
   local mdl="${MUSE_MODEL:-muse-spark-1.2-contributor}"   # ~/.config/muse/settings.json is per-box; pin it
   echo "aigate: $reason → falling back to muse --yolo ($mdl)" >&2
   rm -f "$AUTHF"   # exec skips the EXIT trap
+  [ -n "${stdinf:-}" ] && { exec <"$stdinf"; rm -f "$stdinf"; }   # replay the buffered piped prompt
   [ -n "$prompt" ] && exec "$M" exec --yolo --model "$mdl" "$prompt"
   exec "$M" --yolo --model "$mdl"
 }
@@ -114,6 +115,7 @@ fallback_to_kimi(){
   fi
   echo "aigate: $reason → falling back to Kimi K3 (1M ctx)" >&2
   rm -f "$AUTHF"   # exec skips the EXIT trap
+  [ -n "${stdinf:-}" ] && { exec <"$stdinf"; rm -f "$stdinf"; }   # replay the buffered piped prompt
   exec "$HOME/.claude/aigate/aigate-kimi.sh" "$@"
 }
 
@@ -167,7 +169,7 @@ if [ "$is_print" != 1 ]; then
     # after the first account, --continue resumes the same conversation on the next
     cont=(); [ "$first" = 0 ] && cont=(--continue)
     if [ -z "$tok" ]; then
-      is_capacity_exhausted "$resp" && fallback_to_kimi "no Claude account has headroom" "${cont[@]}" "$@"
+      is_capacity_exhausted "$resp" && fallback_to_kimi "no Claude account has headroom" ${cont[@]+"${cont[@]}"} "$@"
       no_token_diag "$resp"; exit 1
     fi
     echo "aigate → using account: $acct$(usage_tag "$resp")" >&2
@@ -175,7 +177,7 @@ if [ "$is_print" != 1 ]; then
     export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
     clear_shadow_login
     report_prompt "$acct" "interactive session"
-    "$CLAUDE_BIN" "${cont[@]}" "$@"; rc=$?; first=0
+    "$CLAUDE_BIN" ${cont[@]+"${cont[@]}"} "$@"; rc=$?; first=0
     # On exit: cheap CACHED usage check first; only pay for a live re-poll when usage
     # is already near the cap, so a normal quit stays instant.
     worst="$(curl -s -m5 -H "@$AUTHF" "$AIGATE_URL/api/accounts" 2>/dev/null \
@@ -196,6 +198,14 @@ if [ "$is_print" != 1 ]; then
 fi
 
 prompt="$*"; tried=""
+# A piped prompt is consumed by the FIRST attempt; buffer it once (0600) and replay it
+# into every retry, else attempt 2 runs claude on an empty stdin. Not a TTY only.
+stdinf=""
+if [ ! -t 0 ]; then
+  stdinf="$(mktemp)"; chmod 600 "$stdinf"
+  cat > "$stdinf" <&0 & cpid=$!
+  wait "$cpid"; cpid=""
+fi
 for attempt in 1 2 3; do
   resp="$(select_acct "$tried")"
   acct="$(printf '%s' "$resp" | jget account)"; tok="$(printf '%s' "$resp" | jget setup_token)"
@@ -210,8 +220,12 @@ for attempt in 1 2 3; do
   # split streams: stdout stays CLEAN for consuming scripts, stderr banners don't
   # pollute it and don't false-trigger the limit classifier on success
   errf="$(mktemp)"; outf="$(mktemp)"
-  # <&0 explicitly: a background job's stdin is otherwise /dev/null, breaking piped prompts
-  "$CLAUDE_BIN" ${skip[@]+"${skip[@]}"} "$@" <&0 >"$outf" 2>"$errf" & cpid=$!
+  if [ -n "$stdinf" ]; then
+    "$CLAUDE_BIN" ${skip[@]+"${skip[@]}"} "$@" <"$stdinf" >"$outf" 2>"$errf" & cpid=$!
+  else
+    # <&0 explicitly: a background job's stdin is otherwise /dev/null
+    "$CLAUDE_BIN" ${skip[@]+"${skip[@]}"} "$@" <&0 >"$outf" 2>"$errf" & cpid=$!
+  fi
   wait "$cpid"; rc=$?; cpid=""
   out="$(cat "$outf")"; err="$(cat "$errf" 2>/dev/null)"; rm -f "$errf" "$outf"
   if [ $rc -eq 0 ]; then printf '%s\n' "$out"; exit 0; fi
