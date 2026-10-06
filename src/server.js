@@ -80,12 +80,19 @@ const ENC_KEY = (process.env.AIGATE_ENCRYPTION_KEY || '').trim();
 const ALERT_WEBHOOK = (process.env.AIGATE_ALERT_WEBHOOK || '').trim();
 // Codex (ChatGPT) upstreams — lazy getters (same pattern as PROXY_UPSTREAMS below) so a
 // test can point usage + token at one fake server without a restart. The client id is the
-// public Codex CLI OAuth app id; refreshing under it is what the official binary does.
+// public Codex CLI OAuth app id; refreshing under it is a protocol requirement (the tokens
+// were issued to that client), not spoofing — the refresh call sends no fake user-agent.
 const CODEX = {
   usageUrl: () => process.env.AIGATE_CODEX_USAGE_URL || 'https://chatgpt.com/backend-api/wham/usage',
   tokenUrl: () => process.env.AIGATE_CODEX_TOKEN_URL || 'https://auth.openai.com/oauth/token',
   clientId: () => process.env.AIGATE_CODEX_CLIENT_ID || 'app_EMoamEEZ73f0CkXaXp7hrann',
-  ua: () => process.env.AIGATE_CODEX_UA || 'codex_cli_rs/0.160.1',
+  // Honest UA for the usage poll. Measured 2026-10-06: GET chatgpt.com/backend-api/wham/usage
+  // with `aigate/<v> (codex-usage)` + ChatGPT-Account-Id answers 200 (no Cloudflare challenge),
+  // so no codex_cli_rs impersonation is needed. If that ever 403s, AIGATE_CODEX_UA overrides it.
+  ua: () => process.env.AIGATE_CODEX_UA || `aigate/${VERSION} (codex-usage)`,
+  // a refresh whose request may have been SENT is unrecoverable if we time out early (the token
+  // may already be spent), so give the token endpoint a generous window
+  tokenTimeoutMs: () => envNum('AIGATE_CODEX_TOKEN_TIMEOUT_MS', 60000),
   // refresh LATE: every refresh rotates the token family and orphans long-lived holders
   // (the Codex desktop app), so only refresh when the access token is within this window of exp.
   refreshAheadS: () => envNum('AIGATE_CODEX_REFRESH_AHEAD_S', 172800),   // 2 days
@@ -256,7 +263,9 @@ for (const col of ['five_hour_reset', 'seven_day_reset'])
 // pickRanked caller names one); plan/token_exp/ext_id are non-secret facts for the dashboard
 // and for refresh scheduling (token_exp = access-token exp, epoch s; ext_id = codex account_id).
 // The Codex auth.json itself rides encrypted in token_enc, like a Claude setup-token.
-for (const [col, ddl] of [['kind', `TEXT NOT NULL DEFAULT 'claude'`], ['plan', 'TEXT'], ['token_exp', 'INTEGER'], ['ext_id', 'TEXT']])
+// refresh_unknown: a token-endpoint call whose request may have been SENT failed without a
+// verdict (timeout/reset/5xx) — the single-use refresh token may be spent, so auto-refresh halts.
+for (const [col, ddl] of [['kind', `TEXT NOT NULL DEFAULT 'claude'`], ['plan', 'TEXT'], ['token_exp', 'INTEGER'], ['ext_id', 'TEXT'], ['refresh_unknown', 'INTEGER NOT NULL DEFAULT 0']])
   if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === col))
     db.exec(`ALTER TABLE accounts ADD COLUMN ${col} ${ddl}`);
 // migration: board cards gained an optional target host (route a card to a specific worker box)
@@ -285,6 +294,13 @@ if (!db.prepare(`SELECT 1 FROM meta WHERE k='hint_backfill_done'`).get()) {
   try { db.prepare(`INSERT INTO meta(k,v) VALUES('hint_backfill_done','1')`).run(); } catch { /* raced */ }
 }
 
+// A rotated single-use refresh token must survive power loss, so credential writes run at
+// synchronous=FULL (single connection, synchronous call — nothing interleaves). NORMAL elsewhere.
+function durably(fn) {
+  db.exec('PRAGMA synchronous=FULL');
+  try { return fn(); } finally { db.exec('PRAGMA synchronous=NORMAL'); }
+}
+
 // prepared once
 const q = {
   // reauth_needed=0 on re-add: the recovery flow (setup-token → re-POST the fresh token) must
@@ -292,25 +308,28 @@ const q = {
   // parked_until/disabled are deliberately untouched — parking is usage-driven, disabling is manual.
   upsertAccount: db.prepare(`INSERT INTO accounts(account,token_enc,label,kind,plan,token_exp,ext_id) VALUES(?,?,?,?,?,?,?)
     ON CONFLICT(account) DO UPDATE SET token_enc=excluded.token_enc, label=excluded.label, reauth_needed=0,
-      kind=excluded.kind, plan=excluded.plan, token_exp=excluded.token_exp, ext_id=excluded.ext_id`),
+      kind=excluded.kind, plan=excluded.plan, token_exp=excluded.token_exp, ext_id=excluded.ext_id, refresh_unknown=0`),
   // parked computed in the SAME clock domain as pickRanked — clients get a plain 0/1
   // instead of parsing a bare sqlite UTC string (no Z) in the right timezone.
-  listAccounts: db.prepare(`SELECT account,label,kind,plan,token_exp,ext_id,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset,usage_updated,disabled,reauth_needed,parked_until,
+  listAccounts: db.prepare(`SELECT account,label,kind,plan,token_exp,ext_id,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset,usage_updated,disabled,reauth_needed,refresh_unknown,parked_until,
     (parked_until IS NOT NULL AND parked_until > datetime('now')) AS parked,
     CAST(strftime('%s','now') - strftime('%s', usage_updated) AS INTEGER) AS usage_age_s,
     (token_enc IS NOT NULL) AS has_token FROM accounts ORDER BY account`),
   getToken: db.prepare(`SELECT token_enc,kind FROM accounts WHERE account=?`),
   // full non-secret state + the ciphertext for ONE account (codex select/refresh/sync paths)
-  getAcct: db.prepare(`SELECT account,kind,token_enc,ext_id,plan,token_exp,reauth_needed,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset FROM accounts WHERE account=?`),
+  getAcct: db.prepare(`SELECT account,kind,token_enc,ext_id,plan,token_exp,reauth_needed,disabled,refresh_unknown,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset FROM accounts WHERE account=?`),
   codexByExt: db.prepare(`SELECT account,token_enc FROM accounts WHERE kind='codex' AND ext_id=?`),
+  codexKeep: db.prepare(`SELECT account,token_enc,token_exp,reauth_needed,disabled FROM accounts WHERE kind='codex' AND ext_id=?`),
+  setRefreshUnknown: db.prepare(`UPDATE accounts SET refresh_unknown=? WHERE account=?`),
   // refresh persisted in ONE statement: tokens + exp together, or neither
   updCodexAuth: db.prepare(`UPDATE accounts SET token_enc=?, token_exp=?, plan=COALESCE(?,plan) WHERE account=?`),
   // sync from a client's own login: same write, but a fresh credential also clears reauth
-  syncCodexAuth: db.prepare(`UPDATE accounts SET token_enc=?, token_exp=?, plan=COALESCE(?,plan), reauth_needed=0 WHERE account=?`),
+  syncCodexAuth: db.prepare(`UPDATE accounts SET token_enc=?, token_exp=?, plan=COALESCE(?,plan), reauth_needed=0, refresh_unknown=0 WHERE account=?`),
   // EXPLICIT writes for all four window fields (no COALESCE): a window that vanished (Pro has
-  // no 5h) must read 0/NULL, not freeze at its last value. reauth cleared by the caller's flag.
+  // no 5h) must read 0/NULL, not freeze at its last value. Never touches reauth_needed: only a sync
+  // or a re-add may clear it (a good usage read says nothing about the refresh token's health).
   updCodexUsage: db.prepare(`UPDATE accounts SET five_hour_pct=?, seven_day_pct=?, five_hour_reset=?, seven_day_reset=?,
-    plan=COALESCE(?,plan), usage_updated=datetime('now'), reauth_needed=CASE WHEN ? THEN reauth_needed ELSE 0 END WHERE account=?`),
+    plan=COALESCE(?,plan), usage_updated=datetime('now') WHERE account=?`),
   delAccount: db.prepare(`DELETE FROM accounts WHERE account=? RETURNING label`),
   setDisabled: db.prepare(`UPDATE accounts SET disabled=? WHERE account=?`),
   setReauth: db.prepare(`UPDATE accounts SET reauth_needed=? WHERE account=?`),
@@ -345,7 +364,8 @@ const q = {
     FROM request_log ORDER BY id DESC LIMIT ?`),
   recentAccess: db.prepare(`SELECT id,ts,account,host,ip,action,result FROM access_log ORDER BY id DESC LIMIT ?`),
   // julianday (not strftime string-parse) to dodge the sqlite-UTC trap; NULL when nothing polled yet
-  pollAge: db.prepare(`SELECT CAST((julianday('now')-julianday(MAX(usage_updated)))*86400 AS INT) AS s FROM accounts WHERE usage_updated IS NOT NULL`),
+  pollAge: db.prepare(`SELECT CAST((julianday('now')-julianday(MAX(usage_updated)))*86400 AS INT) AS s FROM accounts WHERE usage_updated IS NOT NULL AND kind='claude'`),
+  codexPollAge: db.prepare(`SELECT CAST((julianday('now')-julianday(MAX(usage_updated)))*86400 AS INT) AS s FROM accounts WHERE usage_updated IS NOT NULL AND kind='codex'`),
   statByHost: db.prepare(`SELECT host, count(*) AS requests, sum(coalesce(tokens,0)) AS tokens,
     max(ts) AS last FROM request_log GROUP BY host ORDER BY requests DESC`),
   // windowed per-second throughput: normalize host to substr before first '.' (falls back to
@@ -704,11 +724,11 @@ const server = http.createServer(async (req, res) => {
         if (mtimes.length) backup_age_s = Math.round((Date.now() - Math.max(...mtimes)) / 1000);
       }
       return json(res, 200, { ok: true, uptime_s: Math.round(process.uptime()), accounts: accts.length, selectable,
-        poll_age_s: q.pollAge.get().s, backup_age_s, parked, reauth, disabled, over_cutoff,
+        poll_age_s: q.pollAge.get().s, codex_poll_age_s: q.codexPollAge.get().s, backup_age_s, parked, reauth, disabled, over_cutoff,
         // last poller cycle health — surfaces poll degradation (all tokens erroring) that
         // usage staleness alone wouldn't flag; numbers only, safe on this unauth endpoint
         poll_ok: lastPoll.ok, poll_failed: lastPoll.failed.length,
-        codex_accounts: codex.length, codex_selectable: q.pickRanked.all('codex', CUTOFF).length, codex_reauth: codex.reduce((n, a) => n + a.reauth_needed, 0) });
+        codex_accounts: codex.length, codex_selectable: q.pickRanked.all('codex', CUTOFF).length, codex_reauth: codex.reduce((n, a) => n + a.reauth_needed, 0), codex_refresh_unknown: codex.reduce((n, a) => n + a.refresh_unknown, 0) });
     } catch (e) {
       // unauth endpoint: log the detail, return a generic 503 (don't leak DB_PATH / SQLite internals)
       console.error('[health] db check failed', String((e && e.message) || e));
@@ -817,7 +837,8 @@ const server = http.createServer(async (req, res) => {
         // sync finds the row by account_id — two rows sharing one would make that ambiguous
         const dup = q.codexByExt.get(n.account_id);
         if (dup && dup.account !== b.account) return json(res, 409, { error: 'that ChatGPT account is already vaulted as ' + dup.account });
-        q.upsertAccount.run(b.account, encrypt(JSON.stringify(n.auth)), b.label || n.email || '', 'codex', n.plan, n.exp, n.account_id);
+        if (prior && codexInflight.has(b.account)) return json(res, 409, { error: 'a refresh is in flight for ' + b.account + ' — retry in a moment' });
+        durably(() => q.upsertAccount.run(b.account, encrypt(JSON.stringify(n.auth)), b.label || n.email || '', 'codex', n.plan, n.exp, n.account_id));
         logAccess(b.account, '', reqIp(req), prior ? 'account-overwrite' : 'account-add', b.label || n.email || '');
         broadcast('accounts', q.listAccounts.all());
         return json(res, 200, { ok: true, account: b.account, kind: 'codex', email: n.email, plan: n.plan });
@@ -942,6 +963,8 @@ const server = http.createServer(async (req, res) => {
       // /api/accounts/<name>/<verb> path parsing (split('/')[3]) for every verb route.
       if (!newName || /[/\s]/.test(newName)) return json(res, 400, { error: 'account name cannot contain spaces or slashes' });
       if (newName !== name && q.getAccount.get(newName)) return json(res, 409, { error: 'account ' + newName + ' already exists' });
+      // the in-flight refresh persists its rotation by NAME — renaming under it would lose the token
+      if (newName !== name && codexInflight.has(name)) return json(res, 409, { error: 'a refresh is in flight for ' + name + ' — retry in a moment' });
       if (b.account === undefined && b.label === undefined) return json(res, 400, { error: 'nothing to update' });
       const label = b.label === undefined ? row.label : String(b.label);
       // .changes guard like the sibling mutation routes: deleted between our read and the
@@ -971,7 +994,13 @@ const server = http.createServer(async (req, res) => {
       let r;
       if (row.kind === 'codex') {
         let auth; try { auth = JSON.parse(tok); } catch { return json(res, 500, { error: 'decrypt failed' }); }
-        r = await pollCodexUsage(name, auth);
+        const cx = q.getAcct.get(name);
+        // ?force=1 = explicit operator override: lift the refresh_unknown halt, then poll normally
+        if (url.searchParams.get('force') === '1' && cx && cx.refresh_unknown) {
+          q.setRefreshUnknown.run(0, name);
+          logAccess(name, '', reqIp(req), 'codex-refresh', 'refresh_unknown cleared (force)');
+        }
+        r = await pollCodexUsage(name, auth, { noRefresh: !!(cx && (cx.disabled || cx.reauth_needed)) });
       } else r = await pollAccountUsage(name, tok);   // updates usage/reauth in the DB
       // poll failure (timeout/outage) → 502, DB untouched — a 200 {alive:true,maxed:0} here
       // would read as "healthy and empty" exactly when the client must keep-or-switch
@@ -1035,6 +1064,18 @@ const server = http.createServer(async (req, res) => {
       }
       return json(res, 200, { account: picked.account, setup_token: tok, ...usageOf(picked) });
     }
+    // keeper read: hand a box the vault's CURRENT auth.json for its account so a long-lived
+    // codex reloads the rotated token instead of spending a dead one. Never picks, refreshes or parks.
+    if (p === '/api/codex/auth' && req.method === 'GET') {
+      const host = url.searchParams.get('host') || '', ip = reqIp(req);
+      const accountId = url.searchParams.get('account_id') || '';
+      if (!accountId) return json(res, 400, { error: 'account_id required' });
+      const row = q.codexKeep.get(accountId);
+      if (!row) { logAccess(null, host, ip, 'codex-keep', '404'); return json(res, 404, { error: 'no codex account for that account_id' }); }
+      let auth; try { auth = JSON.parse(decrypt(row.token_enc)); } catch { return json(res, 500, { error: 'decrypt failed' }); }
+      logAccess(row.account, host, ip, 'codex-keep', 'ok');
+      return json(res, 200, { account: row.account, kind: 'codex', auth_json: auth, last_refresh: auth.last_refresh, token_exp: row.token_exp, reauth_needed: row.reauth_needed, disabled: row.disabled });
+    }
     // sync a client's own Codex login back into the vault: when the desktop app (or a
     // `codex login`) rotated the family under us, our stored refresh token is dead — accept
     // the newer one. Applied only if its refresh_token differs AND last_refresh is newer.
@@ -1056,7 +1097,7 @@ const server = http.createServer(async (req, res) => {
       }
       // a refresh in flight will persist its own rotation — applying under it would be clobbered or clobber it
       if (codexInflight.has(row.account)) return reply(false, 'refresh in flight');
-      q.syncCodexAuth.run(encrypt(JSON.stringify(n.auth)), n.exp, n.plan, row.account);
+      durably(() => q.syncCodexAuth.run(encrypt(JSON.stringify(n.auth)), n.exp, n.plan, row.account));
       broadcast('accounts', q.listAccounts.all());
       return reply(true, 'applied');
     }
@@ -1477,7 +1518,7 @@ server.on('upgrade', (req, socket, head) => {
 // Read each account's REAL rate-limit headroom straight from Anthropic and
 // update the vault. No proxy: this is aigate polling on its own tokens so
 // selection/skip stays accurate and auto-recovers after a reset window.
-const allTokensStmt = db.prepare(`SELECT account, token_enc, kind FROM accounts WHERE token_enc IS NOT NULL`);
+const allTokensStmt = db.prepare(`SELECT account, token_enc, kind, disabled, reauth_needed FROM accounts WHERE token_enc IS NOT NULL`);
 async function pollAccountUsage(account, token) {
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1531,11 +1572,37 @@ async function pollAccountUsage(account, token) {
 // tokens ROTATE with reuse detection, so exactly ONE caller may spend a given refresh token:
 // a per-account in-flight promise makes concurrent callers share one token call.
 const codexInflight = new Map();   // account -> Promise<result>
-// permanent = the refresh token is spent/revoked/expired and no retry will help; everything
-// else (network, 5xx, unknown 4xx) is transient and leaves state untouched.
+// permanent = the refresh token is spent/revoked/expired and no retry will help.
 const CODEX_DEAD_RX = /invalid_grant|refresh_token_reused|refresh_token_expired|refresh_token_invalidated|already (?:been )?used|expired|revoked/i;
+// Errors that provably happened BEFORE the request reached the server: nothing was spent, so
+// the same refresh token may be retried later. Anything else (response timeout, reset after
+// send, 5xx, garbage 200) may have consumed the single-use token → refresh_unknown, halt.
+const CODEX_PRESEND_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT']);
+function codexPreSend(e) {
+  const c = e && e.cause;
+  if (!c) return false;
+  if (CODEX_PRESEND_CODES.has(c.code)) return true;
+  return Array.isArray(c.errors) && c.errors.length > 0 && c.errors.every((x) => CODEX_PRESEND_CODES.has(x && x.code));
+}
 const nowS = () => Math.floor(Date.now() / 1000);
 const readCodexAuth = (row) => { try { const a = JSON.parse(decrypt(row.token_enc)); return a && a.tokens ? a : null; } catch { return null; } };
+
+// edge-triggered: alert only on the 0→1 transition
+function flagCodexReauth(account, auditResult, alertText) {
+  const prior = q.getAcct.get(account);
+  q.setReauth.run(1, account);
+  logAccess(account, '', '', 'codex-refresh', auditResult);
+  if (prior && !prior.reauth_needed) alert(alertText, { account });
+  broadcast('accounts', q.listAccounts.all());
+}
+function markRefreshUnknown(account, why) {
+  const prior = q.getAcct.get(account);
+  q.setRefreshUnknown.run(1, account);
+  logAccess(account, '', '', 'codex-refresh', 'unknown — auto-refresh halted');
+  console.error('[codex] refresh outcome unknown for', account, '—', why);
+  if (!prior || !prior.refresh_unknown) alert(`aigate: codex account ${account} refresh outcome unknown (${why}) — auto-refresh halted until a sync, re-add, or forced refresh`, { account });
+  broadcast('accounts', q.listAccounts.all());
+}
 
 // staleAccess: the access token the caller just got a 401 on — if the stored one already
 // differs, someone else refreshed in the meantime and re-spending the family would be waste.
@@ -1550,6 +1617,9 @@ function refreshCodex(account, { staleAccess } = {}) {
 async function doRefreshCodex(account, staleAccess) {
   const row = q.getAcct.get(account);
   if (!row || row.kind !== 'codex' || !row.token_enc) return { error: 'unknown codex account' };
+  // dead refresh token / unknown outcome: spending it again can only revoke the whole family
+  if (row.reauth_needed) return { error: 'reauth needed', reauth: true };
+  if (row.refresh_unknown) return { error: 'refresh_unknown', unknown: true };
   const auth = readCodexAuth(row);
   if (!auth) return { error: 'decrypt' };
   if (staleAccess && auth.tokens.access_token !== staleAccess) return { ok: true, auth, exp: row.token_exp, reused: true };
@@ -1559,27 +1629,30 @@ async function doRefreshCodex(account, staleAccess) {
   try {
     r = await fetch(CODEX.tokenUrl(), {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json', 'user-agent': CODEX.ua() },
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
       // body shape verified against openai/codex codex-rs/login (oauth/client.rs refresh() with
       // TokenEncoding::Json: grant_type + client_id + refresh_token, JSON, no scope)
       body: JSON.stringify({ client_id: CODEX.clientId(), grant_type: 'refresh_token', refresh_token: auth.tokens.refresh_token }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(CODEX.tokenTimeoutMs()),
       redirect: 'error',   // a live refresh token rides this body — never follow a 30x to another host
     });
     text = await r.text();
-  } catch (e) { return { error: String((e && e.message) || e) }; }   // network: state untouched
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    if (codexPreSend(e)) return { error: msg, transient: true };   // never sent: state untouched, retry later
+    markRefreshUnknown(account, msg);
+    return { error: msg, unknown: true };
+  }
   if (!r.ok) {
     if (r.status === 401 || (r.status === 400 && CODEX_DEAD_RX.test(text))) {
-      q.setReauth.run(1, account);
-      logAccess(account, '', '', 'codex-refresh', 'invalid_grant');
-      alert(`aigate: codex account ${account} refresh token is dead — re-login needed`, { account });
-      broadcast('accounts', q.listAccounts.all());
+      flagCodexReauth(account, 'invalid_grant', `aigate: codex account ${account} refresh token is dead — re-login needed`);
       return { error: 'invalid_grant', reauth: true };
     }
-    return { error: 'token endpoint ' + r.status };
+    markRefreshUnknown(account, 'token endpoint ' + r.status);
+    return { error: 'token endpoint ' + r.status, unknown: true };
   }
-  let j; try { j = JSON.parse(text); } catch { return { error: 'token endpoint returned non-JSON' }; }
-  if (!j || typeof j.access_token !== 'string' || !j.access_token) return { error: 'token endpoint returned no access_token' };
+  let j; try { j = JSON.parse(text); } catch { markRefreshUnknown(account, 'non-JSON 200'); return { error: 'token endpoint returned non-JSON', unknown: true }; }
+  if (!j || typeof j.access_token !== 'string' || !j.access_token) { markRefreshUnknown(account, '200 without access_token'); return { error: 'token endpoint returned no access_token', unknown: true }; }
   const idTok = typeof j.id_token === 'string' && j.id_token ? j.id_token : auth.tokens.id_token;
   const next = { auth_mode: 'chatgpt', OPENAI_API_KEY: null,
     tokens: { id_token: idTok, access_token: j.access_token, refresh_token: (typeof j.refresh_token === 'string' && j.refresh_token) || auth.tokens.refresh_token, account_id: auth.tokens.account_id },
@@ -1587,14 +1660,20 @@ async function doRefreshCodex(account, staleAccess) {
   const acc = decodeJwtPayload(j.access_token);
   const exp = acc && Number.isFinite(acc.exp) ? Math.trunc(acc.exp) : nowS() + 10 * 86400;
   const plan = ((decodeJwtPayload(idTok) || {})['https://api.openai.com/auth'] || {}).chatgpt_plan_type || null;
-  // persisted synchronously BEFORE the promise resolves: the rotated refresh token exists
-  // nowhere else, and losing it to a crash between response and write would orphan the account
-  q.updCodexAuth.run(encrypt(JSON.stringify(next)), exp, plan, account);
+  // persisted synchronously (and durably) BEFORE the promise resolves: the rotated refresh token
+  // exists nowhere else, and losing it to a crash between response and write would orphan the account
+  let changes = 0;
+  try { changes = durably(() => q.updCodexAuth.run(encrypt(JSON.stringify(next)), exp, plan, account)).changes; }
+  catch (e) { markRefreshUnknown(account, 'persist failed: ' + String((e && e.message) || e)); return { error: 'persist failed', unknown: true }; }
+  if (changes === 0) { markRefreshUnknown(account, 'row vanished before the rotated token could be saved'); return { error: 'persist affected 0 rows', unknown: true }; }
   return { ok: true, auth: next, exp };
 }
 // The credential a caller may use right now: refresh only when the access token is inside
 // the ahead-window; a failed EARLY refresh never withholds a token that's still valid.
 async function codexFresh(account) {
+  // never hand out a pre-rotation token while a refresh for this account is running
+  const inflight = codexInflight.get(account);
+  if (inflight) await inflight.catch(() => {});
   const row = q.getAcct.get(account);
   if (!row || row.kind !== 'codex' || !row.token_enc) return { error: 'unknown codex account' };
   const auth = readCodexAuth(row);
@@ -1614,26 +1693,27 @@ async function fetchCodexUsage(auth) {
   });
   return { status: r.status, text: await r.text() };
 }
-async function pollCodexUsage(account, auth) {
+// noRefresh: disabled / reauth rows are read-only — a usage read is fine, the token endpoint is not.
+async function pollCodexUsage(account, auth, { noRefresh = false } = {}) {
   try {
-    // refreshDead: a refresh in THIS poll came back invalid_grant → the access token may still
-    // answer, but the credential is not healthy, so a good usage read must not clear reauth.
-    let refreshDead = false;
+    // a refresh in flight is about to replace the credential the caller read — wait and re-read
+    const inflight = codexInflight.get(account);
+    if (inflight) { await inflight.catch(() => {}); const fresh = q.getAcct.get(account); const a2 = fresh && readCodexAuth(fresh); if (a2) auth = a2; }
     const cur = q.getAcct.get(account);
-    if (cur && cur.token_exp != null && cur.token_exp - nowS() < CODEX.refreshAheadS()) {
+    if (!noRefresh && cur && cur.token_exp != null && cur.token_exp - nowS() < CODEX.refreshAheadS()) {
       const r = await refreshCodex(account);
-      if (r.ok) auth = r.auth; else if (r.reauth) refreshDead = true;
+      if (r.ok) auth = r.auth;
     }
     let u = await fetchCodexUsage(auth);
     if (u.status === 401) {
+      if (noRefresh) return { account, status: 401, alive: false, note: 'access token rejected; refresh skipped (disabled or needs reauth)' };
       const r = await refreshCodex(account, { staleAccess: auth.tokens.access_token });
       if (r.reauth) return { account, status: 401, alive: false, note: 'refresh token dead — needs reauth' };
       if (!r.ok) return { account, error: r.error };
       auth = r.auth;
       u = await fetchCodexUsage(auth);
       if (u.status === 401) {
-        q.setReauth.run(1, account);
-        logAccess(account, '', '', 'codex-refresh', 'usage 401 after refresh');
+        flagCodexReauth(account, 'usage 401 after refresh', `aigate: codex account ${account} auth failed after refresh — re-login needed`);
         return { account, status: 401, alive: false, note: 'auth failed after refresh — needs reauth' };
       }
     }
@@ -1655,8 +1735,9 @@ async function pollCodexUsage(account, auth) {
     }
     // limit_reached → the worst window IS at its limit whatever percent it reported
     if (rl.limit_reached === true) pct[pct.five > pct.seven ? 'five' : 'seven'] = 100;
-    q.updCodexUsage.run(pct.five, pct.seven, reset.five, reset.seven, typeof j.plan_type === 'string' && j.plan_type ? j.plan_type : null, refreshDead ? 1 : 0, account);
-    return { account, five: pct.five, seven: pct.seven, status: 200, alive: !refreshDead };
+    q.updCodexUsage.run(pct.five, pct.seven, reset.five, reset.seven, typeof j.plan_type === 'string' && j.plan_type ? j.plan_type : null, account);
+    const after = q.getAcct.get(account);
+    return { account, five: pct.five, seven: pct.seven, status: 200, alive: !(after && after.reauth_needed) };
   } catch (e) {
     return { account, error: String((e && e.message) || e) };
   }
@@ -1672,18 +1753,21 @@ async function pollUsage() {
       let tok;
       // no exit: partial failure stays partial, and a restart won't fix a key mismatch
       try { tok = decrypt(row.token_enc); }
-      catch (e) { console.error('[poll] decrypt failed for', row.account, '— wrong AIGATE_ENCRYPTION_KEY or corrupt row:', String(e && e.message || e)); return { account: row.account, error: 'decrypt' }; }
+      catch (e) { console.error('[poll] decrypt failed for', row.account, '— wrong AIGATE_ENCRYPTION_KEY or corrupt row:', String(e && e.message || e)); return { account: row.account, kind: row.kind, error: 'decrypt' }; }
       let res;
       if (row.kind === 'codex') {
         let auth; try { auth = JSON.parse(tok); } catch { return { account: row.account, error: 'decrypt' }; }
-        res = await pollCodexUsage(row.account, auth);
+        res = await pollCodexUsage(row.account, auth, { noRefresh: !!(row.disabled || row.reauth_needed) });
       } else res = await pollAccountUsage(row.account, tok);
       console.log('[poll]', new Date().toISOString(), JSON.stringify(res));
-      return res;
+      return { ...res, kind: row.kind };
     }));
     // record cycle health so /health (and thus fleet autoheal/dashboard) can see poller degradation
-    const failed = results.filter((r) => r && r.error).map((r) => ({ account: r.account, error: r.error }));
-    lastPoll = { ts: new Date().toISOString(), ok: results.length - failed.length, failed };
+    // claude rows only: ok/failed predate codex and fleet autoheal reads them via /health
+    const cl = results.filter((r) => r && r.kind !== 'codex');
+    const failed = cl.filter((r) => r.error).map((r) => ({ account: r.account, error: r.error }));
+    const cx = results.filter((r) => r && r.kind === 'codex');
+    lastPoll = { ts: new Date().toISOString(), ok: cl.length - failed.length, failed, codex_ok: cx.filter((r) => !r.error).length, codex_failed: cx.filter((r) => r.error).length };
     // unconditional: a 401'd token returns no rate-limit headers (five==null) but still
     // setReauth(1)'d the DB — a guarded broadcast left the dashboard showing a dying account green.
     broadcast('accounts', q.listAccounts.all());

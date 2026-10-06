@@ -27,7 +27,6 @@ delete process.env.AIGATE_CODEX_REFRESH_AHEAD_S;
 
 const { server, db } = await import('../src/server.js');
 const vault = makeVault(Buffer.from(ENC_KEY, 'hex'));
-const BACKUPS = join(tmpdir(), 'backups');
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
 
@@ -68,7 +67,7 @@ const upstream = http.createServer((req, res) => {
       let j = null; try { j = JSON.parse(text); } catch { /* keep null */ }
       tokenHits.push({ headers: req.headers, body: j });
       await new Promise((r) => setTimeout(r, 40));   // widen the window so concurrent callers really overlap
-      return reply(tokenHandler(j));
+      return reply(await tokenHandler(j));
     }
     res.writeHead(404); res.end();
   });
@@ -87,7 +86,6 @@ after(() => {
   upstream.close();
   try { db.close(); } catch { /* already closed */ }
   for (const f of [DB, DB + '-wal', DB + '-shm']) { try { rmSync(f); } catch { /* gone */ } }
-  rmSync(BACKUPS, { recursive: true, force: true });
 });
 beforeEach(() => {
   db.exec(`DELETE FROM accounts; DELETE FROM access_log`);
@@ -185,7 +183,7 @@ test('ranking by worst window; ?exclude walks to the next; Pro weekly-only write
   assert.equal(j.account, 'hi');
   // usage headers the upstream saw
   assert.equal(usageHits[0].headers['chatgpt-account-id'], hi.tokens.account_id);
-  assert.equal(usageHits[0].headers['user-agent'], 'codex_cli_rs/0.160.1');
+  assert.match(usageHits[0].headers['user-agent'], /^aigate\/\S+ \(codex-usage\)$/);   // honest UA, no codex impersonation
 });
 
 test('a window that disappears is written back as 0, not frozen', async () => {
@@ -265,15 +263,76 @@ test('invalid_grant → reauth_needed, audited codex-refresh, select 503 afterwa
   assert.equal((await select('?kind=codex')).status, 503);
 });
 
-test('transient token-endpoint failure (5xx) leaves state alone and does not flag reauth', async () => {
+test('5xx from the token endpoint AFTER the send → refresh_unknown, audited once, no second token call', async () => {
   const a = mkAuth(); await add('flaky', a);
   tokenHandler = () => ({ status: 503, body: 'upstream down' });
   usageFor = () => ({ status: 401, body: {} });
   const r = await poll('flaky');
   assert.ok(r.error);
   assert.equal(row('flaky').reauth_needed, 0);
+  assert.equal(row('flaky').refresh_unknown, 1);
   assert.equal(stored('flaky').tokens.refresh_token, a.tokens.refresh_token);
-  assert.equal(audit('codex-refresh').length, 0);
+  assert.deepEqual(audit('codex-refresh'), [{ account: 'flaky', result: 'unknown — auto-refresh halted' }]);
+  assert.equal(tokenHits.length, 1);
+  await poll('flaky'); await select('?kind=codex');
+  assert.equal(tokenHits.length, 1);                              // halted: the maybe-spent token is not re-spent
+  assert.equal(audit('codex-refresh').length, 1);
+});
+
+test('abort-after-send (upstream accepts then never answers) → refresh_unknown, no retry; operator force clears it', async () => {
+  process.env.AIGATE_CODEX_TOKEN_TIMEOUT_MS = '300';
+  try {
+    const a = mkAuth({ expIn: 3600 }); await add('hang', a);
+    tokenHandler = () => new Promise(() => {});                    // never replies
+    const r = await select('?kind=codex');
+    assert.equal(r.status, 200);                                   // still-valid access token is handed out
+    assert.equal((await r.json()).auth_json.tokens.access_token, a.tokens.access_token);
+    assert.equal(row('hang').refresh_unknown, 1);
+    assert.equal(tokenHits.length, 1);
+    await select('?kind=codex'); await poll('hang');
+    assert.equal(tokenHits.length, 1);
+    const h = await (await fetch(base + '/health')).json();
+    assert.equal(h.codex_refresh_unknown, 1);
+    tokenHandler = defaultTokenHandler;
+    await fetch(`${base}/api/accounts/hang/refresh?force=1`, { method: 'POST', headers: H });
+    assert.equal(row('hang').refresh_unknown, 0);
+    assert.equal(tokenHits.length, 2);                             // near expiry → the forced poll refreshed
+  } finally { delete process.env.AIGATE_CODEX_TOKEN_TIMEOUT_MS; }
+});
+
+test('connection refused (provably before send) → no flag, retried later', async () => {
+  const a = mkAuth({ expIn: 3600 }); await add('refused', a);
+  const saved = process.env.AIGATE_CODEX_TOKEN_URL;
+  const tmp = http.createServer(); await new Promise((r) => tmp.listen(0, '127.0.0.1', r));
+  const deadPort = tmp.address().port; await new Promise((r) => tmp.close(r));   // a port that refuses
+  process.env.AIGATE_CODEX_TOKEN_URL = `http://127.0.0.1:${deadPort}/token`;
+  try {
+    const r = await select('?kind=codex');
+    assert.equal(r.status, 200);
+    assert.equal(row('refused').refresh_unknown, 0);
+    assert.equal(audit('codex-refresh').length, 0);
+  } finally { process.env.AIGATE_CODEX_TOKEN_URL = saved; }
+  await select('?kind=codex');
+  assert.equal(tokenHits.length, 1);                              // next attempt reached the restored upstream
+  assert.equal(stored('refused').tokens.refresh_token, 'rt-rotated-1');
+});
+
+test('unparseable 200 → refresh_unknown', async () => {
+  await add('junk', mkAuth({ expIn: 3600 }));
+  tokenHandler = () => ({ status: 200, body: 'not json' });
+  await select('?kind=codex');
+  assert.equal(row('junk').refresh_unknown, 1);
+});
+
+test('refresh_unknown clears on sync apply and on re-add', async () => {
+  const a = mkAuth({ expIn: 3600, lastRefresh: iso(now() - 100) }); await add('clr', a);
+  db.prepare(`UPDATE accounts SET refresh_unknown=1 WHERE account='clr'`).run();
+  const newer = mkAuth({ acct: a.tokens.account_id, refresh: 'rt-newer', lastRefresh: iso(now()) });
+  await fetch(base + '/api/codex/sync', { method: 'POST', headers: H, body: JSON.stringify({ auth_json: newer }) });
+  assert.equal(row('clr').refresh_unknown, 0);
+  db.prepare(`UPDATE accounts SET refresh_unknown=1 WHERE account='clr'`).run();
+  await add('clr', newer);
+  assert.equal(row('clr').refresh_unknown, 0);
 });
 
 test('proactive refresh on select when inside the ahead-window; a far-off exp is NOT refreshed', async () => {
@@ -390,4 +449,99 @@ test('poison codex ciphertext is parked and the next account is served', async (
   const j = await (await select('?kind=codex')).json();
   assert.equal(j.account, 'good');
   assert.ok(row('poison').parked_until);
+});
+
+// ---- disabled / reauth rows are never refreshed ---------------------------------
+test('poller: disabled and reauth rows make no token call; usage polls cannot clear reauth; sync does', async () => {
+  await add('dis', mkAuth({ expIn: 600 })); await add('rea', mkAuth({ expIn: 600 }));
+  db.prepare(`UPDATE accounts SET disabled=1 WHERE account='dis'`).run();
+  db.prepare(`UPDATE accounts SET reauth_needed=1 WHERE account='rea'`).run();
+  usageFor = () => ({ status: 200, body: usage(win(3, 604800)) });
+  for (const n of ['dis', 'rea']) { await poll(n); await poll(n); }
+  assert.equal(tokenHits.length, 0);
+  assert.equal(row('rea').reauth_needed, 1);                      // even a good usage read never clears it
+  usageFor = () => ({ status: 401, body: {} });
+  await poll('dis'); await poll('rea');
+  assert.equal(tokenHits.length, 0);
+  assert.equal(row('rea').reauth_needed, 1);
+  const cur = stored('rea');
+  await fetch(base + '/api/codex/sync', { method: 'POST', headers: H, body: JSON.stringify({ auth_json: mkAuth({ acct: cur.tokens.account_id, expIn: 600, refresh: 'rt-x', lastRefresh: iso(now() + 5) }) }) });
+  assert.equal(row('rea').reauth_needed, 0);
+});
+
+test('invalid_grant is spent once: later polls of the reauth row never touch the token endpoint again', async () => {
+  await add('edge', mkAuth());
+  tokenHandler = () => ({ status: 400, body: { error: 'invalid_grant' } });
+  usageFor = () => ({ status: 401, body: {} });
+  await poll('edge'); await poll('edge'); await poll('edge');
+  assert.equal(tokenHits.length, 1);
+  assert.equal(audit('codex-refresh').length, 1);                 // audited (and alerted) on the 0→1 edge only
+});
+
+// ---- races ---------------------------------------------------------------------
+test('select awaits an in-flight refresh (never the pre-rotation token); rename/overwrite 409 meanwhile', async () => {
+  const a = mkAuth({ expIn: 600 }); await add('race', a);
+  usageFor = (tok) => tok === a.tokens.access_token ? { status: 401, body: {} } : { status: 200, body: usage(win(3, 604800)) };
+  const pollP = poll('race');                                     // starts a refresh (40ms upstream delay)
+  await new Promise((r) => setTimeout(r, 15));
+  const rn = await fetch(base + '/api/accounts/race', { method: 'PATCH', headers: H, body: JSON.stringify({ account: 'race2' }) });
+  assert.equal(rn.status, 409);
+  assert.equal((await add('race', mkAuth({ acct: a.tokens.account_id }))).status, 409);
+  const j = await (await select('?kind=codex')).json();
+  assert.notEqual(j.auth_json.tokens.access_token, a.tokens.access_token);
+  assert.equal(j.auth_json.tokens.refresh_token, 'rt-rotated-1');
+  await pollP;
+  assert.equal(tokenHits.length, 1);
+});
+
+test('rotated token whose row vanished mid-refresh (0 rows changed) is flagged, not silently lost', async () => {
+  await add('gone', mkAuth({ expIn: 600 }));
+  tokenHandler = (b) => { db.exec(`DELETE FROM accounts WHERE account='gone'`); return defaultTokenHandler(b); };
+  await select('?kind=codex');
+  assert.equal(audit('codex-refresh').some((x) => x.result.startsWith('unknown')), true);
+});
+
+// ---- GET /api/codex/auth (keeper) ------------------------------------------------
+test('GET /api/codex/auth: 200 with the vault auth.json, never refreshes even near expiry, audited codex-keep without secrets', async () => {
+  const a = mkAuth({ expIn: 600 }); await add('keep', a);
+  const r = await fetch(`${base}/api/codex/auth?account_id=${a.tokens.account_id}&host=mbp`, { headers: H });
+  assert.equal(r.status, 200);
+  const j = await r.json();
+  assert.equal(j.account, 'keep'); assert.equal(j.kind, 'codex');
+  assert.deepEqual(j.auth_json, stored('keep'));
+  assert.equal(j.last_refresh, a.last_refresh);
+  assert.equal(j.token_exp, row('keep').token_exp);
+  assert.equal(j.reauth_needed, 0); assert.equal(j.disabled, 0);
+  assert.equal(tokenHits.length, 0);                              // near expiry, still no token call
+  assert.deepEqual(audit('codex-keep'), [{ account: 'keep', result: 'ok' }]);
+  const dump = JSON.stringify(db.prepare('SELECT * FROM access_log').all());
+  assert.ok(!dump.includes(a.tokens.refresh_token) && !dump.includes(a.tokens.access_token));
+  db.prepare(`UPDATE accounts SET reauth_needed=1, disabled=1 WHERE account='keep'`).run();
+  const j2 = await (await fetch(`${base}/api/codex/auth?account_id=${a.tokens.account_id}`, { headers: H })).json();
+  assert.equal(j2.reauth_needed, 1); assert.equal(j2.disabled, 1);   // reports, never parks or picks
+  assert.equal(tokenHits.length, 0);
+  assert.equal(row('keep').parked_until, null);
+});
+
+test('GET /api/codex/auth: 404 for unknown account_id (audited), 401 without bearer', async () => {
+  const r = await fetch(`${base}/api/codex/auth?account_id=nope`, { headers: H });
+  assert.equal(r.status, 404);
+  assert.deepEqual(audit('codex-keep'), [{ account: null, result: '404' }]);
+  assert.equal((await fetch(`${base}/api/codex/auth?account_id=nope`)).status, 401);
+});
+
+// ---- /health separation + durability + UA ---------------------------------------
+test('/health: poll_age_s ignores codex rows; codex_poll_age_s covers them', async () => {
+  await addClaude('hcl'); await add('hcx', mkAuth());
+  db.prepare(`UPDATE accounts SET usage_updated=datetime('now','-1 hour') WHERE account='hcl'`).run();
+  db.prepare(`UPDATE accounts SET usage_updated=datetime('now') WHERE account='hcx'`).run();
+  const h = await (await fetch(base + '/health')).json();
+  assert.ok(h.poll_age_s >= 3500);
+  assert.ok(h.codex_poll_age_s <= 5);
+});
+
+test('credential writes restore synchronous=NORMAL afterwards', async () => {
+  await add('dur', mkAuth({ expIn: 600 }));
+  await select('?kind=codex');
+  assert.equal(db.prepare('PRAGMA synchronous').get().synchronous, 1);   // 1 = NORMAL
 });
