@@ -14,14 +14,14 @@
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync } from 'node:fs';
-import { dirname, join, extname } from 'node:path';
+import { chmodSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs';
+import { basename, dirname, join, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { WebSocketServer } from 'ws';
-import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot } from './lib.js';
+import { makeVault, rtHash, ledgerVerdict, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
 
 // ---- config -------------------------------------------------------------
@@ -95,7 +95,9 @@ const CODEX = {
   tokenTimeoutMs: () => envNum('AIGATE_CODEX_TOKEN_TIMEOUT_MS', 60000),
   // refresh LATE: every refresh rotates the token family and orphans long-lived holders
   // (the Codex desktop app), so only refresh when the access token is within this window of exp.
-  refreshAheadS: () => envNum('AIGATE_CODEX_REFRESH_AHEAD_S', 172800),   // 2 days
+  // 4 days: every token aigate hands out then carries >=4 days, which is how long a holder's
+  // keeper has to adopt a rotation before the holder would refresh on its own and revoke the family.
+  refreshAheadS: () => envNum('AIGATE_CODEX_REFRESH_AHEAD_S', 345600),   // 4 days
 };
 const clampLimit = (v) => { if (v == null || v === '') return 100; const n = Number(v); return Number.isFinite(n) ? Math.max(1, Math.min(Math.trunc(n), 1000)) : 100; };
 
@@ -839,6 +841,7 @@ const server = http.createServer(async (req, res) => {
         if (dup && dup.account !== b.account) return json(res, 409, { error: 'that ChatGPT account is already vaulted as ' + dup.account });
         if (prior && codexInflight.has(b.account)) return json(res, 409, { error: 'a refresh is in flight for ' + b.account + ' — retry in a moment' });
         durably(() => q.upsertAccount.run(b.account, encrypt(JSON.stringify(n.auth)), b.label || n.email || '', 'codex', n.plan, n.exp, n.account_id));
+        ledgerNote(n.auth);
         logAccess(b.account, '', reqIp(req), prior ? 'account-overwrite' : 'account-add', b.label || n.email || '');
         broadcast('accounts', q.listAccounts.all());
         return json(res, 200, { ok: true, account: b.account, kind: 'codex', email: n.email, plan: n.plan });
@@ -944,6 +947,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (p.startsWith('/api/accounts/') && req.method === 'DELETE') {
       const name = decodeURIComponent(p.split('/').pop());
+      if (codexInflight.has(name)) return json(res, 409, { error: 'a refresh is in flight for ' + name + ' — retry in a moment' });
       const dead = q.delAccount.get(name);
       if (!dead) return json(res, 404, { error: 'unknown account' });
       logAccess(name, '', reqIp(req), 'account-delete', dead.label);
@@ -997,7 +1001,7 @@ const server = http.createServer(async (req, res) => {
         const cx = q.getAcct.get(name);
         // ?force=1 = explicit operator override: lift the refresh_unknown halt, then poll normally
         if (url.searchParams.get('force') === '1' && cx && cx.refresh_unknown) {
-          q.setRefreshUnknown.run(0, name);
+          durably(() => q.setRefreshUnknown.run(0, name));
           logAccess(name, '', reqIp(req), 'codex-refresh', 'refresh_unknown cleared (force)');
         }
         r = await pollCodexUsage(name, auth, { noRefresh: !!(cx && (cx.disabled || cx.reauth_needed)) });
@@ -1098,6 +1102,7 @@ const server = http.createServer(async (req, res) => {
       // a refresh in flight will persist its own rotation — applying under it would be clobbered or clobber it
       if (codexInflight.has(row.account)) return reply(false, 'refresh in flight');
       durably(() => q.syncCodexAuth.run(encrypt(JSON.stringify(n.auth)), n.exp, n.plan, row.account));
+      ledgerNote(n.auth);
       broadcast('accounts', q.listAccounts.all());
       return reply(true, 'applied');
     }
@@ -1577,7 +1582,10 @@ const CODEX_DEAD_RX = /invalid_grant|refresh_token_reused|refresh_token_expired|
 // Errors that provably happened BEFORE the request reached the server: nothing was spent, so
 // the same refresh token may be retried later. Anything else (response timeout, reset after
 // send, 5xx, garbage 200) may have consumed the single-use token → refresh_unknown, halt.
-const CODEX_PRESEND_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT']);
+// ENETUNREACH/EHOSTUNREACH fail at connect(2): no route, so no byte of the body left this box.
+// ECONNRESET is deliberately NOT here: it can arrive after the body was written (the server read
+// it, spent the token, then dropped the socket), and undici's error doesn't say which — unknown.
+const CODEX_PRESEND_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'ENETUNREACH', 'EHOSTUNREACH']);
 function codexPreSend(e) {
   const c = e && e.cause;
   if (!c) return false;
@@ -1587,17 +1595,75 @@ function codexPreSend(e) {
 const nowS = () => Math.floor(Date.now() / 1000);
 const readCodexAuth = (row) => { try { const a = JSON.parse(decrypt(row.token_enc)); return a && a.tokens ? a : null; } catch { return null; } };
 
+// ---- refresh ledger: survives a DB restore ---------------------------------
+// ext_id -> {last_refresh, rt_hash}. Lives beside (never inside) data/backups, so a restored
+// backup can't bring it back in time. Written AFTER each durable credential write; at boot a row
+// that is behind it means the DB was restored and its refresh token may already be spent.
+// Prod DB is data/aigate.db → data/codex-ledger.json; any other DB filename (tests, scratch
+// instances) gets its own `<db>.codex-ledger.json` so instances sharing a directory never cross.
+const LEDGER_PATH = process.env.AIGATE_CODEX_LEDGER
+  || (basename(DB_PATH) === 'aigate.db' ? join(dirname(DB_PATH), 'codex-ledger.json') : DB_PATH + '.codex-ledger.json');
+let ledger = {};
+function ledgerRead() {
+  try { const j = JSON.parse(readFileSync(LEDGER_PATH, 'utf8')); return j && typeof j === 'object' && !Array.isArray(j) ? j : null; }
+  catch (e) { return e && e.code === 'ENOENT' ? { missing: true } : null; }
+}
+function ledgerWrite() {
+  const tmp = `${LEDGER_PATH}.${process.pid}.tmp`;
+  const fd = openSync(tmp, 'w', 0o600);
+  try { writeSync(fd, JSON.stringify(ledger)); fsyncSync(fd); } finally { closeSync(fd); }
+  renameSync(tmp, LEDGER_PATH);
+  try { chmodSync(LEDGER_PATH, 0o600); } catch { /* best effort */ }
+}
+function ledgerNote(auth) {
+  const t = auth && auth.tokens;
+  if (!t || !t.account_id || !t.refresh_token) return;
+  ledger[t.account_id] = { last_refresh: auth.last_refresh, rt_hash: rtHash(t.refresh_token) };
+  try { ledgerWrite(); } catch (e) { console.error('[ledger] write failed (credential IS durable in the DB)', String((e && e.message) || e)); }
+}
+// Run once at module load, before any poll can spend a refresh token.
+function codexRestoreGuard() {
+  const rows = db.prepare(`SELECT account,token_enc,ext_id FROM accounts WHERE kind='codex'`).all();
+  const read = ledgerRead();
+  if (!read || read.missing) {
+    console.error(`[ledger] ${read ? 'no ledger yet' : 'ledger unreadable'} at ${LEDGER_PATH} — restore guard skipped, seeding from the DB`);
+    ledger = {};
+    for (const r of rows) { const a = readCodexAuth(r); if (a) ledger[a.tokens.account_id] = { last_refresh: a.last_refresh, rt_hash: rtHash(a.tokens.refresh_token) }; }
+    if (rows.length) { try { ledgerWrite(); } catch (e) { console.error('[ledger] seed write failed', String((e && e.message) || e)); } }
+    return [];
+  }
+  ledger = read;
+  const halted = []; let dirty = false;
+  for (const r of rows) {
+    const a = readCodexAuth(r); if (!a) continue;
+    const ext = r.ext_id || a.tokens.account_id;
+    const v = ledgerVerdict(ledger[ext], a);
+    if (v === 'stale') {
+      durably(() => q.setRefreshUnknown.run(1, r.account));
+      logAccess(r.account, '', '', 'codex-restore-guard', 'DB behind the refresh ledger — auto-refresh halted');
+      halted.push(r.account);
+    } else if (v === 'unknown' || v === 'ahead') { ledger[ext] = { last_refresh: a.last_refresh, rt_hash: rtHash(a.tokens.refresh_token) }; dirty = true; }
+  }
+  if (dirty) { try { ledgerWrite(); } catch { /* next credential write retries */ } }
+  if (halted.length) {
+    console.error('[ledger] vault restored from backup — codex auto-refresh halted for', halted.join(', '));
+    alert(`aigate: vault restored from backup — codex auto-refresh halted for ${halted.length} account${halted.length === 1 ? '' : 's'} (${halted.join(', ')}). Push fresh tokens with \`ai codex adopt\` or POST /api/accounts/:name/refresh?force=1 after verifying`, { accounts: halted });
+  }
+  return halted;
+}
+codexRestoreGuard();
+
 // edge-triggered: alert only on the 0→1 transition
 function flagCodexReauth(account, auditResult, alertText) {
   const prior = q.getAcct.get(account);
-  q.setReauth.run(1, account);
+  durably(() => q.setReauth.run(1, account));
   logAccess(account, '', '', 'codex-refresh', auditResult);
   if (prior && !prior.reauth_needed) alert(alertText, { account });
   broadcast('accounts', q.listAccounts.all());
 }
 function markRefreshUnknown(account, why) {
   const prior = q.getAcct.get(account);
-  q.setRefreshUnknown.run(1, account);
+  durably(() => q.setRefreshUnknown.run(1, account));
   logAccess(account, '', '', 'codex-refresh', 'unknown — auto-refresh halted');
   console.error('[codex] refresh outcome unknown for', account, '—', why);
   if (!prior || !prior.refresh_unknown) alert(`aigate: codex account ${account} refresh outcome unknown (${why}) — auto-refresh halted until a sync, re-add, or forced refresh`, { account });
@@ -1666,6 +1732,7 @@ async function doRefreshCodex(account, staleAccess) {
   try { changes = durably(() => q.updCodexAuth.run(encrypt(JSON.stringify(next)), exp, plan, account)).changes; }
   catch (e) { markRefreshUnknown(account, 'persist failed: ' + String((e && e.message) || e)); return { error: 'persist failed', unknown: true }; }
   if (changes === 0) { markRefreshUnknown(account, 'row vanished before the rotated token could be saved'); return { error: 'persist affected 0 rows', unknown: true }; }
+  ledgerNote(next);
   return { ok: true, auth: next, exp };
 }
 // The credential a caller may use right now: refresh only when the access token is inside

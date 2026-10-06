@@ -9,7 +9,8 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rmSync } from 'node:fs';
+import { rmSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { rtHash } from '../src/lib.js';
 import { makeVault } from '../src/lib.js';
 
 const TOKEN = 'test-token-' + crypto.randomBytes(8).toString('hex');
@@ -96,7 +97,7 @@ after(() => {
   upstream.close();
   alertSink.close();
   try { db.close(); } catch { /* already closed */ }
-  for (const f of [DB, DB + '-wal', DB + '-shm']) { try { rmSync(f); } catch { /* gone */ } }
+  for (const f of [DB, DB + '-wal', DB + '-shm', DB + '.codex-ledger.json']) { try { rmSync(f); } catch { /* gone */ } }
 });
 beforeEach(() => {
   db.exec(`DELETE FROM accounts; DELETE FROM access_log`);
@@ -597,4 +598,92 @@ test('codex reauth alert is edge-triggered: two consecutive failing polls → ex
   await new Promise((r) => setTimeout(r, 300));                    // give a (wrong) second POST time to land
   assert.equal(alertPosts.length, 1);
   assert.equal(tokenHits.length, 1);                               // and the dead token was never spent twice
+});
+
+// ---- N2/N3/N4/N5 hardening -----------------------------------------------------
+const ledgerFile = () => JSON.parse(readFileSync(DB + '.codex-ledger.json', 'utf8'));
+
+test('default refresh-ahead window is 4 days: exp in 3d refreshes, exp in 5d does not', async () => {
+  await add('d5', mkAuth({ expIn: 5 * 86400 }));
+  await select('?kind=codex');
+  assert.equal(tokenHits.length, 0);
+  db.exec(`DELETE FROM accounts`);
+  await add('d3', mkAuth({ expIn: 3 * 86400 }));
+  await select('?kind=codex');
+  assert.equal(tokenHits.length, 1);
+});
+
+test('ledger: written (0600, fingerprint not token) on add, refresh and sync; never inside backups/', async () => {
+  const a = mkAuth({ expIn: 3600, lastRefresh: iso(now() - 100) }); await add('led', a);
+  let l = ledgerFile();
+  assert.deepEqual(l[a.tokens.account_id], { last_refresh: a.last_refresh, rt_hash: rtHash(a.tokens.refresh_token) });
+  assert.equal(statSync(DB + '.codex-ledger.json').mode & 0o777, 0o600);
+  assert.ok(!JSON.stringify(l).includes(a.tokens.refresh_token));
+  await select('?kind=codex');                                    // near expiry → rotates
+  l = ledgerFile();
+  assert.equal(l[a.tokens.account_id].rt_hash, rtHash('rt-rotated-1'));
+  const newer = mkAuth({ acct: a.tokens.account_id, refresh: 'rt-synced', lastRefresh: iso(now() + 5) });
+  await fetch(base + '/api/codex/sync', { method: 'POST', headers: H, body: JSON.stringify({ auth_json: newer }) });
+  assert.equal(ledgerFile()[a.tokens.account_id].rt_hash, rtHash('rt-synced'));
+  assert.equal(existsSync(join(DB, '..', 'backups', 'codex-ledger.json')), false);
+});
+
+// stub only the token-endpoint fetch so we can throw the exact errno undici would
+async function withTokenFetchError(code, fn) {
+  const real = globalThis.fetch;
+  globalThis.fetch = (u, ...rest) => {
+    if (String(u).includes('/token')) { const e = new TypeError('fetch failed'); e.cause = Object.assign(new Error(code), { code }); return Promise.reject(e); }
+    return real(u, ...rest);
+  };
+  try { await fn(); } finally { globalThis.fetch = real; }
+}
+for (const code of ['ENETUNREACH', 'EHOSTUNREACH']) {
+  test(`${code} is provably before-send: no refresh_unknown, token kept`, async () => {
+    await add('unr', mkAuth({ expIn: 3600 }));
+    await withTokenFetchError(code, async () => { await select('?kind=codex'); });
+    assert.equal(row('unr').refresh_unknown, 0);
+    assert.equal(audit('codex-refresh').length, 0);
+  });
+}
+test('ECONNRESET is NOT provably before-send: stays refresh_unknown', async () => {
+  await add('rst', mkAuth({ expIn: 3600 }));
+  await withTokenFetchError('ECONNRESET', async () => { await select('?kind=codex'); });
+  assert.equal(row('rst').refresh_unknown, 1);
+});
+
+test('DELETE /api/accounts/:name is 409 while a refresh for it is in flight, 200 after', async () => {
+  const a = mkAuth({ expIn: 600 }); await add('deli', a);
+  usageFor = (tok) => tok === a.tokens.access_token ? { status: 401, body: {} } : { status: 200, body: usage(win(3, 604800)) };
+  const pollP = poll('deli');
+  await new Promise((r) => setTimeout(r, 15));
+  const d = await fetch(base + '/api/accounts/deli', { method: 'DELETE', headers: H });
+  assert.equal(d.status, 409);
+  assert.ok(row('deli'));
+  await pollP;
+  assert.equal((await fetch(base + '/api/accounts/deli', { method: 'DELETE', headers: H })).status, 200);
+});
+
+test('refresh_unknown / reauth_needed flag writes run under synchronous=FULL, then NORMAL again', async () => {
+  const calls = [];
+  const realExec = db.exec.bind(db);
+  db.exec = (sql) => { calls.push(sql); return realExec(sql); };
+  try {
+    await add('fl1', mkAuth({ expIn: 3600 }));
+    tokenHandler = () => ({ status: 503, body: '' });
+    calls.length = 0; await select('?kind=codex');                // 5xx → markRefreshUnknown (no persist)
+    assert.equal(row('fl1').refresh_unknown, 1);
+    assert.ok(calls.includes('PRAGMA synchronous=FULL'), 'refresh_unknown write must be FULL-sync');
+    await add('fl2', mkAuth({ expIn: 3600 }));
+    tokenHandler = () => ({ status: 400, body: '{"error":"invalid_grant"}' });
+    calls.length = 0; await select('?kind=codex&exclude=fl1');
+    assert.equal(row('fl2').reauth_needed, 1);
+    assert.ok(calls.includes('PRAGMA synchronous=FULL'), 'reauth_needed write must be FULL-sync');
+    await add('fl3', mkAuth({ expIn: 6 * 86400 }));               // far from expiry: the force poll refreshes nothing, so FULL can only come from the clear
+    db.prepare(`UPDATE accounts SET refresh_unknown=1 WHERE account='fl3'`).run();
+    calls.length = 0;
+    await fetch(`${base}/api/accounts/fl3/refresh?force=1`, { method: 'POST', headers: H });
+    assert.equal(row('fl3').refresh_unknown, 0);
+    assert.ok(calls.includes('PRAGMA synchronous=FULL'), 'force-clear must be FULL-sync');
+  } finally { db.exec = realExec; }
+  assert.equal(db.prepare('PRAGMA synchronous').get().synchronous, 1);
 });

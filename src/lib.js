@@ -211,3 +211,23 @@ export function normalizeCodexAuth(obj) {
 export function codexWindowSlot(seconds) {
   return Number(seconds) <= 21600 ? 'five' : 'seven';
 }
+
+// ---- codex refresh ledger (pure half) -----------------------------------
+// The ledger lives OUTSIDE the DB so a restored backup cannot hide that a refresh token was
+// already rotated. It stores only a 64-bit-ish fingerprint of the refresh token, never the token.
+export function rtHash(refreshToken) {
+  return crypto.createHash('sha256').update(String(refreshToken || '')).digest('hex').slice(0, 16);
+}
+// Is the DB row behind the ledger? 'stale' = the ledger recorded a rotation the row doesn't have
+// (restored backup) → the row's refresh token may already be spent. A row that is AHEAD of the
+// ledger (crash between the durable DB write and the ledger write) is not stale: the ledger heals.
+export function ledgerVerdict(entry, auth) {
+  if (!entry) return 'unknown';
+  const tokens = auth && auth.tokens;
+  if (!tokens || !tokens.refresh_token) return 'unknown';
+  const t = (v) => { const n = Date.parse(v); return Number.isFinite(n) ? n : 0; };
+  const led = t(entry.last_refresh), row = t(auth.last_refresh);
+  if (led > row) return 'stale';
+  if (entry.rt_hash !== rtHash(tokens.refresh_token)) return led >= row ? 'stale' : 'ahead';
+  return 'ok';
+}

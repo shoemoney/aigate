@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { join, sep } from 'node:path';
-import { makeVault, tokenMatches, ip2int, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot } from '../src/lib.js';
+import { makeVault, tokenMatches, ip2int, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot, rtHash, ledgerVerdict } from '../src/lib.js';
 const _jwt = (o) => `${Buffer.from('{"alg":"none"}').toString('base64url')}.${Buffer.from(JSON.stringify(o)).toString('base64url')}.sig`;
 
 const KEY = crypto.randomBytes(32);
@@ -217,4 +217,21 @@ test('codexWindowSlot: ≤6h is five, anything longer is seven', () => {
   assert.equal(codexWindowSlot(21600), 'five');
   assert.equal(codexWindowSlot(21601), 'seven');
   assert.equal(codexWindowSlot(604800), 'seven');
+});
+
+test('rtHash: 16 hex chars, deterministic, never the token', () => {
+  assert.match(rtHash('rt-abc'), /^[0-9a-f]{16}$/);
+  assert.equal(rtHash('rt-abc'), rtHash('rt-abc'));
+  assert.notEqual(rtHash('rt-abc'), rtHash('rt-abd'));
+});
+
+test('ledgerVerdict: ok / stale (restored DB) / ahead (crash before ledger write) / unknown', () => {
+  const auth = (rt, lr) => ({ last_refresh: lr, tokens: { refresh_token: rt } });
+  const T1 = '2026-10-01T00:00:00.000Z', T2 = '2026-10-02T00:00:00.000Z';
+  assert.equal(ledgerVerdict(undefined, auth('a', T1)), 'unknown');
+  assert.equal(ledgerVerdict({ last_refresh: T1, rt_hash: rtHash('a') }, auth('a', T1)), 'ok');
+  assert.equal(ledgerVerdict({ last_refresh: T2, rt_hash: rtHash('a') }, auth('a', T1)), 'stale');   // ledger newer
+  assert.equal(ledgerVerdict({ last_refresh: T1, rt_hash: rtHash('b') }, auth('a', T1)), 'stale');   // different token, same stamp
+  assert.equal(ledgerVerdict({ last_refresh: T1, rt_hash: rtHash('b') }, auth('a', T2)), 'ahead');   // row is newer: heal the ledger
+  assert.equal(ledgerVerdict({ last_refresh: T1, rt_hash: rtHash('a') }, { tokens: {} }), 'unknown');
 });
