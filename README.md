@@ -169,15 +169,64 @@ Or run `ai codex adopt` on a box that is already logged in to `codex`; it POSTs 
 
 **Usage polling.** Every poll cycle, and on `POST /api/accounts/:name/refresh`, aigate reads `chatgpt.com/backend-api/wham/usage` with the account's own access token. Windows are slotted by their length, never by primary/secondary: up to six hours is the "five hour" meter, longer is the weekly one (Pro plans report only a weekly window, so the 5h meter is hidden for them). `limit_reached` pins the worst window to 100%. A poll that fails or returns a changed shape keeps the last known values.
 
-**Refresh is server-owned and late.** Codex refresh tokens rotate with reuse detection, so exactly one caller may spend one. aigate does the refresh itself, through the official token endpoint (`auth.openai.com/oauth/token`) with the public Codex CLI client id, and clients simply receive a fresh `auth.json`.
+**Refresh is server-owned and late.** Codex refresh tokens rotate with reuse detection, so exactly one caller may spend one. aigate does the refresh itself, through the official token endpoint (`auth.openai.com/oauth/token`) with the public Codex CLI client id (an OAuth protocol requirement: the tokens were issued to that client, and the refresh call sends no fake user-agent), and clients simply receive a fresh `auth.json`.
 
-- **Late:** a refresh happens only when the access token is within `AIGATE_CODEX_REFRESH_AHEAD_S` (default two days) of expiry. Every refresh rotates the token family and orphans long-lived holders such as the Codex desktop app, so aigate avoids refreshing early.
+- **Late, by design:** a refresh happens only when the access token is within `AIGATE_CODEX_REFRESH_AHEAD_S` of expiry, **default 4 days (`345600`)**. Every refresh rotates the token family and orphans long-lived holders such as the Codex desktop app, so aigate refreshes as late as it safely can. Four days is also the keeper's adoption window: every token aigate hands out carries at least four days, which is how long a holder's [keeper](#the-codex-keeper) has to adopt a rotation before that holder would refresh on its own and revoke the family.
 - **Single-flight:** concurrent callers for one account share a single in-flight refresh.
-- **Persist first:** the rotated tokens are written to the vault before anything else, because they exist nowhere else.
-- **Dead tokens:** `invalid_grant` and similar responses set `reauth_needed` and fire an alert; transient failures (network, 5xx) change nothing.
+- **Persist first:** the rotated tokens are written to the vault (synchronous, durable) before anything else, because they exist nowhere else.
+- **Dead tokens:** `invalid_grant` and similar verdicts from the token endpoint set `reauth_needed` and fire an alert (once, on the 0 to 1 edge).
 - **Selection** skips accounts whose access token has already expired, and a failed early refresh never withholds a token that is still valid.
 
-**Sync back.** `POST /api/codex/sync` accepts `{auth_json}` from a client whose own login rotated (the desktop app, or a manual `codex login`). It finds the row by `account_id` (`404` if none) and applies the file only when its refresh token differs and its `last_refresh` is newer. It replies `{ok, applied, reason}`, with `applied:false` and a reason such as `same refresh_token`, `not newer than stored last_refresh`, or `refresh in flight`. `auth_json` must carry `last_refresh`.
+#### `refresh_unknown`: the "did that spend my token?" halt
+
+A refresh token is single use. If the token call may have *reached* OpenAI and then failed without a verdict, the token may already be spent, and retrying could revoke the whole family. In that case aigate sets `refresh_unknown` on the row, alerts, and **halts auto-refresh** for it.
+
+| Outcome of the token call | Result |
+|---|---|
+| Fails **before the request was sent**: only `ECONNREFUSED`, `ENOTFOUND`, `EAI_AGAIN`, connect-timeout (`UND_ERR_CONNECT_TIMEOUT`), `ENETUNREACH`, `EHOSTUNREACH` | transient, nothing changes, retried later |
+| Response timeout, `ECONNRESET`, any other network error, a 5xx, a non-JSON 200, a 200 without `access_token`, or a failed persist | **`refresh_unknown`**, auto-refresh halted |
+| `401`, or `400` with `invalid_grant` / `refresh_token_reused` / expired / revoked wording | `reauth_needed` (token is dead, log in again) |
+
+`ECONNRESET` is deliberately not treated as pre-send: it can arrive after the server read the body and spent the token.
+
+Clear `refresh_unknown` with any of:
+
+1. `POST /api/codex/sync` with a newer login (what `ai codex adopt` does); an applied sync clears it.
+2. Re-add the account (`POST /api/accounts`); the upsert resets it.
+3. `POST /api/accounts/:name/refresh?force=1`, the explicit operator override (audited as `refresh_unknown cleared (force)`), followed by a normal poll.
+
+`refresh_unknown` shows per account in the account list and as `codex_refresh_unknown` on `/health`.
+
+#### The restore guard (`codex-ledger.json`)
+
+Restoring an old vault backup would silently put an already-spent refresh token back in the DB. To catch that, aigate keeps a small ledger **outside** the database, `data/codex-ledger.json` beside `aigate.db` (any other DB filename gets `<db>.codex-ledger.json`; override with `AIGATE_CODEX_LEDGER`). It holds, per ChatGPT account id, the `last_refresh` and a short **fingerprint** (hash) of the refresh token, never the token. It is written atomically (fsync + rename, mode 600) after each durable credential write.
+
+At boot, any codex row whose stored login is *behind* the ledger is marked `refresh_unknown`, logged as `codex-restore-guard`, and alerted. A row that is *ahead* of the ledger (crash between the DB write and the ledger write) is not stale; the ledger heals. A missing or unreadable ledger is seeded from the DB and the guard is skipped for that boot.
+
+> [!IMPORTANT]
+> **Operator rule:** after restoring a vault backup, expect codex rows to halt until fresh tokens are pushed. Run `ai codex adopt` from a box that holds the current login (or use `/api/accounts/:name/refresh?force=1` once you have verified the stored token is still good). Do not restore `aigate.db` and delete `codex-ledger.json` to make the warning go away; that only hides the problem.
+
+**Keeper read.** `GET /api/codex/auth?account_id=&host=` returns the vault's *current* `{account, kind, auth_json, last_refresh, token_exp, reauth_needed, disabled}` for that ChatGPT account id (`400` without `account_id`, `404` if none). It never picks, refreshes, or parks, and is audited as `codex-keep`. It exists so a box's keeper can reload a rotated token instead of spending a dead one.
+
+**Sync back.** `POST /api/codex/sync` accepts `{auth_json}` from a client whose own login rotated (the desktop app, or a manual `codex login`). It finds the row by `account_id` (`404` if none) and applies the file only when its refresh token differs and its `last_refresh` is newer. An applied sync also clears `reauth_needed` and `refresh_unknown`. It replies `{ok, applied, reason}`, with `applied:false` and a reason such as `same refresh_token`, `not newer than stored last_refresh`, or `refresh in flight`. `auth_json` must carry `last_refresh`.
+
+#### The Codex keeper
+
+Rotation on the server means a box's `~/.codex/auth.json` goes stale. The **keeper** (`aigate-codex.sh --keep`) brings the on-disk login in step with the vault for the account it is *already* logged in as. It never picks and never switches account, and it fails open (any aigate trouble is a no-op). It runs at the start of every `ai codex` invocation and on a schedule that `clients/install.sh` installs:
+
+| Platform | Scheduler | Cadence |
+|---|---|---|
+| macOS | launchd agent `ai.shoemoney.aigate-codex-keeper` | every 5 minutes |
+| Linux | `systemd --user` timer `aigate-codex-keeper` (`Persistent=true`, catches up after suspend or being off) | every 5 minutes |
+| Linux without systemd | crontab line `*/5 * * * *` tagged `# aigate-codex-keeper` | every 5 minutes |
+
+When the scheduler fires at boot or on wake before the network is up, an *unreachable* aigate (connect refused, timeout, DNS) is retried with backoff (`AIGATE_KEEP_BACKOFF`, default `5 10 20 40 60 60` seconds, about 4 minutes) and then given up until the next tick. `401`, `404`, and `503` are answers, not outages, and are not retried. Set `AIGATE_NO_LAUNCHD`, `AIGATE_NO_SYSTEMD`, or `AIGATE_NO_CRON` to `1` at install time to skip activation. If the vault's copy is flagged `reauth_needed`, the keeper never writes it to disk; if this box holds the same account with a *newer* login, it pushes that to the vault, which is how a re-login repairs a halted account.
+
+**Sticky account.** While a `codex` process for this `CODEX_HOME` is alive, `ai codex` does **not** switch the on-disk account (the keeper just keeps it current), because swapping the login under a running codex would make it spend a token the vault already rotated. It switches, and says so on stderr, only if that account is exhausted, needs re-auth, or is disabled, or when `AI_CODEX_FORCE=1`.
+
+**Newest codex binary.** `AIGATE_CODEX_BIN` wins when set; otherwise the highest `--version` among `~/.local/bin/codex`, `/opt/homebrew/bin/codex`, and `/usr/local/bin/codex` is used, so a stale copy never shadows a newer one (the decision is cached for an hour in `~/.claude/aigate/codex-bin.cache`).
+
+**Honest user-agent.** The usage poll identifies itself as `aigate/<version> (codex-usage)` (override with `AIGATE_CODEX_UA`); no `codex_cli_rs` impersonation is used.
 
 ### Task lifecycle
 
@@ -260,7 +309,7 @@ A `--model` flag selects the route and is stripped before the binary sees it. He
 
 **Codex route (`aigate-codex.sh`).** It asks `GET /api/select?kind=codex`, backs up any existing `auth.json` once (`auth.json.bak-pre-aigate-*`), writes the picked account's `auth.json` atomically with mode 600, then runs the real `codex`. `-p`/`--print` becomes `codex exec` with clean stdout, and on a usage-limit failure it parks the account via `POST /api/events/limit` and retries the next one (up to three). A token that codex rotated locally is synced back to aigate on exit, and before a new pick if it differs from the vault's copy. If aigate is down, unauthorized, or has no account, it says why on stderr and runs plain `codex` on the existing login. Defaults: model `gpt-6.1-sol` (`AI_GPT_MODEL`), effort `high` (`AI_GPT_EFFORT`), and approvals/sandbox bypassed unless `AI_GPT_YOLO=0` or you pass your own sandbox flags. `AI_CODEX_FORCE=1` silences the "another codex is running" warning; `AIGATE_CODEX_BIN` and `AIGATE_CODEX_HOME` override the binary and home.
 
-**Desktop apps.** `ai desktop codex` writes the best Codex account into `auth.json`, quits and relaunches the ChatGPT/Codex app, which reads that file at start, so the switch is real. `ai desktop claude` is **display-only**: it launches Claude.app and prints which account aigate recommends, but cannot switch it. Measured on 2026-08-20, Claude for Desktop spawns its Code runtime through a helper that overwrites `CLAUDE_CODE_OAUTH_TOKEN` with the app's own signed-in credential, so the app runs on whatever account is signed in inside it. Sign in to the recommended account yourself.
+**Desktop apps.** `ai desktop codex` runs the keeper, then selects and writes through `aigate-codex.sh --write-only` (sticky: if another codex is live on this `CODEX_HOME` its account is kept, and the account actually written is the one reported), then quits and relaunches the ChatGPT/Codex app, which reads that file at start, so the switch is real. `ai desktop claude` is **display-only**: it launches Claude.app and prints which account aigate recommends, but cannot switch it. Measured on 2026-08-20, Claude for Desktop spawns its Code runtime through a helper that overwrites `CLAUDE_CODE_OAUTH_TOKEN` with the app's own signed-in credential, so the app runs on whatever account is signed in inside it. Sign in to the recommended account yourself.
 
 > [!IMPORTANT]
 > The **live copies are `~/.claude/aigate/*`** — editing `clients/*.sh` in the repo changes
@@ -361,14 +410,15 @@ Use `Authorization: Bearer $AIGATE_TOKEN` for machine clients. The dashboard use
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` · `/healthz` | **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` (Claude pool only) plus observability numbers `poll_age_s, backup_age_s, poll_ok, poll_failed` + a `parked` / `reauth` / `disabled` / `over_cutoff` tally and the Codex counters `codex_accounts, codex_selectable, codex_reauth` (all numbers, no secrets; autoheal reads only the status) (generic 503 if the DB is wedged) |
+| `GET` | `/health` · `/healthz` | **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` (Claude pool only) plus observability numbers `poll_age_s, backup_age_s, poll_ok, poll_failed` + a `parked` / `reauth` / `disabled` / `over_cutoff` tally and the Codex counters `codex_accounts, codex_selectable, codex_reauth, codex_poll_age_s, codex_refresh_unknown`. The pre-codex fields (`accounts`, `selectable`, `poll_age_s`, `parked`, `reauth`, `disabled`, `over_cutoff`) describe **Claude only** (all numbers, no secrets; autoheal reads only the status) (generic 503 if the DB is wedged) |
 | `GET` | `/api/session` | Public session state: `{authenticated, passwordEnabled}`; no vault contents |
 | `GET` | `/api/select?host=&exclude=a,b&kind=&dry=` | best account + credential (logs access w/ IP); `exclude` skips accounts on retry. `kind=claude` (default) returns `{account, setup_token, five_hour_pct, seven_day_pct, five_hour_reset, seven_day_reset}`; `kind=codex` returns `{account, kind, auth_json, plan, token_exp, …usage}` after a late refresh if due. `dry=1` returns `{account, kind, dry, plan, …usage}` with **no credential**, audited as `select-dry`. `503` with a tally when nothing has headroom; `400` on an unknown `kind` |
+| `GET` | `/api/codex/auth?account_id=&host=` | **keeper read**: the vault's current Codex `auth_json` for that ChatGPT account id plus `last_refresh, token_exp, reauth_needed, disabled`; never picks, refreshes, or parks; `400` without `account_id`, `404` unknown (audited `codex-keep`) |
 | `POST` | `/api/codex/sync` | `{auth_json}` — adopt a client's newer Codex login into the vault; replies `{ok, applied, reason}` (`404` unknown `account_id`, `400` without `last_refresh`). See [Codex accounts](#codex-chatgpt-accounts) |
 | `GET` / `POST` | `/api/accounts` | list (usage, `kind`, `plan`, `token_exp`, **no credentials**) / add Claude `{account, setup_token, label}` or Codex `{kind:"codex", account, auth_json, label}` |
 | `DELETE` | `/api/accounts/:name` | remove |
 | `POST` | `/api/accounts/:name/disabled` | `{disabled: true/false}` |
-| `POST` | `/api/accounts/:name/refresh` | **live re-poll** ONE account's real headroom right now (not the 10-min cache) → `{account, five, seven, alive, maxed}` (Codex accounts poll `wham/usage`); 404 on unknown account, 502 on a poll failure |
+| `POST` | `/api/accounts/:name/refresh` | **live re-poll** ONE account's real headroom right now (not the 10-min cache) → `{account, five, seven, alive, maxed}` (Codex accounts poll `wham/usage`; `?force=1` first clears a Codex `refresh_unknown` halt); 404 on unknown account, 502 on a poll failure |
 | `POST` | `/api/events/usage` | set an account's 5h/7d % — the **client statusline-feed** path (the server-side poller writes usage straight to the DB); **404 on unknown account** |
 | `POST` | `/api/events/limit` | `{account, minutes?}` — **TTL-park** an over-limit account (default **15m**, `minutes` clamped 1–360; real usage untouched, auto-unparks when the TTL passes); **404 on unknown account** |
 | `POST` | `/api/events/prompt` | log a prompt `{account, host, cwd, model, prompt}` |
@@ -438,11 +488,13 @@ Same posture on the OpenAI wire: point the client at `http://<aigate>/v1` with t
 | `AIGATE_AUTH_MAX_FAILS` | `10` | bad bearer attempts from one IP within window before 429 lock. Loopback exempt. |
 | `AIGATE_AUTH_WINDOW_MS` | `60000` (60s) | window for counting `AUTH_MAX_FAILS`. |
 | `AIGATE_AUTH_LOCK_MS` | `300000` (5m) | lock duration after `AUTH_MAX_FAILS` exceeded. |
-| `AIGATE_CODEX_REFRESH_AHEAD_S` | `172800` (2d) | refresh a Codex access token only when it is this close to expiry |
+| `AIGATE_CODEX_REFRESH_AHEAD_S` | `345600` (4d) | refresh a Codex access token only when it is this close to expiry (late on purpose, see [Codex accounts](#codex-chatgpt-accounts)) |
 | `AIGATE_CODEX_USAGE_URL` | `https://chatgpt.com/backend-api/wham/usage` | Codex usage endpoint (override for tests) |
 | `AIGATE_CODEX_TOKEN_URL` | `https://auth.openai.com/oauth/token` | official OAuth token endpoint used for refresh |
-| `AIGATE_CODEX_CLIENT_ID` | the public Codex CLI app id | OAuth client id sent on refresh |
-| `AIGATE_CODEX_UA` | `codex_cli_rs/0.160.1` | user-agent sent to the two Codex endpoints |
+| `AIGATE_CODEX_CLIENT_ID` | the public Codex CLI app id | OAuth client id sent on refresh (the tokens were issued to it) |
+| `AIGATE_CODEX_UA` | `aigate/<version> (codex-usage)` | user-agent for the usage poll (the refresh call sends none) |
+| `AIGATE_CODEX_TOKEN_TIMEOUT_MS` | `60000` | timeout for the token call; generous because a refresh that was sent but timed out cannot be safely retried |
+| `AIGATE_CODEX_LEDGER` | `<db dir>/codex-ledger.json` | path of the refresh ledger used by the restore guard |
 | `AIGATE_VERSION` | *(empty = package.json)* | override served version string (`/health` + `/api/capabilities`); fleet tar-path deploy stamps the sha. |
 
 See `.env.example` for the fully-commented list.
@@ -481,6 +533,11 @@ The vault, account selector, provider-key proxy, live dashboard, task board, and
 | Account discovery and expanded agent capabilities | Make available services easier for agents to find and use. |
 
 See [VISION.md](VISION.md) for the longer design direction. Budget-breaker behavior should not be assumed from the current usage dashboard.
+
+## Rollback
+
+> [!WARNING]
+> Before rolling the server back to a **pre-codex** commit, delete or disable the codex rows first. Old `pickRanked` has no `kind` filter, so a Claude selection could hand out a ChatGPT `auth.json` as if it were a Claude setup token. Remove them with `DELETE /api/accounts/<name>` (or `POST /api/accounts/<name>/disabled`), and re-add them from `~/.codex/auth.json` after rolling forward. The extra columns and `codex-ledger.json` are harmless to old code.
 
 ## Security and operations
 
