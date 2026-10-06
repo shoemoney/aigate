@@ -25,7 +25,7 @@ const pick = (name, rt, extra = {}) => ({
   five_hour_reset: now() + 3600, seven_day_reset: now() + 3 * 86400 + 4 * 3600 + 600, ...extra,
 });
 
-function startMock(handler) {
+function startMock(handler, port = 0) {
   const calls = [];
   const server = http.createServer((req, res) => {
     let raw = '';
@@ -42,7 +42,7 @@ function startMock(handler) {
       }, delay || 0);
     });
   });
-  return new Promise((r) => server.listen(0, '127.0.0.1', () =>
+  return new Promise((r) => server.listen(port, '127.0.0.1', () =>
     r({ calls, url: `http://127.0.0.1:${server.address().port}`, close: () => server.close() })));
 }
 
@@ -274,7 +274,7 @@ test('--write-only: selects + writes + banner, never launches codex', async (t) 
   const mock = await startMock(defaultHandler(pick('acct1', 'rt-1'))); t.after(mock.close);
   const r = await run(sb, CODEX_SH, ['--write-only'], { AIGATE_URL: mock.url });
   assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.stdout, '');
+  assert.equal(r.stdout, 'aigate-account: acct1\n', 'machine-readable: the account actually written');
   assert.match(r.stderr, /codex account: acct1/);
   assert.equal(readAuth(sb).tokens.refresh_token, 'rt-1');
   assert.ok(!existsSync(sb.log), 'codex was not run');
@@ -453,7 +453,7 @@ test('--keep: local newer + different token → POST /api/codex/sync', async (t)
 test('--keep: fail-open (down / 404 / 401 / no env / no auth.json / reauth) always exits 0', async (t) => {
   const sb = sandbox(); t.after(sb.cleanup);
   writeAuthAt(sb, 'rt-local', 'aid-1', '2026-10-01T00:00:00Z');
-  const down = await run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: 'http://127.0.0.1:1' });
+  const down = await run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: 'http://127.0.0.1:1', AIGATE_KEEP_BACKOFF: '0 0' });
   assert.equal(down.code, 0); assert.match(down.stderr, /cannot reach/);
   const m404 = await startMock(() => [404, { error: 'no such codex account' }]); t.after(m404.close);
   const r404 = await run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: m404.url });
@@ -631,7 +631,7 @@ test('install.sh writes the codex keeper launchd plist (scratch root: no launchc
   assert.ok(existsSync(plist));
   const x = readFileSync(plist, 'utf8');
   assert.match(x, /<string>ai\.shoemoney\.aigate-codex-keeper<\/string>/);
-  assert.match(x, /<key>StartInterval<\/key><integer>3600<\/integer>/);
+  assert.match(x, /<key>StartInterval<\/key><integer>300<\/integer>/);
   assert.match(x, /<key>RunAtLoad<\/key><true\/>/);
   assert.match(x, new RegExp(`<string>/bin/bash</string>\\s*<string>${join(dir, '.claude', 'aigate', 'aigate-codex.sh').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</string>\\s*<string>--keep</string>`));
   assert.match(x, /codex-keeper\.log/);
@@ -678,4 +678,250 @@ test('ai-desktop codex: only ChatGPT.app\'s app-server is stopped; keeper/select
   assert.equal(readAuth(sb).tokens.refresh_token, 'rt-1', 'auth.json written');
   const lines = readFileSync(order, 'utf8').trim().split('\n');
   assert.equal(lines[0], 'osascript'); assert.equal(lines[1], 'open -b com.openai.codex', 'open comes last, after the write');
+});
+
+// ── N1: keeper survives sleep/boot (retry), installers, N3 repair, N4 desktop, binary pick ──
+import { spawnSync } from 'node:child_process';
+import { utimesSync } from 'node:fs';
+
+const freePort = () => new Promise((r) => { const s = http.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
+
+test('--keep: an UNREACHABLE aigate is retried with backoff until it comes up (boot/wake gap), then the vault token lands', async (t) => {
+  const sb = sandbox(); t.after(sb.cleanup);
+  writeAuthAt(sb, 'rt-local', 'aid-1', '2026-10-01T00:00:00Z');
+  const port = await freePort();
+  const child = run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: `http://127.0.0.1:${port}`, AIGATE_KEEP_BACKOFF: '1 1 1 1 1 1' });
+  await sleep(1500);                                    // network "comes up" mid-backoff
+  const mock = await startMock((c) => (c.path === '/api/codex/auth'
+    ? [200, vaultAuth('acct1', 'rt-vault', 'aid-1', '2026-10-06T12:00:00Z')] : [200, {}]), port); t.after(mock.close);
+  const r = await child;
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(readAuth(sb).tokens.refresh_token, 'rt-vault', 'a later retry reached the vault');
+});
+
+test('--keep: gives up fail-open after the backoff schedule when aigate never answers', async (t) => {
+  const sb = sandbox(); t.after(sb.cleanup);
+  writeAuthAt(sb, 'rt-local', 'aid-1', '2026-10-01T00:00:00Z');
+  const t0 = Date.now();
+  const r = await run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: 'http://127.0.0.1:1', AIGATE_KEEP_BACKOFF: '1 1' });
+  assert.equal(r.code, 0);
+  assert.ok(Date.now() - t0 >= 1900, `waited out the 1s+1s schedule (${Date.now() - t0}ms)`);
+  assert.match(r.stderr, /still unreachable after retries/);
+  assert.equal(readAuth(sb).tokens.refresh_token, 'rt-local');
+});
+
+test('--keep: 401 / 404 / 503 are answers, never retried', async (t) => {
+  for (const [status, body] of [[401, { error: 'unauthorized' }], [404, { error: 'no such codex account' }], [503, { error: 'busy' }]]) {
+    const sb = sandbox(); t.after(sb.cleanup);
+    writeAuthAt(sb, 'rt-local', 'aid-1', '2026-10-01T00:00:00Z');
+    const m = await startMock(() => [status, body]); t.after(m.close);
+    const t0 = Date.now();
+    const r = await run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: m.url, AIGATE_KEEP_BACKOFF: '2 2 2' });
+    assert.equal(r.code, 0, `${status}: ${r.stderr}`);
+    assert.equal(m.calls.length, 1, `${status} asked exactly once`);
+    assert.ok(Date.now() - t0 < 1800, `${status} did not sleep through the backoff`);
+  }
+});
+
+test('N3 --keep: vault flagged reauth_needed/refresh_unknown + a NEWER different local login on the same account → POST /sync (re-login repairs the vault); never writes the vault token to disk', async (t) => {
+  for (const flag of ['reauth_needed', 'refresh_unknown']) {
+    const sb = sandbox(); t.after(sb.cleanup);
+    const mock = await startMock((c) => (c.path === '/api/codex/auth'
+      ? [200, vaultAuth('acct1', 'rt-dead', 'aid-1', '2026-10-01T00:00:00Z', { [flag]: 1 })]
+      : c.path === '/api/codex/sync' ? [200, { ok: true, applied: true, reason: 'applied' }] : [200, {}])); t.after(mock.close);
+    writeAuthAt(sb, 'rt-relogin', 'aid-1', '2026-10-06T12:00:00Z');
+    const r = await run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: mock.url });
+    assert.equal(r.code, 0, `${flag}: ${r.stderr}`);
+    const sync = mock.calls.find((c) => c.path === '/api/codex/sync');
+    assert.ok(sync, `${flag}: local re-login was pushed`);
+    assert.equal(sync.body.auth_json.tokens.refresh_token, 'rt-relogin');
+    assert.equal(readAuth(sb).tokens.refresh_token, 'rt-relogin', `${flag}: local untouched`);
+    assert.doesNotMatch(r.stderr, /needs re-auth/, `${flag}: repaired → no reauth complaint`);
+    assert.match(r.stderr, /repaired the vault/);
+  }
+});
+
+test('N3 --keep: reauth + server declines the sync → reports re-auth; reauth + OLDER local or other account → no sync, vault token never written', async (t) => {
+  const sb = sandbox(); t.after(sb.cleanup);
+  const declined = await startMock((c) => (c.path === '/api/codex/auth'
+    ? [200, vaultAuth('acct1', 'rt-dead', 'aid-1', '2026-10-01T00:00:00Z', { reauth_needed: 1 })]
+    : [200, { ok: true, applied: false, reason: 'refresh in flight' }])); t.after(declined.close);
+  writeAuthAt(sb, 'rt-relogin', 'aid-1', '2026-10-06T12:00:00Z');
+  const r = await run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: declined.url });
+  assert.equal(r.code, 0);
+  assert.ok(declined.calls.some((c) => c.path === '/api/codex/sync'), 'tried to sync');
+  assert.match(r.stderr, /needs re-auth/);
+
+  const older = await startMock((c) => (c.path === '/api/codex/auth'
+    ? [200, vaultAuth('acct1', 'rt-dead', 'aid-1', '2026-10-09T00:00:00Z', { reauth_needed: 1 })] : [200, {}])); t.after(older.close);
+  await run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: older.url });
+  assert.ok(!older.calls.some((c) => c.path === '/api/codex/sync'), 'local older than vault → no sync');
+  assert.equal(readAuth(sb).tokens.refresh_token, 'rt-relogin', 'dead vault token never written to disk');
+
+  const other = await startMock((c) => (c.path === '/api/codex/auth'
+    ? [200, vaultAuth('acct2', 'rt-dead', 'aid-OTHER', '2026-10-01T00:00:00Z', { reauth_needed: 1 })] : [200, {}])); t.after(other.close);
+  await run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: other.url });
+  assert.ok(!other.calls.some((c) => c.path === '/api/codex/sync'), 'vault row for a different account → no sync');
+  assert.equal(readAuth(sb).tokens.refresh_token, 'rt-relogin');
+});
+
+// ── installer: keeper units ──
+const INSTALL_SH = join(ROOT, 'clients', 'install.sh');
+const shimBin = (shim, name, body) => { writeFileSync(join(shim, name), `#!/bin/bash\n${body}\n`); chmodSync(join(shim, name), 0o755); };
+function installEnv(dir, shim, extra) {
+  return { PATH: `${shim}:${PATH_ENV}`, HOME: dir, AIGATE_INSTALL_ROOT: dir, AIGATE_URL: 'http://127.0.0.1:1', AIGATE_TOKEN: 'tok', ZDOTDIR: dir, ...extra };
+}
+function install(prep, tag) {
+  const dir = mkdtempSync(join(tmpdir(), `inst-${tag}-`));
+  const shim = join(dir, 'shim'); mkdirSync(shim);
+  const extra = prep(dir, shim);
+  const r = spawnSync(BASH, [INSTALL_SH], { encoding: 'utf8', env: installEnv(dir, shim, extra) });
+  return { dir, shim, extra, r };
+}
+
+test('install.sh (darwin plist): passes AIGATE_CODEX_HOME / CODEX_HOME through EnvironmentVariables only when set', async (t) => {
+  const withEnv = install(() => ({ AIGATE_NO_LAUNCHD: '1', AIGATE_INSTALL_OS: 'Darwin', AIGATE_CODEX_HOME: '/tmp/a&b/codex', CODEX_HOME: '/tmp/ch' }), 'pe');
+  t.after(() => rmSync(withEnv.dir, { recursive: true, force: true }));
+  assert.equal(withEnv.r.status, 0, withEnv.r.stderr);
+  const pl = join(withEnv.dir, 'Library', 'LaunchAgents', 'ai.shoemoney.aigate-codex-keeper.plist');
+  const x = readFileSync(pl, 'utf8');
+  assert.match(x, /<key>EnvironmentVariables<\/key>\s*<dict>[\s\S]*<key>AIGATE_CODEX_HOME<\/key><string>\/tmp\/a&amp;b\/codex<\/string>[\s\S]*<key>CODEX_HOME<\/key><string>\/tmp\/ch<\/string>/);
+  assert.match(x, /<key>StartInterval<\/key><integer>300<\/integer>/);
+  if (spawnSync('which', ['plutil']).status === 0) assert.equal(spawnSync('plutil', ['-lint', pl]).status, 0, 'valid plist');
+  const none = install(() => ({ AIGATE_NO_LAUNCHD: '1', AIGATE_INSTALL_OS: 'Darwin', AIGATE_CODEX_HOME: '', CODEX_HOME: '' }), 'pn');
+  t.after(() => rmSync(none.dir, { recursive: true, force: true }));
+  assert.doesNotMatch(readFileSync(join(none.dir, 'Library', 'LaunchAgents', 'ai.shoemoney.aigate-codex-keeper.plist'), 'utf8'), /EnvironmentVariables/);
+});
+
+test('install.sh (linux): systemd --user timer+service (boot 60s, every 300s, Persistent) enabled via systemctl', async (t) => {
+  const i = install((dir, shim) => {
+    shimBin(shim, 'systemctl', `echo "systemctl $*" >> "${dir}/sc.log"; exit 0`);
+    return { AIGATE_INSTALL_OS: 'Linux', AIGATE_TEST_ACTIVATE: '1', CODEX_HOME: '/srv/ch', AIGATE_CODEX_HOME: '' };
+  }, 'ls');
+  t.after(() => rmSync(i.dir, { recursive: true, force: true }));
+  assert.equal(i.r.status, 0, i.r.stderr);
+  const u = join(i.dir, '.config', 'systemd', 'user');
+  const timer = readFileSync(join(u, 'aigate-codex-keeper.timer'), 'utf8');
+  assert.match(timer, /^OnBootSec=60$/m); assert.match(timer, /^OnUnitActiveSec=300$/m); assert.match(timer, /Persistent=true/);
+  const svc = readFileSync(join(u, 'aigate-codex-keeper.service'), 'utf8');
+  assert.match(svc, new RegExp(`ExecStart=/bin/bash ${join(i.dir, '.claude', 'aigate', 'aigate-codex.sh').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} --keep`));
+  assert.match(svc, /Environment="CODEX_HOME=\/srv\/ch"/);
+  assert.doesNotMatch(svc, /AIGATE_CODEX_HOME/);
+  assert.match(readFileSync(join(i.dir, 'sc.log'), 'utf8'), /systemctl --user enable --now aigate-codex-keeper\.timer/);
+});
+
+test('install.sh (linux): no systemd → idempotent crontab line */5 (re-run never duplicates; other lines kept); AIGATE_NO_CRON skips', async (t) => {
+  const dirs = [];
+  t.after(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
+  const mk = (extra) => {
+    const i = install((dir, shim) => {
+      writeFileSync(join(dir, 'cron.txt'), '0 1 * * * /usr/bin/backup\n');
+      shimBin(shim, 'systemctl', 'exit 1');
+      shimBin(shim, 'crontab', `if [ "$1" = "-l" ]; then cat "${dir}/cron.txt"; else cat > "${dir}/cron.txt"; fi`);
+      return { AIGATE_INSTALL_OS: 'Linux', AIGATE_TEST_ACTIVATE: '1', ...extra };
+    }, 'cr');
+    dirs.push(i.dir); return i;
+  };
+  const count = (i) => readFileSync(join(i.dir, 'cron.txt'), 'utf8').split('\n').filter((l) => l.includes('aigate-codex-keeper')).length;
+  const first = mk({});
+  assert.equal(first.r.status, 0, first.r.stderr);
+  assert.equal(count(first), 1);
+  const cron = readFileSync(join(first.dir, 'cron.txt'), 'utf8');
+  assert.match(cron, /^\*\/5 \* \* \* \* \/bin\/bash .*aigate-codex\.sh --keep/m);
+  assert.match(cron, /0 1 \* \* \* \/usr\/bin\/backup/);
+  const again = spawnSync(BASH, [INSTALL_SH], { encoding: 'utf8', env: installEnv(first.dir, first.shim, first.extra) });
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(count(first), 1, 'no duplicate on re-run');
+  const skip = mk({ AIGATE_NO_CRON: '1' });
+  assert.equal(count(skip), 0, 'AIGATE_NO_CRON respected');
+});
+
+// ── N4: ai-desktop ──
+async function desktop(t, { writeFails, dryAccount }) {
+  const sb = sandbox(); t.after(sb.cleanup);
+  const mock = await startMock((c) => {
+    if (c.path === '/api/select') return writeFails ? [503, { error: 'none', accounts: 1 }]
+      : [200, c.q.dry ? { account: dryAccount, plan: 'pro' } : pick('acct1', 'rt-1')];
+    return [200, { ok: true, applied: false }];
+  }); t.after(mock.close);
+  const dir = join(sb.home, '.claude', 'aigate');
+  writeFileSync(join(dir, 'aigate-codex.sh'), readFileSync(CODEX_SH)); chmodSync(join(dir, 'aigate-codex.sh'), 0o755);
+  const app = join(sb.dir, 'ChatGPT.app'); mkdirSync(join(app, 'Contents'), { recursive: true });
+  const shim = join(sb.dir, 'shim'); mkdirSync(shim);
+  const order = join(sb.dir, 'order.log');
+  for (const [n, body] of [['osascript', `echo osascript >> "${order}"`], ['open', `echo "open $*" >> "${order}"`], ['mdfind', 'exit 0']]) shimBin(shim, n, body);
+  const r = await new Promise((res) => {
+    const c = execFile(BASH, [join(ROOT, 'clients', 'ai-desktop'), 'codex'], {
+      env: { PATH: `${shim}:${PATH_ENV}`, HOME: sb.home, AIGATE_DIR: dir, AIGATE_CODEX_HOME: sb.ch, CODEX_HOME: sb.ch, AIGATE_URL: mock.url,
+        AIGATE_TOKEN: 'tok-secret', AIGATE_CODEX_BIN: sb.bin, FAKE_LOG: sb.log, AIGATE_CODEX_APP_PATH: app, AIGATE_DESKTOP_WAIT_S: '1' }, timeout: 30_000,
+    }, (err, stdout, stderr) => res({ code: err ? (err.code ?? 1) : 0, stdout, stderr }));
+    c.stdin.end('');
+  });
+  return { r, order: existsSync(order) ? readFileSync(order, 'utf8').trim().split('\n') : [] };
+}
+
+test('N4 ai-desktop codex: --write-only failure AFTER the app was quit reopens ChatGPT on its existing login and says so', async (t) => {
+  if (process.platform !== 'darwin') return t.skip('ai-desktop is macOS-only');
+  const { r, order } = await desktop(t, { writeFails: true });
+  assert.notEqual(r.code, 0);
+  assert.deepEqual(order, ['osascript', 'open -b com.openai.codex'], 'quit then reopened');
+  assert.match(r.stderr, /reopening ChatGPT on its existing login/);
+});
+
+test('N4 ai-desktop codex: success message names the account actually written, not a fresh dry pick', async (t) => {
+  if (process.platform !== 'darwin') return t.skip('ai-desktop is macOS-only');
+  const { r } = await desktop(t, { writeFails: false, dryAccount: 'DRY-PICK-DIFFERENT' });
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /relaunched on acct1/);
+  assert.doesNotMatch(r.stdout, /DRY-PICK-DIFFERENT/);
+});
+
+// ── binary resolution ──
+function fakeBins(sb, specs) {
+  const d = join(sb.dir, 'cands'); mkdirSync(d, { recursive: true });
+  const vlog = join(sb.dir, 'version.log');
+  const paths = specs.map(([name, ver, sub]) => {
+    const dd = sub ? join(d, sub) : d; mkdirSync(dd, { recursive: true });
+    const p = join(dd, name);
+    writeFileSync(p, `#!/bin/bash\nif [ "$1" = --version ]; then echo "v:${name}" >> "${vlog}"; echo "codex-cli ${ver}"; exit 0; fi\nprintf 'RUN rt=\\nARG %s\\n' "${name}" >> "$FAKE_LOG"\n`);
+    chmodSync(p, 0o755); return p;
+  });
+  return { paths, versionCalls: () => (existsSync(vlog) ? readFileSync(vlog, 'utf8').trim().split('\n').filter(Boolean) : []) };
+}
+const ranName = (sb) => (existsSync(sb.log) ? /^ARG (.*)$/m.exec(readFileSync(sb.log, 'utf8'))?.[1] : undefined);
+
+test('codex binary: highest --version wins (numeric, not lexical), cmux shims excluded, AIGATE_CODEX_BIN wins, 1h cache keyed by mtimes', async (t) => {
+  for (const script of [CODEX_SH, T3_CODEX]) {
+    const sb = sandbox(); t.after(sb.cleanup);
+    const mock = await startMock(defaultHandler(pick('acct1', 'rt-1'))); t.after(mock.close);
+    const fb = fakeBins(sb, [['old', '0.147.0'], ['new', '0.160.1'], ['nine', '0.9.9'], ['shim', '9.9.9', 'cmux-cli-shims']]);
+    const env = { AIGATE_URL: mock.url, AIGATE_CODEX_BIN: '', AIGATE_CODEX_CANDIDATES: fb.paths.join(':') };
+    const r1 = await run(sb, script, ['x'], env);
+    assert.equal(r1.code, 0, `${script}: ${r1.stderr}`);
+    assert.equal(ranName(sb), 'new', `${script}: 0.160.1 beats 0.147.0 and 0.9.9; cmux shim ignored`);
+    assert.deepEqual(fb.versionCalls().sort(), ['v:new', 'v:nine', 'v:old'], 'shim never probed');
+    assert.ok(existsSync(join(sb.home, '.claude', 'aigate', 'codex-bin.cache')), 'decision cached');
+    const n = fb.versionCalls().length;
+    await run(sb, script, ['y'], env);
+    assert.equal(fb.versionCalls().length, n, `${script}: second launch pays no version calls`);
+    const future = new Date(Date.now() + 5000);
+    utimesSync(fb.paths[0], future, future);
+    await run(sb, script, ['z'], env);
+    assert.ok(fb.versionCalls().length > n, `${script}: mtime change re-probes`);
+    writeFileSync(sb.log, '');
+    await run(sb, script, ['w'], { ...env, AIGATE_CODEX_BIN: fb.paths[0] });
+    assert.equal(ranName(sb), 'old', `${script}: AIGATE_CODEX_BIN wins`);
+  }
+});
+
+test('codex binary: the resolver block is byte-identical in aigate-codex.sh, t3-codex.sh and ai', () => {
+  const blk = (f) => /# >>> aigate-codex-bin[\s\S]*?# <<< aigate-codex-bin/.exec(readFileSync(join(ROOT, 'clients', f), 'utf8'))?.[0];
+  assert.ok(blk('aigate-codex.sh'));
+  assert.equal(blk('t3-codex.sh'), blk('aigate-codex.sh'));
+  assert.equal(blk('ai'), blk('aigate-codex.sh'));
+});
+
+test('E2E note: -p stdin buffering is documented in both wrappers', () => {
+  for (const f of ['aigate-run.sh', 'aigate-codex.sh'])
+    assert.match(readFileSync(join(ROOT, 'clients', f), 'utf8'), /never-closing stdin pipe waits for EOF here AND in the raw claude\/codex/, f);
 });

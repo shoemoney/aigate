@@ -69,10 +69,17 @@ case "${1:-}" in
       for p in $left; do kill -TERM "$p" 2>/dev/null || true; done
       sleep 1
     fi
-    # keeper + select + write (STICKY: another live codex on this CODEX_HOME keeps its account)
-    "$WRITER" --write-only || { echo "ai-desktop: could not select/write a codex account — not restarting the app" >&2; exit 1; }
+    # keeper + select + write (STICKY: another live codex on this CODEX_HOME keeps its account).
+    # --write-only prints "aigate-account: <name>" = the account ACTUALLY in auth.json now.
+    if ! wout="$("$WRITER" --write-only)"; then
+      echo "ai-desktop: could not select/write a codex account — reopening ChatGPT on its existing login" >&2
+      open -b "$CODEX_BUNDLE_ID" >/dev/null 2>&1 || echo "ai-desktop: could not reopen $CODEX_BUNDLE_ID" >&2
+      exit 1
+    fi
+    written="$(printf '%s\n' "$wout" | sed -n 's/^aigate-account: //p' | tail -n 1)"
     open -b "$CODEX_BUNDLE_ID" || { echo "ai-desktop: could not open $CODEX_BUNDLE_ID" >&2; exit 1; }
-    echo "ai-desktop: ChatGPT/Codex relaunched on $(dry_pick 'kind=codex&' | fmt_pick)"
+    if [ -n "$written" ]; then echo "ai-desktop: ChatGPT/Codex relaunched on $written"
+    else echo "ai-desktop: ChatGPT/Codex relaunched on the existing login"; fi
     ;;
   claude)
     [ -d "$CLAUDE_APP" ] || [ -x "$CLAUDE_APP/Contents/MacOS/Claude" ] || { echo "ai-desktop: no Claude.app at $CLAUDE_APP" >&2; exit 1; }

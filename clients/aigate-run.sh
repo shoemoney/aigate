@@ -200,6 +200,8 @@ fi
 prompt="$*"; tried=""
 # A piped prompt is consumed by the FIRST attempt; buffer it once (0600) and replay it
 # into every retry, else attempt 2 runs claude on an empty stdin. Not a TTY only.
+# NB: -p with a never-closing stdin pipe waits for EOF here AND in the raw claude/codex
+# binaries (measured: raw `claude -p` sat the full 12s on an open pipe). Not a wrapper bug.
 stdinf=""
 if [ ! -t 0 ]; then
   stdinf="$(mktemp)"; chmod 600 "$stdinf"

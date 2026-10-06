@@ -38,8 +38,23 @@ AUTH="$CODEX_HOME/auth.json"
 MODEL="${AI_GPT_MODEL:-gpt-6.1-sol}"
 EFFORT="${AI_GPT_EFFORT:-high}"
 
-resolve_codex(){
-  local c
+# >>> aigate-codex-bin (byte-identical in aigate-codex.sh, t3-codex.sh, ai; test/codex-client.test.js enforces it)
+# Which codex binary? AIGATE_CODEX_BIN wins. Else the HIGHEST `--version` among the usual
+# installs, so a stale ~/.local/bin/codex never shadows a newer brew one. The decision is cached
+# 1h in $AIGATE_DIR/codex-bin.cache keyed by candidate mtimes: launches don't pay N version calls.
+# AIGATE_CODEX_CANDIDATES (colon list) replaces the built-in candidate list (tests).
+_cv_gt(){ # dotted version $1 strictly greater than $2 ?
+  local a="${1:-0}." b="${2:-0}." x y i=0
+  while [ "$i" -lt 4 ]; do
+    x="${a%%.*}"; y="${b%%.*}"; a="${a#*.}"; b="${b#*.}"; x="${x:-0}"; y="${y:-0}"
+    [ "$x" -gt "$y" ] 2>/dev/null && return 0
+    [ "$x" -lt "$y" ] 2>/dev/null && return 1
+    i=$((i+1))
+  done
+  return 1
+}
+aigate_codex_bin(){
+  local c d list cs=() cand=() key="" best="" bestv="" v t now cache ck="" ct="" cb=""
   if [ -n "${AIGATE_CODEX_BIN:-}" ]; then
     case "$AIGATE_CODEX_BIN" in
       */*) [ -x "$AIGATE_CODEX_BIN" ] && { printf '%s' "$AIGATE_CODEX_BIN"; return 0; };;
@@ -47,20 +62,47 @@ resolve_codex(){
     esac
     return 1
   fi
-  for c in "$HOME/.local/bin/codex" /opt/homebrew/bin/codex /usr/local/bin/codex; do
+  list="${AIGATE_CODEX_CANDIDATES:-$HOME/.local/bin/codex:/opt/homebrew/bin/codex:/usr/local/bin/codex}"
+  IFS=: read -r -a cand <<< "$list"
+  for c in ${cand[@]+"${cand[@]}"}; do
     [ -x "$c" ] || continue
     case "$c" in *cmux-cli-shims*|*aigate/*) continue;; esac
-    printf '%s' "$c"; return 0
+    cs+=("$c")
   done
-  local IFS=:
-  for d in $PATH; do
-    c="$d/codex"
-    [ -x "$c" ] || continue
-    case "$c" in *cmux-cli-shims*|*aigate/*) continue;; esac
-    printf '%s' "$c"; return 0
+  if [ "${#cs[@]}" -eq 0 ]; then
+    local IFS=:
+    for d in $PATH; do
+      c="$d/codex"; [ -x "$c" ] || continue
+      case "$c" in *cmux-cli-shims*|*aigate/*) continue;; esac
+      printf '%s' "$c"; return 0
+    done
+    return 1
+  fi
+  [ "${#cs[@]}" -eq 1 ] && { printf '%s' "${cs[0]}"; return 0; }
+  for c in ${cs[@]+"${cs[@]}"}; do
+    t="$(stat -Lf %m "$c" 2>/dev/null || stat -L -c %Y "$c" 2>/dev/null)"
+    key="$key$c:$t|"
   done
-  return 1
+  cache="${AIGATE_DIR:-$HOME/.claude/aigate}/codex-bin.cache"
+  now="$(date +%s)"
+  if [ -f "$cache" ]; then
+    { IFS= read -r ck; IFS= read -r ct; IFS= read -r cb; } < "$cache" 2>/dev/null
+    if [ "$ck" = "$key" ] && [ -x "$cb" ] && [ "$ct" -le "$now" ] 2>/dev/null && [ $((now - ct)) -lt 3600 ] 2>/dev/null; then
+      printf '%s' "$cb"; return 0
+    fi
+  fi
+  for c in ${cs[@]+"${cs[@]}"}; do
+    v="$("$c" --version 2>/dev/null | sed -n 's/.*codex-cli \([0-9][0-9]*\(\.[0-9][0-9]*\)*\).*/\1/p' | head -n 1)"
+    v="${v:-0}"
+    if [ -z "$best" ] || _cv_gt "$v" "$bestv"; then best="$c"; bestv="$v"; fi
+  done
+  mkdir -p "$(dirname "$cache")" 2>/dev/null \
+    && printf '%s\n%s\n%s\n' "$key" "$now" "$best" > "$cache.$$" 2>/dev/null \
+    && mv -f "$cache.$$" "$cache" 2>/dev/null
+  printf '%s' "$best"
 }
+# <<< aigate-codex-bin
+resolve_codex(){ aigate_codex_bin; }
 
 write_only=0 adopt=0 keep=0 sub=() args=() yolo=1 is_print=0 is_cont=0 has_model=0
 while [ $# -gt 0 ]; do
@@ -211,15 +253,34 @@ keep(){
   esac
   KEEP_NAME="$(jp "$KEEPF" account)"
   KEEP_STATE=ok
-  case "$(jp "$KEEPF" reauth_needed)" in 1|True|true) KEEP_STATE=reauth; return 0;; esac
+  local flagged=0
+  case "$(jp "$KEEPF" reauth_needed)" in 1|True|true) flagged=1;; esac
+  case "$(jp "$KEEPF" refresh_unknown)" in 1|True|true) flagged=1;; esac
   vid="$(jp "$KEEPF" auth_json.tokens.account_id)"
-  [ -z "$vid" ] || [ "$vid" = "$id" ] || return 0        # never cross to a different account
-  vrt="$(jp "$KEEPF" auth_json.tokens.refresh_token)"; [ -n "$vrt" ] || return 0
+  vrt="$(jp "$KEEPF" auth_json.tokens.refresh_token)"
   lrt="$(jp "$AUTH" tokens.refresh_token)"
-  [ "$vrt" != "$lrt" ] || return 0
   vrf="$(jp "$KEEPF" last_refresh)"; [ -n "$vrf" ] || vrf="$(jp "$KEEPF" auth_json.last_refresh)"
   lrf="$(jp "$AUTH" last_refresh)"
   cmp="$(iso_cmp "$vrf" "$lrf")"
+  if [ "$flagged" = 1 ]; then
+    # The vault's token is dead (re-auth / unknown refresh outcome). NEVER write it to disk. But
+    # if THIS box holds the same account with a different, NEWER login (a re-login here), push it:
+    # that is exactly how a re-login repairs the vault. Report re-auth only if the server declined.
+    KEEP_STATE=reauth
+    if [ -z "$vid" ] || [ "$vid" = "$id" ]; then
+      if [ -n "$lrt" ] && [ "$vrt" != "$lrt" ] && [ "$cmp" = older ] && sync_file "$AUTH" \
+         && [ "$(jp "$SYNCF" applied)" = "True" ]; then
+        KEEP_STATE=changed
+        keep_say "re-login on this box repaired the vault (${KEEP_NAME:-$id})"
+        return 0
+      fi
+    fi
+    [ "$KEEP_NOISY" = 1 ] && keep_say "account ${KEEP_NAME:-$id} needs re-auth (log in again with codex, then: ai codex adopt)"
+    return 0
+  fi
+  [ -z "$vid" ] || [ "$vid" = "$id" ] || return 0        # never cross to a different account
+  [ -n "$vrt" ] || return 0
+  [ "$vrt" != "$lrt" ] || return 0
   case "$cmp" in
     newer)
       write_auth "$KEEPF" && { WROTE_RT="$vrt"; KEEP_STATE=changed
@@ -405,6 +466,15 @@ if [ "$keep" = 1 ]; then
   KEEP_NOISY=1
   if [ -z "${AIGATE_URL:-}" ] || [ -z "${AIGATE_TOKEN:-}" ]; then keep_say "no aigate env — nothing to do"; exit 0; fi
   keep
+  # launchd/systemd fire at boot and on wake BEFORE the network is up: an UNREACHABLE aigate
+  # (connect refused / timeout / DNS → KEEP_STATE=down) is retried with backoff (~4 min total).
+  # 401/404/503 are answers, not outages: never retried. Gives up fail-open (exit 0).
+  for _w in ${AIGATE_KEEP_BACKOFF:-5 10 20 40 60 60}; do
+    [ "$KEEP_STATE" = down ] || break
+    bgwait sleep "$_w"
+    KEEP_NOISY=0; keep
+  done
+  [ "$KEEP_STATE" = down ] && keep_say "aigate still unreachable after retries — giving up until the next tick"
   exit 0
 fi
 
@@ -441,9 +511,11 @@ install_pick(){
 }
 
 if [ "$write_only" = 1 ]; then
-  sticky_reuse && exit 0
+  # machine-readable result for ai-desktop: the account whose login is NOW in auth.json
+  if sticky_reuse; then echo "aigate-account: ${KEEP_NAME:-}"; exit 0; fi
   pick "" || { diag; exit 1; }
   install_pick || exit 1
+  echo "aigate-account: $(jp "$RESPF" account)"
   exit 0
 fi
 
@@ -464,6 +536,8 @@ fi
 # print mode: buffer a piped prompt ONCE so every retry attempt replays it
 if [ ! -t 0 ]; then
   STDINF="$TMPD/stdin"
+  # NB: -p with a never-closing stdin pipe waits for EOF here AND in the raw claude/codex
+  # binaries (measured: raw `claude -p` sat the full 12s on an open pipe). Not a wrapper bug.
   bgwait cat > "$STDINF" 2>/dev/null
 fi
 run_print(){

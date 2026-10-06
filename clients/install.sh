@@ -46,14 +46,44 @@ if [ -e "$DIR/aigate-gpt.sh" ]; then
   echo "retired aigate-gpt.sh (moved to .bak-removed-*)"
 fi
 
-# Codex keeper (macOS): hourly `aigate-codex.sh --keep` keeps ~/.codex/auth.json in step
-# with the vault so a long-lived codex (ChatGPT.app, T3) reloads the vault's rotated
-# token instead of spending a dead one. The plist always lands under $ROOT; launchctl is
-# only touched for a real install (not AIGATE_NO_LAUNCHD=1, not a scratch AIGATE_INSTALL_ROOT).
-if [ "$(uname -s)" = "Darwin" ]; then
+# Codex keeper: every 5 min `aigate-codex.sh --keep` keeps ~/.codex/auth.json in step with the
+# vault so a long-lived codex (ChatGPT.app, T3) reloads the vault's rotated token instead of
+# spending a dead one. StartInterval/OnUnitActiveSec skip firings while the machine sleeps, so
+# the keeper itself retries an unreachable aigate (clients/aigate-codex.sh --keep).
+# Unit files always land under $ROOT; the real activation (launchctl / systemctl / crontab) is
+# skipped for AIGATE_NO_LAUNCHD / AIGATE_NO_SYSTEMD / AIGATE_NO_CRON =1 and for a scratch
+# AIGATE_INSTALL_ROOT (unless a test sets AIGATE_TEST_ACTIVATE=1 with fake launchctl/systemctl/crontab).
+# AIGATE_CODEX_HOME / CODEX_HOME set at install time are passed through to the keeper.
+OS="${AIGATE_INSTALL_OS:-$(uname -s)}"
+KEEPER_ENV=""   # "NAME<TAB>VALUE" lines
+TAB="$(printf '\t')"
+for _v in AIGATE_CODEX_HOME CODEX_HOME; do
+  eval "_val=\${$_v:-}"
+  [ -n "$_val" ] && KEEPER_ENV="$KEEPER_ENV$_v$TAB$_val
+"
+done
+xml_esc(){ printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+ACTIVATE=1
+[ -n "${AIGATE_INSTALL_ROOT:-}" ] && [ "${AIGATE_TEST_ACTIVATE:-0}" != 1 ] && ACTIVATE=0
+if [ "$OS" = "Darwin" ]; then
   KLABEL="ai.shoemoney.aigate-codex-keeper"
   KPLIST="$ROOT/Library/LaunchAgents/$KLABEL.plist"
   mkdir -p "$ROOT/Library/LaunchAgents"
+  ENVXML=""
+  if [ -n "$KEEPER_ENV" ]; then
+    ENVXML="  <key>EnvironmentVariables</key>
+  <dict>
+"
+    while IFS="$TAB" read -r _k _val; do
+      [ -n "$_k" ] || continue
+      ENVXML="$ENVXML    <key>$_k</key><string>$(xml_esc "$_val")</string>
+"
+    done <<EOK
+$KEEPER_ENV
+EOK
+    ENVXML="$ENVXML  </dict>
+"
+  fi
   cat > "$KPLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -66,7 +96,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
     <string>$DIR/aigate-codex.sh</string>
     <string>--keep</string>
   </array>
-  <key>StartInterval</key><integer>3600</integer>
+${ENVXML}  <key>StartInterval</key><integer>300</integer>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>$DIR/codex-keeper.log</string>
   <key>StandardErrorPath</key><string>$DIR/codex-keeper.log</string>
@@ -74,12 +104,62 @@ if [ "$(uname -s)" = "Darwin" ]; then
 </plist>
 EOF
   chmod 644 "$KPLIST"
-  if [ "${AIGATE_NO_LAUNCHD:-0}" != 1 ] && [ -z "${AIGATE_INSTALL_ROOT:-}" ]; then
+  if [ "${AIGATE_NO_LAUNCHD:-0}" != 1 ] && [ "$ACTIVATE" = 1 ]; then
     UIDN="$(id -u)"
     launchctl bootout "gui/$UIDN/$KLABEL" >/dev/null 2>&1 || true
     launchctl bootstrap "gui/$UIDN" "$KPLIST" >/dev/null 2>&1 \
-      && echo "loaded launchd agent $KLABEL (hourly codex keeper)" \
+      && echo "loaded launchd agent $KLABEL (codex keeper, every 5 min)" \
       || echo "NOTE: could not load $KLABEL — run: launchctl bootstrap gui/$UIDN $KPLIST" >&2
+  fi
+else
+  # Linux: systemd --user timer (Persistent=true catches up after suspend/off), else crontab.
+  KUNIT="aigate-codex-keeper"
+  UDIR="$ROOT/.config/systemd/user"
+  mkdir -p "$UDIR"
+  SENV=""
+  if [ -n "$KEEPER_ENV" ]; then
+    while IFS="$TAB" read -r _k _val; do
+      [ -n "$_k" ] || continue
+      SENV="${SENV}Environment=\"$_k=$_val\"
+"
+    done <<EOK
+$KEEPER_ENV
+EOK
+  fi
+  cat > "$UDIR/$KUNIT.service" <<EOF
+[Unit]
+Description=aigate codex keeper (keep ~/.codex/auth.json in step with the vault)
+
+[Service]
+Type=oneshot
+${SENV}ExecStart=/bin/bash $DIR/aigate-codex.sh --keep
+EOF
+  cat > "$UDIR/$KUNIT.timer" <<EOF
+[Unit]
+Description=aigate codex keeper, every 5 minutes
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+  KEEPER_DONE=0
+  if [ "${AIGATE_NO_SYSTEMD:-0}" != 1 ] && [ "$ACTIVATE" = 1 ] && command -v systemctl >/dev/null 2>&1 \
+     && systemctl --user show-environment >/dev/null 2>&1; then
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
+    if systemctl --user enable --now "$KUNIT.timer" >/dev/null 2>&1; then
+      KEEPER_DONE=1; echo "enabled systemd user timer $KUNIT.timer (codex keeper, every 5 min)"
+    fi
+  fi
+  if [ "$KEEPER_DONE" = 0 ] && [ "${AIGATE_NO_CRON:-0}" != 1 ] && [ "$ACTIVATE" = 1 ] && command -v crontab >/dev/null 2>&1; then
+    CRONLINE="*/5 * * * * /bin/bash $DIR/aigate-codex.sh --keep >> $DIR/codex-keeper.log 2>&1 # aigate-codex-keeper"
+    OLDCRON="$(crontab -l 2>/dev/null | grep -v '# aigate-codex-keeper$' || true)"   # read fully BEFORE rewriting
+    { [ -n "$OLDCRON" ] && printf '%s\n' "$OLDCRON"; printf '%s\n' "$CRONLINE"; } | crontab - \
+      && echo "installed crontab line for the codex keeper (every 5 min)" \
+      || echo "NOTE: could not install the keeper crontab line" >&2
   fi
 fi
 

@@ -145,7 +145,7 @@ test('ai usage: table grouped Claude/Codex, ★ on each dry pick, flags, countdo
     return [404, {}];
   }); t.after(mock.close);
   const sb = sandbox(); t.after(sb.cleanup);
-  const r = await ai(sb, ['usage'], { AIGATE_URL: mock.url });
+  const r = await ai(sb, ['usage'], { AIGATE_URL: mock.url, AI_USAGE_COLS: '160' });
   assert.equal(r.code, 0, r.stderr);
   const out = r.stdout;
   assert.ok(out.indexOf('Claude') < out.indexOf('Codex'));
@@ -213,7 +213,7 @@ test('install.sh into a scratch root: ai, ai-desktop, wrappers, t3 symlinks; ret
     const plist = readFileSync(join(dir, 'Library', 'LaunchAgents', 'ai.shoemoney.aigate-codex-keeper.plist'), 'utf8');
     assert.match(plist, /<key>Label<\/key><string>ai\.shoemoney\.aigate-codex-keeper<\/string>/);
     assert.match(plist, new RegExp(`<string>/bin/bash</string>\\s*<string>${ag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/aigate-codex\\.sh</string>\\s*<string>--keep</string>`));
-    assert.match(plist, /<key>StartInterval<\/key><integer>3600<\/integer>/);
+    assert.match(plist, /<key>StartInterval<\/key><integer>300<\/integer>/);
     assert.match(plist, /<key>RunAtLoad<\/key><true\/>/);
   }
 });
@@ -272,4 +272,53 @@ test('bash 3.2: every "${arr[@]}" in clients/ is guarded (${a[@]+"${a[@]}"}) or 
     });
   }
   assert.deepEqual(bad, []);
+});
+
+// ── ai usage rendering: no mid-email truncation, plan column, fits the terminal ──
+const LONG = [
+  { account: 'personal', label: 'jeremy68508@gmail.com', plan: 'pro', five_hour_pct: 12, seven_day_pct: 30, five_hour_reset: now() + 3600, seven_day_reset: now() + 86400, usage_age_s: 5 },
+  { account: 'same', label: 'same', plan: 'plus', five_hour_pct: 1, seven_day_pct: 2, five_hour_reset: now() + 3600, seven_day_reset: now() + 86400, usage_age_s: 5 },
+  { account: 'cxlong', kind: 'codex', label: 'a-really-long-address-for-codex@example-domain.com', plan: 'plus', five_hour_pct: 5, seven_day_pct: 9, five_hour_reset: now() + 600, seven_day_reset: now() + 86400, usage_age_s: 5 },
+];
+async function usage(t, cols, extra = {}) {
+  const mock = await startMock((u) => (u.pathname === '/api/accounts' ? [200, LONG] : [404, {}])); t.after(mock.close);
+  const sb = sandbox(); t.after(sb.cleanup);
+  return (await ai(sb, ['usage'], { AIGATE_URL: mock.url, AI_USAGE_COLS: String(cols), ...extra })).stdout;
+}
+const rowsOf = (out) => out.split('\n').filter((l) => /personal|same|cxlong/.test(l));
+
+test('ai usage: 80-col terminal → every row fits, truncation is an ellipsis (never mid-email-silently), name first', async (t) => {
+  const out = await usage(t, 80);
+  const rows = rowsOf(out);
+  assert.equal(rows.length, 3);
+  for (const l of rows) assert.ok([...l].length <= 80, `row fits 80 cols (${[...l].length}): ${l}`);
+  const personal = rows.find((l) => l.includes('personal'));
+  assert.match(personal, /personal \(/); assert.match(personal, /…/, 'truncated with an ellipsis');
+  assert.ok(!/jeremy68508@gmai\s/.test(personal), 'no silent mid-email cut');
+  assert.ok(rows.find((l) => l.includes('same')).includes('same') && !/same \(same\)/.test(out), 'label equal to the name is not repeated');
+});
+
+test('ai usage: wide terminal shows the full label; plan is its own aligned column for Claude AND Codex rows', async (t) => {
+  const out = await usage(t, 200);
+  assert.match(out, /personal \(jeremy68508@gmail\.com\)/);
+  assert.match(out, /cxlong \(a-really-long-address-for-codex@example-domain\.com\)/);
+  assert.ok(!/…/.test(out), 'nothing truncated when there is room');
+  const rows = rowsOf(out);
+  const planCol = (l, plan) => l.indexOf(` ${plan} `);
+  const a = planCol(rows.find((l) => l.includes('personal')), 'pro');
+  const b = planCol(rows.find((l) => l.includes('same')), 'plus');
+  const c = planCol(rows.find((l) => l.includes('cxlong')), 'plus');
+  assert.ok(a > 0 && a === b && b === c, `plan column aligned across rows and kinds (${a},${b},${c})`);
+});
+
+// ── codex binary fallback in `ai codex` (no wrapper installed) picks the highest version ──
+test('ai codex without the wrapper: execs the HIGHEST-version candidate, cmux shims excluded', async (t) => {
+  const sb = sandbox(); t.after(sb.cleanup);
+  rmSync(join(sb.ag, 'aigate-codex.sh'));
+  const d = join(sb.dir, 'cands'); mkdirSync(join(d, 'cmux-cli-shims'), { recursive: true });
+  const mkc = (p, name, ver) => { writeFileSync(p, `#!/bin/bash\nif [ "$1" = --version ]; then echo "codex-cli ${ver}"; exit 0; fi\necho "${name}" >> "${join(sb.dir, 'ran.log')}"\n`); chmodSync(p, 0o755); return p; };
+  const cands = [mkc(join(d, 'a'), 'a-old', '0.147.0'), mkc(join(d, 'b'), 'b-new', '0.160.1'), mkc(join(d, 'cmux-cli-shims', 'c'), 'c-shim', '9.0.0')];
+  const r = await ai(sb, ['codex', 'hi'], { AIGATE_CODEX_CANDIDATES: cands.join(':') });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(readFileSync(join(sb.dir, 'ran.log'), 'utf8').trim(), 'b-new');
 });
