@@ -28,7 +28,8 @@
 | Balances **your own** accounts by real headroom | Route requests **on behalf of other users** |
 | Injects the picked account's token into the **official client** (clean credential store, no shadow login) | Extract tokens to feed a third-party harness |
 | Stays **single-tenant** (just you) | Resell / share access, or pool for a team |
-| Uses a real proxy **only for API-key providers** (OpenAI, fal, …) | Proxy/relay **Claude subscription OAuth** |
+| Runs the **official `codex` binary** on **your own** ChatGPT logins | Relay Codex/ChatGPT traffic, or sit in its request path |
+| Uses a real proxy **only for API-key providers** (OpenAI, fal, …) | Proxy/relay **Claude or ChatGPT subscription OAuth** |
 
 If you can't say "these are **my** accounts and **I'm** the only user," you're outside what this doc covers — use an [API key](https://platform.claude.com/) instead.
 
@@ -134,15 +135,59 @@ aigate keeps the **architecture** compliant; it can't stop you from **using** it
 
 ---
 
+## 🧠 The Codex (ChatGPT) half
+
+Codex accounts follow the **same selector pattern** as Claude: aigate is a vault and a picker, **never a relay**. The official `codex` binary makes every request to ChatGPT itself, with its own headers and telemetry; aigate is not in that path.
+
+| ✅ aigate does (Codex) | ❌ aigate never does (Codex) |
+|---|---|
+| Stores **your own** ChatGPT logins (`auth.json`) AES-256-GCM encrypted | Hold, share, or hand out logins that are not yours |
+| Writes the picked account's **`auth.json`** for the **official `codex` binary** to read | Proxy, relay, or rewrite Codex's requests |
+| **Reads `chatgpt.com/backend-api/wham/usage`** with the account's own token to learn headroom | Send prompts or model traffic anywhere |
+| **Refreshes tokens** through OpenAI's official token endpoint (`auth.openai.com/oauth/token`) using the **public Codex CLI client id**, the same call the binary itself makes | Mint tokens by any other route, or use a private or borrowed client id |
+| Stays single-tenant: your boxes, your accounts | Resell, pool for others, or serve another person's session |
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Box as 🖥️ your box
+  participant AG as 🛡️ aigate (selector)
+  participant CX as 🤖 official codex binary
+  participant OA as 🟢 ChatGPT / OpenAI
+  Box->>AG: GET /api/select?kind=codex  (which of MY accounts has headroom?)
+  AG-->>Box: { account, auth_json }  📝 audited (IP + host)
+  Box->>CX: write ~/.codex/auth.json, run OFFICIAL codex
+  CX->>OA: normal Codex request 🔑 (direct, real client)
+  Note over AG,OA: aigate only polls wham/usage + refreshes via the official token endpoint
+```
+
+- **Official binary, always.** aigate's whole footprint on the client is one file, `auth.json`, written atomically with mode 600. A pre-existing login is backed up once (`auth.json.bak-pre-aigate-*`). The request path to ChatGPT never touches aigate.
+- **Two server-side calls, both the client's own.** The usage read (`wham/usage`) and the token refresh are the calls the official client makes for itself; aigate makes them on your behalf for **your** accounts only, and does not follow redirects, since both carry live credentials.
+- **Refresh late.** Rotating a refresh token orphans every other holder of that login (such as the Codex desktop app), so aigate refreshes only when the access token is near expiry (default: within two days). A client whose own login rotated can sync the newer one back with `POST /api/codex/sync`.
+- **Your accounts only.** The same single-tenant rule as Claude applies. Don't spread one heavy workload across many ChatGPT accounts to beat limits, and don't put a login on a machine used by someone else.
+- **Policy status is yours to check.** Unlike the Claude section above, this document quotes no OpenAI policy and makes no claim that a given ChatGPT plan permits multiple personal accounts. Read OpenAI's current terms for your plan. What aigate guarantees is the architecture: official binary, your own logins, no relay.
+
+### 🖥️ Desktop apps
+
+- **ChatGPT/Codex desktop:** `ai desktop codex` only writes `auth.json` and restarts the app, which reads that file itself.
+- **Claude Desktop:** **display-only.** aigate can show which account it recommends but does not inject anything into the app, and cannot: the app launches its Code runtime with its own signed-in credential. Nothing here works around or overrides the app's own login.
+
+### 🧹 CLIProxyAPI is gone
+
+Earlier Codex routing went through CLIProxyAPI, a local OAuth-pooling proxy. That component has been **removed and is no longer used**: the installer retires the `aigate-gpt.sh` shim, and Codex goes directly through the official binary via `aigate-codex.sh`. No proxy sits between your machine and ChatGPT any more.
+
+---
+
 ## 🔀 The non-Claude half (API keys are different)
 
-The prohibition above is about **Claude subscription OAuth**. Ordinary **API keys** (OpenAI, OpenRouter, Gemini, Groq, fal, …) are *meant* for programmatic use — so aigate's **secure proxy** (`POST /v1/messages`, `GET /v1/models`) injects those server-side freely. That's a normal API gateway and carries none of the subscription-OAuth restrictions.
+The prohibition above is about **Claude subscription OAuth**; the same no-relay rule is kept for ChatGPT subscription logins. Ordinary **API keys** (OpenAI, OpenRouter, Gemini, Groq, fal, …) are *meant* for programmatic use — so aigate's **secure proxy** (`POST /v1/messages`, `GET /v1/models`) injects those server-side freely. That's a normal API gateway and carries none of the subscription-OAuth restrictions.
 
 The proxy is structurally incapable of crossing the line above: it reads only from the API-key registry (`provider_keys`), never from the Claude-account vault (`accounts`) — the two tables, two code paths never touch. A key that *looks* like a Claude Code setup-token (`sk-ant-oat…`) is refused both at store-time (vaulting it under the `anthropic` provider 400s, telling you to add it as an account instead) and at fetch-time (a poisoned row that slipped in some other way is skipped, audited, and the next real key is tried) — so even a mistake can't relay a subscription token through this path.
 
 | Provider type | aigate mode | In the request path? | Compliance |
 |---|---|---|---|
 | **Claude subscriptions** (OAuth) | 🎯 Selector — official binary | ❌ never | ✅ accepted architecture |
+| **Codex / ChatGPT logins** | 🎯 Selector — official `codex` binary; aigate writes `auth.json`, reads `wham/usage`, refreshes via the official token endpoint | ❌ never | ✅ same no-relay architecture; plan terms are yours to check |
 | **API-key providers** | 🔀 Secure proxy — `openrouter`, `kimi`, `anthropic` (API keys only) | ✅ standard | ✅ normal for API keys |
 
 ---

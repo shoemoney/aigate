@@ -16,9 +16,9 @@ Node.js 24+ · SQLite · One runtime dependency · MIT
 
 [![AIGate master-password entry: mint AI lock branding over a navy flying-token background](docs/screenshots/live-2026-09-15/01-entry-desktop.png)](docs/screenshots/live-2026-09-15/01-entry-desktop.png)
 
-**One vault. A clear view of what is using it.** AIGate stores your credentials, selects Claude accounts by available headroom, proxies requests for supported API-key providers, and brings usage and activity into one live workspace.
+**One vault. A clear view of what is using it.** AIGate stores your credentials, selects Claude **and Codex (ChatGPT)** accounts by available headroom, proxies requests for supported API-key providers, and brings usage and activity into one live workspace.
 
-Claude subscription requests run through the official Claude client directly. API-key proxy requests use the provider-key vault. These are separate paths; see [credential boundaries](#credential-boundaries).
+Claude and Codex subscription requests run through the official `claude` and `codex` binaries directly; AIGate only picks the account and hands over its credential. API-key proxy requests use the provider-key vault. These are separate paths; see [credential boundaries](#credential-boundaries).
 
 | Vault | Observe | Operate |
 |---|---|---|
@@ -108,9 +108,10 @@ The folder also includes an [interactive gallery](docs/screenshots/live-2026-09-
 | **Encrypted vault** | AES-256-GCM storage for Claude account tokens and provider API keys. List endpoints return metadata; authenticated selection and key-fetch routes return the requested credential and record access. |
 | **Account selection** | Ranks accounts by their worst usage window, skips disabled, parked, and over-cutoff accounts, and recovers eligibility as limits reset. The default cutoff is 95%. |
 | **Usage polling** | Reads real five-hour and seven-day rate-limit utilization every ten minutes. Unchecked usage is shown as unknown rather than a fabricated zero. |
+| **Codex (ChatGPT) accounts** | Accounts carry a `kind` (`claude` or `codex`); the two pools never mix in selection. A Codex row stores the whole `auth.json` encrypted, polls `wham/usage` for real 5h and weekly utilization, and refreshes its own OAuth tokens late and server-side. See [Codex accounts](#codex-chatgpt-accounts). |
 | **Provider registry** | A 65-provider catalog, add-key controls, bulk import, normalized key intake, liveness probes where supported, and masked key hints. |
 | **API-key proxy** | Anthropic Messages, OpenAI Chat Completions, and Responses endpoints with provider routing, server-side key injection, streaming, and audited key failover. |
-| **Claude client integration** | The `cc` wrapper runs the official binary, checks account headroom, parks exhausted accounts, and retries with the next eligible account. Global overload responses retry the same account. |
+| **Client integration** | The `ai` front door runs the official `claude` or `codex` binary on the account with the most headroom, parks exhausted accounts, and retries with the next eligible one. Global overload responses retry the same account. `ai usage` prints every account's live meters. |
 | **Live interface** | WebSocket updates, interactive usage charts, account and key management, a filtered activity feed, responsive navigation, and the shared token background. |
 | **Task board** | Atomic task claims, worker heartbeats, drag reordering, results, follow-ups, and retries. Its API is internal and may change. |
 | **Audit and recovery** | Credential access and mutations are logged; prompts are scrubbed before storage. DB-backed health checks, a watchdog, a boot encryption canary, and daily snapshots support operations. |
@@ -122,8 +123,10 @@ The folder also includes an [interactive gallery](docs/screenshots/live-2026-09-
 ```mermaid
 flowchart LR
   Client["Your machines"] -->|"select account"| Vault["AIGate<br/>Encrypted vault + usage poller"]
-  Vault -->|"selected credential"| Claude["Official Claude client"]
+  Vault -->|"selected credential"| Claude["Official claude binary"]
   Claude -->|"direct request"| Anthropic["Anthropic"]
+  Vault -->|"auth.json"| Codex["Official codex binary"]
+  Codex -->|"direct request"| OpenAI["ChatGPT / OpenAI"]
   Client -->|"API-key request"| Proxy["AIGate API-key proxy"]
   Vault --- Proxy
   Proxy -->|"vaulted provider key"| Providers["API providers"]
@@ -133,7 +136,7 @@ flowchart LR
   style UI fill:#071825,color:#e9fff9,stroke:#67efd6
 ```
 
-The daemon polls usage and records activity independently of Claude's request stream. The client requests an eligible account, then launches the official `claude` binary with that credential. Prompt hooks re-check headroom and record activity; a genuine account-limit response can park the account temporarily and continue on the next eligible account.
+The daemon polls usage and records activity independently of Claude's request stream. The client requests an eligible account, then launches the official `claude` binary with that credential (or, for Codex, writes the picked account's `auth.json` and launches the official `codex` binary). Prompt hooks re-check headroom and record activity; a genuine account-limit response can park the account temporarily and continue on the next eligible account.
 
 For API-key requests, AIGate is in the request path: it selects a working provider key, injects it server-side, and streams the upstream response. The supported routes and model mappings are documented in the [API reference](#api-reference).
 
@@ -142,6 +145,39 @@ For API-key requests, AIGate is in the request path: it selects a working provid
 Claude OAuth setup tokens belong in **accounts**. Provider API keys belong in **provider_keys**. The proxy reads the provider-key vault and rejects Claude setup tokens at intake and retrieval. The selector returns credentials to authenticated callers, so clients using selection or explicit key retrieval do receive those credentials; proxy clients use the AIGate bearer instead.
 
 For the project's policy analysis and source references, read [COMPLIANCE.md](COMPLIANCE.md). The software's routing architecture does not guarantee an account's policy status.
+
+### Codex (ChatGPT) accounts
+
+Codex accounts sit in the same `accounts` table as Claude accounts, partitioned by `kind` (`claude` default, or `codex`). Selection, health counts, and the dashboard keep the two pools separate; Claude fields and `/health` counters keep their original meaning.
+
+**Adding one.** `POST /api/accounts` with `kind: "codex"`, an `account` name (no spaces or slashes), and `auth_json` as an object or a JSON string. Two shapes are accepted and normalized to the canonical `auth.json`:
+
+| Shape | Looks like |
+|---|---|
+| Real Codex login | `~/.codex/auth.json`: `{ "tokens": { "id_token", "access_token", "refresh_token", "account_id" }, "last_refresh" }` |
+| Flat file | `{ "type": "codex", "access_token", "refresh_token", "id_token", "account_id", "expired", "last_refresh" }` (local-offset timestamps are converted to UTC) |
+
+`access_token` and `refresh_token` are required. `account_id` comes from the file or the token's ChatGPT claim, and email and plan are read from the JWT claims. A Claude `setup_token` sent with `kind: "codex"` is a `400`, `auth_json` on a Claude account is a `400`, and reusing a name across kinds is a `409`. A second row for a ChatGPT account that is already vaulted is a `409`.
+
+```bash
+curl -X POST http://localhost:20200/api/accounts \
+  -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
+  -d "{\"kind\":\"codex\",\"account\":\"gpt_1\",\"auth_json\":$(cat ~/.codex/auth.json)}"
+```
+
+Or run `ai codex adopt` on a box that is already logged in to `codex`; it POSTs that box's `auth.json` to `/api/codex/sync` (see below).
+
+**Usage polling.** Every poll cycle, and on `POST /api/accounts/:name/refresh`, aigate reads `chatgpt.com/backend-api/wham/usage` with the account's own access token. Windows are slotted by their length, never by primary/secondary: up to six hours is the "five hour" meter, longer is the weekly one (Pro plans report only a weekly window, so the 5h meter is hidden for them). `limit_reached` pins the worst window to 100%. A poll that fails or returns a changed shape keeps the last known values.
+
+**Refresh is server-owned and late.** Codex refresh tokens rotate with reuse detection, so exactly one caller may spend one. aigate does the refresh itself, through the official token endpoint (`auth.openai.com/oauth/token`) with the public Codex CLI client id, and clients simply receive a fresh `auth.json`.
+
+- **Late:** a refresh happens only when the access token is within `AIGATE_CODEX_REFRESH_AHEAD_S` (default two days) of expiry. Every refresh rotates the token family and orphans long-lived holders such as the Codex desktop app, so aigate avoids refreshing early.
+- **Single-flight:** concurrent callers for one account share a single in-flight refresh.
+- **Persist first:** the rotated tokens are written to the vault before anything else, because they exist nowhere else.
+- **Dead tokens:** `invalid_grant` and similar responses set `reauth_needed` and fire an alert; transient failures (network, 5xx) change nothing.
+- **Selection** skips accounts whose access token has already expired, and a failed early refresh never withholds a token that is still valid.
+
+**Sync back.** `POST /api/codex/sync` accepts `{auth_json}` from a client whose own login rotated (the desktop app, or a manual `codex login`). It finds the row by `account_id` (`404` if none) and applies the file only when its refresh token differs and its `last_refresh` is newer. It replies `{ok, applied, reason}`, with `applied:false` and a reason such as `same refresh_token`, `not newer than stored last_refresh`, or `refresh in flight`. `auth_json` must carry `last_refresh`.
 
 ### Task lifecycle
 
@@ -194,19 +230,37 @@ You can also open **API keys** in the dashboard, choose a provider, and add the 
 
 ## Connect a machine
 
-**One installer sets up the `cc` command.** It routes the official `claude`
-through aigate's selector, unsets stray `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` /
+**One installer sets up the `ai` command (plus `ai-desktop`).** It routes the official `claude` and `codex`
+binaries through aigate's selector, and for Claude unsets stray `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` /
 `ANTHROPIC_BASE_URL`, preflight-**warns** on shadow logins + `BASE_URL` hijacks, and (in
 headless `-p` mode) detects over-limit and retries the next account — with **clean stdout**
-(all banners on stderr, so piping `cc -p` output stays pure).
+(all banners on stderr, so piping `ai -p` output stays pure).
 
 ```bash
 AIGATE_URL='https://aigate.example.com' AIGATE_TOKEN='…' bash clients/install.sh
-cc -p 'hi'          # Claude replies using the account with the most headroom
+ai -p 'hi'          # Claude replies using the account with the most headroom
+ai codex exec 'hi'  # Codex on the ChatGPT account with the most headroom
 ```
 
-The installer writes `~/.claude/aigate/{aigate-run.sh,hydrate.sh,env}` + `~/.local/bin/cc`
-and auto-detects the `claude` binary.
+The installer writes the `aigate-*.sh` scripts, `hydrate.sh`, and `env` into `~/.claude/aigate/`, installs `ai` and `ai-desktop` into `~/.local/bin/`, and auto-detects the `claude` binary. It removes an old installer-written `cc` and retires the legacy CLIProxyAPI-era `aigate-gpt.sh` shim (moved aside to `.bak-removed-*`). **CLIProxyAPI is no longer used anywhere**; Codex goes straight through `aigate-codex.sh`.
+
+### `ai` — one front door
+
+| Command | Runs |
+|---|---|
+| `ai [claude] …` | official `claude` on the Claude account with the most headroom (Claude-in-Chrome on by default; `--no-chrome` opts out) |
+| `ai codex …` · `ai gpt …` | official `codex` on the ChatGPT account with the most headroom (also reached by `--model gpt*`, `sol*`, or `codex*`) |
+| `ai kimi …` | `claude` against Kimi K3 (see [`ai kimi`](#ai-kimi--kimi-k3-via-aigate)); also `--model kimi*` or `k3*` |
+| `ai muse …` | `claude` against Meta Muse; also `--model muse*` or `spark*`. `ai muse cli …` runs Meta's own `muse` CLI instead |
+| `ai usage [--json]` | live table of every Claude and Codex account (5h and weekly meters, resets, flags), with a star on the next pick; `--json` prints `{accounts, next}` |
+| `ai desktop codex` · `ai desktop claude` | relaunch a desktop app on the recommended account (below) |
+| `ai codex adopt` | POST this box's `~/.codex/auth.json` to `/api/codex/sync` (recovery and first import) |
+
+A `--model` flag selects the route and is stripped before the binary sees it. Headless `-p` on the Claude route auto-adds `--dangerously-skip-permissions` so it never hangs on the trust prompt.
+
+**Codex route (`aigate-codex.sh`).** It asks `GET /api/select?kind=codex`, backs up any existing `auth.json` once (`auth.json.bak-pre-aigate-*`), writes the picked account's `auth.json` atomically with mode 600, then runs the real `codex`. `-p`/`--print` becomes `codex exec` with clean stdout, and on a usage-limit failure it parks the account via `POST /api/events/limit` and retries the next one (up to three). A token that codex rotated locally is synced back to aigate on exit, and before a new pick if it differs from the vault's copy. If aigate is down, unauthorized, or has no account, it says why on stderr and runs plain `codex` on the existing login. Defaults: model `gpt-6.1-sol` (`AI_GPT_MODEL`), effort `high` (`AI_GPT_EFFORT`), and approvals/sandbox bypassed unless `AI_GPT_YOLO=0` or you pass your own sandbox flags. `AI_CODEX_FORCE=1` silences the "another codex is running" warning; `AIGATE_CODEX_BIN` and `AIGATE_CODEX_HOME` override the binary and home.
+
+**Desktop apps.** `ai desktop codex` writes the best Codex account into `auth.json`, quits and relaunches the ChatGPT/Codex app, which reads that file at start, so the switch is real. `ai desktop claude` is **display-only**: it launches Claude.app and prints which account aigate recommends, but cannot switch it. Measured on 2026-08-20, Claude for Desktop spawns its Code runtime through a helper that overwrites `CLAUDE_CODE_OAUTH_TOKEN` with the app's own signed-in credential, so the app runs on whatever account is signed in inside it. Sign in to the recommended account yourself.
 
 > [!IMPORTANT]
 > The **live copies are `~/.claude/aigate/*`** — editing `clients/*.sh` in the repo changes
@@ -215,10 +269,12 @@ and auto-detects the `claude` binary.
 
 | File | Role |
 |---|---|
-| `install.sh` | sets up `cc` + `~/.claude/aigate/` + env; auto-detects `claude`; wires MCP-key hydration into the shell |
-| `aigate-run.sh` | the `cc` wrapper — select → set token → unset stray `ANTHROPIC_*` (incl. `BASE_URL`) → run `claude`; **interactive sessions auto-switch** on exhaustion — relaunch `claude --continue` on the next account, **no `[Y/n]`**, same conversation; **retry-on-limit** in `-p` mode (real limit → **15m park** + next account; transient **529 → wait 10s, retry the SAME account, no park**) w/ clean stdout; preflight-warns **shadow logins** + `BASE_URL` hijacks |
+| `install.sh` | installs `ai` + `ai-desktop` + `~/.claude/aigate/` + env; auto-detects `claude`; wires MCP-key hydration into the shell |
+| `ai` / `ai-desktop` | the front door and the desktop relauncher described above |
+| `aigate-codex.sh` | the Codex route: select `kind=codex`, write `auth.json`, run the official `codex`; parks and retries on a usage limit; syncs rotated tokens back |
+| `aigate-run.sh` | the Claude route behind `ai` — select → set token → unset stray `ANTHROPIC_*` (incl. `BASE_URL`) → run `claude`; **interactive sessions auto-switch** on exhaustion — relaunch `claude --continue` on the next account, **no `[Y/n]`**, same conversation; **retry-on-limit** in `-p` mode (real limit → **15m park** + next account; transient **529 → wait 10s, retry the SAME account, no park**) w/ clean stdout; preflight-warns **shadow logins** + `BASE_URL` hijacks |
 | `aigate-kimi.sh` | **[Kimi K3 only]** — run the official `claude` binary against Kimi's Anthropic-compatible endpoint; fetches the `sk-kimi` key from the vault (audited, host+IP); atomic-writes a cache (mode 600) so parallel swarms survive vault blips; maps every model tier onto Kimi; adds `--dangerously-skip-permissions` in `-p` headless mode; bypasses the Claude-account warden (Kimi has no OAuth) but **stays a selector** — still the real binary, your own vaulted key, **never a proxy** |
-| `hydrate.sh` | MCP-key hydration — vault → `~/.claude/aigate/mcp-keys.env` so `${BRAVE_API_KEY}`-style MCP configs resolve at launch; **merges** partial fetches (a blip never wipes cached keys); `cc` **foreground-freshens** when missing/stale (>12h) so *this* launch gets keys |
+| `hydrate.sh` | MCP-key hydration — vault → `~/.claude/aigate/mcp-keys.env` so `${BRAVE_API_KEY}`-style MCP configs resolve at launch; **merges** partial fetches (a blip never wipes cached keys); `ai` **foreground-freshens** when missing/stale (>12h) so *this* launch gets keys |
 | `prompt-hook.sh` | Claude Code `UserPromptSubmit` hook → **re-evaluates the current account every turn** (parks it fleet-wide the instant it's exhausted) + logs the prompt; backgrounded & **stdio-detached** = does not block the prompt turn |
 | `statusline-feed.sh` | statusline badge (account · wk %) → also feeds real usage back |
 | `test-switching.sh` | end-to-end switching test (below) |
@@ -235,25 +291,20 @@ The repo includes a Claude Code **skill** at [`.claude/skills/add-key/`](.claude
 It knows the auth flow (source `~/.claude/aigate/env`), the 65-provider catalog, and the add / list / fetch / rotate routes. Distribute it fleet-wide by dropping it in `~/.claude/skills/` on each box — every Claude then knows how to reach the vault.
 
 > [!TIP]
-> `cc` is a shell command (`~/.local/bin/cc`). On Linux it shadows the C
-> compiler `cc` when `~/.local/bin` precedes `/usr/bin` — rename it if you
-> compile with `cc`. In headless `-p` mode it auto-adds
-> `--dangerously-skip-permissions` so it never hangs on the trust prompt.
->
 > **"Unable to connect to API"?** A stale `ANTHROPIC_BASE_URL` silently hijacks
-> every request. `cc` unsets the env var and **preflight-warns** when
+> every request. The Claude route unsets the env var and **preflight-warns** when
 > `~/.claude/settings*.json` carries one — strip the key where it points.
 
-### `cc kimi` — Kimi K3 via aigate
+### `ai kimi` — Kimi K3 via aigate
 
 Kimi K3 ("Kimi for Coding") has an Anthropic-compatible API endpoint. To run the official `claude` binary against Kimi:
 
 ```bash
-cc kimi [claude args...]
-cc kimi -p "explain this repo"
+ai kimi [claude args...]
+ai kimi -p "explain this repo"
 ```
 
-**How it works:** `cc` dispatches `kimi` to `aigate-kimi.sh`, which fetches your vaulted `sk-kimi` key from aigate, points `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` at Kimi's endpoint, maps every model tier to Kimi, and runs the real `claude` binary. The architecture stays a **selector** — your own key, the real binary, never a proxy relaying requests through aigate. Kimi has no Claude OAuth account, so this bypasses the multi-account warden entirely.
+**How it works:** `ai` dispatches `kimi` to `aigate-kimi.sh`, which fetches your vaulted `sk-kimi` key from aigate, points `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` at Kimi's endpoint, maps every model tier to Kimi, and runs the real `claude` binary. The architecture stays a **selector** — your own key, the real binary, never a proxy relaying requests through aigate. Kimi has no Claude OAuth account, so this bypasses the multi-account warden entirely.
 
 **Setup:**
 
@@ -263,11 +314,11 @@ cc kimi -p "explain this repo"
      -H "Authorization: Bearer $AIGATE_TOKEN" -H 'content-type: application/json' \
      -d '{"provider":"kimi","key":"sk-…","label":"kimi-k3"}'
    ```
-2. **Re-run the installer** on any box where you want `cc kimi`:
+2. **Re-run the installer** on any box where you want `ai kimi`:
    ```bash
    AIGATE_URL='https://aigate.example.com' AIGATE_TOKEN='…' bash clients/install.sh
    ```
-   The installer now installs both `aigate-run.sh` and `aigate-kimi.sh` alongside `cc`.
+   The installer installs `aigate-run.sh`, `aigate-kimi.sh`, `aigate-codex.sh`, and `aigate-muse.sh` alongside `ai`.
 
 **Env overrides** (optional):
 
@@ -276,13 +327,13 @@ cc kimi -p "explain this repo"
 - `CC_KIMI_BASE_URL` — default `https://api.kimi.com/coding`
 
 > [!WARNING]
-> Kimi is an **unprovisioned experimental mode** of aigate. `cc kimi` is confirmed to *route* to `aigate-kimi.sh` (verified via a sandbox install), but the script has **no automated test coverage** and a live end-to-end Kimi completion has never been run. Treat the vault-fetch and cache paths as unexercised. Test before deploying to critical workloads.
+> Kimi is an **unprovisioned experimental mode** of aigate. `ai kimi` is confirmed to *route* to `aigate-kimi.sh` (verified via a sandbox install), but the script has **no automated test coverage** and a live end-to-end Kimi completion has never been run. Treat the vault-fetch and cache paths as unexercised. Test before deploying to critical workloads.
 
 ---
 
 ## Verify account switching
 
-`test-switching.sh` temporarily changes account availability and asserts that `cc -p` follows the selector, with a real Claude `PONG` at each step:
+`test-switching.sh` temporarily changes account availability and asserts that `ai -p` follows the selector, with a real Claude `PONG` at each step:
 
 ```bash
 bash clients/test-switching.sh <accountWithMoreHeadroom> <otherAccount>
@@ -291,7 +342,7 @@ bash clients/test-switching.sh <accountWithMoreHeadroom> <otherAccount>
 <details>
 <summary><b>Verified run — Pi <code>twojeffs</code> → <code>aigate.shoemoney.ai</code> (2026-07-08)</b></summary>
 
-| State | Expected | Picked | `cc -p` |
+| State | Expected | Picked | `ai -p` |
 |---|---|---|---|
 | both enabled | shoemoney (1% vs 19%) | **shoemoney** | `PONG` |
 | shoemoney disabled | personal | **personal** | `PONG` |
@@ -310,13 +361,14 @@ Use `Authorization: Bearer $AIGATE_TOKEN` for machine clients. The dashboard use
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` · `/healthz` | **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` plus observability numbers `poll_age_s, backup_age_s, poll_ok, poll_failed` + a `parked` / `reauth` / `disabled` tally (all numbers, no secrets; autoheal reads only the status) (generic 503 if the DB is wedged) |
+| `GET` | `/health` · `/healthz` | **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` (Claude pool only) plus observability numbers `poll_age_s, backup_age_s, poll_ok, poll_failed` + a `parked` / `reauth` / `disabled` / `over_cutoff` tally and the Codex counters `codex_accounts, codex_selectable, codex_reauth` (all numbers, no secrets; autoheal reads only the status) (generic 503 if the DB is wedged) |
 | `GET` | `/api/session` | Public session state: `{authenticated, passwordEnabled}`; no vault contents |
-| `GET` | `/api/select?host=&exclude=a,b` | best account + token (logs access w/ IP); `exclude` skips accounts on retry |
-| `GET` / `POST` | `/api/accounts` | list (usage, **no tokens**) / add `{account, setup_token, label}` |
+| `GET` | `/api/select?host=&exclude=a,b&kind=&dry=` | best account + credential (logs access w/ IP); `exclude` skips accounts on retry. `kind=claude` (default) returns `{account, setup_token, five_hour_pct, seven_day_pct, five_hour_reset, seven_day_reset}`; `kind=codex` returns `{account, kind, auth_json, plan, token_exp, …usage}` after a late refresh if due. `dry=1` returns `{account, kind, dry, plan, …usage}` with **no credential**, audited as `select-dry`. `503` with a tally when nothing has headroom; `400` on an unknown `kind` |
+| `POST` | `/api/codex/sync` | `{auth_json}` — adopt a client's newer Codex login into the vault; replies `{ok, applied, reason}` (`404` unknown `account_id`, `400` without `last_refresh`). See [Codex accounts](#codex-chatgpt-accounts) |
+| `GET` / `POST` | `/api/accounts` | list (usage, `kind`, `plan`, `token_exp`, **no credentials**) / add Claude `{account, setup_token, label}` or Codex `{kind:"codex", account, auth_json, label}` |
 | `DELETE` | `/api/accounts/:name` | remove |
 | `POST` | `/api/accounts/:name/disabled` | `{disabled: true/false}` |
-| `POST` | `/api/accounts/:name/refresh` | **live re-poll** ONE account's real headroom right now (not the 10-min cache) → `{five, seven, alive, maxed}`; 404 on unknown account |
+| `POST` | `/api/accounts/:name/refresh` | **live re-poll** ONE account's real headroom right now (not the 10-min cache) → `{account, five, seven, alive, maxed}` (Codex accounts poll `wham/usage`); 404 on unknown account, 502 on a poll failure |
 | `POST` | `/api/events/usage` | set an account's 5h/7d % — the **client statusline-feed** path (the server-side poller writes usage straight to the DB); **404 on unknown account** |
 | `POST` | `/api/events/limit` | `{account, minutes?}` — **TTL-park** an over-limit account (default **15m**, `minutes` clamped 1–360; real usage untouched, auto-unparks when the TTL passes); **404 on unknown account** |
 | `POST` | `/api/events/prompt` | log a prompt `{account, host, cwd, model, prompt}` |
@@ -386,6 +438,11 @@ Same posture on the OpenAI wire: point the client at `http://<aigate>/v1` with t
 | `AIGATE_AUTH_MAX_FAILS` | `10` | bad bearer attempts from one IP within window before 429 lock. Loopback exempt. |
 | `AIGATE_AUTH_WINDOW_MS` | `60000` (60s) | window for counting `AUTH_MAX_FAILS`. |
 | `AIGATE_AUTH_LOCK_MS` | `300000` (5m) | lock duration after `AUTH_MAX_FAILS` exceeded. |
+| `AIGATE_CODEX_REFRESH_AHEAD_S` | `172800` (2d) | refresh a Codex access token only when it is this close to expiry |
+| `AIGATE_CODEX_USAGE_URL` | `https://chatgpt.com/backend-api/wham/usage` | Codex usage endpoint (override for tests) |
+| `AIGATE_CODEX_TOKEN_URL` | `https://auth.openai.com/oauth/token` | official OAuth token endpoint used for refresh |
+| `AIGATE_CODEX_CLIENT_ID` | the public Codex CLI app id | OAuth client id sent on refresh |
+| `AIGATE_CODEX_UA` | `codex_cli_rs/0.160.1` | user-agent sent to the two Codex endpoints |
 | `AIGATE_VERSION` | *(empty = package.json)* | override served version string (`/health` + `/api/capabilities`); fleet tar-path deploy stamps the sha. |
 
 See `.env.example` for the fully-commented list.
