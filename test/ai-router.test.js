@@ -79,16 +79,36 @@ test('ai codex adopt → aigate-codex.sh --adopt; ai desktop → ai-desktop; ai 
   assert.deepEqual(c[3].args, ['--yolo', '--model', 'm1', 'hi'], 'caller --model wins');
 });
 
-test('no aigate env → plain claude binary with the same posture; no claude → 127', async (t) => {
+function plainClaude(sb) {
+  const cl = join(sb.home, '.local', 'bin', 'claude');
+  writeFileSync(cl, `#!/bin/bash\n{ echo plain; printf 'ARG %s\\n' "$@"; echo ---; } >> "${join(sb.dir, 'calls.log')}"\n`); chmodSync(cl, 0o755);
+}
+
+test('guard 1 alone: aigate-run.sh missing (AIGATE_URL set) → plain claude, same posture; no claude → 127', async (t) => {
   const sb = sandbox(); t.after(sb.cleanup);
   rmSync(join(sb.ag, 'aigate-run.sh'));
+  const none = await ai(sb, ['hi']);
+  assert.equal(none.code, 127);
+  assert.deepEqual(sb.calls(), [], 'nothing launched');
+  plainClaude(sb);
+  const r = await ai(sb, ['hi']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(sb.calls().length, 1);
+  assert.equal(sb.calls()[0].who, 'plain');
+  assert.deepEqual(sb.calls()[0].args, ['--dangerously-skip-permissions', '--chrome', 'hi']);
+});
+
+test('guard 2 alone: aigate-run.sh present but AIGATE_URL blank → plain claude, wrapper NOT run; no claude → 127', async (t) => {
+  const sb = sandbox(); t.after(sb.cleanup);
   const bare = { AIGATE_URL: '' };
   const none = await ai(sb, ['hi'], bare);
   assert.equal(none.code, 127);
-  const cl = join(sb.home, '.local', 'bin', 'claude');
-  writeFileSync(cl, `#!/bin/bash\n{ echo plain; printf 'ARG %s\\n' "$@"; echo ---; } >> "${join(sb.dir, 'calls.log')}"\n`); chmodSync(cl, 0o755);
+  assert.deepEqual(sb.calls(), [], 'wrapper must not run without AIGATE_URL');
+  plainClaude(sb);
   const r = await ai(sb, ['hi'], bare);
   assert.equal(r.code, 0, r.stderr);
+  assert.equal(sb.calls().length, 1);
+  assert.equal(sb.calls()[0].who, 'plain', 'plain claude, not the aigate-run stub');
   assert.deepEqual(sb.calls()[0].args, ['--dangerously-skip-permissions', '--chrome', 'hi']);
 });
 
@@ -185,7 +205,17 @@ test('install.sh into a scratch root: ai, ai-desktop, wrappers, t3 symlinks; ret
   writeFileSync(join(bin, 'cc'), '#!/bin/sh\necho my compiler\n');
   assert.equal(spawnSync(BASH, [join(CLIENTS, 'install.sh')], { env, encoding: 'utf8' }).status, 0);
   assert.match(readFileSync(join(bin, 'cc'), 'utf8'), /my compiler/);
-  assert.ok(existsSync(join(dir, '.claude', 'settings.json')), 'hooks wired under the scratch root');
+  const st = JSON.parse(readFileSync(join(dir, '.claude', 'settings.json'), 'utf8'));
+  const cmds = (st.hooks?.UserPromptSubmit ?? []).flatMap((g) => (g.hooks ?? []).map((h) => h.command));
+  assert.deepEqual(cmds, ['bash ~/.claude/aigate/prompt-hook.sh'], 'UserPromptSubmit hook wired exactly once (idempotent across 2 installs)');
+  assert.deepEqual(st.statusLine, { type: 'command', command: 'bash ~/.claude/aigate/statusline-feed.sh' });
+  if (process.platform === 'darwin') {
+    const plist = readFileSync(join(dir, 'Library', 'LaunchAgents', 'ai.shoemoney.aigate-codex-keeper.plist'), 'utf8');
+    assert.match(plist, /<key>Label<\/key><string>ai\.shoemoney\.aigate-codex-keeper<\/string>/);
+    assert.match(plist, new RegExp(`<string>/bin/bash</string>\\s*<string>${ag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/aigate-codex\\.sh</string>\\s*<string>--keep</string>`));
+    assert.match(plist, /<key>StartInterval<\/key><integer>3600<\/integer>/);
+    assert.match(plist, /<key>RunAtLoad<\/key><true\/>/);
+  }
 });
 
 // ── static hygiene ────────────────────────────────────────────────────────────

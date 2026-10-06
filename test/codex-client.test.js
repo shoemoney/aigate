@@ -77,7 +77,10 @@ function sandbox() {
 
 function run(sb, script, args, env = {}, opts = {}) {
   return new Promise((res) => {
-    const child = execFile(BASH, [script, ...args], {
+    const [cmd, argv] = opts.umask
+      ? ['/bin/sh', ['-c', `umask ${opts.umask}; exec "$0" "$@"`, BASH, script, ...args]]
+      : [BASH, [script, ...args]];
+    const child = execFile(cmd, argv, {
       env: { PATH: PATH_ENV, HOME: sb.home, AIGATE_CODEX_HOME: sb.ch, CODEX_HOME: sb.ch, AIGATE_DIR: join(sb.home, '.claude', 'aigate'),
         AIGATE_CODEX_BIN: sb.bin, AIGATE_TOKEN: 'tok-secret', FAKE_LOG: sb.log, ...env },
       timeout: 30_000,
@@ -119,6 +122,20 @@ test('interactive: writes auth.json 0600 with the picked tokens, banner on stder
   const args = sb.runs()[0].args;
   assert.deepEqual(args, ['-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort=high', 'hello', '--dangerously-bypass-approvals-and-sandbox']);
   assert.ok(!existsSync(join(sb.ch)) || readdirSync(sb.ch).every((f) => !f.startsWith('.auth.json.')), 'no temp file left behind');
+});
+
+test('interactive: auth.json ends 0600 under umask 022 even when a stale world-readable auth.json pre-exists', async (t) => {
+  const sb = sandbox(); t.after(sb.cleanup);
+  const mock = await startMock(defaultHandler(pick('acct1', 'rt-1'))); t.after(mock.close);
+  writeAuth(sb, 'local-old', 'someone-else'); chmodSync(sb.auth, 0o644);
+  assert.equal(statSync(sb.auth).mode & 0o777, 0o644);
+  const r = await run(sb, CODEX_SH, ['hello'], { AIGATE_URL: mock.url }, { umask: '022' });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(readAuth(sb).tokens.refresh_token, 'rt-1');
+  assert.equal(statSync(sb.auth).mode & 0o777, 0o600, 'replaced file must not inherit the stale 0644');
+  const bak = readdirSync(sb.ch).find((f) => f.startsWith('auth.json.bak-pre-aigate-'));
+  assert.equal(statSync(join(sb.ch, bak)).mode & 0o777, 0o600, 'backup of the stale file is 0600 too');
+  assert.ok(readdirSync(sb.ch).every((f) => !f.startsWith('.auth.json.')), 'no temp file left behind');
 });
 
 test('print mode: flag translation and clean stdout', async (t) => {
@@ -266,6 +283,24 @@ test('--write-only: selects + writes + banner, never launches codex', async (t) 
   assert.notEqual(bad.code, 0); assert.ok(!existsSync(sb.log));
 });
 
+test('--write-only never launches codex even when it falls through to plain_codex (no aigate env) or aigate says 503/401', async (t) => {
+  const sb = sandbox(); t.after(sb.cleanup);
+  writeAuth(sb, 'rt-existing', 'aid-x');
+  // no AIGATE_URL: the script reaches plain_codex(), whose write-only guard must exit 1 before exec
+  const noenv = await run(sb, CODEX_SH, ['--write-only'], { AIGATE_URL: '' });
+  assert.equal(noenv.code, 1, noenv.stderr);
+  assert.match(noenv.stderr, /no aigate env → running plain codex/);
+  assert.ok(!existsSync(sb.log), 'plain_codex must not exec codex in write-only mode');
+  for (const [status, body] of [[503, { error: 'no available account', accounts: 1, parked: 1 }], [401, { error: 'unauthorized' }]]) {
+    const m = await startMock(() => [status, body]); t.after(m.close);
+    const r = await run(sb, CODEX_SH, ['--write-only'], { AIGATE_URL: m.url });
+    assert.equal(r.code, 1, `${status}: ${r.stderr}`);
+    assert.equal(r.stdout, '');
+    assert.ok(!existsSync(sb.log), `${status}: codex must not run`);
+  }
+  assert.equal(readAuth(sb).tokens.refresh_token, 'rt-existing', 'auth.json untouched');
+});
+
 test('--adopt: POSTs the local auth.json to /api/codex/sync', async (t) => {
   const sb = sandbox(); t.after(sb.cleanup);
   const mock = await startMock((c) => (c.path === '/api/codex/sync' ? [200, { ok: true, applied: true, reason: 'adopted' }] : [200, {}])); t.after(mock.close);
@@ -287,15 +322,34 @@ test('t3-codex.sh: writes the pick then execs real codex with args untouched', a
   assert.equal(sb.runs().length, 1, 'real codex ran exactly once');
 });
 
-test('t3-codex.sh: fail-safe — aigate down or wrapper missing still execs codex', async (t) => {
-  const sb = sandbox(); t.after(sb.cleanup);
-  writeAuth(sb, 'rt-keep', 'aid-k');
-  const r = await run(sb, T3_CODEX, ['app-server'], { AIGATE_URL: 'http://127.0.0.1:1' });
-  assert.equal(r.code, 0, r.stderr);
-  assert.deepEqual(sb.runs()[0].args, ['app-server']);
-  assert.equal(sb.runs()[0].rt, 'rt-keep');
+test('t3-codex.sh: fail-safe — wrapper missing, aigate down, aigate 503, wrapper crashing: real codex still runs, argv untouched', async (t) => {
+  const argv = ['app-server', '--listen', 'stdio://', '-c', 'x=1'];
+  const install = (sb, body) => {
+    const w = join(sb.home, '.claude', 'aigate', 'aigate-codex.sh');
+    writeFileSync(w, body ?? readFileSync(CODEX_SH)); chmodSync(w, 0o755);
+  };
+  const cases = {
+    'wrapper missing': { setup: () => {}, env: { AIGATE_URL: 'http://127.0.0.1:1' } },
+    'aigate down': { setup: (sb) => install(sb), env: { AIGATE_URL: 'http://127.0.0.1:1' } },
+    'aigate 503': { setup: (sb) => install(sb), env: {}, mock: () => [503, { error: 'none', accounts: 1, parked: 1 }] },
+    'aigate 401': { setup: (sb) => install(sb), env: {}, mock: () => [401, { error: 'unauthorized' }] },
+    'wrapper crashes': { setup: (sb) => install(sb, '#!/bin/bash\nexit 99\n'), env: { AIGATE_URL: 'http://127.0.0.1:1' } },
+  };
+  for (const [name, c] of Object.entries(cases)) {
+    const sb = sandbox(); t.after(sb.cleanup);
+    writeAuth(sb, 'rt-keep', 'aid-k');
+    c.setup(sb);
+    const env = { ...c.env };
+    if (c.mock) { const m = await startMock(c.mock); t.after(m.close); env.AIGATE_URL = m.url; }
+    const r = await run(sb, T3_CODEX, argv, env);
+    assert.equal(r.code, 0, `${name}: ${r.stderr}`);
+    assert.equal(sb.runs().length, 1, `${name}: real codex ran exactly once`);
+    assert.deepEqual(sb.runs()[0].args, argv, `${name}: argv untouched`);
+    assert.equal(sb.runs()[0].rt, 'rt-keep', `${name}: existing login untouched`);
+    assert.equal(r.stdout, 'fake-codex-stdout\n', `${name}: wrapper chatter does not leak to stdout`);
+    assert.ok(!/aigate/.test(r.stderr), `${name}: wrapper stderr suppressed (T3 owns the driver's stderr)`);
+  }
 });
-
 
 // ── helpers for the keeper / sticky / signal tests ────────────────────────────
 const vaultAuth = (name, rt, aid, lastRefresh, extra = {}) => ({
