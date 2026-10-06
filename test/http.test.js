@@ -1433,6 +1433,7 @@ test('GET /api/usage groups accounts by provider with day/hour reset countdowns 
     const claude = await (await fetch(base + '/api/usage/claude', { headers: H })).json();
     const alice = claude.find((a) => a.account === 'alice');
     assert.equal(alice.seven_day.pct, 42);
+    assert.equal(alice.status, 'ok');
     assert.equal(alice.seven_day.resets_in, '3d 5h');
     assert.equal(alice.seven_day.resets_at, new Date(soon * 1000).toISOString());
     assert.deepEqual(alice.five_hour, { pct: alice.five_hour.pct, resets_in: null, resets_at: null });   // Claude keeps its 5h meter
@@ -1443,6 +1444,9 @@ test('GET /api/usage groups accounts by provider with day/hour reset countdowns 
     assert.equal(cx.five_hour, null);   // Pro plan: no short window, hidden instead of a fake 0%
     assert.equal(cx.seven_day.resets_in, '3d 5h');
     assert.equal(cx.plan, 'pro');
+    db.prepare(`UPDATE accounts SET seven_day_pct=100 WHERE account='usage-codex'`).run();
+    const maxed = (await (await fetch(base + '/api/usage/codex', { headers: H })).json()).find((a) => a.account === 'usage-codex');
+    assert.equal(maxed.status, 'at_limit');   // over the cutoff must not read as "ok"
 
     assert.equal((await fetch(base + '/api/usage/gemini', { headers: H })).status, 404);
     assert.equal((await fetch(base + '/api/usage')).status, 401);

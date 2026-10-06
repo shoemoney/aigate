@@ -839,7 +839,8 @@ const server = http.createServer(async (req, res) => {
         const kind = a.kind === 'codex' ? 'codex' : 'claude';
         out[kind].push({
           account: a.account, label: a.label, plan: a.plan,
-          status: a.disabled ? 'disabled' : a.reauth_needed ? 'reauth_needed' : a.refresh_unknown ? 'refresh_unknown' : a.parked ? 'parked' : 'ok',
+          status: a.disabled ? 'disabled' : a.reauth_needed ? 'reauth_needed' : a.refresh_unknown ? 'refresh_unknown' : a.parked ? 'parked'
+            : Math.max(a.five_hour_pct || 0, a.seven_day_pct || 0) >= CUTOFF ? 'at_limit' : 'ok',
           // Pro Codex plans have no short window (reset stays null) — hide it rather than show a fake 0%
           five_hour: win(a.five_hour_pct, a.five_hour_reset, kind === 'codex' && a.five_hour_reset == null),
           seven_day: win(a.seven_day_pct, a.seven_day_reset, false),
