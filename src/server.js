@@ -21,7 +21,7 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { WebSocketServer } from 'ws';
-import { makeVault, rtHash, ledgerVerdict, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot } from './lib.js';
+import { makeVault, rtHash, ledgerVerdict, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot, resetsIn } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
 
 // ---- config -------------------------------------------------------------
@@ -821,6 +821,27 @@ const server = http.createServer(async (req, res) => {
     // --- accounts / vault ---
     if (p === '/api/accounts' && req.method === 'GET')
       return json(res, 200, q.listAccounts.all());
+    // --- human-readable usage per provider: GET /api/usage · /api/usage/claude · /api/usage/codex ---
+    if ((p === '/api/usage' || p.startsWith('/api/usage/')) && req.method === 'GET') {
+      const want = p === '/api/usage' ? null : p.slice('/api/usage/'.length);
+      if (want !== null && want !== 'claude' && want !== 'codex') return json(res, 404, { error: "unknown provider — use 'claude' or 'codex'" });
+      const now = Date.now();
+      const win = (pct, reset, hidden) => hidden ? null
+        : { pct, resets_in: resetsIn(reset, now), resets_at: reset == null ? null : new Date(reset * 1000).toISOString() };
+      const out = { claude: [], codex: [] };
+      for (const a of q.listAccounts.all()) {
+        const kind = a.kind === 'codex' ? 'codex' : 'claude';
+        out[kind].push({
+          account: a.account, label: a.label, plan: a.plan,
+          status: a.disabled ? 'disabled' : a.reauth_needed ? 'reauth_needed' : a.refresh_unknown ? 'refresh_unknown' : a.parked ? 'parked' : 'ok',
+          // Pro Codex plans have no short window (reset stays null) — hide it rather than show a fake 0%
+          five_hour: win(a.five_hour_pct, a.five_hour_reset, kind === 'codex' && a.five_hour_reset == null),
+          seven_day: win(a.seven_day_pct, a.seven_day_reset, false),
+          usage_age_s: a.usage_age_s,
+        });
+      }
+      return json(res, 200, want ? out[want] : out);
+    }
     if (p === '/api/accounts' && req.method === 'POST') {
       const b = await body(req);
       if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }

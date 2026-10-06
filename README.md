@@ -416,6 +416,7 @@ Use `Authorization: Bearer $AIGATE_TOKEN` for machine clients. The dashboard use
 | `GET` | `/api/codex/auth?account_id=&host=` | **keeper read**: the vault's current Codex `auth_json` for that ChatGPT account id plus `last_refresh, token_exp, reauth_needed, disabled`; never picks, refreshes, or parks; `400` without `account_id`, `404` unknown (audited `codex-keep`) |
 | `POST` | `/api/codex/sync` | `{auth_json}` — adopt a client's newer Codex login into the vault; replies `{ok, applied, reason}` (`404` unknown `account_id`, `400` without `last_refresh`). See [Codex accounts](#codex-chatgpt-accounts) |
 | `GET` / `POST` | `/api/accounts` | list (usage, `kind`, `plan`, `token_exp`, **no credentials**) / add Claude `{account, setup_token, label}` or Codex `{kind:"codex", account, auth_json, label}` |
+| `GET` | `/api/usage` · `/api/usage/claude` · `/api/usage/codex` | human-readable usage grouped by provider: per account `status`, `five_hour` / `seven_day` `{pct, resets_in: "3d 4h", resets_at}` (Pro Codex `five_hour` is `null`), `usage_age_s`; **no credentials**; `404` on an unknown provider |
 | `DELETE` | `/api/accounts/:name` | remove |
 | `POST` | `/api/accounts/:name/disabled` | `{disabled: true/false}` |
 | `POST` | `/api/accounts/:name/refresh` | **live re-poll** ONE account's real headroom right now (not the 10-min cache) → `{account, five, seven, alive, maxed}` (Codex accounts poll `wham/usage`; `?force=1` first clears a Codex `refresh_unknown` halt); 404 on unknown account, 502 on a poll failure |

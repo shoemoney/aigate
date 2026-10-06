@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { join, sep } from 'node:path';
-import { makeVault, tokenMatches, ip2int, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot, rtHash, ledgerVerdict } from '../src/lib.js';
+import { makeVault, tokenMatches, ip2int, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot, rtHash, ledgerVerdict, resetsIn } from '../src/lib.js';
 const _jwt = (o) => `${Buffer.from('{"alg":"none"}').toString('base64url')}.${Buffer.from(JSON.stringify(o)).toString('base64url')}.sig`;
 
 const KEY = crypto.randomBytes(32);
@@ -234,4 +234,19 @@ test('ledgerVerdict: ok / stale (restored DB) / ahead (crash before ledger write
   assert.equal(ledgerVerdict({ last_refresh: T1, rt_hash: rtHash('b') }, auth('a', T1)), 'stale');   // different token, same stamp
   assert.equal(ledgerVerdict({ last_refresh: T1, rt_hash: rtHash('b') }, auth('a', T2)), 'ahead');   // row is newer: heal the ledger
   assert.equal(ledgerVerdict({ last_refresh: T1, rt_hash: rtHash('a') }, { tokens: {} }), 'unknown');
+});
+
+test('resetsIn: days+hours past a day, hours+minutes under one, "now" once passed, null without a reset', () => {
+  const now = Date.UTC(2026, 9, 6, 12, 0, 0);
+  const at = (mins) => now / 1000 + mins * 60;
+  assert.equal(resetsIn(at(3 * 1440 + 4 * 60 + 59), now), '3d 4h');   // minutes past a day are dropped
+  assert.equal(resetsIn(at(1440), now), '1d 0h');
+  assert.equal(resetsIn(at(4 * 60 + 12), now), '4h 12m');
+  assert.equal(resetsIn(at(60), now), '1h 0m');
+  assert.equal(resetsIn(at(12), now), '12m');
+  assert.equal(resetsIn(at(0), now), 'now');
+  assert.equal(resetsIn(at(-30), now), 'now');
+  assert.equal(resetsIn(null, now), null);
+  assert.equal(resetsIn(undefined, now), null);
+  assert.equal(resetsIn('garbage', now), null);
 });

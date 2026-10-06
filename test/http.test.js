@@ -1419,3 +1419,34 @@ test('GET /api/stats — by_host_1h merges normalized hosts, rates are numeric, 
   assert.equal(web1.rps, +(2 / 3600).toFixed(3));
   assert.equal(web1.tps, +(150 / 3600).toFixed(2));
 });
+
+test('GET /api/usage groups accounts by provider with day/hour reset countdowns and no credentials', async () => {
+  const soon = Math.floor(Date.now() / 1000) + 3 * 86400 + 5 * 3600 + 120;   // ~3d 5h out
+  db.prepare('UPDATE accounts SET seven_day_pct=42, seven_day_reset=?, five_hour_reset=NULL WHERE account=?').run(soon, 'alice');
+  db.prepare(`INSERT INTO accounts (account, token_enc, label, kind, plan, seven_day_pct, seven_day_reset, five_hour_reset)
+    VALUES ('usage-codex', NULL, 'u@example.com', 'codex', 'pro', 7, ?, NULL)`).run(soon);
+  try {
+    const all = await (await fetch(base + '/api/usage', { headers: H })).json();
+    assert.ok(Array.isArray(all.claude) && Array.isArray(all.codex));
+    assert.ok(!JSON.stringify(all).includes('token'), 'usage view leaked a credential field');
+
+    const claude = await (await fetch(base + '/api/usage/claude', { headers: H })).json();
+    const alice = claude.find((a) => a.account === 'alice');
+    assert.equal(alice.seven_day.pct, 42);
+    assert.equal(alice.seven_day.resets_in, '3d 5h');
+    assert.equal(alice.seven_day.resets_at, new Date(soon * 1000).toISOString());
+    assert.deepEqual(alice.five_hour, { pct: alice.five_hour.pct, resets_in: null, resets_at: null });   // Claude keeps its 5h meter
+    assert.ok(!claude.some((a) => a.account === 'usage-codex'));
+
+    const codex = await (await fetch(base + '/api/usage/codex', { headers: H })).json();
+    const cx = codex.find((a) => a.account === 'usage-codex');
+    assert.equal(cx.five_hour, null);   // Pro plan: no short window, hidden instead of a fake 0%
+    assert.equal(cx.seven_day.resets_in, '3d 5h');
+    assert.equal(cx.plan, 'pro');
+
+    assert.equal((await fetch(base + '/api/usage/gemini', { headers: H })).status, 404);
+    assert.equal((await fetch(base + '/api/usage')).status, 401);
+  } finally {
+    db.prepare(`DELETE FROM accounts WHERE account='usage-codex'`).run();
+  }
+});

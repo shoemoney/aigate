@@ -212,6 +212,17 @@ export function codexWindowSlot(seconds) {
   return Number(seconds) <= 21600 ? 'five' : 'seven';
 }
 
+// Countdown to a reset stored as epoch SECONDS: "3d 4h" past a day, "4h 12m" under one,
+// "12m" under an hour, "now" once it has passed, null when there is no reset time.
+export function resetsIn(epochSec, nowMs = Date.now()) {
+  if (epochSec == null || !Number.isFinite(Number(epochSec))) return null;
+  const mins = Math.floor((Number(epochSec) * 1000 - nowMs) / 60000);
+  if (mins <= 0) return 'now';
+  const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60), m = mins % 60;
+  if (d) return `${d}d ${h}h`;
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
 // ---- codex refresh ledger (pure half) -----------------------------------
 // The ledger lives OUTSIDE the DB so a restored backup cannot hide that a refresh token was
 // already rotated. It stores only a 64-bit-ish fingerprint of the refresh token, never the token.
