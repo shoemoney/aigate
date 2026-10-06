@@ -21,7 +21,7 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { WebSocketServer } from 'ws';
-import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie } from './lib.js';
+import { makeVault, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
 
 // ---- config -------------------------------------------------------------
@@ -78,6 +78,18 @@ const ENC_KEY = (process.env.AIGATE_ENCRYPTION_KEY || '').trim();
 // events an operator wants to hear about at 2am: selection outage, a provider key
 // going dead, a failed backup. Empty = disabled. Fire-and-forget, never blocks a request.
 const ALERT_WEBHOOK = (process.env.AIGATE_ALERT_WEBHOOK || '').trim();
+// Codex (ChatGPT) upstreams — lazy getters (same pattern as PROXY_UPSTREAMS below) so a
+// test can point usage + token at one fake server without a restart. The client id is the
+// public Codex CLI OAuth app id; refreshing under it is what the official binary does.
+const CODEX = {
+  usageUrl: () => process.env.AIGATE_CODEX_USAGE_URL || 'https://chatgpt.com/backend-api/wham/usage',
+  tokenUrl: () => process.env.AIGATE_CODEX_TOKEN_URL || 'https://auth.openai.com/oauth/token',
+  clientId: () => process.env.AIGATE_CODEX_CLIENT_ID || 'app_EMoamEEZ73f0CkXaXp7hrann',
+  ua: () => process.env.AIGATE_CODEX_UA || 'codex_cli_rs/0.160.1',
+  // refresh LATE: every refresh rotates the token family and orphans long-lived holders
+  // (the Codex desktop app), so only refresh when the access token is within this window of exp.
+  refreshAheadS: () => envNum('AIGATE_CODEX_REFRESH_AHEAD_S', 172800),   // 2 days
+};
 const clampLimit = (v) => { if (v == null || v === '') return 100; const n = Number(v); return Number.isFinite(n) ? Math.max(1, Math.min(Math.trunc(n), 1000)) : 100; };
 
 // weak = empty / a known placeholder / under 16 chars — any of these boots the
@@ -121,6 +133,12 @@ function openDb(path = DB_PATH) {
       d.exec(`
         PRAGMA busy_timeout = 5000; -- 5s = Dockerfile HEALTHCHECK timeout: a lock outlasting it still fails /health honestly
         PRAGMA journal_mode = WAL;
+        -- prod's SQLite lives on an HDD raidz2 pool whose ZFS txg syncs take 20-50s under NFS load
+        -- (measured 2026-10-06: load avg 40, main thread in D state, /health 18-20s, container
+        -- unhealthy). FULL fsyncs every commit and blocks node's single thread; NORMAL in WAL mode
+        -- only syncs at checkpoint and stays corruption-safe — worst case a power loss drops the last
+        -- few commits, and the poller rewrites usage every 10 min anyway.
+        PRAGMA synchronous = NORMAL;
         CREATE TABLE IF NOT EXISTS accounts (
           account        TEXT PRIMARY KEY,
           token_enc      TEXT,
@@ -234,6 +252,13 @@ if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === 'par
 for (const col of ['five_hour_reset', 'seven_day_reset'])
   if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === col))
     db.exec(`ALTER TABLE accounts ADD COLUMN ${col} INTEGER`);
+// migration: Codex (ChatGPT) accounts share the table. kind partitions selection (every
+// pickRanked caller names one); plan/token_exp/ext_id are non-secret facts for the dashboard
+// and for refresh scheduling (token_exp = access-token exp, epoch s; ext_id = codex account_id).
+// The Codex auth.json itself rides encrypted in token_enc, like a Claude setup-token.
+for (const [col, ddl] of [['kind', `TEXT NOT NULL DEFAULT 'claude'`], ['plan', 'TEXT'], ['token_exp', 'INTEGER'], ['ext_id', 'TEXT']])
+  if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === col))
+    db.exec(`ALTER TABLE accounts ADD COLUMN ${col} ${ddl}`);
 // migration: board cards gained an optional target host (route a card to a specific worker box)
 if (!db.prepare(`PRAGMA table_info(board_cards)`).all().some((c) => c.name === 'host'))
   db.exec(`ALTER TABLE board_cards ADD COLUMN host TEXT DEFAULT ''`);
@@ -265,15 +290,27 @@ const q = {
   // reauth_needed=0 on re-add: the recovery flow (setup-token → re-POST the fresh token) must
   // clear the poller's 401-flag NOW, else the account stays unselectable up to a full poll cycle.
   // parked_until/disabled are deliberately untouched — parking is usage-driven, disabling is manual.
-  upsertAccount: db.prepare(`INSERT INTO accounts(account,token_enc,label) VALUES(?,?,?)
-    ON CONFLICT(account) DO UPDATE SET token_enc=excluded.token_enc, label=excluded.label, reauth_needed=0`),
+  upsertAccount: db.prepare(`INSERT INTO accounts(account,token_enc,label,kind,plan,token_exp,ext_id) VALUES(?,?,?,?,?,?,?)
+    ON CONFLICT(account) DO UPDATE SET token_enc=excluded.token_enc, label=excluded.label, reauth_needed=0,
+      kind=excluded.kind, plan=excluded.plan, token_exp=excluded.token_exp, ext_id=excluded.ext_id`),
   // parked computed in the SAME clock domain as pickRanked — clients get a plain 0/1
   // instead of parsing a bare sqlite UTC string (no Z) in the right timezone.
-  listAccounts: db.prepare(`SELECT account,label,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset,usage_updated,disabled,reauth_needed,parked_until,
+  listAccounts: db.prepare(`SELECT account,label,kind,plan,token_exp,ext_id,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset,usage_updated,disabled,reauth_needed,parked_until,
     (parked_until IS NOT NULL AND parked_until > datetime('now')) AS parked,
     CAST(strftime('%s','now') - strftime('%s', usage_updated) AS INTEGER) AS usage_age_s,
     (token_enc IS NOT NULL) AS has_token FROM accounts ORDER BY account`),
-  getToken: db.prepare(`SELECT token_enc FROM accounts WHERE account=?`),
+  getToken: db.prepare(`SELECT token_enc,kind FROM accounts WHERE account=?`),
+  // full non-secret state + the ciphertext for ONE account (codex select/refresh/sync paths)
+  getAcct: db.prepare(`SELECT account,kind,token_enc,ext_id,plan,token_exp,reauth_needed,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset FROM accounts WHERE account=?`),
+  codexByExt: db.prepare(`SELECT account,token_enc FROM accounts WHERE kind='codex' AND ext_id=?`),
+  // refresh persisted in ONE statement: tokens + exp together, or neither
+  updCodexAuth: db.prepare(`UPDATE accounts SET token_enc=?, token_exp=?, plan=COALESCE(?,plan) WHERE account=?`),
+  // sync from a client's own login: same write, but a fresh credential also clears reauth
+  syncCodexAuth: db.prepare(`UPDATE accounts SET token_enc=?, token_exp=?, plan=COALESCE(?,plan), reauth_needed=0 WHERE account=?`),
+  // EXPLICIT writes for all four window fields (no COALESCE): a window that vanished (Pro has
+  // no 5h) must read 0/NULL, not freeze at its last value. reauth cleared by the caller's flag.
+  updCodexUsage: db.prepare(`UPDATE accounts SET five_hour_pct=?, seven_day_pct=?, five_hour_reset=?, seven_day_reset=?,
+    plan=COALESCE(?,plan), usage_updated=datetime('now'), reauth_needed=CASE WHEN ? THEN reauth_needed ELSE 0 END WHERE account=?`),
   delAccount: db.prepare(`DELETE FROM accounts WHERE account=? RETURNING label`),
   setDisabled: db.prepare(`UPDATE accounts SET disabled=? WHERE account=?`),
   setReauth: db.prepare(`UPDATE accounts SET reauth_needed=? WHERE account=?`),
@@ -294,9 +331,13 @@ const q = {
   // needs-reauth / currently-parked. Unpolled (usage_updated IS NULL) sorts LAST so a
   // freshly-added account isn't handed out as a phantom "0%" before its first real poll.
   // Ranked (no LIMIT) so /api/select can skip client-excluded accounts on retry.
-  pickRanked: db.prepare(`SELECT account FROM accounts
-    WHERE disabled=0 AND reauth_needed=0 AND token_enc IS NOT NULL AND max(five_hour_pct,seven_day_pct) < ?
+  // Takes the account KIND first (?1) — claude and codex pools never mix. A codex row whose
+  // access token has already expired is skipped (the poller's 401→refresh path revives it);
+  // handing out a dead token would just make the client's codex fail.
+  pickRanked: db.prepare(`SELECT account,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset,plan,token_exp FROM accounts
+    WHERE kind=?1 AND disabled=0 AND reauth_needed=0 AND token_enc IS NOT NULL AND max(five_hour_pct,seven_day_pct) < ?2
       AND (parked_until IS NULL OR parked_until <= datetime('now'))
+      AND (?1 <> 'codex' OR token_exp IS NULL OR token_exp > CAST(strftime('%s','now') AS INTEGER))
     ORDER BY (usage_updated IS NULL) ASC, max(five_hour_pct,seven_day_pct) ASC, usage_updated ASC`),
   insReq: db.prepare(`INSERT INTO request_log(account,host,ip,cwd,model,prompt,tokens) VALUES(?,?,?,?,?,?,?)`),
   insAccess: db.prepare(`INSERT INTO access_log(account,host,ip,action,result) VALUES(?,?,?,?,?)`),
@@ -405,9 +446,10 @@ function logAccess(account, host, ip, action, result) {
 // for being out of quota. Without it, a routine "two accounts are over their 7-day
 // window" reads on /health as selectable<accounts with parked/reauth/disabled all 0 —
 // an unexplained gap that gets escalated as a suspected outage every time it happens.
-const tally = (list, cutoff = CUTOFF) => {
+const tally = (list, cutoff = CUTOFF, kind = 'claude') => {
   let parked = 0, reauth = 0, disabled = 0, over_cutoff = 0;
   for (const a of list) {
+    if (a.kind !== kind) continue;
     parked += a.parked; reauth += a.reauth_needed; disabled += a.disabled;
     // mirrors pickRanked's WHERE exactly: the other gates first, then the usage test
     if (!a.disabled && !a.reauth_needed && a.has_token && !a.parked
@@ -644,10 +686,14 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && (p === '/health' || p === '/healthz')) {
     try {
       db.prepare('SELECT 1').get();
-      const accts = q.listAccounts.all();
+      const all = q.listAccounts.all();
+      // every pre-codex field keeps meaning CLAUDE (fleet autoheal keys on selectable) —
+      // codex rows get their own codex_* counters below
+      const accts = all.filter((a) => a.kind === 'claude');
+      const codex = all.filter((a) => a.kind === 'codex');
       // same query /api/select uses — a hand-rolled filter here once ignored parked_until
       // and reported selectable>0 while select 503'd, so autoheal never restarted anything.
-      const selectable = q.pickRanked.all(CUTOFF).length;
+      const selectable = q.pickRanked.all('claude', CUTOFF).length;
       const { parked, reauth, disabled, over_cutoff } = tally(accts);
       // newest aigate-*.db backup mtime → age; numbers only, safe on this unauth endpoint
       let backup_age_s = null;
@@ -661,7 +707,8 @@ const server = http.createServer(async (req, res) => {
         poll_age_s: q.pollAge.get().s, backup_age_s, parked, reauth, disabled, over_cutoff,
         // last poller cycle health — surfaces poll degradation (all tokens erroring) that
         // usage staleness alone wouldn't flag; numbers only, safe on this unauth endpoint
-        poll_ok: lastPoll.ok, poll_failed: lastPoll.failed.length });
+        poll_ok: lastPoll.ok, poll_failed: lastPoll.failed.length,
+        codex_accounts: codex.length, codex_selectable: q.pickRanked.all('codex', CUTOFF).length, codex_reauth: codex.reduce((n, a) => n + a.reauth_needed, 0) });
     } catch (e) {
       // unauth endpoint: log the detail, return a generic 503 (don't leak DB_PATH / SQLite internals)
       console.error('[health] db check failed', String((e && e.message) || e));
@@ -752,6 +799,30 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/accounts' && req.method === 'POST') {
       const b = await body(req);
       if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
+      const kind = b.kind === undefined ? 'claude' : String(b.kind);
+      if (kind !== 'claude' && kind !== 'codex') return json(res, 400, { error: "kind must be 'claude' or 'codex'" });
+      if (kind === 'codex') {
+        // Codex rows carry the whole auth.json (it holds the refresh token aigate will rotate),
+        // never a Claude setup-token — and the reverse for Claude, so a paste into the wrong
+        // slot fails NOW instead of surfacing as a mystery reauth_needed.
+        if (!b.account || b.auth_json == null || b.auth_json === '') return json(res, 400, { error: 'account + auth_json required for kind=codex' });
+        if (b.setup_token !== undefined) return json(res, 400, { error: 'setup_token is for Claude accounts — send auth_json for kind=codex' });
+        if (/[/\s]/.test(String(b.account))) return json(res, 400, { error: 'account name cannot contain spaces or slashes' });
+        let raw = b.auth_json;
+        if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { return json(res, 400, { error: 'auth_json is not valid JSON' }); } }
+        const n = normalizeCodexAuth(raw);
+        if (n.error) return json(res, 400, { error: n.error });
+        const prior = q.getAcct.get(b.account);
+        if (prior && prior.kind !== 'codex') return json(res, 409, { error: 'account ' + b.account + ' already exists as a Claude account' });
+        // sync finds the row by account_id — two rows sharing one would make that ambiguous
+        const dup = q.codexByExt.get(n.account_id);
+        if (dup && dup.account !== b.account) return json(res, 409, { error: 'that ChatGPT account is already vaulted as ' + dup.account });
+        q.upsertAccount.run(b.account, encrypt(JSON.stringify(n.auth)), b.label || n.email || '', 'codex', n.plan, n.exp, n.account_id);
+        logAccess(b.account, '', reqIp(req), prior ? 'account-overwrite' : 'account-add', b.label || n.email || '');
+        broadcast('accounts', q.listAccounts.all());
+        return json(res, 200, { ok: true, account: b.account, kind: 'codex', email: n.email, plan: n.plan });
+      }
+      if (b.auth_json !== undefined) return json(res, 400, { error: 'auth_json is for kind=codex accounts — Claude accounts take setup_token' });
       if (!b.account || !b.setup_token) return json(res, 400, { error: 'account + setup_token required' });
       // a name with '/' or whitespace breaks the /api/accounts/<name>/<verb> path
       // parsing (split('/')[3]) and can't be targeted for disable/refresh/delete.
@@ -761,8 +832,10 @@ const server = http.createServer(async (req, res) => {
       const tok = String(b.setup_token).trim();
       if (!tok || /#|\s/.test(tok))
         return json(res, 400, { error: "that looks like the browser Authentication Code (code#state) — send the sk-ant-oat01-… line the TERMINAL prints after 'claude setup-token'" });
-      const existed = !!q.getToken.get(b.account);   // BEFORE upsert — overwrite vs add
-      q.upsertAccount.run(b.account, encrypt(tok), b.label || '');
+      const priorRow = q.getToken.get(b.account);   // BEFORE upsert — overwrite vs add
+      if (priorRow && priorRow.kind === 'codex') return json(res, 409, { error: 'account ' + b.account + ' already exists as a Codex account' });
+      const existed = !!priorRow;
+      q.upsertAccount.run(b.account, encrypt(tok), b.label || '', 'claude', null, null, null);
       logAccess(b.account, '', reqIp(req), existed ? 'account-overwrite' : 'account-add', b.label || '');
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, tok.startsWith('sk-ant-') ? { ok: true }
@@ -781,7 +854,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/capabilities' && req.method === 'GET') {
       const providers = {};
       for (const r of q.capabilities.all()) providers[r.provider] = { keys: r.keys, label: r.label, last_checked: r.last_checked };
-      return json(res, 200, { version: VERSION, cutoff: CUTOFF, providers, claude: { selectable: q.pickRanked.all(CUTOFF).length, accounts: q.listAccounts.all().length } });
+      return json(res, 200, { version: VERSION, cutoff: CUTOFF, providers, claude: { selectable: q.pickRanked.all('claude', CUTOFF).length, accounts: q.listAccounts.all().filter((a) => a.kind === 'claude').length } });
     }
     // on-demand liveness check for ONE key (mirror of /api/accounts/:name/refresh)
     if (p.startsWith('/api/keys/') && p.endsWith('/refresh') && req.method === 'POST') {
@@ -895,7 +968,11 @@ const server = http.createServer(async (req, res) => {
       const row = q.getToken.get(name);
       if (!row || !row.token_enc) return json(res, 404, { error: 'unknown account' });
       let tok; try { tok = decrypt(row.token_enc); } catch { return json(res, 500, { error: 'decrypt failed' }); }
-      const r = await pollAccountUsage(name, tok);   // updates usage/reauth in the DB
+      let r;
+      if (row.kind === 'codex') {
+        let auth; try { auth = JSON.parse(tok); } catch { return json(res, 500, { error: 'decrypt failed' }); }
+        r = await pollCodexUsage(name, auth);
+      } else r = await pollAccountUsage(name, tok);   // updates usage/reauth in the DB
       // poll failure (timeout/outage) → 502, DB untouched — a 200 {alive:true,maxed:0} here
       // would read as "healthy and empty" exactly when the client must keep-or-switch
       if (r.error) return json(res, 502, { account: name, error: r.error });
@@ -907,36 +984,81 @@ const server = http.createServer(async (req, res) => {
 
     // --- the selector: hand out the best account's token (audited) ---
     // ?exclude=a,b lets a client retry past an account that just hit its limit.
+    // ?kind=codex selects from the ChatGPT pool (default/claude = the original contract,
+    // byte-compatible plus additive usage fields). ?dry=1 reports the would-be pick WITHOUT a
+    // credential and audits 'select-dry', so a client can ask "who's next?" without a handout.
     if (p === '/api/select' && req.method === 'GET') {
       const host = url.searchParams.get('host') || '', ip = reqIp(req);
+      const kind = url.searchParams.get('kind') || 'claude';
+      if (kind !== 'claude' && kind !== 'codex') return json(res, 400, { error: "kind must be 'claude' or 'codex'" });
+      const dry = url.searchParams.get('dry') === '1';
+      const act = dry ? 'select-dry' : 'select';
       const excl = new Set((url.searchParams.get('exclude') || '').split(',').map((s) => s.trim()).filter(Boolean));
+      const usageOf = (r) => ({ five_hour_pct: r.five_hour_pct, seven_day_pct: r.seven_day_pct, five_hour_reset: r.five_hour_reset, seven_day_reset: r.seven_day_reset });
       // Walk the ranked candidates, not just the top one: a poison account (corrupt
       // ciphertext or a since-rotated key) used to throw on decrypt and 500 — and
       // pickRanked kept re-electing it, so EVERY select 500'd forever. Park a poison
       // account (so pickRanked skips it), audit the fault, and fall through to next.
-      let picked = null, tok = null;
-      for (const r of q.pickRanked.all(CUTOFF)) {
+      let picked = null, tok = null, auth = null;
+      for (const r of q.pickRanked.all(kind, CUTOFF)) {
         if (excl.has(r.account)) continue;
+        if (dry) { picked = r; break; }   // no credential leaves, so nothing to decrypt or refresh
         const row = q.getToken.get(r.account);
         if (!row || !row.token_enc) continue;   // TOCTOU: deleted between rank and read
+        if (kind === 'codex') {
+          const f = await codexFresh(r.account);
+          if (f.decryptFail) { q.parkAccount.run('+60 minutes', r.account); logAccess(r.account, host, ip, act, 'decrypt-fail — parked 60m'); continue; }
+          if (f.error) { logAccess(r.account, host, ip, act, 'codex-refresh-fail'); continue; }
+          auth = f.auth; picked = r; break;
+        }
         try { tok = decrypt(row.token_enc); picked = r; break; }
         catch {
           q.parkAccount.run('+60 minutes', r.account);
-          logAccess(r.account, host, ip, 'select', 'decrypt-fail — parked 60m');
+          logAccess(r.account, host, ip, act, 'decrypt-fail — parked 60m');
         }
       }
       if (!picked) {
         // reasoned 503: WHY is nothing servable — one account may tick several counters.
         // Tally BEFORE the audit so the feed AND /api/access record the reason, not a bare 'none-available'.
-        const all = q.listAccounts.all();
-        const { parked, reauth, disabled, over_cutoff } = tally(all);
-        logAccess(null, host, ip, 'select', `none-available · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off, ${over_cutoff} over cutoff)`);
-        noteSelectable(0, { via: 'select', accounts: all.length, parked, reauth, disabled, over_cutoff });   // edge-alert on first outage
-        return json(res, 503, { error: 'no account with headroom', accounts: all.length, parked, reauth, disabled, over_cutoff });
+        const all = q.listAccounts.all().filter((a) => a.kind === kind);
+        const { parked, reauth, disabled, over_cutoff } = tally(all, CUTOFF, kind);
+        logAccess(null, host, ip, act, `none-available${kind === 'codex' ? ' (codex)' : ''} · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off, ${over_cutoff} over cutoff)`);
+        if (kind === 'claude' && !dry) noteSelectable(0, { via: 'select', accounts: all.length, parked, reauth, disabled, over_cutoff });   // edge-alert on first outage
+        return json(res, 503, { error: kind === 'codex' ? 'no codex account with headroom' : 'no account with headroom', accounts: all.length, parked, reauth, disabled, over_cutoff });
       }
-      noteSelectable(1, { via: 'select' });   // a real handout means selection is up → clears the outage latch
-      logAccess(picked.account, host, ip, 'select', 'ok');
-      return json(res, 200, { account: picked.account, setup_token: tok });
+      if (kind === 'claude' && !dry) noteSelectable(1, { via: 'select' });   // a real handout means selection is up → clears the outage latch
+      logAccess(picked.account, host, ip, act, 'ok');
+      if (dry) return json(res, 200, { account: picked.account, kind, dry: true, plan: picked.plan, ...usageOf(picked) });
+      if (kind === 'codex') {
+        const cur = q.getAcct.get(picked.account) || picked;   // post-refresh exp/plan, not the pre-refresh rank row
+        return json(res, 200, { account: picked.account, kind: 'codex', auth_json: auth, plan: cur.plan, token_exp: cur.token_exp, ...usageOf(cur) });
+      }
+      return json(res, 200, { account: picked.account, setup_token: tok, ...usageOf(picked) });
+    }
+    // sync a client's own Codex login back into the vault: when the desktop app (or a
+    // `codex login`) rotated the family under us, our stored refresh token is dead — accept
+    // the newer one. Applied only if its refresh_token differs AND last_refresh is newer.
+    if (p === '/api/codex/sync' && req.method === 'POST') {
+      const b = await body(req);
+      if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
+      let raw = b.auth_json;
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { return json(res, 400, { error: 'auth_json is not valid JSON' }); } }
+      const n = normalizeCodexAuth(raw);
+      if (n.error) return json(res, 400, { error: n.error });
+      if (!Number.isFinite(Date.parse(raw.last_refresh))) return json(res, 400, { error: 'auth_json needs last_refresh' });
+      const row = q.codexByExt.get(n.account_id);
+      if (!row) return json(res, 404, { error: 'no codex account for that account_id' });
+      const reply = (applied, reason) => { logAccess(row.account, '', reqIp(req), 'codex-sync', applied ? 'applied' : reason); return json(res, 200, { ok: true, applied, reason }); };
+      let cur; try { cur = JSON.parse(decrypt(row.token_enc)); } catch { cur = null; }   // unreadable stored copy: anything valid replaces it
+      if (cur && cur.tokens) {
+        if (cur.tokens.refresh_token === n.auth.tokens.refresh_token) return reply(false, 'same refresh_token');
+        if (!(Date.parse(n.auth.last_refresh) > Date.parse(cur.last_refresh))) return reply(false, 'not newer than stored last_refresh');
+      }
+      // a refresh in flight will persist its own rotation — applying under it would be clobbered or clobber it
+      if (codexInflight.has(row.account)) return reply(false, 'refresh in flight');
+      q.syncCodexAuth.run(encrypt(JSON.stringify(n.auth)), n.exp, n.plan, row.account);
+      broadcast('accounts', q.listAccounts.all());
+      return reply(true, 'applied');
     }
     // client hit an over-limit/unavailable account → PARK it for a TTL (default 15m) so
     // the next select skips it, WITHOUT clobbering its real usage; the poller keeps the %
@@ -998,14 +1120,17 @@ const server = http.createServer(async (req, res) => {
     // Prometheus text exposition (bearer-gated; the fleet already scrapes Prometheus, so
     // it can alert on 0 selectable / rising decrypt or poll failures). Numbers only.
     if (p === '/api/metrics' && req.method === 'GET') {
-      const accts = q.listAccounts.all();
+      const all = q.listAccounts.all();
+      const accts = all.filter((a) => a.kind === 'claude');
       const { parked, reauth, disabled, over_cutoff } = tally(accts);
       const keyc = Object.fromEntries(q.keyStatusCounts.all().map((r) => [r.status || 'unknown', r.c]));
       const L = [
         '# aigate metrics',
         `aigate_uptime_seconds ${Math.round(process.uptime())}`,
         `aigate_accounts_total ${accts.length}`,
-        `aigate_selectable ${q.pickRanked.all(CUTOFF).length}`,
+        `aigate_selectable ${q.pickRanked.all('claude', CUTOFF).length}`,
+        `aigate_codex_accounts_total ${all.length - accts.length}`,
+        `aigate_codex_selectable ${q.pickRanked.all('codex', CUTOFF).length}`,
         `aigate_accounts_parked ${parked}`,
         `aigate_accounts_reauth ${reauth}`,
         `aigate_accounts_disabled ${disabled}`,
@@ -1352,7 +1477,7 @@ server.on('upgrade', (req, socket, head) => {
 // Read each account's REAL rate-limit headroom straight from Anthropic and
 // update the vault. No proxy: this is aigate polling on its own tokens so
 // selection/skip stays accurate and auto-recovers after a reset window.
-const allTokensStmt = db.prepare(`SELECT account, token_enc FROM accounts WHERE token_enc IS NOT NULL`);
+const allTokensStmt = db.prepare(`SELECT account, token_enc, kind FROM accounts WHERE token_enc IS NOT NULL`);
 async function pollAccountUsage(account, token) {
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1401,6 +1526,141 @@ async function pollAccountUsage(account, token) {
     return { account, error: String((e && e.message) || e) };
   }
 }
+// ---- codex (ChatGPT) accounts: owned refresh + usage poll ----------------
+// aigate owns the OAuth refresh for Codex rows (clients receive a fresh auth.json). Refresh
+// tokens ROTATE with reuse detection, so exactly ONE caller may spend a given refresh token:
+// a per-account in-flight promise makes concurrent callers share one token call.
+const codexInflight = new Map();   // account -> Promise<result>
+// permanent = the refresh token is spent/revoked/expired and no retry will help; everything
+// else (network, 5xx, unknown 4xx) is transient and leaves state untouched.
+const CODEX_DEAD_RX = /invalid_grant|refresh_token_reused|refresh_token_expired|refresh_token_invalidated|already (?:been )?used|expired|revoked/i;
+const nowS = () => Math.floor(Date.now() / 1000);
+const readCodexAuth = (row) => { try { const a = JSON.parse(decrypt(row.token_enc)); return a && a.tokens ? a : null; } catch { return null; } };
+
+// staleAccess: the access token the caller just got a 401 on — if the stored one already
+// differs, someone else refreshed in the meantime and re-spending the family would be waste.
+function refreshCodex(account, { staleAccess } = {}) {
+  let p = codexInflight.get(account);
+  if (!p) {
+    p = doRefreshCodex(account, staleAccess).finally(() => codexInflight.delete(account));
+    codexInflight.set(account, p);
+  }
+  return p;
+}
+async function doRefreshCodex(account, staleAccess) {
+  const row = q.getAcct.get(account);
+  if (!row || row.kind !== 'codex' || !row.token_enc) return { error: 'unknown codex account' };
+  const auth = readCodexAuth(row);
+  if (!auth) return { error: 'decrypt' };
+  if (staleAccess && auth.tokens.access_token !== staleAccess) return { ok: true, auth, exp: row.token_exp, reused: true };
+  // a caller that read the row just before another caller's refresh landed: it's fresh now
+  if (!staleAccess && row.token_exp != null && row.token_exp - nowS() >= CODEX.refreshAheadS()) return { ok: true, auth, exp: row.token_exp, reused: true };
+  let r, text;
+  try {
+    r = await fetch(CODEX.tokenUrl(), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json', 'user-agent': CODEX.ua() },
+      // body shape verified against openai/codex codex-rs/login (oauth/client.rs refresh() with
+      // TokenEncoding::Json: grant_type + client_id + refresh_token, JSON, no scope)
+      body: JSON.stringify({ client_id: CODEX.clientId(), grant_type: 'refresh_token', refresh_token: auth.tokens.refresh_token }),
+      signal: AbortSignal.timeout(15000),
+      redirect: 'error',   // a live refresh token rides this body — never follow a 30x to another host
+    });
+    text = await r.text();
+  } catch (e) { return { error: String((e && e.message) || e) }; }   // network: state untouched
+  if (!r.ok) {
+    if (r.status === 401 || (r.status === 400 && CODEX_DEAD_RX.test(text))) {
+      q.setReauth.run(1, account);
+      logAccess(account, '', '', 'codex-refresh', 'invalid_grant');
+      alert(`aigate: codex account ${account} refresh token is dead — re-login needed`, { account });
+      broadcast('accounts', q.listAccounts.all());
+      return { error: 'invalid_grant', reauth: true };
+    }
+    return { error: 'token endpoint ' + r.status };
+  }
+  let j; try { j = JSON.parse(text); } catch { return { error: 'token endpoint returned non-JSON' }; }
+  if (!j || typeof j.access_token !== 'string' || !j.access_token) return { error: 'token endpoint returned no access_token' };
+  const idTok = typeof j.id_token === 'string' && j.id_token ? j.id_token : auth.tokens.id_token;
+  const next = { auth_mode: 'chatgpt', OPENAI_API_KEY: null,
+    tokens: { id_token: idTok, access_token: j.access_token, refresh_token: (typeof j.refresh_token === 'string' && j.refresh_token) || auth.tokens.refresh_token, account_id: auth.tokens.account_id },
+    last_refresh: new Date().toISOString() };
+  const acc = decodeJwtPayload(j.access_token);
+  const exp = acc && Number.isFinite(acc.exp) ? Math.trunc(acc.exp) : nowS() + 10 * 86400;
+  const plan = ((decodeJwtPayload(idTok) || {})['https://api.openai.com/auth'] || {}).chatgpt_plan_type || null;
+  // persisted synchronously BEFORE the promise resolves: the rotated refresh token exists
+  // nowhere else, and losing it to a crash between response and write would orphan the account
+  q.updCodexAuth.run(encrypt(JSON.stringify(next)), exp, plan, account);
+  return { ok: true, auth: next, exp };
+}
+// The credential a caller may use right now: refresh only when the access token is inside
+// the ahead-window; a failed EARLY refresh never withholds a token that's still valid.
+async function codexFresh(account) {
+  const row = q.getAcct.get(account);
+  if (!row || row.kind !== 'codex' || !row.token_enc) return { error: 'unknown codex account' };
+  const auth = readCodexAuth(row);
+  if (!auth) return { decryptFail: true, error: 'decrypt' };
+  if (row.token_exp == null || row.token_exp - nowS() >= CODEX.refreshAheadS()) return { auth };
+  const r = await refreshCodex(account);
+  if (r.ok) return { auth: r.auth };
+  if (row.token_exp > nowS()) return { auth, refreshError: r.error, reauth: !!r.reauth };
+  return { error: r.error, reauth: !!r.reauth };
+}
+async function fetchCodexUsage(auth) {
+  const r = await fetch(CODEX.usageUrl(), {
+    headers: { authorization: 'Bearer ' + auth.tokens.access_token, 'chatgpt-account-id': auth.tokens.account_id,
+      'user-agent': CODEX.ua(), accept: 'application/json' },
+    signal: AbortSignal.timeout(15000),
+    redirect: 'error',   // carries a live bearer — never follow a 30x
+  });
+  return { status: r.status, text: await r.text() };
+}
+async function pollCodexUsage(account, auth) {
+  try {
+    // refreshDead: a refresh in THIS poll came back invalid_grant → the access token may still
+    // answer, but the credential is not healthy, so a good usage read must not clear reauth.
+    let refreshDead = false;
+    const cur = q.getAcct.get(account);
+    if (cur && cur.token_exp != null && cur.token_exp - nowS() < CODEX.refreshAheadS()) {
+      const r = await refreshCodex(account);
+      if (r.ok) auth = r.auth; else if (r.reauth) refreshDead = true;
+    }
+    let u = await fetchCodexUsage(auth);
+    if (u.status === 401) {
+      const r = await refreshCodex(account, { staleAccess: auth.tokens.access_token });
+      if (r.reauth) return { account, status: 401, alive: false, note: 'refresh token dead — needs reauth' };
+      if (!r.ok) return { account, error: r.error };
+      auth = r.auth;
+      u = await fetchCodexUsage(auth);
+      if (u.status === 401) {
+        q.setReauth.run(1, account);
+        logAccess(account, '', '', 'codex-refresh', 'usage 401 after refresh');
+        return { account, status: 401, alive: false, note: 'auth failed after refresh — needs reauth' };
+      }
+    }
+    if (u.status !== 200) return { account, error: 'usage endpoint ' + u.status };
+    let j; try { j = JSON.parse(u.text); } catch { return { account, error: 'usage endpoint returned non-JSON' }; }
+    const rl = j && j.rate_limit;
+    if (!rl || typeof rl !== 'object') return { account, error: 'usage endpoint returned no rate_limit' };   // drift: keep last-known-good
+    // slot each window by its LENGTH, never by primary/secondary (Pro has only a weekly one in
+    // primary). A slot with no window is written as 0 — COALESCE would freeze its stale value.
+    const pct = { five: 0, seven: 0 }, reset = { five: null, seven: null };
+    for (const w of [rl.primary_window, rl.secondary_window]) {
+      if (!w || typeof w !== 'object') continue;
+      const slot = codexWindowSlot(w.limit_window_seconds);
+      const used = Number(w.used_percent);
+      if (!Number.isFinite(used)) continue;
+      const rs = w.reset_at != null && Number.isFinite(Number(w.reset_at)) ? Math.trunc(Number(w.reset_at))
+        : (w.reset_after_seconds != null && Number.isFinite(Number(w.reset_after_seconds)) ? nowS() + Math.trunc(Number(w.reset_after_seconds)) : null);
+      if (Math.round(used) >= pct[slot]) { pct[slot] = Math.round(used); reset[slot] = rs; }
+    }
+    // limit_reached → the worst window IS at its limit whatever percent it reported
+    if (rl.limit_reached === true) pct[pct.five > pct.seven ? 'five' : 'seven'] = 100;
+    q.updCodexUsage.run(pct.five, pct.seven, reset.five, reset.seven, typeof j.plan_type === 'string' && j.plan_type ? j.plan_type : null, refreshDead ? 1 : 0, account);
+    return { account, five: pct.five, seven: pct.seven, status: 200, alive: !refreshDead };
+  } catch (e) {
+    return { account, error: String((e && e.message) || e) };
+  }
+}
 let polling = false;   // ponytail: skip-not-queue — a skipped cycle self-corrects next interval
 async function pollUsage() {
   if (polling) { console.warn('[poll] previous cycle still running, skipping'); return; }
@@ -1413,7 +1673,11 @@ async function pollUsage() {
       // no exit: partial failure stays partial, and a restart won't fix a key mismatch
       try { tok = decrypt(row.token_enc); }
       catch (e) { console.error('[poll] decrypt failed for', row.account, '— wrong AIGATE_ENCRYPTION_KEY or corrupt row:', String(e && e.message || e)); return { account: row.account, error: 'decrypt' }; }
-      const res = await pollAccountUsage(row.account, tok);
+      let res;
+      if (row.kind === 'codex') {
+        let auth; try { auth = JSON.parse(tok); } catch { return { account: row.account, error: 'decrypt' }; }
+        res = await pollCodexUsage(row.account, auth);
+      } else res = await pollAccountUsage(row.account, tok);
       console.log('[poll]', new Date().toISOString(), JSON.stringify(res));
       return res;
     }));
@@ -1424,7 +1688,7 @@ async function pollUsage() {
     // setReauth(1)'d the DB — a guarded broadcast left the dashboard showing a dying account green.
     broadcast('accounts', q.listAccounts.all());
     // edge-alert if this cycle left nothing selectable (or recovered)
-    noteSelectable(q.pickRanked.all(CUTOFF).length, { via: 'poll' });
+    noteSelectable(q.pickRanked.all('claude', CUTOFF).length, { via: 'poll' });
   } finally { polling = false; }
 }
 

@@ -152,3 +152,62 @@ export function safeStaticPath(publicDir, urlPath) {
   if (fp !== publicDir && !fp.startsWith(publicDir + sep)) return null;
   return fp;
 }
+
+// ---- codex (ChatGPT) auth helpers --------------------------------------
+// Decode a JWT's payload WITHOUT verifying it — we only read claims (email, plan,
+// exp) out of tokens OpenAI already issued to us; the signature is the issuer's
+// business. null on anything that isn't a 3-part base64url JSON object.
+export function decodeJwtPayload(tok) {
+  if (typeof tok !== 'string') return null;
+  const parts = tok.split('.');
+  if (parts.length !== 3 || !parts[1]) return null;
+  try {
+    const v = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : null;
+  } catch { return null; }
+}
+
+// Any RFC3339 (Z or +08:00 offset) → UTC ISO string, null when unparseable. CLIProxyAPI
+// files carry local-offset stamps; comparing them as strings across offsets is wrong.
+const toUtcIso = (s) => {
+  if (typeof s !== 'string' || !s.trim()) return null;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+};
+
+// Accept BOTH on-disk shapes — the real ~/.codex/auth.json ({tokens:{…}}) and the
+// CLIProxyAPI flat file ({type:'codex', access_token, …, expired}) — and return the
+// canonical auth.json object plus the non-secret facts aigate indexes on. Never
+// throws: {error} is the 400 text. exp = the access token's own JWT exp (epoch s),
+// falling back to the flat file's `expired`, then last_refresh + 10d (Codex's
+// observed lifetime) so a token whose claims can't be read still gets a refresh date.
+export function normalizeCodexAuth(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { error: 'auth_json must be a JSON object' };
+  const src = obj.tokens && typeof obj.tokens === 'object' ? obj.tokens : obj;
+  const id_token = typeof src.id_token === 'string' ? src.id_token : '';
+  const access_token = typeof src.access_token === 'string' ? src.access_token.trim() : '';
+  const refresh_token = typeof src.refresh_token === 'string' ? src.refresh_token.trim() : '';
+  if (!access_token) return { error: 'auth_json has no access_token' };
+  if (!refresh_token) return { error: 'auth_json has no refresh_token' };
+  const idc = decodeJwtPayload(id_token), acc = decodeJwtPayload(access_token);
+  const authClaim = (idc && idc['https://api.openai.com/auth']) || (acc && acc['https://api.openai.com/auth']) || {};
+  const account_id = String(src.account_id || obj.account_id || authClaim.chatgpt_account_id || '').trim();
+  if (!account_id) return { error: 'auth_json has no account_id' };
+  const email = String((idc && idc.email) || obj.email || (acc && acc.email) || '').trim() || null;
+  const plan = String(authClaim.chatgpt_plan_type || obj.plan_type || '').trim() || null;
+  const last_refresh = toUtcIso(obj.last_refresh) || new Date().toISOString();
+  let exp = acc && Number.isFinite(acc.exp) ? Math.trunc(acc.exp) : null;
+  if (exp == null) { const e = toUtcIso(obj.expired); if (e) exp = Math.floor(Date.parse(e) / 1000); }
+  if (exp == null) exp = Math.floor(Date.parse(last_refresh) / 1000) + 10 * 86400;
+  return {
+    auth: { auth_mode: 'chatgpt', OPENAI_API_KEY: null, tokens: { id_token, access_token, refresh_token, account_id }, last_refresh },
+    email, plan, account_id, exp,
+  };
+}
+
+// chatgpt.com/backend-api/wham/usage reports each window by its LENGTH, and which
+// of primary/secondary holds which varies by plan (Pro: only a weekly one). Slot by
+// length — ≤6h is the short "five hour" bucket, anything longer is the weekly one.
+export function codexWindowSlot(seconds) {
+  return Number(seconds) <= 21600 ? 'five' : 'seven';
+}

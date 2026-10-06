@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { join, sep } from 'node:path';
-import { makeVault, tokenMatches, ip2int, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie } from '../src/lib.js';
+import { makeVault, tokenMatches, ip2int, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot } from '../src/lib.js';
+const _jwt = (o) => `${Buffer.from('{"alg":"none"}').toString('base64url')}.${Buffer.from(JSON.stringify(o)).toString('base64url')}.sig`;
 
 const KEY = crypto.randomBytes(32);
 
@@ -154,4 +155,41 @@ test('parseCookie: extracts one value, tolerates spacing/absence', () => {
   assert.equal(parseCookie('other=1', 'aigate_sess'), '');
   assert.equal(parseCookie('', 'aigate_sess'), '');
   assert.equal(parseCookie(undefined, 'aigate_sess'), '');
+});
+
+// ---- codex helpers -------------------------------------------------------
+test('decodeJwtPayload: reads claims, null on garbage', () => {
+  assert.deepEqual(decodeJwtPayload(_jwt({ exp: 5, email: 'a@b' })), { exp: 5, email: 'a@b' });
+  for (const bad of [null, undefined, 42, '', 'abc', 'a.b', 'a.!!!.c', 'a..c', `a.${Buffer.from('[1]').toString('base64url')}.c`, `a.${Buffer.from('"str"').toString('base64url')}.c`])
+    assert.equal(decodeJwtPayload(bad), null, String(bad));
+});
+test('normalizeCodexAuth: real auth.json shape → canonical + email/plan/account_id/exp from the JWTs', () => {
+  const id = _jwt({ email: 'e@x.test', 'https://api.openai.com/auth': { chatgpt_plan_type: 'pro', chatgpt_account_id: 'acc-9' } });
+  const at = _jwt({ exp: 1791000000 });
+  const n = normalizeCodexAuth({ auth_mode: 'chatgpt', OPENAI_API_KEY: null, tokens: { id_token: id, access_token: at, refresh_token: 'rt', account_id: 'acc-9' }, last_refresh: '2026-10-03T08:45:22+08:00' });
+  assert.equal(n.error, undefined);
+  assert.deepEqual([n.email, n.plan, n.account_id, n.exp], ['e@x.test', 'pro', 'acc-9', 1791000000]);
+  assert.equal(n.auth.last_refresh, '2026-10-03T00:45:22.000Z');
+  assert.deepEqual(n.auth.tokens, { id_token: id, access_token: at, refresh_token: 'rt', account_id: 'acc-9' });
+  assert.equal(n.auth.auth_mode, 'chatgpt'); assert.equal(n.auth.OPENAI_API_KEY, null);
+});
+test('normalizeCodexAuth: CLIProxyAPI flat shape; exp falls back to `expired`, then last_refresh+10d', () => {
+  const flat = { type: 'codex', access_token: 'opaque', refresh_token: 'rt', id_token: '', account_id: 'a1', email: 'f@x', plan_type: 'plus',
+    expired: '2026-10-13T08:45:22+08:00', last_refresh: '2026-10-03T08:45:22+08:00' };
+  let n = normalizeCodexAuth(flat);
+  assert.equal(n.exp, Date.parse('2026-10-13T00:45:22Z') / 1000);
+  assert.deepEqual([n.email, n.plan, n.account_id], ['f@x', 'plus', 'a1']);
+  delete flat.expired;
+  n = normalizeCodexAuth(flat);
+  assert.equal(n.exp, Date.parse('2026-10-03T00:45:22Z') / 1000 + 10 * 86400);
+});
+test('normalizeCodexAuth: {error} for non-objects and missing tokens/account_id — never throws', () => {
+  for (const bad of [null, 'x', 5, [], {}, { tokens: {} }, { access_token: 'a' }, { access_token: 'a', refresh_token: 'r' }])
+    assert.ok(normalizeCodexAuth(bad).error, JSON.stringify(bad));
+});
+test('codexWindowSlot: ≤6h is five, anything longer is seven', () => {
+  assert.equal(codexWindowSlot(18000), 'five');
+  assert.equal(codexWindowSlot(21600), 'five');
+  assert.equal(codexWindowSlot(21601), 'seven');
+  assert.equal(codexWindowSlot(604800), 'seven');
 });
