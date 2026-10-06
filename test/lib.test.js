@@ -183,9 +183,34 @@ test('normalizeCodexAuth: CLIProxyAPI flat shape; exp falls back to `expired`, t
   n = normalizeCodexAuth(flat);
   assert.equal(n.exp, Date.parse('2026-10-03T00:45:22Z') / 1000 + 10 * 86400);
 });
+test('normalizeCodexAuth: exp precedence is JWT exp > `expired` > last_refresh+10d', () => {
+  const jwtExp = 1791000000, expiredS = Date.parse('2026-10-13T00:45:22Z') / 1000, lastRefreshS = Date.parse('2026-10-03T00:45:22Z') / 1000;
+  assert.notEqual(jwtExp, expiredS); assert.notEqual(expiredS, lastRefreshS + 10 * 86400 + 1);
+  const base = { refresh_token: 'rt', id_token: '', account_id: 'a1', last_refresh: '2026-10-03T08:45:22+08:00' };
+  // all three present, three different values: the JWT wins
+  let n = normalizeCodexAuth({ ...base, access_token: _jwt({ exp: jwtExp }), expired: '2026-10-13T08:45:22+08:00' });
+  assert.equal(n.exp, jwtExp);
+  // opaque access token: `expired` beats last_refresh+10d (they differ: 10d vs 0d offset... expired is 10d too, so shift it)
+  n = normalizeCodexAuth({ ...base, access_token: 'opaque', expired: '2026-10-20T08:45:22+08:00' });
+  assert.equal(n.exp, Date.parse('2026-10-20T00:45:22Z') / 1000);
+  assert.notEqual(n.exp, lastRefreshS + 10 * 86400);
+  // neither: last_refresh+10d
+  n = normalizeCodexAuth({ ...base, access_token: 'opaque' });
+  assert.equal(n.exp, lastRefreshS + 10 * 86400);
+});
 test('normalizeCodexAuth: {error} for non-objects and missing tokens/account_id — never throws', () => {
-  for (const bad of [null, 'x', 5, [], {}, { tokens: {} }, { access_token: 'a' }, { access_token: 'a', refresh_token: 'r' }])
-    assert.ok(normalizeCodexAuth(bad).error, JSON.stringify(bad));
+  for (const bad of [null, 'x', 5, [], undefined]) assert.match(normalizeCodexAuth(bad).error, /must be a JSON object/, String(bad));
+  const full = { access_token: 'a', refresh_token: 'r', account_id: 'acc', id_token: '' };
+  // each case is otherwise complete, so only ITS guard can produce the error
+  assert.match(normalizeCodexAuth({ ...full, access_token: '' }).error, /no access_token/);
+  assert.match(normalizeCodexAuth({ ...full, access_token: '   ' }).error, /no access_token/);
+  assert.match(normalizeCodexAuth({ ...full, refresh_token: '' }).error, /no refresh_token/);
+  assert.match(normalizeCodexAuth({ ...full, refresh_token: undefined }).error, /no refresh_token/);
+  assert.match(normalizeCodexAuth({ ...full, account_id: '' }).error, /no account_id/);
+  assert.match(normalizeCodexAuth({ tokens: { access_token: 'a', refresh_token: 'r' } }).error, /no account_id/);
+  assert.match(normalizeCodexAuth({ tokens: { refresh_token: 'r', account_id: 'acc' } }).error, /no access_token/);
+  assert.match(normalizeCodexAuth({ tokens: { access_token: 'a', account_id: 'acc' } }).error, /no refresh_token/);
+  assert.equal(normalizeCodexAuth(full).error, undefined);     // control: the complete object passes
 });
 test('codexWindowSlot: ≤6h is five, anything longer is seven', () => {
   assert.equal(codexWindowSlot(18000), 'five');

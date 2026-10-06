@@ -25,6 +25,16 @@ delete process.env.AIGATE_ALLOW_CIDR;
 delete process.env.AIGATE_TRUST_PROXY;
 delete process.env.AIGATE_CODEX_REFRESH_AHEAD_S;
 
+// alert receiver: server.js reads AIGATE_ALERT_WEBHOOK once at import, so it must exist first
+const alertPosts = [];
+const alertSink = http.createServer((req, res) => {
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('end', () => { try { alertPosts.push(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { alertPosts.push({ bad: true }); } res.writeHead(200); res.end('ok'); });
+});
+await new Promise((r) => alertSink.listen(0, '127.0.0.1', r));
+process.env.AIGATE_ALERT_WEBHOOK = `http://127.0.0.1:${alertSink.address().port}/hook`;
+
 const { server, db } = await import('../src/server.js');
 const vault = makeVault(Buffer.from(ENC_KEY, 'hex'));
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
@@ -84,12 +94,13 @@ before(async () => {
 after(() => {
   server.close();
   upstream.close();
+  alertSink.close();
   try { db.close(); } catch { /* already closed */ }
   for (const f of [DB, DB + '-wal', DB + '-shm']) { try { rmSync(f); } catch { /* gone */ } }
 });
 beforeEach(() => {
   db.exec(`DELETE FROM accounts; DELETE FROM access_log`);
-  usageHits.length = 0; tokenHits.length = 0;
+  usageHits.length = 0; tokenHits.length = 0; alertPosts.length = 0;
   usageFor = () => ({ status: 200, body: usage(win(3, 604800)) });
   tokenHandler = defaultTokenHandler;
 });
@@ -131,19 +142,32 @@ test('import the CLIProxyAPI flat shape (+08:00 stamps normalize to UTC); auth_j
 
 test('kind/credential mismatches are rejected both ways; duplicates and cross-kind overwrites 409', async () => {
   const a = mkAuth();
-  let r = await add('bad1', a, { setup_token: 'sk-ant-oat01-x' });
-  assert.equal(r.status, 400);
-  r = await fetch(base + '/api/accounts', { method: 'POST', headers: H, body: JSON.stringify({ account: 'bad2', auth_json: a }) });
-  assert.equal(r.status, 400);
-  r = await add('bad/3', a);
-  assert.equal(r.status, 400);
-  r = await add('bad4', { tokens: { access_token: 'x' } });
-  assert.equal(r.status, 400);
+  const post = (body) => fetch(base + '/api/accounts', { method: 'POST', headers: H, body: JSON.stringify(body) });
+  const err = async (r, status, rx) => { assert.equal(r.status, status); assert.match((await r.json()).error, rx); };
+  const goodSetup = 'sk-ant-oat01-' + crypto.randomBytes(8).toString('hex');
+  // codex slot given a Claude setup_token (auth_json present, so only the setup_token guard can fire)
+  await err(await add('bad1', a, { setup_token: goodSetup }), 400, /setup_token is for Claude accounts/);
+  // claude slot given an auth_json (valid setup_token present, so the missing-setup_token check cannot fire)
+  await err(await post({ account: 'bad2', setup_token: goodSetup, auth_json: a }), 400, /auth_json is for kind=codex accounts/);
+  await err(await post({ account: 'bad2b', auth_json: a }), 400, /auth_json is for kind=codex accounts/);
+  // codex slot with nothing / claude slot with nothing
+  await err(await add('bad2c', ''), 400, /account \+ auth_json required for kind=codex/);
+  await err(await post({ account: 'bad2d' }), 400, /account \+ setup_token required/);
+  // unknown kind
+  await err(await post({ account: 'bad2e', kind: 'gemini', auth_json: a }), 400, /kind must be 'claude' or 'codex'/);
+  // name with a slash — on both paths
+  await err(await add('bad/3', a), 400, /cannot contain spaces or slashes/);
+  await err(await post({ account: 'bad 3', setup_token: goodSetup }), 400, /cannot contain spaces or slashes/);
+  // codex payload that parses but lacks a refresh token (access_token present, so only that guard fires)
+  await err(await add('bad4', { tokens: { access_token: 'x' } }), 400, /no refresh_token/);
+  await err(await add('bad5', '{not json'), 400, /not valid JSON/);
+  for (const n of ['bad1', 'bad2', 'bad2b', 'bad/3', 'bad4', 'bad5']) assert.equal(row(n), undefined, n);   // nothing leaked in
   assert.equal((await add('ok1', a)).status, 200);
-  assert.equal((await add('ok1-dupe', a)).status, 409);        // same ChatGPT account_id under another name
+  await err(await add('ok1-dupe', a), 409, /already vaulted as ok1/);        // same ChatGPT account_id under another name
   assert.equal((await add('ok1', mkAuth({ acct: a.tokens.account_id }))).status, 200);   // overwrite same name is fine
   assert.equal((await addClaude('cl1')).status, 200);
-  assert.equal((await add('cl1', mkAuth())).status, 409);
+  await err(await add('cl1', mkAuth()), 409, /already exists as a Claude account/);
+  await err(await addClaude('ok1'), 409, /already exists as a Codex account/);
 });
 
 // ---- kind isolation + ranking --------------------------------------------
@@ -416,10 +440,17 @@ test('/health: codex counters are separate and `selectable` stays claude-only', 
   const m = await (await fetch(base + '/api/metrics', { headers: H })).text();
   assert.match(m, /^aigate_codex_selectable 1$/m);
   assert.match(m, /^aigate_selectable 0$/m);
+  // a second, different count — a hardcoded value cannot satisfy both
+  await add('hx3', mkAuth()); await add('hx4', mkAuth()); await addClaude('hc2');
+  const m2 = await (await fetch(base + '/api/metrics', { headers: H })).text();
+  assert.match(m2, /^aigate_codex_selectable 3$/m);
+  assert.match(m2, /^aigate_selectable 1$/m);
+  h = await (await fetch(base + '/health')).json();
+  assert.equal(h.codex_selectable, 3); assert.equal(h.codex_accounts, 4); assert.equal(h.selectable, 1);
 });
 
 test('?dry=1 returns the would-be pick without any token and audits select-dry, never select', async () => {
-  const a = mkAuth(); await add('dry1', a);
+  const a = mkAuth({ expIn: 3600 }); await add('dry1', a);   // inside the 2-day refresh window: a non-dry select WOULD refresh
   await addClaude('dry-cl');
   const rc = await select('?kind=codex&dry=1');
   const txt = await rc.text();
@@ -431,7 +462,11 @@ test('?dry=1 returns the would-be pick without any token and audits select-dry, 
   assert.equal(audit('select').length, 0);
   assert.equal(audit('select-dry').length, 2);
   assert.equal(tokenHits.length, 0);                              // dry never refreshes either
+  assert.equal(stored('dry1').tokens.refresh_token, a.tokens.refresh_token);
   assert.equal((await select('?kind=codex&dry=1&exclude=dry1')).status, 503);
+  // control: the same near-expiry fixture DOES hit the token endpoint on a real select, so the 0 above means something
+  assert.equal((await select('?kind=codex')).status, 200);
+  assert.equal(tokenHits.length, 1);
 });
 
 test('/api/events/limit parks a codex row by name and select skips it', async () => {
@@ -544,4 +579,22 @@ test('credential writes restore synchronous=NORMAL afterwards', async () => {
   await add('dur', mkAuth({ expIn: 600 }));
   await select('?kind=codex');
   assert.equal(db.prepare('PRAGMA synchronous').get().synchronous, 1);   // 1 = NORMAL
+});
+
+// ---- reauth alert is edge-triggered ------------------------------------------------
+test('codex reauth alert is edge-triggered: two consecutive failing polls → exactly one webhook POST', async () => {
+  await add('edge', mkAuth());
+  tokenHandler = () => ({ status: 400, body: { error: 'invalid_grant', error_description: 'refresh_token_reused' } });
+  usageFor = () => ({ status: 401, body: {} });
+  const waitFor = async (n) => { for (let i = 0; i < 50 && alertPosts.length < n; i++) await new Promise((r) => setTimeout(r, 40)); };
+  await poll('edge');
+  await waitFor(1);
+  assert.equal(row('edge').reauth_needed, 1);
+  assert.equal(alertPosts.length, 1);
+  assert.match(alertPosts[0].text, /codex account edge/);
+  assert.equal(alertPosts[0].account, 'edge');
+  await poll('edge');                                              // still failing
+  await new Promise((r) => setTimeout(r, 300));                    // give a (wrong) second POST time to land
+  assert.equal(alertPosts.length, 1);
+  assert.equal(tokenHits.length, 1);                               // and the dead token was never spent twice
 });
