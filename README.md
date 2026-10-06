@@ -106,12 +106,12 @@ The folder also includes an [interactive gallery](docs/screenshots/live-2026-09-
 | Capability | Implemented behavior |
 |---|---|
 | **Encrypted vault** | AES-256-GCM storage for Claude account tokens and provider API keys. List endpoints return metadata; authenticated selection and key-fetch routes return the requested credential and record access. |
-| **Account selection** | Ranks accounts by their worst usage window, skips disabled, parked, and over-cutoff accounts, and recovers eligibility as limits reset. The default cutoff is 95%. |
+| **Account selection** | Use it or lose it: of the accounts under the cutoff, the one whose **weekly window resets soonest** is picked first, so quota that is about to expire is spent before quota that carries over. Accounts with nothing spent this week (no weekly reset yet) come after; ties go to the lowest worst-window usage. Skips disabled, parked, and over-cutoff accounts, and recovers eligibility as limits reset. The default cutoff is 95%. |
 | **Usage polling** | Reads real five-hour and seven-day rate-limit utilization every ten minutes. Unchecked usage is shown as unknown rather than a fabricated zero. |
 | **Codex (ChatGPT) accounts** | Accounts carry a `kind` (`claude` or `codex`); the two pools never mix in selection. A Codex row stores the whole `auth.json` encrypted, polls `wham/usage` for real 5h and weekly utilization, and refreshes its own OAuth tokens late and server-side. See [Codex accounts](#codex-chatgpt-accounts). |
 | **Provider registry** | A 65-provider catalog, add-key controls, bulk import, normalized key intake, liveness probes where supported, and masked key hints. |
 | **API-key proxy** | Anthropic Messages, OpenAI Chat Completions, and Responses endpoints with provider routing, server-side key injection, streaming, and audited key failover. |
-| **Client integration** | The `ai` front door runs the official `claude` or `codex` binary on the account with the most headroom, parks exhausted accounts, and retries with the next eligible one. Global overload responses retry the same account. `ai usage` prints every account's live meters. |
+| **Client integration** | The `ai` front door runs the official `claude` or `codex` binary on the account aigate picks (soonest weekly reset with headroom left), parks exhausted accounts, and retries with the next eligible one. Global overload responses retry the same account. `ai usage` prints every account's live meters. |
 | **Live interface** | WebSocket updates, interactive usage charts, account and key management, a filtered activity feed, responsive navigation, and the shared token background. |
 | **Task board** | Atomic task claims, worker heartbeats, drag reordering, results, follow-ups, and retries. Its API is internal and may change. |
 | **Audit and recovery** | Credential access and mutations are logged; prompts are scrubbed before storage. DB-backed health checks, a watchdog, a boot encryption canary, and daily snapshots support operations. |
@@ -287,8 +287,8 @@ headless `-p` mode) detects over-limit and retries the next account — with **c
 
 ```bash
 AIGATE_URL='https://aigate.example.com' AIGATE_TOKEN='…' bash clients/install.sh
-ai -p 'hi'          # Claude replies using the account with the most headroom
-ai codex exec 'hi'  # Codex on the ChatGPT account with the most headroom
+ai -p 'hi'          # Claude replies using the account aigate picks
+ai codex exec 'hi'  # Codex on the ChatGPT account aigate picks
 ```
 
 The installer writes the `aigate-*.sh` scripts, `hydrate.sh`, and `env` into `~/.claude/aigate/`, installs `ai` and `ai-desktop` into `~/.local/bin/`, and auto-detects the `claude` binary. It removes an old installer-written `cc` and retires the legacy CLIProxyAPI-era `aigate-gpt.sh` shim (moved aside to `.bak-removed-*`). **CLIProxyAPI is no longer used anywhere**; Codex goes straight through `aigate-codex.sh`.
@@ -297,8 +297,8 @@ The installer writes the `aigate-*.sh` scripts, `hydrate.sh`, and `env` into `~/
 
 | Command | Runs |
 |---|---|
-| `ai [claude] …` | official `claude` on the Claude account with the most headroom (Claude-in-Chrome on by default; `--no-chrome` opts out) |
-| `ai codex …` · `ai gpt …` | official `codex` on the ChatGPT account with the most headroom (also reached by `--model gpt*`, `sol*`, or `codex*`) |
+| `ai [claude] …` | official `claude` on the Claude account aigate picks (Claude-in-Chrome on by default; `--no-chrome` opts out) |
+| `ai codex …` · `ai gpt …` | official `codex` on the ChatGPT account aigate picks (also reached by `--model gpt*`, `sol*`, or `codex*`) |
 | `ai kimi …` | `claude` against Kimi K3 (see [`ai kimi`](#ai-kimi--kimi-k3-via-aigate)); also `--model kimi*` or `k3*` |
 | `ai muse …` | `claude` against Meta Muse; also `--model muse*` or `spark*`. `ai muse cli …` runs Meta's own `muse` CLI instead |
 | `ai usage [--json]` | live table of every Claude and Codex account (5h and weekly meters, resets, flags), with a star on the next pick; `--json` prints `{accounts, next}` |

@@ -348,7 +348,11 @@ const q = {
   // skips it until parked_until passes (auto-recover); the poller keeps its % honest.
   parkAccount: db.prepare(`UPDATE accounts SET parked_until=datetime('now', ?) WHERE account=?`),
   getParked: db.prepare(`SELECT parked_until FROM accounts WHERE account=?`),
-  // most headroom = lowest worst-window usage; skip disabled / over cutoff / tokenless /
+  // use-it-or-lose-it: of the accounts under the cutoff, the one whose WEEKLY window resets
+  // soonest goes first, so quota that is about to expire gets spent before quota that keeps.
+  // No weekly window running — no reset, or a PAST one (updResets COALESCE keeps the last-known
+  // reset, so an idle account's stays in the past) — has nothing expiring and sorts after; ties
+  // fall back to lowest worst-window usage. Skip disabled / over cutoff / tokenless /
   // needs-reauth / currently-parked. Unpolled (usage_updated IS NULL) sorts LAST so a
   // freshly-added account isn't handed out as a phantom "0%" before its first real poll.
   // Ranked (no LIMIT) so /api/select can skip client-excluded accounts on retry.
@@ -361,7 +365,9 @@ const q = {
       AND (parked_until IS NULL OR parked_until <= datetime('now'))
       AND (?1 <> 'codex' OR token_exp IS NULL OR token_exp > CAST(strftime('%s','now') AS INTEGER))
       AND (?1 <> 'codex' OR refresh_unknown=0)
-    ORDER BY (usage_updated IS NULL) ASC, max(five_hour_pct,seven_day_pct) ASC, usage_updated ASC`),
+    ORDER BY (usage_updated IS NULL) ASC,
+      (seven_day_reset IS NULL OR seven_day_reset <= CAST(strftime('%s','now') AS INTEGER)) ASC, seven_day_reset ASC,
+      max(five_hour_pct,seven_day_pct) ASC, usage_updated ASC`),
   insReq: db.prepare(`INSERT INTO request_log(account,host,ip,cwd,model,prompt,tokens) VALUES(?,?,?,?,?,?,?)`),
   insAccess: db.prepare(`INSERT INTO access_log(account,host,ip,action,result) VALUES(?,?,?,?,?)`),
   recentReq: db.prepare(`SELECT id,ts,account,host,ip,cwd,model,substr(prompt,1,400) AS prompt,tokens

@@ -1450,3 +1450,30 @@ test('GET /api/usage groups accounts by provider with day/hour reset countdowns 
     db.prepare(`DELETE FROM accounts WHERE account='usage-codex'`).run();
   }
 });
+
+test('select is use-it-or-lose-it: soonest weekly reset under the cutoff wins, usage only breaks ties', async () => {
+  const cols = 'account,disabled,reauth_needed,parked_until,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset,usage_updated';
+  const saved = db.prepare(`SELECT ${cols} FROM accounts WHERE kind='claude'`).all();
+  const now = Math.floor(Date.now() / 1000), day = 86400;
+  const set = (acct, pct, reset) => db.prepare(`UPDATE accounts SET disabled=0,reauth_needed=0,parked_until=NULL,
+    five_hour_pct=0,seven_day_pct=?,seven_day_reset=?,usage_updated=datetime('now') WHERE account=?`).run(pct, reset, acct);
+  const pick = async () => (await (await fetch(base + '/api/select?host=t&dry=1', { headers: H })).json()).account;
+  try {
+    db.prepare(`UPDATE accounts SET disabled=1 WHERE kind='claude' AND account NOT IN ('alice','bob')`).run();
+    set('alice', 60, now + 1 * day); set('bob', 5, now + 5 * day);
+    assert.equal(await pick(), 'alice');                    // resets tomorrow beats more headroom that keeps
+    set('alice', 96, now + 1 * day);
+    assert.equal(await pick(), 'bob');                      // over the cutoff is still never picked
+    set('alice', 10, null); set('bob', 50, now + 5 * day);
+    assert.equal(await pick(), 'bob');                      // nothing spent this week = nothing expiring
+    set('alice', 10, now - 1 * day); set('bob', 50, now + 5 * day);
+    assert.equal(await pick(), 'bob');                      // a PAST reset (idle since rollover) is not "expiring soonest"
+    set('alice', 30, now + 2 * day); set('bob', 20, now + 2 * day);
+    assert.equal(await pick(), 'bob');                      // same reset → lower usage breaks the tie
+  } finally {
+    const restore = db.prepare(`UPDATE accounts SET disabled=?,reauth_needed=?,parked_until=?,five_hour_pct=?,seven_day_pct=?,
+      five_hour_reset=?,seven_day_reset=?,usage_updated=? WHERE account=?`);
+    for (const r of saved) restore.run(r.disabled, r.reauth_needed, r.parked_until, r.five_hour_pct, r.seven_day_pct,
+      r.five_hour_reset, r.seven_day_reset, r.usage_updated, r.account);
+  }
+});
