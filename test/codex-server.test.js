@@ -9,12 +9,15 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rmSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { rmSync, readFileSync, statSync, existsSync, mkdtempSync } from 'node:fs';
 import { rtHash } from '../src/lib.js';
 import { makeVault } from '../src/lib.js';
 
 const TOKEN = 'test-token-' + crypto.randomBytes(8).toString('hex');
-const DB = join(tmpdir(), `aigate-codex-test-${process.pid}-${Date.now()}.db`);
+// own temp dir: the server backs up into dirname(DB)/backups — a DB straight in $TMPDIR shared that
+// dir with every other test file, and their parallel backups/rm's raced each other's assertions
+const TMP = mkdtempSync(join(tmpdir(), 'aigate-codex-'));
+const DB = join(TMP, `aigate-codex-test-${process.pid}-${Date.now()}.db`);
 const ENC_KEY = crypto.randomBytes(32).toString('hex');
 process.env.AIGATE_TOKEN = TOKEN;
 process.env.AIGATE_ENCRYPTION_KEY = ENC_KEY;
@@ -98,6 +101,7 @@ after(() => {
   alertSink.close();
   try { db.close(); } catch { /* already closed */ }
   for (const f of [DB, DB + '-wal', DB + '-shm', DB + '.codex-ledger.json']) { try { rmSync(f); } catch { /* gone */ } }
+  rmSync(TMP, { recursive: true, force: true });
 });
 beforeEach(() => {
   db.exec(`DELETE FROM accounts; DELETE FROM access_log`);

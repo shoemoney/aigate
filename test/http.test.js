@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
+import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readdirSync, readFileSync, mkdtempSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { connect } from 'node:net';
 import WebSocket from 'ws';
@@ -13,7 +13,10 @@ import WebSocket from 'ws';
 // already-set vars), so this never touches real data.
 const TOKEN = 'test-token-' + crypto.randomBytes(8).toString('hex');
 const DASH_PW = 'master-' + crypto.randomBytes(6).toString('hex');
-const DB = join(tmpdir(), `aigate-test-${process.pid}-${Date.now()}.db`);
+// own temp dir: the server backs up into dirname(DB)/backups — a DB straight in $TMPDIR shared that
+// dir with every other test file, and their parallel backups/rm's raced each other's assertions
+const TMP = mkdtempSync(join(tmpdir(), 'aigate-http-'));
+const DB = join(TMP, `aigate-test-${process.pid}-${Date.now()}.db`);
 process.env.AIGATE_TOKEN = TOKEN;
 process.env.AIGATE_DASHBOARD_PASSWORD = DASH_PW;
 process.env.AIGATE_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
@@ -24,7 +27,7 @@ delete process.env.AIGATE_ALLOW_CIDR;
 delete process.env.AIGATE_TRUST_PROXY;
 
 const { server, db, backupNow, openDb, isWeakToken, pollProviderKeys, authFail, authLocked, authOk, shortHost } = await import('../src/server.js');
-const BACKUPS = join(tmpdir(), 'backups');   // dirname(DB)/backups
+const BACKUPS = join(TMP, 'backups');   // dirname(DB)/backups
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
 
@@ -36,7 +39,7 @@ after(() => {
   server.close();
   try { db.close(); } catch { /* already closed */ }
   for (const f of [DB, DB + '-wal', DB + '-shm']) { try { rmSync(f); } catch { /* gone */ } }
-  rmSync(BACKUPS, { recursive: true, force: true });
+  rmSync(TMP, { recursive: true, force: true });
 });
 
 test('GET / serves the dashboard', async () => {
@@ -561,18 +564,18 @@ test('openDb: corrupt DB is quarantined and auto-restored from the newest backup
   src.exec(`CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT);
             INSERT INTO meta(k,v) VALUES('restore-marker','yes')`);
   src.close();
-  const CORRUPT = join(tmpdir(), `aigate-corrupt-${process.pid}-${Date.now()}.db`);
+  const CORRUPT = join(TMP, `aigate-corrupt-${process.pid}-${Date.now()}.db`);
   writeFileSync(CORRUPT, 'definitely not a sqlite database — hard power-off garbage');
   const d = openDb(CORRUPT);
   try {
     assert.equal(d.prepare('PRAGMA quick_check').get().quick_check, 'ok');
     assert.equal(d.prepare(`SELECT v FROM meta WHERE k='restore-marker'`).get().v, 'yes');
-    const quarantined = readdirSync(tmpdir()).filter((f) => f.startsWith(CORRUPT.split('/').pop() + '.corrupt-'));
+    const quarantined = readdirSync(TMP).filter((f) => f.startsWith(CORRUPT.split('/').pop() + '.corrupt-'));
     assert.ok(quarantined.length >= 1, 'no .corrupt-* quarantine file');
   } finally {
     d.close();
-    for (const f of readdirSync(tmpdir()))
-      if (f.startsWith(CORRUPT.split('/').pop())) rmSync(join(tmpdir(), f), { force: true });
+    for (const f of readdirSync(TMP))
+      if (f.startsWith(CORRUPT.split('/').pop())) rmSync(join(TMP, f), { force: true });
     rmSync(bak, { force: true });
   }
 });

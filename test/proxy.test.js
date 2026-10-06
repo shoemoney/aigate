@@ -8,11 +8,14 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rmSync } from 'node:fs';
+import { rmSync, mkdtempSync } from 'node:fs';
 import { makeVault } from '../src/lib.js';
 
 const TOKEN = 'test-token-' + crypto.randomBytes(8).toString('hex');
-const DB = join(tmpdir(), `aigate-proxy-test-${process.pid}-${Date.now()}.db`);
+// own temp dir: the server backs up into dirname(DB)/backups — a DB straight in $TMPDIR shared that
+// dir with every other test file, and their parallel backups/rm's raced each other's assertions
+const TMP = mkdtempSync(join(tmpdir(), 'aigate-proxy-'));
+const DB = join(TMP, `aigate-proxy-test-${process.pid}-${Date.now()}.db`);
 const ENC_KEY = crypto.randomBytes(32).toString('hex');
 process.env.AIGATE_TOKEN = TOKEN;
 process.env.AIGATE_ENCRYPTION_KEY = ENC_KEY;
@@ -27,7 +30,7 @@ delete process.env.AIGATE_PROXY_SMALL;
 
 const { server, db } = await import('../src/server.js');
 const vault = makeVault(Buffer.from(ENC_KEY, 'hex'));
-const BACKUPS = join(tmpdir(), 'backups');
+const BACKUPS = join(TMP, 'backups');
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
 
@@ -64,7 +67,7 @@ after(() => {
   upstream.close();
   try { db.close(); } catch { /* already closed */ }
   for (const f of [DB, DB + '-wal', DB + '-shm']) { try { rmSync(f); } catch { /* gone */ } }
-  rmSync(BACKUPS, { recursive: true, force: true });
+  rmSync(TMP, { recursive: true, force: true });
 });
 
 const postKey = (provider, key) => fetch(base + '/api/keys', { method: 'POST', headers: H, body: JSON.stringify({ provider, key }) });
