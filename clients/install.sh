@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
-# aigate client installer — sets up the `cc` command that routes the official
-# claude binary through aigate's account selector.
+# aigate client installer: sets up `ai` / `ai-desktop`, which route the official
+# claude and codex binaries through aigate's account selector.
 #
 #   AIGATE_URL=https://aigate… AIGATE_TOKEN=… bash install.sh
 #   bash install.sh                       # re-install: reads secrets from the saved env
 #
-# Installs:  ~/.claude/aigate/{aigate-run.sh,env,version}  and  ~/.local/bin/cc
+# Installs:  ~/.claude/aigate/{aigate-*.sh,t3-*.sh,cmux-claude.sh,env,version}  and  ~/.local/bin/{ai,ai-desktop}
+# (AIGATE_INSTALL_ROOT=/some/dir installs under that dir instead of $HOME)
 set -euo pipefail
 # re-install needs no secrets on the CLI: source the persisted env first so the
 # required-var checks pass. first install (no env file yet) still demands the token.
-[ -f "$HOME/.claude/aigate/env" ] && { set -a; . "$HOME/.claude/aigate/env"; set +a; }
+[ -f "${AIGATE_INSTALL_ROOT:-$HOME}/.claude/aigate/env" ] && { set -a; . "${AIGATE_INSTALL_ROOT:-$HOME}/.claude/aigate/env"; set +a; }
 : "${AIGATE_URL:?set AIGATE_URL}"; : "${AIGATE_TOKEN:?set AIGATE_TOKEN}"
 SRC="$(cd "$(dirname "$0")" && pwd)"
-DIR="$HOME/.claude/aigate"; BIN="$HOME/.local/bin"
+# AIGATE_INSTALL_ROOT lets tests (and sandboxes) install into a scratch dir
+ROOT="${AIGATE_INSTALL_ROOT:-$HOME}"
+DIR="$ROOT/.claude/aigate"; BIN="$ROOT/.local/bin"
 mkdir -p "$DIR" "$BIN"
 
 # version stamp — repo short-sha of the source checkout (best-effort); a git-less
@@ -23,18 +26,28 @@ printf '%s\n' "$VER" > "$DIR/version"
 
 # the rc file zsh ACTUALLY sources is ZDOTDIR-based (the .10 trap: $HOME/.zshrc is
 # never read there). pick by ZDOTDIR, not by which file happens to exist.
-ZRC="${ZDOTDIR:-$HOME}/.zshrc"
+ZRC="${ZDOTDIR:-$ROOT}/.zshrc"
 mkdir -p "$(dirname "$ZRC")"
 [ -f "$ZRC" ] || : > "$ZRC"
 
 install -m 0755 "$SRC/aigate-run.sh" "$DIR/aigate-run.sh"
-[ -f "$SRC/aigate-kimi.sh" ]     && install -m 0755 "$SRC/aigate-kimi.sh"     "$DIR/aigate-kimi.sh"     || true
-[ -f "$SRC/prompt-hook.sh" ]     && install -m 0755 "$SRC/prompt-hook.sh"     "$DIR/prompt-hook.sh"     || true
-[ -f "$SRC/statusline-feed.sh" ] && install -m 0755 "$SRC/statusline-feed.sh" "$DIR/statusline-feed.sh" || true
-[ -f "$SRC/hydrate.sh" ]         && install -m 0755 "$SRC/hydrate.sh"         "$DIR/hydrate.sh"         || true
+for f in aigate-kimi.sh aigate-muse.sh aigate-codex.sh prompt-hook.sh statusline-feed.sh hydrate.sh \
+         t3-claude.sh t3-codex.sh t3-opencode.sh t3-anthropic-compat.sh cmux-claude.sh; do
+  [ -f "$SRC/$f" ] && install -m 0755 "$SRC/$f" "$DIR/$f" || true
+done
+# every non-Anthropic T3 rung is the same script dispatched on its invocation name
+for n in kimi muse facebook qwen openrouter aigate; do
+  ln -sfn t3-anthropic-compat.sh "$DIR/t3-$n.sh"
+done
+# aigate-gpt.sh (the CPA-era codex shim) is retired: aigate-codex.sh replaces it.
+# Move it aside instead of deleting.
+if [ -e "$DIR/aigate-gpt.sh" ]; then
+  mv "$DIR/aigate-gpt.sh" "$DIR/aigate-gpt.sh.bak-removed-$(date +%Y%m%d-%H%M%S)"
+  echo "retired aigate-gpt.sh (moved to .bak-removed-*)"
+fi
 
 CLAUDE_BIN=""
-for p in "$HOME/.local/bin/claude" /usr/bin/claude /usr/local/bin/claude /opt/homebrew/bin/claude; do
+for p in "$ROOT/.local/bin/claude" /usr/bin/claude /usr/local/bin/claude /opt/homebrew/bin/claude; do
   [ -x "$p" ] && CLAUDE_BIN="$p" && break
 done
 
@@ -45,33 +58,21 @@ AIGATE_TOKEN=$AIGATE_TOKEN
 ${CLAUDE_BIN:+AIGATE_CLAUDE_BIN=$CLAUDE_BIN}
 EOF
 
-cat > "$BIN/cc" <<'EOF'
-#!/usr/bin/env bash
-# cc — run claude through aigate (account picked by the warden), or `cc kimi …`
-# to drive the same official binary against Kimi K3.
-set -a; . "$HOME/.claude/aigate/env"; set +a
-# freshen MCP keys in-foreground when missing/stale so THIS launch resolves ${VAR}s
-MK="$HOME/.claude/aigate/mcp-keys.env"
-if [ ! -f "$MK" ] || [ -n "$(find "$MK" -mmin +720 2>/dev/null)" ]; then
-  "$HOME/.claude/aigate/hydrate.sh" >/dev/null 2>&1 || true
+# `ai` (routes claude / codex / kimi / muse through aigate) and `ai-desktop` live in BIN.
+install -m 0755 "$SRC/ai" "$BIN/ai"
+[ -f "$SRC/ai-desktop" ] && install -m 0755 "$SRC/ai-desktop" "$BIN/ai-desktop" || true
+# the old `cc` this installer used to write: remove ONLY if it is still our own text
+# (a user's own `cc` -- or the C compiler -- is never touched).
+if [ -f "$BIN/cc" ] && grep -q '^# cc — run claude through aigate' "$BIN/cc" 2>/dev/null; then
+  rm -f "$BIN/cc"; echo "removed the old installer-written $BIN/cc (use ai)"
 fi
-[ -f "$MK" ] && . "$MK"
-# force a plain single-session REPL — never the experimental agent-teams board
-# (cmux injects CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1; unset beats it, "=0" would not)
-unset CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
-# `cc kimi …` → Kimi K3 via its Anthropic endpoint (bypasses the Claude warden);
-# anything else → the account warden, unchanged.
-[ "${1:-}" = kimi ] && { shift; exec "$HOME/.claude/aigate/aigate-kimi.sh" "$@"; }
-exec "$HOME/.claude/aigate/aigate-run.sh" "$@"
-EOF
-chmod 0755 "$BIN/cc"
 
 # reap the legacy cc.zsh shadow: older installs defined `cc` as a zsh FUNCTION
 # (sourced from an rc line) that shadowed the installed binary. it isn't written
 # by this installer, so its presence means a stale shell-function override.
 if [ -f "$DIR/cc.zsh" ]; then
   rm -f "$DIR/cc.zsh"
-  for rc in "$HOME/.zshrc" "$HOME/.config/zsh/.zshrc" "$ZRC"; do
+  for rc in "$ROOT/.zshrc" "$ROOT/.config/zsh/.zshrc" "$ZRC"; do
     [ -f "$rc" ] && { sed -i.bak '/aigate\/cc.zsh/d' "$rc"; rm -f "$rc.bak"; }
   done
   echo "removed legacy cc.zsh shell-function shadow"
@@ -80,7 +81,7 @@ fi
 # wire the hooks into settings.json — they're installed above but nothing
 # references them on a fresh box (dead on every clean install). idempotent
 # python3 merge: dedupe on the command string so re-runs never double-add.
-SETTINGS="$HOME/.claude/settings.json"
+SETTINGS="$ROOT/.claude/settings.json"
 [ -f "$SETTINGS" ] && cp "$SETTINGS" "$SETTINGS.bak" || true
 python3 - "$SETTINGS" <<'PY'
 import json, sys
@@ -122,7 +123,8 @@ if [ ! -f "$HOME/.claude/aigate/mcp-keys.env" ] || [ -n "$(find "$HOME/.claude/a
   ( "$HOME/.claude/aigate/hydrate.sh" >/dev/null 2>&1 & ) 2>/dev/null
 fi
 EOF
-  "$DIR/hydrate.sh" >/dev/null 2>&1 || true
+  # hydrate.sh writes under the real $HOME — skip it for a scratch install root
+  [ "$ROOT" = "$HOME" ] && { "$DIR/hydrate.sh" >/dev/null 2>&1 || true; }
   if ! grep -q 'aigate/mcp.zsh' "$ZRC" 2>/dev/null; then
     printf '\n[ -f "$HOME/.claude/aigate/mcp.zsh" ] && source "$HOME/.claude/aigate/mcp.zsh"  # aigate mcp keys\n' >> "$ZRC"
     echo "wired MCP-key hydration into $ZRC"
@@ -132,6 +134,5 @@ EOF
   echo "  claude mcp add -s user tavily        --env TAVILY_API_KEY='\${TAVILY_API_KEY}' -- npx -y tavily-mcp"
 fi
 
-echo "installed: $BIN/cc  →  $DIR/aigate-run.sh  (claude: ${CLAUDE_BIN:-not found in PATH})  [aigate ${VER:-unknown}]"
-case ":$PATH:" in *":$BIN:"*) : ;; *) echo "NOTE: add to PATH →  export PATH=\"$BIN:\$PATH\"";; esac
-echo "NOTE: 'cc' shadows the C compiler in shells where $BIN precedes /usr/bin. Rename if you compile with cc."
+echo "installed: $BIN/ai (+ ai-desktop)  ->  $DIR/aigate-{run,codex,kimi,muse}.sh  (claude: ${CLAUDE_BIN:-not found in PATH})  [aigate ${VER:-unknown}]"
+case ":$PATH:" in *":$BIN:"*) : ;; *) echo "NOTE: add to PATH ->  export PATH=\"$BIN:\$PATH\"";; esac

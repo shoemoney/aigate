@@ -29,7 +29,7 @@ BASE="${CC_KIMI_BASE_URL:-https://api.kimi.com/coding}"   # Claude Code appends 
 # back to its 200k default (DFe), which silently throws away 80% of K3 and makes
 # auto-compact fire absurdly early. CLAUDE_CODE_MAX_CONTEXT_TOKENS is the documented
 # override and is ONLY honoured for non-claude-* model names, i.e. exactly this route.
-# Values are Kimi's own context_length from GET $BASE/v1/models (verified 2026-09-27).
+# Values are Kimi's own context_length from its models endpoint (verified 2026-09-27).
 case "$MODEL" in
   k3|kimi-for-coding) CTX=1048576;;                    # 1M
   k3-256k|kimi-for-coding-highspeed) CTX=262144;;      # 256k

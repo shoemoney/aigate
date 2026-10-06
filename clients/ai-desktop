@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# ai-desktop — relaunch a desktop app on the account aigate recommends.
+#
+#   ai-desktop codex    write the best Codex account into auth.json, restart ChatGPT.app
+#   ai-desktop claude   launch Claude.app and print which account to sign into
+#
+# Codex: the app's bundled `codex app-server` reads $CODEX_HOME/auth.json at start,
+# so write-then-restart genuinely switches the account.
+# Claude: MEASURED 2026-08-20 — Claude for Desktop spawns its Code runtime through
+# Contents/Helpers/disclaimer, which OVERWRITES CLAUDE_CODE_OAUTH_TOKEN with the app's
+# own OAuth credential (injected ad6c1028fc1a vs spawned 5c4f5ebbb086), and Anthropic's
+# docs say Desktop doesn't read these env vars. So the app runs on whatever account is
+# signed in INSIDE it; we can only tell you which one to sign into.
+set -uo pipefail
+
+AIGATE_DIR="${AIGATE_DIR:-$HOME/.claude/aigate}"
+[ -r "$AIGATE_DIR/env" ] && { set -a; . "$AIGATE_DIR/env"; set +a; }
+HOST="$(hostname -s)"
+CODEX_BUNDLE_ID="${AIGATE_CODEX_BUNDLE_ID:-com.openai.codex}"
+CLAUDE_APP="${AIGATE_DESKTOP_APP:-/Applications/Claude.app}"
+
+dry_pick(){ # $1 = query prefix ("" | "kind=codex&")
+  [ -n "${AIGATE_URL:-}" ] && [ -n "${AIGATE_TOKEN:-}" ] || return 1
+  local hf; hf="$(mktemp)"; chmod 600 "$hf"; printf 'Authorization: Bearer %s\n' "$AIGATE_TOKEN" > "$hf"
+  curl -s -m15 -H "@$hf" "$AIGATE_URL/api/select?${1}host=$HOST&dry=1" 2>/dev/null
+  local rc=$?; rm -f "$hf"; return $rc
+}
+fmt_pick(){ python3 -c 'import sys,json
+try:d=json.load(sys.stdin)
+except Exception:d={}
+if not d.get("account"): print(""); sys.exit()
+p=[str(d["plan"])] if d.get("plan") else []
+for k,l in (("five_hour_pct","5h"),("seven_day_pct","7d")):
+    if isinstance(d.get(k),(int,float)): p.append("%s %d%%"%(l,round(d[k])))
+print("%s (%s)"%(d["account"]," · ".join(p)))' 2>/dev/null; }
+
+case "${1:-}" in
+  codex)
+    WRITER="$AIGATE_DIR/aigate-codex.sh"
+    [ -x "$WRITER" ] || { echo "ai-desktop: $WRITER missing — run aigate's clients/install.sh" >&2; exit 1; }
+    "$WRITER" --write-only || { echo "ai-desktop: could not select/write a codex account — not restarting the app" >&2; exit 1; }
+    osascript -e "quit app id \"$CODEX_BUNDLE_ID\"" >/dev/null 2>&1 || true
+    # wait up to ~20s for the bundled app-server to let go of the old login
+    for _ in $(seq 40); do
+      pgrep -f 'codex.* app-server' >/dev/null 2>&1 || break
+      sleep 0.5
+    done
+    if pgrep -f 'codex.* app-server' >/dev/null 2>&1; then
+      echo "ai-desktop: codex app-server still running → TERM" >&2
+      pkill -TERM -f 'codex.* app-server' 2>/dev/null || true
+      sleep 1
+    fi
+    open -b "$CODEX_BUNDLE_ID" || { echo "ai-desktop: could not open $CODEX_BUNDLE_ID" >&2; exit 1; }
+    echo "ai-desktop: ChatGPT/Codex relaunched on $(dry_pick 'kind=codex&' | fmt_pick)"
+    ;;
+  claude)
+    [ -d "$CLAUDE_APP" ] || [ -x "$CLAUDE_APP/Contents/MacOS/Claude" ] || { echo "ai-desktop: no Claude.app at $CLAUDE_APP" >&2; exit 1; }
+    rec="$(dry_pick '' | fmt_pick)"
+    open "$CLAUDE_APP" 2>/dev/null || open -a Claude || { echo "ai-desktop: could not launch Claude.app" >&2; exit 1; }
+    if [ -n "$rec" ]; then echo "ai-desktop: aigate recommends: $rec"
+    else echo "ai-desktop: aigate has no recommendation right now (unreachable or no headroom)"; fi
+    echo "ai-desktop: NOTE — Claude Desktop uses whichever account is signed in INSIDE the app;" >&2
+    echo "            it does not read CLAUDE_CODE_OAUTH_TOKEN. Sign into the account above if it differs." >&2
+    ;;
+  *)
+    echo "usage: ai-desktop codex|claude" >&2; exit 64;;
+esac

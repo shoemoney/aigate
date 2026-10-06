@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# ai — one front door to every agent CLI, all through the aigate account selector.
+# Always the OFFICIAL binaries (claude / codex), never a proxy. Installs to ~/.local/bin/ai.
+#
+#   ai [claude] …        Claude Code on the Claude account with the most headroom
+#   ai codex …  ai gpt … Codex on the ChatGPT account with the most headroom
+#   ai kimi …            Claude Code against Kimi K3
+#   ai muse …            Claude Code against Meta Muse      (ai muse cli … = Meta's own CLI)
+#   ai usage [--json]    live usage table for every account, ★ = next pick
+#   ai desktop codex|claude   relaunch the desktop app on the recommended account
+#   ai codex adopt       POST this box's ~/.codex/auth.json to aigate (recovery)
+#   --model kimi*|k3*  →kimi   gpt*|sol*|codex* →codex   muse*|spark* →muse   (flag is stripped)
+AG="${AIGATE_DIR:-$HOME/.claude/aigate}"
+
+# `ai muse cli …` escapes to Meta's OWN muse CLI (Codex-fork harness, always --yolo).
+if [ "${1:-}" = muse ] && [ "${2:-}" = cli ]; then
+  shift 2
+  M="$(command -v muse || echo "$HOME/.local/bin/muse")"
+  [ -x "$M" ] || { echo "ai: muse not installed (looked on PATH and in ~/.local/bin)" >&2; exit 127; }
+  # Pin the model here too: ~/.config/muse/settings.json is per-box and absent on the
+  # fleet. An explicit --model from the caller wins; MUSE_MODEL overrides.
+  mm=(--model "${MUSE_MODEL:-muse-spark-1.2-contributor}")
+  for a in "$@"; do case "$a" in --model|--model=*) mm=(); break;; esac; done
+  case "${1:-}" in
+    exec|resume) c="$1"; shift; exec "$M" "$c" --yolo ${mm[@]+"${mm[@]}"} "$@";;
+    export|trace|skills|sandbox|session-message|auth|login|logout|init) exec "$M" "$@";;
+    *) exec "$M" --yolo ${mm[@]+"${mm[@]}"} "$@";;
+  esac
+fi
+
+# rtk — PreToolUse hook that rewrites `git status` → `rtk git status`. Installed ONCE
+# per box (marker-gated, so a deliberate uninstall sticks). AI_NO_RTK=1 skips it.
+RTK_MARK="$HOME/.claude/.rtk-installed"
+if [ -z "${AI_NO_RTK:-}" ] && [ ! -e "$RTK_MARK" ] && command -v rtk >/dev/null 2>&1; then
+  rtk init -g --auto-patch >/dev/null 2>&1   # claude/kimi: Bash hook + ~/.claude/RTK.md
+  rtk init -g --codex      >/dev/null 2>&1   # codex route: no hook, docs only
+  mkdir -p "$HOME/.claude"; : > "$RTK_MARK"
+fi
+
+# force a plain single-session REPL — never the experimental agent-teams board
+unset CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
+
+if [ -f "$AG/env" ]; then
+  set -a; . "$AG/env"; set +a
+  # freshen MCP keys in-foreground when missing/stale so THIS launch resolves ${VAR}s
+  MK="$AG/mcp-keys.env"
+  if [ -x "$AG/hydrate.sh" ] && { [ ! -f "$MK" ] || [ -n "$(find "$MK" -mmin +720 2>/dev/null)" ]; }; then
+    "$AG/hydrate.sh" >/dev/null 2>&1 || true
+  fi
+  [ -f "$MK" ] && . "$MK"
+fi
+
+# ---- subcommands -------------------------------------------------------------
+if [ "${1:-}" = usage ]; then
+  shift
+  [ -n "${AIGATE_URL:-}" ] && [ -n "${AIGATE_TOKEN:-}" ] || { echo "ai usage: AIGATE_URL/AIGATE_TOKEN not set (no $AG/env)" >&2; exit 1; }
+  AI_USAGE_HOST="$(hostname -s)" exec python3 - "$@" <<'PY'
+import os, sys, json, time, urllib.request, urllib.error
+
+url, tok, host = os.environ["AIGATE_URL"].rstrip("/"), os.environ["AIGATE_TOKEN"], os.environ["AI_USAGE_HOST"]
+
+def get(path):
+    req = urllib.request.Request(url + path, headers={"Authorization": "Bearer " + tok})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        try: return {"_http": e.code, **json.loads(e.read().decode())}
+        except Exception: return {"_http": e.code}
+    except Exception as e:
+        return {"_error": str(e)}
+
+accts = get("/api/accounts")
+if not isinstance(accts, list):
+    print("ai usage: cannot read /api/accounts: %s" % json.dumps(accts)[:200], file=sys.stderr); sys.exit(1)
+nxt = {}
+for kind, q in (("claude", ""), ("codex", "kind=codex&")):
+    r = get("/api/select?%shost=%s&dry=1" % (q, host))
+    nxt[kind] = r if isinstance(r, dict) and r.get("account") and "_http" not in r else None
+
+if "--json" in sys.argv[1:]:
+    print(json.dumps({"accounts": accts, "next": nxt}, indent=2)); sys.exit(0)
+
+tty = sys.stdout.isatty()
+def col(s, c): return "\033[%sm%s\033[0m" % (c, s) if tty else s
+def left(ts):
+    try: s = int(ts) - int(time.time())
+    except Exception: return ""
+    if s <= 0: return "now"
+    d, r = divmod(s, 86400); h, r = divmod(r, 3600); m = r // 60
+    return "%dd%dh" % (d, h) if d else "%dh%dm" % (h, m) if h else "%dm" % m
+def bar(p):
+    if not isinstance(p, (int, float)): return "·" * 10 + "   --"
+    n = max(0, min(10, round(p / 10)))
+    c = "32" if p < 60 else "33" if p < 85 else "31"
+    return col("█" * n + "░" * (10 - n), c) + " %3d%%" % round(p)
+def flags(a):
+    f = []
+    if a.get("parked"): f.append("parked")
+    if a.get("reauth_needed"): f.append("re-auth")
+    if a.get("disabled"): f.append("off")
+    age = a.get("usage_age_s")
+    if isinstance(age, (int, float)) and age > 1800: f.append("stale %dm" % (age // 60))
+    return col(" ".join(f), "31") if f else ""
+
+for kind, title in (("claude", "Claude"), ("codex", "Codex")):
+    rows = [a for a in accts if (a.get("kind") or "claude") == kind]
+    print(col(title, "1") + "  (%d account%s)" % (len(rows), "" if len(rows) == 1 else "s"))
+    pick = (nxt.get(kind) or {}).get("account")
+    for a in rows:
+        star = col("★", "33") if a.get("account") == pick else " "
+        name = str(a.get("account", "?"))
+        lab = a.get("label") or ""
+        who = name if not lab or lab == name else "%s (%s)" % (name, lab)
+        has5 = kind == "claude" or a.get("five_hour_reset")
+        s5 = ("5h " + bar(a.get("five_hour_pct")) + " " + ("resets in " + left(a.get("five_hour_reset"))).ljust(14)) if has5 else ""
+        r7 = left(a.get("seven_day_reset"))
+        s7 = "7d " + bar(a.get("seven_day_pct")) + ((" resets in " + r7) if r7 else "")
+        print(" %s %-26s %-5s %s %s  %s" % (star, who[:26], a.get("plan") or "", s5, s7, flags(a)))
+    if not rows: print("   (none)")
+    if pick is None and rows: print("   no account would be picked right now")
+    print()
+PY
+fi
+[ "${1:-}" = desktop ] && { shift; exec "${AI_DESKTOP_BIN:-$(dirname "$0")/ai-desktop}" "$@"; }
+if [ "${1:-}" = codex ] && [ "${2:-}" = adopt ]; then exec "$AG/aigate-codex.sh" --adopt; fi
+
+# ---- route selection: `ai kimi|gpt|codex|muse …`, or --model style ------------
+case "${1:-}" in
+  claude) shift;;
+  kimi|gpt|codex|muse) set -- --model "$@";;
+esac
+route=claude rest=() want=0
+for a in "$@"; do
+  if [ "$want" = 1 ]; then want=0; m="$a"
+  else case "$a" in
+    -m|--model) want=1; continue;;
+    --model=*) m="${a#--model=}";;
+    *) rest+=("$a"); continue;;
+  esac; fi
+  case "$m" in
+    kimi*|k3*) route=kimi;;
+    muse*|spark*) route=muse;;
+    gpt|sol|codex) route=codex;;
+    gpt*|sol*) route=codex; rest+=(-m "$m");;   # a specific codex model rides along
+    *) rest+=(--model "$m");;
+  esac
+done
+
+case "$route" in
+  codex) [ -x "$AG/aigate-codex.sh" ] && exec "$AG/aigate-codex.sh" ${rest[@]+"${rest[@]}"}
+         for p in "$HOME/.local/bin/codex" /opt/homebrew/bin/codex /usr/local/bin/codex; do
+           [ -x "$p" ] && exec "$p" ${rest[@]+"${rest[@]}"}
+         done
+         echo "ai: no codex wrapper or binary found" >&2; exit 127;;
+  kimi|muse) [ -x "$AG/aigate-$route.sh" ] && exec "$AG/aigate-$route.sh" ${rest[@]+"${rest[@]}"}
+         echo "ai: $AG/aigate-$route.sh missing — run aigate's clients/install.sh" >&2; exit 127;;
+esac
+
+# Claude-in-Chrome on by default. An explicit --chrome/--no-chrome wins, so
+# `ai --no-chrome …` opts out without depending on flag precedence.
+chrome=(--chrome)
+for a in ${rest[@]+"${rest[@]}"}; do case "$a" in --chrome|--no-chrome) chrome=(); break;; esac; done
+# headless -p implies non-interactive: skip the trust prompt that otherwise HANGS
+is_print=0 has_skip=0
+for a in ${rest[@]+"${rest[@]}"}; do case "$a" in
+  -p|--print) is_print=1;;
+  --dangerously-skip-permissions) has_skip=1;;
+esac; done
+skip=(); [ "$is_print" = 1 ] && [ "$has_skip" = 0 ] && skip=(--dangerously-skip-permissions)
+
+if [ -x "$AG/aigate-run.sh" ] && [ -n "${AIGATE_URL:-}" ]; then
+  exec "$AG/aigate-run.sh" ${skip[@]+"${skip[@]}"} ${chrome[@]+"${chrome[@]}"} ${rest[@]+"${rest[@]}"}
+fi
+
+# no aigate on this box → plain binary, same permissions posture
+for p in "$HOME/.local/bin/claude" /opt/homebrew/bin/claude /usr/local/bin/claude; do
+  [ -x "$p" ] && exec "$p" --dangerously-skip-permissions ${chrome[@]+"${chrome[@]}"} ${rest[@]+"${rest[@]}"}
+done
+echo "ai: no claude binary found (looked in ~/.local/bin, /opt/homebrew/bin, /usr/local/bin)" >&2
+exit 127

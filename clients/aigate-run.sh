@@ -27,7 +27,23 @@ trap 'reap; exit 143' TERM
 trap 'reap; exit 130' INT
 
 jget(){ python3 -c 'import sys,json;print(json.load(sys.stdin).get("'"$1"'",""))' 2>/dev/null; }
-select_acct(){ curl -s -m8 -H "@$AUTHF" "$AIGATE_URL/api/select?host=$HOST&exclude=$1"; }
+# -m15 + one retry on a transport failure: -m8 lost to aigate under a NAS IO stall
+# (2026-10-05). Manual, not curl --retry — that retries a 503 too and APPENDS the second
+# body, so a genuine "no headroom" reply became two glued JSON docs and skipped the Kimi fallback.
+select_acct(){
+  local u="$AIGATE_URL/api/select?host=$HOST&exclude=$1" o
+  o="$(curl -s -m15 -H "@$AUTHF" "$u")" || { sleep 2; o="$(curl -s -m15 -H "@$AUTHF" "$u")"; }
+  printf '%s' "$o"
+}
+# "(5h 7% · 7d 16%)" from a select response; empty when it carries no usage
+usage_tag(){ printf '%s' "$1" | python3 -c 'import sys,json
+try:d=json.load(sys.stdin)
+except Exception:sys.exit(0)
+p=[]
+for k,l in (("five_hour_pct","5h"),("seven_day_pct","7d")):
+    v=d.get(k)
+    if isinstance(v,(int,float)):p.append("%s %d%%"%(l,round(v)))
+print(" ("+" · ".join(p)+")" if p else "")' 2>/dev/null; }
 report_prompt(){ curl -s -m5 -X POST -H "@$AUTHF" -H 'content-type: application/json' \
     -d "$(python3 -c 'import json,sys;print(json.dumps({"account":sys.argv[1],"host":sys.argv[2],"prompt":sys.argv[3][:400]}))' "$1" "$HOST" "$2")" \
     "$AIGATE_URL/api/events/prompt" >/dev/null 2>&1 || true; }
@@ -154,7 +170,7 @@ if [ "$is_print" != 1 ]; then
       is_capacity_exhausted "$resp" && fallback_to_kimi "no Claude account has headroom" "${cont[@]}" "$@"
       no_token_diag "$resp"; exit 1
     fi
-    echo "aigate → using account: $acct" >&2
+    echo "aigate → using account: $acct$(usage_tag "$resp")" >&2
     unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
     export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
     clear_shadow_login
@@ -187,7 +203,7 @@ for attempt in 1 2 3; do
     is_capacity_exhausted "$resp" && fallback_to_kimi "no Claude account has headroom" "$@"
     no_token_diag "$resp"; exit 1
   fi
-  echo "aigate → account: $acct (attempt $attempt)" >&2
+  echo "aigate → account: $acct$(usage_tag "$resp") (attempt $attempt)" >&2
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
   export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
   report_prompt "$acct" "$prompt"
