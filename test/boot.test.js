@@ -149,11 +149,11 @@ async function restoreRig() {
   const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
   const kids = [];   // a failed assertion must not leave a server alive to hang the runner
   let port = 39700 + Math.floor(Math.random() * 200);
-  async function start() {
+  async function start(extraEnv = {}) {
     port++;
     const child = spawn(process.execPath, [SERVER], { stdio: 'ignore', env: { ...process.env, AIGATE_TOKEN: TOKEN, AIGATE_ENCRYPTION_KEY: KEY,
       AIGATE_DB: DB, AIGATE_POLL_MS: '0', AIGATE_KEY_POLL_MS: '0', AIGATE_WATCHDOG_MS: '0', HOST: '127.0.0.1', PORT: String(port),
-      AIGATE_CODEX_TOKEN_URL: fb + '/token', AIGATE_CODEX_USAGE_URL: fb + '/usage', AIGATE_ALERT_WEBHOOK: fb + '/alert' } });
+      AIGATE_CODEX_TOKEN_URL: fb + '/token', AIGATE_CODEX_USAGE_URL: fb + '/usage', AIGATE_ALERT_WEBHOOK: fb + '/alert', ...extraEnv } });
     kids.push(child);
     const url = `http://127.0.0.1:${port}`;
     for (let i = 0; i < 80; i++) { await new Promise((r) => setTimeout(r, 100)); try { if ((await fetch(url + '/health')).ok) break; } catch { /* not yet */ } }
@@ -188,7 +188,16 @@ test('restore guard: old DB put back after a rotation → refresh_unknown, ZERO 
     rows = await (await s.api('/api/accounts')).json();
     assert.equal(rows.find((r) => r.account === 'rx').refresh_unknown, 1);
     await s.api('/api/accounts/rx/refresh', { method: 'POST' });
-    await s.api('/api/select?kind=codex');
+    // the restored (possibly spent) token must NOT be handed out: select + dry both 503, and the
+    // keeper read flags it so boxes refuse to write it to disk
+    const sel = await s.api('/api/select?kind=codex');
+    assert.equal(sel.status, 503);
+    const selBody = await sel.json();
+    assert.equal(selBody.refresh_unknown, 1);
+    assert.ok(!JSON.stringify(selBody).includes('auth_json'));
+    assert.equal((await s.api('/api/select?kind=codex&dry=1')).status, 503);
+    const keep = await (await s.api('/api/codex/auth?account_id=acct-r')).json();
+    assert.equal(keep.refresh_unknown, 1);
     assert.equal(rig.hits.token, 0);                                 // the dead token was never spent
     await new Promise((r) => setTimeout(r, 300));
     assert.equal(rig.hits.alert.length, 1);
@@ -215,4 +224,70 @@ test('restore guard: missing ledger (first boot after upgrade) does NOT halt and
     await s.stop();
     assert.ok(JSON.parse(rig.fs.readFileSync(join(rig.dir, 'codex-ledger.json'), 'utf8'))['acct-r']);
   } finally { rig.cleanup(); }
+});
+
+test('ledger unreadable (file EXISTS, corrupt) + codex rows → all halted, moved aside, ONE alert, not reseeded over', async () => {
+  const rig = await restoreRig();
+  try {
+    let s = await rig.start();
+    await s.api('/api/accounts', { method: 'POST', body: JSON.stringify({ account: 'rx', kind: 'codex', auth_json: authJson('rt-original', 3600) }) });
+    await s.stop();
+    const lp = join(rig.dir, 'codex-ledger.json');
+    rig.fs.writeFileSync(lp, '{ this is not json');
+    s = await rig.start();
+    const rows = await (await s.api('/api/accounts')).json();
+    assert.equal(rows.find((r) => r.account === 'rx').refresh_unknown, 1);
+    assert.equal((await s.api('/api/select?kind=codex')).status, 503);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(rig.hits.alert.length, 1);
+    assert.match(rig.hits.alert[0], /ledger unreadable/);
+    const audit = JSON.stringify(await (await s.api('/api/access?limit=50')).json());
+    assert.ok(audit.includes('ledger unreadable'));
+    await s.stop();
+    const aside = rig.fs.readdirSync(rig.dir).filter((f) => f.startsWith('codex-ledger.json.corrupt-'));
+    assert.equal(aside.length, 1);
+    assert.equal(rig.fs.readFileSync(join(rig.dir, aside[0]), 'utf8'), '{ this is not json');
+    assert.ok(JSON.parse(rig.fs.readFileSync(lp, 'utf8'))['acct-r']);   // fresh ledger, evidence preserved aside
+  } finally { rig.cleanup(); }
+});
+
+test('ledger unreadable but NO codex rows → nothing to halt, no alert', async () => {
+  const rig = await restoreRig();
+  try {
+    rig.fs.writeFileSync(join(rig.dir, 'codex-ledger.json'), 'garbage');
+    const s = await rig.start();
+    assert.equal(rig.hits.alert.length, 0);
+    await s.stop();
+  } finally { rig.cleanup(); }
+});
+
+test('AIGATE_CODEX_LEDGER in a not-yet-existing dir: server creates the parent and writes the ledger there', async () => {
+  const rig = await restoreRig();
+  try {
+    const lp = join(rig.dir, 'outside', 'deep', 'codex-ledger.json');
+    const s = await rig.start({ AIGATE_CODEX_LEDGER: lp });
+    await s.api('/api/accounts', { method: 'POST', body: JSON.stringify({ account: 'rx', kind: 'codex', auth_json: authJson('rt-original', 3600) }) });
+    await s.stop();
+    assert.ok(JSON.parse(rig.fs.readFileSync(lp, 'utf8'))['acct-r']);
+    assert.equal(rig.fs.existsSync(join(rig.dir, 'codex-ledger.json')), false);   // default location untouched
+  } finally { rig.cleanup(); }
+});
+
+test('failed ledger write alerts once (edge-triggered), credential still durable', async (t) => {
+  if (process.getuid && process.getuid() === 0) return t.skip('root ignores directory modes');
+  const rig = await restoreRig();
+  const ldir = join(rig.dir, 'ro');
+  try {
+    rig.fs.mkdirSync(ldir);
+    const s = await rig.start({ AIGATE_CODEX_LEDGER: join(ldir, 'codex-ledger.json') });
+    rig.fs.chmodSync(ldir, 0o500);                                   // ledger dir becomes unwritable
+    for (const n of ['a1', 'a2']) {
+      const r = await s.api('/api/accounts', { method: 'POST', body: JSON.stringify({ account: n, kind: 'codex', auth_json: { ...authJson('rt-' + n, 3600), tokens: { ...authJson('rt-' + n, 3600).tokens, account_id: 'acct-' + n } } }) });
+      assert.equal(r.status, 200);                                   // the write itself still succeeds
+    }
+    await new Promise((r) => setTimeout(r, 400));
+    const ours = rig.hits.alert.filter((a) => /ledger write FAILED/.test(a));
+    assert.equal(ours.length, 1);
+    await s.stop();
+  } finally { try { rig.fs.chmodSync(ldir, 0o700); } catch { /* */ } rig.cleanup(); }
 });

@@ -321,7 +321,7 @@ const q = {
   // full non-secret state + the ciphertext for ONE account (codex select/refresh/sync paths)
   getAcct: db.prepare(`SELECT account,kind,token_enc,ext_id,plan,token_exp,reauth_needed,disabled,refresh_unknown,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset FROM accounts WHERE account=?`),
   codexByExt: db.prepare(`SELECT account,token_enc FROM accounts WHERE kind='codex' AND ext_id=?`),
-  codexKeep: db.prepare(`SELECT account,token_enc,token_exp,reauth_needed,disabled FROM accounts WHERE kind='codex' AND ext_id=?`),
+  codexKeep: db.prepare(`SELECT account,token_enc,token_exp,reauth_needed,disabled,refresh_unknown FROM accounts WHERE kind='codex' AND ext_id=?`),
   setRefreshUnknown: db.prepare(`UPDATE accounts SET refresh_unknown=? WHERE account=?`),
   // refresh persisted in ONE statement: tokens + exp together, or neither
   updCodexAuth: db.prepare(`UPDATE accounts SET token_enc=?, token_exp=?, plan=COALESCE(?,plan) WHERE account=?`),
@@ -354,11 +354,13 @@ const q = {
   // Ranked (no LIMIT) so /api/select can skip client-excluded accounts on retry.
   // Takes the account KIND first (?1) — claude and codex pools never mix. A codex row whose
   // access token has already expired is skipped (the poller's 401→refresh path revives it);
-  // handing out a dead token would just make the client's codex fail.
+  // handing out a dead token would just make the client's codex fail. A refresh_unknown codex row
+  // is skipped too: its stored refresh token may already be spent, so it must never reach a box.
   pickRanked: db.prepare(`SELECT account,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset,plan,token_exp FROM accounts
     WHERE kind=?1 AND disabled=0 AND reauth_needed=0 AND token_enc IS NOT NULL AND max(five_hour_pct,seven_day_pct) < ?2
       AND (parked_until IS NULL OR parked_until <= datetime('now'))
       AND (?1 <> 'codex' OR token_exp IS NULL OR token_exp > CAST(strftime('%s','now') AS INTEGER))
+      AND (?1 <> 'codex' OR refresh_unknown=0)
     ORDER BY (usage_updated IS NULL) ASC, max(five_hour_pct,seven_day_pct) ASC, usage_updated ASC`),
   insReq: db.prepare(`INSERT INTO request_log(account,host,ip,cwd,model,prompt,tokens) VALUES(?,?,?,?,?,?,?)`),
   insAccess: db.prepare(`INSERT INTO access_log(account,host,ip,action,result) VALUES(?,?,?,?,?)`),
@@ -469,15 +471,16 @@ function logAccess(account, host, ip, action, result) {
 // window" reads on /health as selectable<accounts with parked/reauth/disabled all 0 —
 // an unexplained gap that gets escalated as a suspected outage every time it happens.
 const tally = (list, cutoff = CUTOFF, kind = 'claude') => {
-  let parked = 0, reauth = 0, disabled = 0, over_cutoff = 0;
+  let parked = 0, reauth = 0, disabled = 0, over_cutoff = 0, refresh_unknown = 0;
   for (const a of list) {
     if (a.kind !== kind) continue;
     parked += a.parked; reauth += a.reauth_needed; disabled += a.disabled;
+    if (kind === 'codex') refresh_unknown += a.refresh_unknown || 0;
     // mirrors pickRanked's WHERE exactly: the other gates first, then the usage test
-    if (!a.disabled && !a.reauth_needed && a.has_token && !a.parked
+    if (!a.disabled && !a.reauth_needed && a.has_token && !a.parked && !(kind === 'codex' && a.refresh_unknown)
         && Math.max(a.five_hour_pct, a.seven_day_pct) >= cutoff) over_cutoff++;
   }
-  return { parked, reauth, disabled, over_cutoff };
+  return { parked, reauth, disabled, over_cutoff, ...(kind === 'codex' ? { refresh_unknown } : {}) };
 };
 // fire-and-forget outbound alert; never throws into a request path
 function alert(text, extra = {}) {
@@ -1054,10 +1057,10 @@ const server = http.createServer(async (req, res) => {
         // reasoned 503: WHY is nothing servable — one account may tick several counters.
         // Tally BEFORE the audit so the feed AND /api/access record the reason, not a bare 'none-available'.
         const all = q.listAccounts.all().filter((a) => a.kind === kind);
-        const { parked, reauth, disabled, over_cutoff } = tally(all, CUTOFF, kind);
-        logAccess(null, host, ip, act, `none-available${kind === 'codex' ? ' (codex)' : ''} · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off, ${over_cutoff} over cutoff)`);
+        const { parked, reauth, disabled, over_cutoff, refresh_unknown } = tally(all, CUTOFF, kind);
+        logAccess(null, host, ip, act, `none-available${kind === 'codex' ? ' (codex)' : ''} · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off, ${over_cutoff} over cutoff${kind === 'codex' ? `, ${refresh_unknown} refresh_unknown` : ''})`);
         if (kind === 'claude' && !dry) noteSelectable(0, { via: 'select', accounts: all.length, parked, reauth, disabled, over_cutoff });   // edge-alert on first outage
-        return json(res, 503, { error: kind === 'codex' ? 'no codex account with headroom' : 'no account with headroom', accounts: all.length, parked, reauth, disabled, over_cutoff });
+        return json(res, 503, { error: kind === 'codex' ? 'no codex account with headroom' : 'no account with headroom', accounts: all.length, parked, reauth, disabled, over_cutoff, ...(kind === 'codex' ? { refresh_unknown } : {}) });
       }
       if (kind === 'claude' && !dry) noteSelectable(1, { via: 'select' });   // a real handout means selection is up → clears the outage latch
       logAccess(picked.account, host, ip, act, 'ok');
@@ -1078,7 +1081,7 @@ const server = http.createServer(async (req, res) => {
       if (!row) { logAccess(null, host, ip, 'codex-keep', '404'); return json(res, 404, { error: 'no codex account for that account_id' }); }
       let auth; try { auth = JSON.parse(decrypt(row.token_enc)); } catch { return json(res, 500, { error: 'decrypt failed' }); }
       logAccess(row.account, host, ip, 'codex-keep', 'ok');
-      return json(res, 200, { account: row.account, kind: 'codex', auth_json: auth, last_refresh: auth.last_refresh, token_exp: row.token_exp, reauth_needed: row.reauth_needed, disabled: row.disabled });
+      return json(res, 200, { account: row.account, kind: 'codex', auth_json: auth, last_refresh: auth.last_refresh, token_exp: row.token_exp, reauth_needed: row.reauth_needed, refresh_unknown: row.refresh_unknown, disabled: row.disabled });
     }
     // sync a client's own Codex login back into the vault: when the desktop app (or a
     // `codex login`) rotated the family under us, our stored refresh token is dead — accept
@@ -1603,7 +1606,11 @@ const readCodexAuth = (row) => { try { const a = JSON.parse(decrypt(row.token_en
 // instances) gets its own `<db>.codex-ledger.json` so instances sharing a directory never cross.
 const LEDGER_PATH = process.env.AIGATE_CODEX_LEDGER
   || (basename(DB_PATH) === 'aigate.db' ? join(dirname(DB_PATH), 'codex-ledger.json') : DB_PATH + '.codex-ledger.json');
+// The ledger may live outside the data/ bind mount (compose sets AIGATE_CODEX_LEDGER), so make
+// sure its directory exists; best effort — a failure surfaces as an alerted write failure.
+try { mkdirSync(dirname(LEDGER_PATH), { recursive: true }); } catch { /* ledgerWrite reports it */ }
 let ledger = {};
+let ledgerWriteFailed = false;   // edge latch: one alert per outage, re-armed by the next good write
 function ledgerRead() {
   try { const j = JSON.parse(readFileSync(LEDGER_PATH, 'utf8')); return j && typeof j === 'object' && !Array.isArray(j) ? j : null; }
   catch (e) { return e && e.code === 'ENOENT' ? { missing: true } : null; }
@@ -1619,14 +1626,32 @@ function ledgerNote(auth) {
   const t = auth && auth.tokens;
   if (!t || !t.account_id || !t.refresh_token) return;
   ledger[t.account_id] = { last_refresh: auth.last_refresh, rt_hash: rtHash(t.refresh_token) };
-  try { ledgerWrite(); } catch (e) { console.error('[ledger] write failed (credential IS durable in the DB)', String((e && e.message) || e)); }
+  try { ledgerWrite(); ledgerWriteFailed = false; }
+  catch (e) {
+    console.error('[ledger] write failed (credential IS durable in the DB)', String((e && e.message) || e));
+    if (!ledgerWriteFailed) { ledgerWriteFailed = true; alert(`aigate: codex refresh ledger write FAILED at ${LEDGER_PATH} — restore guard is blind to new rotations until it recovers`, { ledger: LEDGER_PATH }); }
+  }
 }
 // Run once at module load, before any poll can spend a refresh token.
 function codexRestoreGuard() {
   const rows = db.prepare(`SELECT account,token_enc,ext_id FROM accounts WHERE kind='codex'`).all();
   const read = ledgerRead();
-  if (!read || read.missing) {
-    console.error(`[ledger] ${read ? 'no ledger yet' : 'ledger unreadable'} at ${LEDGER_PATH} — restore guard skipped, seeding from the DB`);
+  if (!read) {
+    // The file EXISTS but can't be trusted: we cannot prove the DB isn't a restored one, so every
+    // codex row's refresh token is suspect. Halt them all, keep the evidence, start a fresh ledger.
+    const aside = `${LEDGER_PATH}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    try { renameSync(LEDGER_PATH, aside); } catch (e) { console.error('[ledger] could not move the unreadable ledger aside', String((e && e.message) || e)); }
+    console.error(`[ledger] ledger unreadable at ${LEDGER_PATH} (moved to ${aside}) — halting codex auto-refresh`);
+    ledger = {};
+    for (const r of rows) { const a = readCodexAuth(r); if (a) ledger[a.tokens.account_id] = { last_refresh: a.last_refresh, rt_hash: rtHash(a.tokens.refresh_token) }; }
+    if (rows.length) { try { ledgerWrite(); } catch (e) { console.error('[ledger] seed write failed', String((e && e.message) || e)); } }
+    const names = rows.map((r) => r.account);
+    for (const n of names) { durably(() => q.setRefreshUnknown.run(1, n)); logAccess(n, '', '', 'codex-restore-guard', 'ledger unreadable'); }
+    if (names.length) alert(`aigate: codex refresh ledger unreadable — auto-refresh halted for ${names.length} account${names.length === 1 ? '' : 's'} (${names.join(', ')}). Push fresh tokens with \`ai codex adopt\` or POST /api/accounts/:name/refresh?force=1 after verifying`, { accounts: names });
+    return names;
+  }
+  if (read.missing) {
+    console.error(`[ledger] no ledger yet at ${LEDGER_PATH} — restore guard skipped, seeding from the DB`);
     ledger = {};
     for (const r of rows) { const a = readCodexAuth(r); if (a) ledger[a.tokens.account_id] = { last_refresh: a.last_refresh, rt_hash: rtHash(a.tokens.refresh_token) }; }
     if (rows.length) { try { ledgerWrite(); } catch (e) { console.error('[ledger] seed write failed', String((e && e.message) || e)); } }

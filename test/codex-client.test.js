@@ -925,3 +925,74 @@ test('E2E note: -p stdin buffering is documented in both wrappers', () => {
   for (const f of ['aigate-run.sh', 'aigate-codex.sh'])
     assert.match(readFileSync(join(ROOT, 'clients', f), 'utf8'), /never-closing stdin pipe waits for EOF here AND in the raw claude\/codex/, f);
 });
+
+// ---- refresh_unknown end-to-end: REAL server, real client script ----
+async function realServer(t) {
+  const { randomBytes } = await import('node:crypto');
+  const { DatabaseSync } = await import('node:sqlite');
+  const dir = mkdtempSync(join(tmpdir(), 'codexc-real-'));
+  const TOKEN = 'real-' + randomBytes(8).toString('hex');
+  const port = 39300 + Math.floor(Math.random() * 300);
+  const DB = join(dir, 'aigate.db');
+  const child = spawn(process.execPath, [join(ROOT, 'src', 'server.js')], { stdio: 'ignore', env: { ...process.env, AIGATE_TOKEN: TOKEN,
+    AIGATE_ENCRYPTION_KEY: randomBytes(32).toString('hex'), AIGATE_DB: DB, AIGATE_POLL_MS: '0', AIGATE_KEY_POLL_MS: '0',
+    AIGATE_WATCHDOG_MS: '0', HOST: '127.0.0.1', PORT: String(port) } });
+  t.after(() => { child.kill('SIGKILL'); rmSync(dir, { recursive: true, force: true }); });
+  const url = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 80; i++) { await sleep(100); try { if ((await fetch(url + '/health')).ok) break; } catch { /* not yet */ } }
+  const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
+  const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const jwt = (p) => `${b64u({ alg: 'none' })}.${b64u(p)}.sig`;
+  const authJson = (rt, lastRefresh) => ({ auth_mode: 'chatgpt', OPENAI_API_KEY: null, last_refresh: lastRefresh,
+    tokens: { id_token: jwt({ email: 'k@x.test', 'https://api.openai.com/auth': { chatgpt_plan_type: 'pro', chatgpt_account_id: 'aid-real' } }),
+      access_token: jwt({ exp: now() + 864000 }), refresh_token: rt, account_id: 'aid-real' } });
+  const add = (rt, lastRefresh) => fetch(url + '/api/accounts', { method: 'POST', headers: H, body: JSON.stringify({ account: 'real', kind: 'codex', auth_json: authJson(rt, lastRefresh) }) });
+  const flag = () => { const d = new DatabaseSync(DB); d.prepare(`UPDATE accounts SET refresh_unknown=1 WHERE account='real'`).run(); d.close(); };
+  return { url, TOKEN, H, add, flag, authJson, api: (p) => fetch(url + p, { headers: H }) };
+}
+
+test('REAL server: refresh_unknown vault token is never written to disk by --keep, and select refuses it', async (t) => {
+  const sb = sandbox(); t.after(sb.cleanup);
+  const rs = await realServer(t);
+  assert.equal((await rs.add('rt-vault-spent', '2026-10-06T12:00:00Z')).status, 200);
+  rs.flag();
+  const keep = await (await rs.api('/api/codex/auth?account_id=aid-real')).json();
+  assert.equal(keep.refresh_unknown, 1, 'server response shape carries the flag');
+  assert.equal((await rs.api('/api/select?kind=codex')).status, 503);
+  writeAuthAt(sb, 'rt-local-old', 'aid-real', '2026-10-01T00:00:00Z');   // vault is newer + different: unflagged, this WOULD be written
+  const r = await run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: rs.url, AIGATE_TOKEN: rs.TOKEN });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(readAuth(sb).tokens.refresh_token, 'rt-local-old', 'flagged vault token must not reach disk');
+  assert.ok(!r.stderr.includes('rt-vault-spent'));
+});
+
+test('REAL server: a box with a NEWER login repairs a refresh_unknown vault via the keeper (flag cleared, select works)', async (t) => {
+  const sb = sandbox(); t.after(sb.cleanup);
+  const rs = await realServer(t);
+  await rs.add('rt-vault-spent', '2026-10-06T12:00:00Z');
+  rs.flag();
+  writeFileSync(sb.auth, JSON.stringify(rs.authJson('rt-fresh-login', '2026-10-07T00:00:00Z')));
+  const r = await run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: rs.url, AIGATE_TOKEN: rs.TOKEN });
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stderr, /repaired the vault/);
+  const keep = await (await rs.api('/api/codex/auth?account_id=aid-real')).json();
+  assert.equal(keep.refresh_unknown, 0);
+  assert.equal(keep.auth_json.tokens.refresh_token, 'rt-fresh-login');
+  assert.equal((await rs.api('/api/select?kind=codex&dry=1')).status, 200);
+});
+
+test('write_auth: skips when on-disk is the SAME account with last_refresh at least as new (overlapping keepers)', async (t) => {
+  const sb = sandbox(); t.after(sb.cleanup);
+  const mock = await startMock(defaultHandler(pick('acct1', 'rt-old-from-vault'))); t.after(mock.close);
+  writeAuthAt(sb, 'rt-disk-newer', 'aid-acct1', '2026-10-06T09:00:00Z');   // pick() carries 2026-10-06T00:00:00Z
+  const r = await run(sb, CODEX_SH, ['--write-only'], { AIGATE_URL: mock.url });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(readAuth(sb).tokens.refresh_token, 'rt-disk-newer', 'newer on-disk login not rolled back');
+  writeAuthAt(sb, 'rt-disk-older', 'aid-acct1', '2026-10-05T00:00:00Z');
+  const r2 = await run(sb, CODEX_SH, ['--write-only'], { AIGATE_URL: mock.url });
+  assert.equal(r2.code, 0, r2.stderr);
+  assert.equal(readAuth(sb).tokens.refresh_token, 'rt-old-from-vault', 'older on-disk login IS replaced');
+  writeAuthAt(sb, 'rt-other', 'aid-OTHER', '2026-12-01T00:00:00Z');
+  await run(sb, CODEX_SH, ['--write-only'], { AIGATE_URL: mock.url });
+  assert.equal(readAuth(sb).tokens.account_id, 'aid-acct1', 'different account always replaced');
+});

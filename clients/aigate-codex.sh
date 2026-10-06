@@ -409,6 +409,25 @@ write_auth(){ # $1 = response file holding {auth_json} (default RESPF). atomic: 
 import sys, json, os, tempfile
 d = json.load(open(sys.argv[1]))["auth_json"]
 dest = sys.argv[2]
+# Overlapping keepers: never replace an on-disk login for the SAME account with one that is not
+# newer (a slow keeper holding an older vault read would otherwise roll back a fresh rotation).
+def _ts(v):
+    from datetime import datetime, timezone
+    try:
+        x = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        return x if x.tzinfo else x.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+try:
+    cur = json.load(open(dest))
+    same = (cur.get("tokens") or {}).get("account_id") and cur["tokens"]["account_id"] == (d.get("tokens") or {}).get("account_id")
+    c, n = _ts(cur.get("last_refresh")), _ts(d.get("last_refresh"))
+    if same and c is not None and n is not None and c >= n:
+        sys.exit(0)
+except SystemExit:
+    raise
+except Exception:
+    pass
 fd, tmp = tempfile.mkstemp(dir=os.path.dirname(dest), prefix=".auth.json.")
 try:
     os.fchmod(fd, 0o600)

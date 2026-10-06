@@ -7,7 +7,13 @@ services:
     dns: ["1.1.1.1", "8.8.8.8"]
     ports: ["20200:20200"]
     env_file: .env
-    volumes: ["./data:/app/data"]
+    # ./ledger is a SEPARATE bind mount on purpose: the codex refresh ledger must not live inside
+    # data/, or a ZFS rollback / data/ restore would roll it back together with the DB and the
+    # restore guard could not see the rotation. The container runs as uid 1000, so on the host:
+    #   sudo mkdir -p ./ledger && sudo chown 1000:1000 ./ledger && sudo chmod 700 ./ledger
+    volumes: ["./data:/app/data", "./ledger:/app/ledger"]
+    environment:
+      AIGATE_CODEX_LEDGER: /app/ledger/codex-ledger.json
     # self-heal: the Dockerfile HEALTHCHECK marks the container unhealthy when
     # /health fails; the willfarrell/autoheal container restarts anything
     # labeled autoheal=true when it goes unhealthy.
