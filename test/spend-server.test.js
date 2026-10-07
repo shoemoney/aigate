@@ -176,6 +176,17 @@ test('attribution: a session posted BEFORE its events attributes them on ingest'
   assert.equal(row.billing, 'subscription');
 });
 
+test('?host= filter normalises like ingest: trim, lowercase, first dot-label', async () => {
+  await post('/api/spend/events', batch('FiltMBP.local', [ev('hf1', { ts: '2026-10-05T10:00:00.000Z' })]));
+  assert.equal(rowOf('hf1').host, 'filtmbp');
+  for (const h of ['FiltMBP.local', 'filtmbp.local', 'filtmbp', 'FILTMBP', '%20FiltMBP.Local%20', 'filtmbp.other']) {
+    const j = await (await get(`/api/spend?from=2026-10-05&to=2026-10-06&host=${h}`)).json();
+    assert.equal(j.totals.events, 1, `host=${h}`);
+  }
+  const other = await (await get('/api/spend?from=2026-10-05&to=2026-10-06&host=nobody-here')).json();
+  assert.equal(other.totals.events, 0);
+});
+
 test('attribution: host case never splits a session from its events (MBP vs mbp, both directions)', async () => {
   await post('/api/spend/sessions', { source: 'claude_code', host: 'CaseMBP', session_id: 'sess-case', scope: '', account: 'shoemoney',
     kind: 'claude', via: 'hook', ts: '2026-10-06T16:00:00.000Z' });

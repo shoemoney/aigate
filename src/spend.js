@@ -461,7 +461,7 @@ function readSpend(db, url) {
   const args = [from, to];
   for (const f of ['account', 'source', 'host']) {
     const val = qs.get(f);
-    if (val) { where.push(`${f} = ?`); args.push(f === 'host' ? val.toLowerCase() : val); }
+    if (val) { where.push(`${f} = ?`); args.push(f === 'host' ? val.trim().toLowerCase().split('.')[0] : val); }
   }
   const W = where.join(' AND ');
   const expr = GROUP_EXPR[group];
