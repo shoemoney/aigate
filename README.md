@@ -114,6 +114,7 @@ The folder also includes an [interactive gallery](docs/screenshots/live-2026-09-
 | **Client integration** | The `ai` front door runs the official `claude` or `codex` binary on the account aigate picks (soonest weekly reset with headroom left), parks exhausted accounts, and retries with the next eligible one. Global overload responses retry the same account. `ai usage` prints every account's live meters. |
 | **Live interface** | WebSocket updates, interactive usage charts, account and key management, a filtered activity feed, responsive navigation, and the shared token background. |
 | **Task board** | Atomic task claims, worker heartbeats, drag reordering, results, follow-ups, and retries. Its API is internal and may change. |
+| **Spend ledger** | Per-host collectors turn Claude Code and Codex usage into content-free events, priced at list price from a dated table. The dashboard **Spend** section shows API-equivalent value, API-key spend and unattributed value as three separate dollar figures, never summed. See [Spend](#spend). |
 | **Audit and recovery** | Credential access and mutations are logged; prompts are scrubbed before storage. DB-backed health checks, a watchdog, a boot encryption canary, and daily snapshots support operations. |
 | **Verification** | **200 automated tests passed** for the September 15 release, including HTTP and client behavior checks. Desktop/mobile rendering and WebGPU were also checked in a browser. See [testing](docs/TESTING.md) and [UI implementation notes](docs/UI-REDESIGN.md). |
 | **Small runtime** | Node.js 24+, built-in `node:sqlite`, and `ws` as the single runtime dependency. No frontend build step. |
@@ -448,6 +449,74 @@ matrix in **[docs/TESTING.md](docs/TESTING.md)**.
 
 ---
 
+## Spend
+
+What the work is worth, per account, model, project, host and day. aigate stores **counts and a list-price estimate, never content**: the server rejects any event carrying prompt, completion, message or tool fields (`400 content fields are not accepted`).
+
+```mermaid
+flowchart LR
+  T["Claude Code transcripts<br/>Codex rollouts"] --> C["aigate-spend<br/>(per-host collector, every 15 min)"]
+  C -->|"POST /api/spend/events"| E["usage_events<br/>(priced at ingest)"]
+  H["prompt hook + aigate-codex.sh<br/>(session / lease to account)"] -->|"POST /api/spend/sessions"| E
+  E -->|"GET /api/spend"| D["dashboard Spend section"]
+```
+
+### Three dollar figures, never summed
+
+| Figure | Dashboard label | What it is |
+|---|---|---|
+| Subscription traffic | **API-equivalent value** | Anthropic and OpenAI traffic from a known aigate account, at list price. It is what the usage would cost on the API, **not money paid**. |
+| API-key traffic | **Spend (API keys, est.)** | Every other provider, estimated at list price. |
+| Unattributed | **Unknown plan** | Anthropic or OpenAI traffic priced but not tied to an account. Never guessed. |
+
+Tokens are four separate buckets (input, output, cache read, cache write) with no composite "tokens" number, because a sum is about 95% cache read and means nothing as cost, context or throughput. These rules came out of the [thirteen-tokens council post](blog/2026-08-21-thirteen-tokens.md).
+
+### Collection
+
+- **Collector.** `clients/aigate-spend.js` tails Claude Code transcripts (`~/.claude/projects`) and Codex rollouts (`~/.codex`) with a per-file byte-offset cursor (`~/.claude/aigate/spend-cursor.json`) and posts batches of events. The first run reads the last 7 days; `--backfill` reads everything still on disk. `--help` lists every flag and `AIGATE_SPEND_*` env var.
+- **Dedupe.** The server keeps `UNIQUE(source, source_event_id)`. Ids are the Claude `message.id` and `<rollout-uuid>:tc:<n>` for Codex token counts, so re-posting or overlapping backfills are safe.
+- **Install.** `clients/install.sh` installs the collector and schedules it every 15 minutes: launchd agent `ai.shoemoney.aigate-spend` on macOS, systemd user timer `aigate-spend.timer` on Linux, with a crontab line if there is no systemd. It needs Node 24 or newer and says so when none is found. So far only the laptop runs it; other hosts are not rolled out.
+- **Attribution.** The prompt hook records which account a Claude session belongs to, and `aigate-codex.sh` leases a `CODEX_HOME` to an account. Events with no mapping stay `unknown`; a mapping that arrives later re-resolves earlier events.
+- **Old history.** Claude Code deletes transcripts after `cleanupPeriodDays` (14 on this setup) and Codex rollouts age out too, so older history was imported once from otari's database with `node scripts/spend-import-otari.js` (`--dry-run`, `--before`, `--since`, `--source`). It reuses the same event ids, so overlap with the collector dedupes.
+- **Smoke test.** `scripts/spend-smoke.sh` posts a 3-event batch twice (accepted, then duplicate), posts a session mapping and round-trips `GET /api/spend` against a live instance.
+
+### Pricing
+
+Rates live in `src/spend-prices.json` (dated, sourced) and are seeded into the `spend_prices` table on first boot. Each event is priced once at ingest, in integer micro-dollars, rounded half-up once per event, using the newest row whose `effective_from` is not after the event time. Exact model names beat prefix matches; an unknown model is left unpriced and listed under `unpriced_models`, never guessed.
+
+- Cache conventions differ per provider: Anthropic counts cache tokens beside input, OpenAI counts them inside input. A meter with no rate bills as fresh input, never as a discount.
+- Long-context tiers exist only on the `gpt-6` / `gpt-5.6` families (the tier flips above 272,000 input tokens).
+- **Kimi** (coding-plan subscription, provider `moonshot`) is deliberately unpriced.
+- `stealth/space-bunny-alpha` has no published rate; it is an operator-set price at 1/5 of `claude-opus-5-5`.
+- Add or correct a rate with `PUT /api/spend/prices` (a newer `effective_from`), then `POST /api/spend/reprice` to fill events that were unpriced.
+
+### Reconciliation
+
+Checked against otari for 2026-10-03 through 2026-10-06: Codex and Claude token counts match exactly per day. Claude dollars run about 2.6% below otari. A long-context tier that otari applies and aigate does not model is the likely cause, but that is **unverified**.
+
+### Retention
+
+Events older than `AIGATE_SPEND_RETENTION_DAYS` (default `400`, `0` keeps everything) are pruned during the daily snapshot. `GET /api/spend` rejects ranges over 400 days.
+
+### Endpoints
+
+All `/api/spend*` routes require the bearer token.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/spend?from=&to=&bucket=&group=&top=&account=&source=&host=` | the read model: `totals`, `groups`, `series`, `collectors`, `prices_count`. `from`/`to` take ISO dates (default last 7 days); `bucket` is `day` or `hour` (hour needs 14 days or less); `group` is `account`, `model`, `project`, `host`, `source` or `billing` (default `account`); `top` is 1-20 (default 8), the rest fold into an `other` row. Bad parameters are `400`. |
+| `POST` | `/api/spend/events` | `{source, host, events[]}` collector batch (max 1000 events, `source` is `claude_code` or `codex`); replies `{accepted, duplicate, unpriced, ...}` and the whole batch is rejected on any invalid event |
+| `GET` / `POST` | `/api/spend/sessions` | list session-to-account mappings (`?limit=`, default 100, max 1000) / upsert them; late mappings re-resolve earlier events |
+| `GET` | `/api/spend/collectors` | per host and source: last post, counts, `collector_version`, `age_s` |
+| `GET` / `PUT` | `/api/spend/prices` | list the price table / add a dated row (`409` if that provider, model and `effective_from` already exist) |
+| `POST` | `/api/spend/reprice` | re-price stored events; body `{only_unpriced?, from?, to?, provider?, model?}`, `only_unpriced` defaults to true |
+
+### Dashboard
+
+The **Spend** section loads on boot and every 5 minutes. It shows 24h / 7d / 30d ranges, a group selector, the figures above, the four token buckets, a value-and-spend chart and table, and a data-quality strip: collector freshness, unpriced models and unattributed events are always surfaced. It shows an explicit "unavailable" state instead of zeros when the endpoint errors.
+
+---
+
 ## API reference
 
 Use `Authorization: Bearer $AIGATE_TOKEN` for machine clients. The dashboard uses its signed session cookie. Health checks, the session probe, and login/logout do not require a bearer; network restrictions still apply.
@@ -483,6 +552,7 @@ Use `Authorization: Bearer $AIGATE_TOKEN` for machine clients. The dashboard use
 | `POST` | `/api/board/activity` · `/api/board/claim` · `/api/board/reorder` | **internal/unstable** — `activity {worker,host,cardId,activity}` heartbeat · `claim {host,worker}` atomically claim next todo (`204` if none) · `reorder {ids:[]}` drag-reorder |
 | `POST` / `PATCH` / `DELETE` | `/api/board/:id/*` | **internal/unstable** — `POST /result {ok,result,error,session_id}` (append turn, flip done/error) · `POST /followup {prompt}` re-queue · `POST /retry` · `PATCH {title,position}` rename/reorder (prompt immutable) · `DELETE` remove |
 | `GET` | `/api/capabilities` | read-only **registry slice** — per-provider **key counts**, Claude **selectability**, configured **cutoff**, and server **version**; a machine-readable "what can I reach?" for agents (**never secrets**) |
+| `GET` / `POST` / `PUT` | `/api/spend*` | **usage and spend ledger** (events, sessions, collectors, prices, reprice, and the `GET /api/spend` read model). Counts and list-price estimates only, never content. See [Spend](#spend) |
 | `WS` | `/ws` | live event stream — auth via the **`bearer.<token>` WebSocket subprotocol** (token never lands in URL/access logs; a `?token=` query param is **ignored** — header/subprotocol only) |
 | `GET` | `/v1/models` | Available model aliases and providers with working vaulted keys; Anthropic and OpenAI listing fields |
 | `POST` | `/v1/messages` | **Anthropic Messages-protocol proxy — API-key providers only** (`openrouter` / `kimi` / `muse` / `qwen` / `anthropic`). Auth also accepts `x-api-key` (the shape the real `claude` binary sends with `ANTHROPIC_API_KEY`). See below. |
@@ -544,6 +614,7 @@ Same posture on the OpenAI wire: point the client at `http://<aigate>/v1` with t
 | `AIGATE_CODEX_UA` | `aigate/<version> (codex-usage)` | user-agent for the usage poll (the refresh call sends none) |
 | `AIGATE_CODEX_TOKEN_TIMEOUT_MS` | `60000` | timeout for the token call; generous because a refresh that was sent but timed out cannot be safely retried |
 | `AIGATE_CODEX_LEDGER` | `<db dir>/codex-ledger.json` | path of the refresh ledger used by the restore guard |
+| `AIGATE_SPEND_RETENTION_DAYS` | `400` | days of spend events (and session mappings) to keep; pruned during the daily snapshot. `0` keeps everything |
 | `AIGATE_VERSION` | *(empty = package.json)* | override served version string (`/health` + `/api/capabilities`); fleet tar-path deploy stamps the sha. |
 
 See `.env.example` for the fully-commented list.
