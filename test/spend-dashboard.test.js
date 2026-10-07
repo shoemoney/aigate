@@ -43,7 +43,7 @@ test('every inline <script> compiles under vm.Script', () => {
 });
 
 // Run the real inline app with Vue.createApp stubbed to capture its options.
-function loadOptions(fetchImpl) {
+function loadOptions(fetchImpl, overrides = {}) {
   assert.ok(appScript, 'inline Vue.createApp script present');
   let captured = null;
   const el = () => ({ addEventListener() {}, setAttribute() {}, hidden: false, textContent: '', value: '', type: 'password',
@@ -58,6 +58,7 @@ function loadOptions(fetchImpl) {
     WebSocket: function () { return { close() {} }; },
     CustomEvent: function () {}, matchMedia: () => ({ matches: false }),
     ResizeObserver: function () { return { observe() {}, disconnect() {} }; },
+    ...overrides,
     Vue: { createApp(o) { captured = o; return { config: {}, mount() { return {}; } }; } },
   };
   sandbox.window = sandbox; sandbox.globalThis = sandbox; sandbox.self = sandbox;
@@ -129,6 +130,31 @@ test('formatters: dollars and compact counts', () => {
   assert.equal(app.fmtCompact(1500), '1.5K');
 });
 
-test('spend refresh runs on a 5 minute timer', () => {
-  assert.match(appScript, /setInterval\([\s\S]*?,\s*300000\)/, '5 minute interval');
+test('spend refresh runs on a 5 minute timer and fetches whichever section is in view', async () => {
+  const urls = [];
+  const timers = [];
+  const app = loadOptions((url) => { if (String(url).startsWith('/api/spend')) urls.push(String(url)); return json(200, { totals: {}, groups: [], series: [], collectors: [] }); },
+    { setInterval: (fn, ms) => { timers.push({ fn, ms }); return timers.length; } });
+  app.activeSection = 'overview';
+  app.startSpendTimer();
+  const spendTimer = timers.find((t) => t.ms === 300000);
+  assert.ok(spendTimer, 'a 300000 ms interval was registered');
+  spendTimer.fn();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(urls.length, 1, 'timer tick fetched /api/spend while on #overview');
+  assert.match(urls[0], /^\/api\/spend\?/);
+});
+
+test('boot loads spend even when the hash is not #spend, so scrolling down never shows a stale Loading panel', async () => {
+  const urls = [];
+  const app = loadOptions((url) => { if (String(url).startsWith('/api/spend')) urls.push(String(url));
+    return json(200, { accounts: [], by_host: [], totals: {}, groups: [], series: [], collectors: [] }); },
+    { setInterval: () => 0, clearInterval() {} });
+  app.activeSection = 'overview';
+  app.authed = false;
+  app.connect = () => {}; app.loadSupportingData = () => {}; app.drawChart = () => {};
+  await app.boot();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(urls.length, 1, 'boot requested /api/spend');
+  assert.match(urls[0], /^\/api\/spend\?/);
 });

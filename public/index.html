@@ -210,7 +210,7 @@ const app=Vue.createApp({
     catch(error){if(stamp!==this.spendStamp)return;if(this.checkError(error))return;this.spend=null;this.spendError=error.status===404?'this server has no spend endpoint yet (404).':error.message;}
     finally{if(stamp===this.spendStamp)this.spendLoading=false;}
   },
-  startSpendTimer(){clearInterval(spendTimer);spendTimer=setInterval(()=>{if(this.authed&&this.activeSection==='spend'&&!document.hidden)this.loadSpend();},300000);},
+  startSpendTimer(){clearInterval(spendTimer);spendTimer=setInterval(()=>{if(this.authed&&!document.hidden)this.loadSpend();},300000);},
   drawSpendChart(){
     if(!this.authed||!this.spend||!window.echarts||!this.$refs.spendChart||!this.spendSeries.length)return;
     try{const element=this.$refs.spendChart;if(spendChart&&spendChart.getDom()!==element){spendObserver?.disconnect();spendChart.dispose();spendChart=null;}
@@ -257,7 +257,7 @@ const app=Vue.createApp({
     this.authed=true;document.getElementById('app').hidden=false;document.getElementById('login').hidden=true;document.title='AIGate · Control room';
     clearInterval(clockTimer);clockTimer=setInterval(()=>{this.now=Date.now();},1000);
     await this.$nextTick();this.drawChart();this.connect();
-    this.loadSupportingData();this.startSpendTimer();if(this.activeSection==='spend')this.loadSpend();
+    this.loadSupportingData();this.startSpendTimer();this.loadSpend();
     const target=document.getElementById(location.hash.slice(1)||'overview');if(target)target.scrollIntoView({behavior:'instant'});
   },
   async loadSupportingData(){
