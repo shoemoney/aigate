@@ -166,3 +166,10 @@ test('spend chart and table show unknown-plan value, which is most traffic until
   assert.match(html, />Unknown plan<\/th>/, 'table must have an Unknown plan column');
   assert.match(html, /fmtUsd\(g\.unknown_usd\)/, 'table rows must render unknown_usd');
 });
+
+test('Spend leads with an all-usage list-price total so the headline is never just the attributed slice', () => {
+  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  assert.match(html, />All usage at list price</, 'headline total tile missing');
+  assert.match(html, /spendTotals\.value_usd\)\|\|0\)\+\(Number\(spendTotals\.unknown_usd\)\|\|0\)\+\(Number\(spendTotals\.spend_usd\)/, 'total must include value + unknown + spend');
+  assert.ok(html.indexOf('All usage at list price') < html.indexOf('>API-equivalent value<'), 'the total must come first');
+});
