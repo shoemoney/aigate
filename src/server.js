@@ -7,9 +7,9 @@
  * ingests prompt + usage events from the fleet's Claude Code hooks, and streams
  * everything live over WebSocket to a dashboard.
  *
- * It is NOT a proxy — it never sits in Anthropic's request path. Clients run the
- * official `claude` binary against a per-account CLAUDE_CONFIG_DIR profile; this
- * daemon only picks which profile and records what happened (via local hooks).
+ * It is NOT a proxy — it never sits in Anthropic's request path. This daemon is a
+ * selector: it picks the account and hands its token to the official `claude`
+ * binary via CLAUDE_CODE_OAUTH_TOKEN, and records what happened (via local hooks).
  */
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';

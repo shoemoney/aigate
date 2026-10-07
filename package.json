@@ -1,7 +1,7 @@
 {
   "name": "aigate",
   "version": "0.1.0",
-  "description": "Safe multi-account Claude Code manager — audited token vault, usage-aware account selection, and a live WebSocket dashboard. Uses the official Claude binary (CLAUDE_CONFIG_DIR profiles + hooks), never a relay/proxy, so it won't jeopardize your accounts.",
+  "description": "Safe multi-account Claude Code manager — audited token vault, usage-aware account selection, and a live WebSocket dashboard. Hands the picked account's token to the official Claude binary via CLAUDE_CODE_OAUTH_TOKEN (plus hooks), never a relay/proxy, so it won't jeopardize your accounts.",
   "type": "module",
   "bin": { "aigate": "src/server.js" },
   "scripts": {
