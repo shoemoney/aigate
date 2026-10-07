@@ -154,3 +154,42 @@ test('a failed post exits 2 and reports progress; missing creds exit 1', async (
   const none = await imp([], { AIGATE_URL: '', AIGATE_TOKEN: '' });
   assert.equal(none.code, 1);
 });
+
+test('otari-only sources import with --source lists and land as api spend, never attributed', async () => {
+  const X = join(TMP, 'otari-extra.db');
+  const x = new DatabaseSync(X);
+  x.exec(`CREATE TABLE usage_logs (
+    id VARCHAR NOT NULL PRIMARY KEY, timestamp DATETIME NOT NULL, model VARCHAR NOT NULL, provider VARCHAR,
+    endpoint VARCHAR NOT NULL DEFAULT 'x', prompt_tokens INTEGER, completion_tokens INTEGER, status VARCHAR NOT NULL,
+    cache_read_tokens INTEGER, cache_write_tokens INTEGER, latency_ms INTEGER, cache_write_1h_tokens INTEGER,
+    source VARCHAR DEFAULT 'gateway' NOT NULL, source_event_id VARCHAR, source_label VARCHAR, cache_tokens_in_prompt BOOLEAN,
+    UNIQUE (source, source_event_id))`);
+  const add = x.prepare(`INSERT INTO usage_logs(id, timestamp, model, provider, prompt_tokens, completion_tokens, status,
+    cache_read_tokens, cache_write_tokens, latency_ms, cache_write_1h_tokens, source, source_event_id, source_label, cache_tokens_in_prompt)
+    VALUES (?,?,?,?,?,?,'success',0,0,10,0,?,?,?,?)`);
+  add.run('m1', '2026-09-20 10:00:00.000000', 'muse-spark-1.3', 'meta', 500, 50, 'muse', 'muse-ev-1', 'mbp:ideas', 1);
+  add.run('o1', '2026-09-21 10:00:00.000000', 'z-ai/glm-5.3', 'openrouter', 700, 70, 'opencode', 'oc-ev-1', 'mbp:tr8r', 0);
+  add.run('h1', '2026-07-01 10:00:00.000000', 'some-model', 'unknown', 9, 9, 'hermes', 'he-ev-1', 'mbp:x', 0);
+  x.close();
+  const r = await imp(['--db', X, '--source', 'muse,opencode']);
+  assert.equal(r.code, 0, r.err);
+  assert.equal(num(r.out, 'accepted'), 2, r.out);                  // hermes not in the list -> not read
+  for (const id of ['muse-ev-1', 'oc-ev-1']) {
+    const row = rowOf(id);
+    assert.ok(row, id + ' imported');
+    assert.equal(row.account, null);
+    assert.equal(row.billing, 'api');
+  }
+  assert.equal(rowOf('muse-ev-1').source, 'muse');
+  assert.equal(rowOf('he-ev-1'), undefined);
+  const bad = await imp(['--db', X, '--source', 'muse,nope']);
+  assert.equal(bad.code, 1);
+});
+
+test('imports tools aigate has no collector for (muse, opencode) and never attributes them', async () => {
+  const { mapRow } = await import('../scripts/spend-import-otari.js');
+  const ev = mapRow({ source: 'muse', source_event_id: 'muse-abc-1', timestamp: '2026-09-01 10:00:00.000000', provider: 'meta',
+    model: 'muse-spark-1.3', status: 'success', source_label: 'mbp:resume', prompt_tokens: 10, completion_tokens: 5,
+    cache_read_tokens: 0, cache_write_tokens: 0, cache_write_1h_tokens: 0, cache_tokens_in_prompt: 1 });
+  assert.ok(ev && ev.event.provider === 'meta' && ev.host === 'mbp' && ev.event.project === 'resume');
+});

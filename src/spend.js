@@ -15,7 +15,9 @@ const FUTURE_SLACK_MS = 48 * 3600e3;
 const SKEW_MS = 120e3;          // attribution time-rule tolerance (hook/lease vs event clocks)
 const DAY_MS = 86400e3;
 const REPRICE_CHUNK = 5000;
-const SOURCES = new Set(['claude_code', 'codex']);
+const SOURCES = new Set(['claude_code', 'codex']);   // sources with an aigate launcher: session/lease attribution
+// usage events may also come from tools aigate has no collector for (imported from otari); never attributed
+const EVENT_SOURCES = new Set([...SOURCES, 'opencode', 'muse', 'hermes', 'qwen', 'kimi', 'gemini']);
 const KINDS = new Set(['claude', 'codex']);
 
 const ID_RE = /^[A-Za-z0-9._:/-]+$/;
@@ -232,6 +234,7 @@ function pickAttribution(source, rows, ts, startedAt) {
 }
 
 function mapRows(s, source, host, sessionId, scope) {
+  if (!SOURCES.has(source)) return [];   // imported tools have no launcher map: never attributed, never borrow a codex lease
   return source === 'claude_code'
     ? (sessionId ? s.claudeMap.all(host, sessionId) : [])
     : (scope ? s.codexMap.all(host, scope) : []);
@@ -253,7 +256,7 @@ function validateBatch(b, now) {
     if (!isPlain(e)) return { error: 'event must be an object', index: i };
     for (const k of Object.keys(e)) if (!EVENT_KEYS.has(k)) return { ...contentError(`events[${i}].${k}`, k), index: i };
   }
-  if (!SOURCES.has(b.source)) return { error: 'source must be claude_code or codex' };
+  if (!EVENT_SOURCES.has(b.source)) return { error: 'source must be one of ' + [...EVENT_SOURCES].join(', ') };
   if (typeof b.host !== 'string' || !b.host.trim()) return { error: 'host is required' };
   if (b.collector_version !== undefined && !(typeof b.collector_version === 'string' && /^[A-Za-z0-9._+-]{1,64}$/.test(b.collector_version)))
     return { error: 'bad collector_version' };

@@ -12,7 +12,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 const VERSION = 'otari-import';
 const DEFAULT_DB = '/Users/shoemoney/Projects/otari/otari.db';
-const SOURCES = ['claude_code', 'codex'];
+// claude_code + codex are also collected live from transcripts; the rest exist only in otari
+const SOURCES = ['claude_code', 'codex', 'opencode', 'muse', 'hermes', 'qwen', 'kimi', 'gemini'];
 const MAX_INT = 2 ** 31 - 1;
 const MIN_TS = Date.parse('2020-01-01T00:00:00Z');
 const ID_RE = /^[A-Za-z0-9._:/-]+$/;
@@ -28,9 +29,11 @@ const HELP = `spend-import-otari — copy otari usage history into aigate's spen
 usage: node scripts/spend-import-otari.js [options]
 
   --db <path>          otari SQLite file, opened read-only (default ${DEFAULT_DB})
-  --source <name>      claude_code | codex | all   (default all)
+  --source <list>      all, or a comma list of: claude_code, codex, opencode, muse, hermes, qwen, kimi, gemini
+                       (default all)
   --before <ISO>       only rows with timestamp < this instant
   --since <ISO>        only rows with timestamp >= this instant
+  --since-hours <N>    only rows from the last N hours (for a scheduled sync)
   --dry-run            count and print what would be posted; post nothing
   --batch <N>          events per POST, 1..1000 (default 500)
   --help               this text
@@ -43,7 +46,7 @@ class Fatal extends Error {}
 class PostFailed extends Error {}
 
 function parseArgs(argv) {
-  const o = { db: DEFAULT_DB, source: 'all', before: null, since: null, dryRun: false, batch: 500, help: false };
+  const o = { db: DEFAULT_DB, source: 'all', sources: SOURCES, before: null, since: null, dryRun: false, batch: 500, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const val = () => {
@@ -55,11 +58,16 @@ function parseArgs(argv) {
     else if (a === '--db') o.db = val();
     else if (a === '--source') {
       o.source = val();
-      if (o.source !== 'all' && !SOURCES.includes(o.source)) throw new Fatal('--source must be claude_code, codex or all');
+      o.sources = o.source === 'all' ? SOURCES : o.source.split(',').map((x) => x.trim()).filter(Boolean);
+      if (!o.sources.length || o.sources.some((x) => !SOURCES.includes(x))) throw new Fatal('--source must be all or a comma list of: ' + SOURCES.join(', '));
     } else if (a === '--before' || a === '--since') {
       const t = Date.parse(val());
       if (!Number.isFinite(t)) throw new Fatal(`${a} needs an ISO-8601 timestamp`);
       o[a.slice(2)] = t;
+    } else if (a === '--since-hours') {
+      const h = Number(val());
+      if (!Number.isFinite(h) || h <= 0) throw new Fatal('--since-hours needs a positive number');
+      o.since = Date.now() - h * 3600e3;
     } else if (a === '--batch') {
       const n = Number(val());
       if (!Number.isInteger(n) || n < 1 || n > 1000) throw new Fatal('--batch must be an integer 1..1000');
@@ -182,13 +190,13 @@ async function postBatch(cfg, source, host, events) {
 }
 
 const blank = () => ({ read: 0, skipped: 0, posted: 0, accepted: 0, duplicate: 0, rejected: 0 });
-export const newStats = () => ({ claude_code: blank(), codex: blank() });
+export const newStats = () => Object.fromEntries(SOURCES.map((s) => [s, blank()]));
 
 // Mutates `stats` as it goes so a failure part-way still reports how far it got.
 export async function run(opts, cfg, stats, out = process.stdout) {
   const db = new DatabaseSync(`file:${opts.db}?immutable=1`, { readOnly: true });
   try {
-    const wanted = opts.source === 'all' ? SOURCES : [opts.source];
+    const wanted = opts.sources || (opts.source === 'all' ? SOURCES : [opts.source]);
     const where = [`source IN (${wanted.map(() => '?').join(',')})`];
     const params = [...wanted];
     if (opts.before != null) { where.push('timestamp < ?'); params.push(otariBound(opts.before)); }

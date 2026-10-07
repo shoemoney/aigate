@@ -403,3 +403,36 @@ test('request_log is untouched and the server.js hook stays small', () => {
   assert.ok(lines.length <= 5, `server.js spend hook is ${lines.length} lines`);
   assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM request_log`).get().n, 0);
 });
+
+test('otari-only sources (muse, opencode, …) are accepted, never attributed, and never borrow a codex lease', async () => {
+  const scope = '/home/dev/.codex-otari-src';
+  // a live codex lease on the same host + scope: a codex event here WOULD be attributed
+  let r = await post('/api/spend/sessions', { source: 'codex', host: 'srcA', session_id: null, scope, account: 'cx-lease',
+    kind: 'codex', via: 'ai-codex', ts: '2026-10-06T16:00:00.000Z' });
+  assert.equal(r.status, 200);
+  r = await post('/api/spend/events', batch('srcA', [ev('muse-evt-1', { provider: 'meta', model: 'muse-spark-1.3', scope })], { source: 'muse' }));
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).accepted, 1);
+  const row = rowOf('muse-evt-1');
+  assert.equal(row.source, 'muse');
+  assert.equal(row.account, null, 'an imported tool must never inherit a codex lease');
+  assert.equal(row.billing, 'api');
+  r = await post('/api/spend/events', batch('srcA', [ev('opencode-evt-1', { provider: 'openrouter', model: 'z-ai/glm-5.3' })], { source: 'opencode' }));
+  assert.equal((await r.json()).accepted, 1);
+  r = await post('/api/spend/events', batch('srcA', [ev('bogus-evt-1')], { source: 'not-a-tool' }));
+  assert.equal(r.status, 400);
+  assert.equal(count("source_event_id='bogus-evt-1'"), 0);
+  // session mappings stay limited to the launcher-backed sources
+  r = await post('/api/spend/sessions', { source: 'muse', host: 'srcA', session_id: 'x', scope: '', account: 'a', kind: 'claude', via: 'hook', ts: '2026-10-06T16:00:00.000Z' });
+  assert.equal(r.status, 400);
+});
+
+test('ingest accepts imported tool sources but never attributes them, and rejects unknown sources', async () => {
+  const ev = (id) => ({ source_event_id: id, ts: new Date(Date.now() - 60e3).toISOString(), provider: 'meta', model: 'muse-spark-1.3',
+    input_tokens: 1, output_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, cache_write_1h_tokens: 0,
+    cache_tokens_in_prompt: true, status: 'success', project: 'p', session_id: null, session_started_at: null, scope: '/Users/x/.codex' });
+  let r = await post('/api/spend/events', { source: 'muse', host: 'imp-host', events: [ev('muse-imp-1')] });
+  assert.equal(r.status, 200); assert.equal(r.body.accepted, 1); assert.equal(r.body.unattributed, 1);
+  r = await post('/api/spend/events', { source: 'not-a-tool', host: 'imp-host', events: [ev('x-1')] });
+  assert.equal(r.status, 400);
+});
