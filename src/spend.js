@@ -297,7 +297,7 @@ function validateBatch(b, now) {
       session_id: e.session_id ?? null, session_started_at: startedAt, scope: e.scope || '',
     });
   }
-  return { ok: true, source: b.source, host: b.host, version: b.collector_version ?? null, summary: b.summary || {}, events };
+  return { ok: true, source: b.source, host: b.host.trim().toLowerCase(), version: b.collector_version ?? null, summary: b.summary || {}, events };
 }
 
 function ingestBatch(db, v) {
@@ -372,7 +372,7 @@ function validateSessions(b, now) {
         return bad('scope must be an absolute path for codex');
       scope = x.scope;
     }
-    out.push({ source: x.source, host: x.host, session_id: sessionId, scope, account: x.account, kind: x.kind, via, ts });
+    out.push({ source: x.source, host: x.host.trim().toLowerCase(), session_id: sessionId, scope, account: x.account, kind: x.kind, via, ts });
   }
   return { ok: true, sessions: out };
 }
@@ -461,7 +461,7 @@ function readSpend(db, url) {
   const args = [from, to];
   for (const f of ['account', 'source', 'host']) {
     const val = qs.get(f);
-    if (val) { where.push(`${f} = ?`); args.push(val); }
+    if (val) { where.push(`${f} = ?`); args.push(f === 'host' ? val.toLowerCase() : val); }
   }
   const W = where.join(' AND ');
   const expr = GROUP_EXPR[group];

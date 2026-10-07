@@ -176,6 +176,21 @@ test('attribution: a session posted BEFORE its events attributes them on ingest'
   assert.equal(row.billing, 'subscription');
 });
 
+test('attribution: host case never splits a session from its events (MBP vs mbp, both directions)', async () => {
+  await post('/api/spend/sessions', { source: 'claude_code', host: 'CaseMBP', session_id: 'sess-case', scope: '', account: 'shoemoney',
+    kind: 'claude', via: 'hook', ts: '2026-10-06T16:00:00.000Z' });
+  let j = await (await post('/api/spend/events', batch('casembp', [ev('hc1', { session_id: 'sess-case' })]))).json();
+  assert.equal(j.unattributed, 0);
+  assert.equal(rowOf('hc1').host, 'casembp');
+  j = await (await post('/api/spend/events', batch('CASEMBP', [ev('hc2', { session_id: 'sess-case' })]))).json();
+  assert.equal(j.unattributed, 0);
+  await post('/api/spend/events', batch('lowerfirst', [ev('hc3', { session_id: 'sess-case2' })]));
+  const r = await (await post('/api/spend/sessions', { source: 'claude_code', host: 'LowerFirst', session_id: 'sess-case2', scope: '', account: 'shoemoney',
+    kind: 'claude', via: 'hook', ts: '2026-10-06T16:00:00.000Z' })).json();
+  assert.equal(r.resolved, 1);
+  assert.equal(rowOf('hc3').account, 'shoemoney');
+});
+
 test('attribution: a session posted AFTER its events re-resolves them and fixes billing', async () => {
   const j = await (await post('/api/spend/events', batch('hostS', [ev('sa1', { session_id: 'sess-after' }), ev('sa2', { session_id: 'sess-after' }),
     ev('sa3', { session_id: 'other-sess' })]))).json();
@@ -209,18 +224,18 @@ test('attribution: two accounts on one Claude session follow the time rule', asy
 
 test('attribution: session upserts are idempotent and replaying old lines does not split rows', async () => {
   const lines = [
-    { source: 'claude_code', host: 'hostR', session_id: 'sess-r', scope: '', account: 'a', kind: 'claude', via: 'hook', ts: '2026-10-06T10:00:00.000Z' },
-    { source: 'claude_code', host: 'hostR', session_id: 'sess-r', scope: '', account: 'b', kind: 'claude', via: 'hook', ts: '2026-10-06T11:00:00.000Z' },
-    { source: 'claude_code', host: 'hostR', session_id: 'sess-r', scope: '', account: 'a', kind: 'claude', via: 'hook', ts: '2026-10-06T12:00:00.000Z' },
+    { source: 'claude_code', host: 'hostr', session_id: 'sess-r', scope: '', account: 'a', kind: 'claude', via: 'hook', ts: '2026-10-06T10:00:00.000Z' },
+    { source: 'claude_code', host: 'hostr', session_id: 'sess-r', scope: '', account: 'b', kind: 'claude', via: 'hook', ts: '2026-10-06T11:00:00.000Z' },
+    { source: 'claude_code', host: 'hostr', session_id: 'sess-r', scope: '', account: 'a', kind: 'claude', via: 'hook', ts: '2026-10-06T12:00:00.000Z' },
   ];
   for (let i = 0; i < 3; i++) await post('/api/spend/sessions', { sessions: lines });
-  const rows = db.prepare(`SELECT account, first_seen FROM spend_sessions WHERE host='hostR' ORDER BY first_seen`).all();
+  const rows = db.prepare(`SELECT account, first_seen FROM spend_sessions WHERE host='hostr' ORDER BY first_seen`).all();
   assert.deepEqual(rows.map((r) => r.account), ['a', 'b', 'a']);
   // a later ping of the same account only extends last_seen
   await post('/api/spend/sessions', { ...lines[2], ts: '2026-10-06T12:30:00.000Z' });
-  const last = db.prepare(`SELECT last_seen FROM spend_sessions WHERE host='hostR' ORDER BY first_seen DESC LIMIT 1`).get();
+  const last = db.prepare(`SELECT last_seen FROM spend_sessions WHERE host='hostr' ORDER BY first_seen DESC LIMIT 1`).get();
   assert.equal(last.last_seen, '2026-10-06T12:30:00.000Z');
-  assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM spend_sessions WHERE host='hostR'`).get().n, 3);
+  assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM spend_sessions WHERE host='hostr'`).get().n, 3);
   const list = await (await get('/api/spend/sessions?limit=5')).json();
   assert.ok(Array.isArray(list) && list.length >= 1 && list.length <= 5);
 });
@@ -269,7 +284,7 @@ const walk = (o, f, path = '') => {
 };
 
 test('GET /api/spend: totals equal the sum of groups (other included), series, collectors, no "tokens" key', async () => {
-  const host = 'hostG';
+  const host = 'hostg';
   const accts = ['g1', 'g2', 'g3', 'g4'];
   for (const [i, a] of accts.entries())
     await post('/api/spend/sessions', { source: 'claude_code', host, session_id: 'gs' + i, scope: '', account: a, kind: 'claude', via: 'hook', ts: '2026-10-01T00:00:00.000Z' });
@@ -341,7 +356,7 @@ test('GET /api/spend: bad parameters are 400s, empty ranges are honest zeros', a
 });
 
 test('prices: GET lists, PUT adds a dated row (409 on repeat), reprice only_unpriced fills the gap and leaves priced rows alone', async () => {
-  const host = 'hostRP';
+  const host = 'hostrp';
   await post('/api/spend/events', batch(host, [
     ev('rp-priced', { session_id: 'q1' }),
     ev('rp-new1', { provider: 'acme', model: 'acme-1', session_id: 'q2', input_tokens: 1000000, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, cache_write_1h_tokens: 0 }),
@@ -381,7 +396,7 @@ test('prices: GET lists, PUT adds a dated row (409 on repeat), reprice only_unpr
 });
 
 test('retention prune removes old rows only, and 0 keeps everything', async () => {
-  const host = 'hostK';
+  const host = 'hostk';
   await post('/api/spend/events', batch(host, [ev('old1', { ts: '2021-03-01T00:00:00.000Z' }), ev('new1', { ts: new Date().toISOString() })]));
   assert.equal(pruneOld(db, 0), 0);
   assert.equal(count(`host=?`, host), 2);
@@ -392,9 +407,9 @@ test('retention prune removes old rows only, and 0 keeps everything', async () =
 });
 
 test('ingest audit rows carry counts only, never event content', async () => {
-  await post('/api/spend/events', batch('hostAud', [ev('aud1')]));
-  const row = db.prepare(`SELECT account, host, action, result FROM access_log WHERE action='spend-ingest' AND host='hostAud'`).get();
-  assert.deepEqual({ ...row }, { account: 'spend', host: 'hostAud', action: 'spend-ingest', result: 'accepted 1 · dup 0 · unpriced 0' });
+  await post('/api/spend/events', batch('hostaud', [ev('aud1')]));
+  const row = db.prepare(`SELECT account, host, action, result FROM access_log WHERE action='spend-ingest' AND host='hostaud'`).get();
+  assert.deepEqual({ ...row }, { account: 'spend', host: 'hostaud', action: 'spend-ingest', result: 'accepted 1 · dup 0 · unpriced 0' });
 });
 
 test('request_log is untouched and the server.js hook stays small', () => {
