@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# T3 Code → aigate for its NATIVE codex driver: pick the Codex account with the
-# most headroom, write its auth.json (aigate-codex.sh --write-only), then exec the
+# T3 Code → aigate for its NATIVE codex driver: pick the Codex account whose weekly
+# limit resets soonest (under the cutoff), write its auth.json (aigate-codex.sh --write-only), then exec the
 # REAL codex with T3's args untouched. Set as the codex "Binary path" in T3 Code.
 # STICKY: aigate-codex.sh runs the keeper first and will NOT switch the on-disk
 # account while another codex for this CODEX_HOME is alive (T3 spawns one per

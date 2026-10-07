@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cmux → aigate: pick the account with the most headroom, then exec the REAL claude.
+# cmux → aigate: pick the account whose weekly limit resets soonest (under the cutoff), then exec the REAL claude.
 # FAIL-SAFE: any aigate hiccup → launch claude normally so cmux never breaks.
 #
 # NEVER hardcode one install path. Fleet boxes use ~/.local/bin/claude (native

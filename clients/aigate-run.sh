@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# aigate-run — ask the warden for the account with the most headroom, then run
+# aigate-run — ask the warden for the account whose weekly limit resets soonest (under the cutoff), then run
 # the OFFICIAL `claude` binary with that account's token. No proxy, no relay.
 #
 #   env: AIGATE_URL (e.g. https://aigate.example.com), AIGATE_TOKEN

@@ -3,7 +3,7 @@
  * aigate — safe multi-account Claude Code manager.
  *
  * A daemon that: stores account OAuth/setup-tokens encrypted at rest, hands the
- * best account (most rate-limit headroom) to whoever asks (audited by IP),
+ * best account (soonest weekly reset among those under the cutoff) to whoever asks (audited by IP),
  * ingests prompt + usage events from the fleet's Claude Code hooks, and streams
  * everything live over WebSocket to a dashboard.
  *

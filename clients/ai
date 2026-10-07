@@ -2,8 +2,8 @@
 # ai — one front door to every agent CLI, all through the aigate account selector.
 # Always the OFFICIAL binaries (claude / codex), never a proxy. Installs to ~/.local/bin/ai.
 #
-#   ai [claude] …        Claude Code on the Claude account with the most headroom
-#   ai codex …  ai gpt … Codex on the ChatGPT account with the most headroom
+#   ai [claude] …        Claude Code on the Claude account whose weekly limit resets soonest
+#   ai codex …  ai gpt … Codex on the ChatGPT account whose weekly limit resets soonest
 #   ai kimi …            Claude Code against Kimi K3
 #   ai muse …            Claude Code against Meta Muse      (ai muse cli … = Meta's own CLI)
 #   ai usage [--json]    live usage table for every account, ★ = next pick

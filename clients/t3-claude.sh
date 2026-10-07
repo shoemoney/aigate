@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T3 Code → aigate: pick the Claude account with the most headroom, then exec the
+# T3 Code → aigate: pick the Claude account whose weekly limit resets soonest (under the cutoff), then exec the
 # REAL claude binary with that account's setup token. Set as the Claude provider
 # "Binary path" in T3 Code (settings.json → providers.claudeAgent.binaryPath).
 # FAIL-SAFE: any aigate hiccup → launch claude normally so T3 Code never breaks.
