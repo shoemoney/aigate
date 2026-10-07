@@ -1,15 +1,15 @@
 ---
 name: aigate
-description: The main Claude Code skill for aigate — the encrypted vault + headroom-aware selector + live kanban board for every AI credential. Use this whenever the user mentions aigate, wants to store or fetch any provider API key (OpenAI, Anthropic, Gemini, Groq, fal…), needs the best Claude Max account/token, talks about headroom / rate limits / 5h/7d, wants the board/kanban/todo, or says "vault", "api key", "provider key", "Claude account", "select account", "board", "kanban", "aigate token", or needs any box to call a provider without hardcoding secrets — even if they don't say "aigate" explicitly. Complements the focused add-key skill — this is the full vault + selector + board manual.
+description: The main Claude Code skill for aigate — the encrypted vault + use-it-or-lose-it selector + live kanban board for every AI credential. Use this whenever the user mentions aigate, wants to store or fetch any provider API key (OpenAI, Anthropic, Gemini, Groq, fal…), needs the best Claude Max account/token, talks about headroom / rate limits / 5h/7d, wants the board/kanban/todo, or says "vault", "api key", "provider key", "Claude account", "select account", "board", "kanban", "aigate token", or needs any box to call a provider without hardcoding secrets — even if they don't say "aigate" explicitly. Complements the focused add-key skill — this is the full vault + selector + board manual.
 ---
 
 # aigate — vault + selector + board for Claude Code
 
-aigate is a **selector, not a proxy** — it never sits in Anthropic's request path. It **picks** the Claude account with the most headroom (lowest `max(5h%,7d%)`), hands the official `claude` binary the right token, logs every handout, and holds every provider API key AES-256-GCM at rest so boxes fetch on demand instead of hardcoding secrets. Plus a **kanban board** (`TODO → RUNNING → DONE/ERROR`) for agent fleets.
+aigate is a **selector, not a proxy** — it never sits in Anthropic's request path. It **picks** the Claude account whose weekly window resets soonest (use it or lose it — among accounts under the headroom cutoff, ties go to lowest usage), hands the official `claude` binary the right token, logs every handout, and holds every provider API key AES-256-GCM at rest so boxes fetch on demand instead of hardcoding secrets. Plus a **kanban board** (`TODO → RUNNING → DONE/ERROR`) for agent fleets.
 
 ## 0. Auth — source it, don't parse it
 
-Values are quoted and `export`-prefixed — `grep|cut` mangles them. Do it the way `cc` does:
+Values are quoted and `export`-prefixed — `grep|cut` mangles them. Do it the way the `ai` launcher does:
 
 ```bash
 BASE=https://aigate.shoemoney.ai   # or http://192.168.1.10:20200 on LAN
@@ -52,16 +52,16 @@ Common ids: `openai openrouter google anthropic groq mistral cohere deepseek xai
 
 ---
 
-## 2. Claude accounts — pick the one with the most headroom
+## 2. Claude accounts — use it or lose it
 
-aigate polls each Claude Max account's **real** Anthropic rate-limit headers every 10 min (`anthropic-ratelimit-unified-{5h,7d}-utilization` → `%`), skips anything ≥ `AIGATE_HEADROOM_CUTOFF` (default 95), and auto-recovers after reset. The `cc` wrapper calls this for you, but agents can call it directly:
+aigate polls each Claude Max account's **real** Anthropic rate-limit headers every 10 min (`anthropic-ratelimit-unified-{5h,7d}-utilization` → `%`), skips anything ≥ `AIGATE_HEADROOM_CUTOFF` (default 95), and auto-recovers after reset. Among the rest, the account with the soonest future weekly reset wins (no or past reset sorts after; ties go to lowest usage). The `ai` launcher calls this for you (`ai usage` shows every account with ★ = next pick), but agents can call it directly:
 
 ```bash
 # best account right now (logs host/IP, respects exclude for retry)
 curl -s "${AUTH[@]}" "$BASE/api/select?host=$(hostname)" | python3 -m json.tool
 # → {account, setup_token: "sk-ant-oat01-…", label, five, seven}
 
-# retry without the just-failed account (cc does this on real limit → TTL-park + next-best)
+# retry without the just-failed account (the launcher does this on real limit → TTL-park + next-best)
 curl -s "${AUTH[@]}" "$BASE/api/select?host=$(hostname)&exclude=demo_max" | python3 -m json.tool
 
 # park an over-limit account yourself (real limit → 15m, 529 → don't park, wait 10s)
@@ -137,7 +137,7 @@ Flow: `POST /api/board` → `TODO`; `POST /claim` → `RUNNING` (heartbeat via `
 - **Source the env, don't parse it:** `set -a; . ~/.claude/aigate/env; set +a` — the file has `export` + quotes; `grep|cut` mangles the token.
 - **VALUE only:** `sk-or-v1-…` not `export SK_OR=…`; an `export` paste gets a **400** on purpose.
 - **Hydrate:** `~/.claude/aigate/hydrate.sh` + `PAIRS` in `clients/hydrate.sh` (source) **and** `~/.claude/aigate/hydrate.sh` (live) — edit both, then re-run `clients/install.sh` on each box. Shell start sources cached `mcp-keys.env` (stale >12h → foreground fresh).
-- **`cc` wrapper:** headless `-p` auto-adds `--dangerously-skip-permissions`; it unsets `ANTHROPIC_API_KEY/AUTH_TOKEN/BASE_URL`; stale `ANTHROPIC_BASE_URL` in `~/.claude/settings*.json` hijacks every request — `cc` warns, you strip it.
+- **`ai` launcher** (`clients/ai`; `ai usage`, `ai codex adopt`): headless `-p` auto-adds `--dangerously-skip-permissions`; a stale `ANTHROPIC_BASE_URL` in `~/.claude/settings*.json` hijacks every request — strip it.
 - **Deploy:** `data/aigate.db` + `.env` are bind-mounted and git-ignored — preserve both across every redeploy or every token is permanently undecryptable. On `.10` (`/mnt/tank/apps/aigate`, `container aigate`, `sudo git pull`, `sudo docker compose up -d --build`).
 
 ---

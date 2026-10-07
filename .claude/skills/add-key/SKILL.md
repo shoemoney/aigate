@@ -12,7 +12,7 @@ aigate keeps every third-party **API-provider key** in one encrypted registry (A
 - Base URL: **`https://aigate.shoemoney.ai`** (public) or on the LAN **`http://192.168.1.10:20200`**.
 - Every call needs `Authorization: Bearer $AIGATE_TOKEN`.
 - Get the bearer (in order of preference):
-  1. On a wired box: **source** `~/.claude/aigate/env` — it holds `export AIGATE_URL=…` and `AIGATE_TOKEN=…` (values are often quoted, so `grep|cut` mangles them — source it instead, the way `cc` does).
+  1. On a wired box: **source** `~/.claude/aigate/env` — it holds `export AIGATE_URL=…` and `AIGATE_TOKEN=…` (values are often quoted, so `grep|cut` mangles them — source it instead, the way the `ai` launcher does).
   2. From the host: `ssh -l shoemoney 192.168.1.10 'sudo docker exec aigate env | grep ^AIGATE_TOKEN' | cut -d= -f2-`
 
 ```bash
