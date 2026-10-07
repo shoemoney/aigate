@@ -45,6 +45,11 @@ server) and static-checks `clients/aigate-run.sh`:
   returns instantly regardless of the HTTP calls (the test polls the mock rather
   than relying on the child holding the pipe open).
 
+- **Supervise contract** — a `supervise` test in the same file runs
+  `clients/aigate-run-supervise.test.sh` (fake aigate + hanging fake `claude`) and
+  asserts `all ok`: TERM to the print-mode wrapper must kill the `claude` it launched.
+  It scrubs `AIGATE_URL`/`AIGATE_TOKEN` and skips when `python3`/`bash` is missing.
+
 ## Dashboard smoke (manual)
 
 There's no browser E2E to maintain — the HTTP suite already exercises every

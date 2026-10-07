@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
@@ -186,4 +186,16 @@ test('aigate-run.sh print mode: a piped prompt is replayed to the retry attempt'
   assert.deepEqual(runs.map((x) => x.tok), ['tok-a1', 'tok-a2']);
   assert.deepEqual(runs.map((x) => x.stdin), ['the piped prompt', 'the piped prompt']);
   assert.equal(r.stdout, 'claude-out\n');
+});
+
+// ── supervise contract: killing aigate-run in print mode must kill the claude it launched ──
+test('aigate-run.sh supervise: TERM reaches the print-mode claude and piped output still passes through', { timeout: 120000 }, async (t) => {
+  const have = (bin) => spawnSync(bin, ['--version'], { stdio: 'ignore' }).status === 0;
+  if (!have('python3') || !have('bash')) return t.skip('python3 or bash unavailable');
+  const env = { ...process.env, PATH: bash32Path() };
+  delete env.AIGATE_URL; delete env.AIGATE_TOKEN; delete env.AIGATE_ACCOUNT; // never reach a real aigate
+  const r = await new Promise((res) => execFile(BASH, [join(ROOT, 'clients', 'aigate-run-supervise.test.sh')],
+    { env, timeout: 100000 }, (err, stdout, stderr) => res({ code: err ? (err.code ?? 1) : 0, stdout, stderr })));
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /all ok/);
 });
