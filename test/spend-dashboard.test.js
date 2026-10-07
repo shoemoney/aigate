@@ -158,3 +158,11 @@ test('boot loads spend even when the hash is not #spend, so scrolling down never
   assert.equal(urls.length, 1, 'boot requested /api/spend');
   assert.match(urls[0], /^\/api\/spend\?/);
 });
+
+test('spend chart and table show unknown-plan value, which is most traffic until sessions are attributed', () => {
+  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  assert.match(html, /stack:'unknown',data:buckets\.map\(b=>\(rows\.get\([^)]*\)\|\|\{\}\)\.unknown_usd/, 'chart must plot unknown_usd as its own series');
+  assert.match(html, /unknown_usd:0,events:0/, 'chart accumulator must sum unknown_usd');
+  assert.match(html, />Unknown plan<\/th>/, 'table must have an Unknown plan column');
+  assert.match(html, /fmtUsd\(g\.unknown_usd\)/, 'table rows must render unknown_usd');
+});
