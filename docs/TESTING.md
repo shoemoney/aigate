@@ -65,7 +65,7 @@ Installs the client on a box, then flips accounts and watches `ai` follow.
 ```bash
 # on the target box (e.g. a Pi):
 AIGATE_URL=https://aigate.example  AIGATE_TOKEN=…  bash clients/install.sh
-bash clients/test-switching.sh <accountWithMoreHeadroom> <otherAccount>
+bash clients/test-switching.sh <defaultPick> <otherAccount>   # defaultPick = the ⭐ in `ai usage`
 ```
 
 It toggles `disabled` on each account and asserts the selected account flips,

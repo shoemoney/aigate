@@ -3,11 +3,12 @@
 # when you disable/enable them, with a REAL `ai -p` call each time.
 #
 # Run on a host that has `ai` installed (see install.sh) and can reach aigate.
-#   usage: test-switching.sh <accountA> <accountB>
+#   usage: test-switching.sh <defaultPick> <otherAccount>
 #   env:   read from ~/.claude/aigate/env (AIGATE_URL, AIGATE_TOKEN)
 #
-# accountA should normally have MORE headroom than accountB (so it's the default
-# pick). The script toggles `disabled` and asserts the selected account flips.
+# accountA must be the account aigate picks by default — the star in `ai usage`
+# (soonest weekly reset among accounts under the cutoff). The script toggles
+# `disabled` and asserts the selected account flips.
 set -uo pipefail
 A="${1:?account A}"; B="${2:?account B}"
 set -a; . "$HOME/.claude/aigate/env"; set +a
@@ -28,7 +29,7 @@ runai(){ # $1 = expected account
 # ctrl-C mid-run must not leave a REAL account disabled fleet-wide
 trap 'setdis "$A" false; setdis "$B" false; rm -rf "$WORK"' EXIT
 
-echo "[1] both enabled → expect $A (more headroom)"; setdis "$A" false; setdis "$B" false; sleep 1; runai "$A"
+echo "[1] both enabled → expect $A (default pick)"; setdis "$A" false; setdis "$B" false; sleep 1; runai "$A"
 echo "[2] $A disabled → expect $B";                  setdis "$A" true;  sleep 1;                 runai "$B"
 echo "[3] $B disabled → expect $A";                  setdis "$A" false; setdis "$B" true; sleep 1; runai "$A"
 echo "[4] both enabled → expect $A";                 setdis "$B" false; sleep 1;                 runai "$A"

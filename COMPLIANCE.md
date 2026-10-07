@@ -48,7 +48,7 @@ flowchart TB
   end
   subgraph ok["✅ ACCEPTED — the selector pattern (aigate)"]
     direction LR
-    A1["aigate<br/>pick account w/ most headroom"] -.only picks.-> A2["official <b>claude</b> binary<br/>own account token · real headers"] --> A3["Anthropic<br/><i>direct · real telemetry</i>"]
+    A1["aigate<br/>pick account: soonest reset w/ headroom"] -.only picks.-> A2["official <b>claude</b> binary<br/>own account token · real headers"] --> A3["Anthropic<br/><i>direct · real telemetry</i>"]
     note2["your own accounts · single-tenant ·<br/>CLAUDE_CODE_OAUTH_TOKEN (sanctioned)"]
   end
 ```
@@ -99,14 +99,14 @@ From Anthropic's **[Claude Code — Legal & Compliance](https://code.claude.com/
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Box as 🖥️ your box
+  participant Host as 🖥️ your box
   participant AG as 🛡️ aigate (selector)
   participant CL as 🤖 official claude binary
   participant AN as 🟣 Anthropic
-  Box->>AG: GET /api/select  (which of MY accounts has headroom?)
-  AG-->>Box: { account, setup_token }  📝 audited (IP + host)
-  Note over Box,CL: injected account token, clean credential store — no relay, no spoofed headers
-  Box->>CL: run OFFICIAL claude with that account's token
+  Host->>AG: GET /api/select  (which of MY accounts has headroom?)
+  AG-->>Host: { account, setup_token }  📝 audited (IP + host)
+  Note over Host,CL: injected account token, clean credential store — no relay, no spoofed headers
+  Host->>CL: run OFFICIAL claude with that account's token
   CL->>AN: normal Claude Code request 🔑 (direct, real telemetry)
   AN-->>CL: response + rate-limit headers
   Note over AG,AN: aigate polls headroom on its OWN tokens, never in the request path
@@ -150,13 +150,13 @@ Codex accounts follow the **same selector pattern** as Claude: aigate is a vault
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Box as 🖥️ your box
+  participant Host as 🖥️ your box
   participant AG as 🛡️ aigate (selector)
   participant CX as 🤖 official codex binary
   participant OA as 🟢 ChatGPT / OpenAI
-  Box->>AG: GET /api/select?kind=codex  (which of MY accounts has headroom?)
-  AG-->>Box: { account, auth_json }  📝 audited (IP + host)
-  Box->>CX: write ~/.codex/auth.json, run OFFICIAL codex
+  Host->>AG: GET /api/select?kind=codex  (which of MY accounts has headroom?)
+  AG-->>Host: { account, auth_json }  📝 audited (IP + host)
+  Host->>CX: write ~/.codex/auth.json, run OFFICIAL codex
   CX->>OA: normal Codex request 🔑 (direct, real client)
   Note over AG,OA: aigate only polls wham/usage + refreshes via the official token endpoint
 ```

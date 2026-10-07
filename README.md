@@ -140,6 +140,50 @@ The daemon polls usage and records activity independently of Claude's request st
 
 For API-key requests, AIGate is in the request path: it selects a working provider key, injects it server-side, and streams the upstream response. The supported routes and model mappings are documented in the [API reference](#api-reference).
 
+### 🎯 How an account gets picked
+
+Every launcher (`ai`, T3 Code, cmux, the desktop helpers) asks `GET /api/select`, and the answer follows one rule: **use it or lose it** ⏳. Weekly quota that is about to reset gets spent before quota that carries over, so nothing expires unused.
+
+```mermaid
+flowchart TD
+  Ask["🖥️ GET /api/select · kind = claude or codex"] --> Gate{"🚦 Eligible?"}
+  Gate -->|"disabled · needs re-auth · parked · no token"| Skip["⛔ skipped"]
+  Gate -->|"worst window at or over the cutoff (95%)"| Skip
+  Gate -->|"Codex only: token expired or refresh_unknown"| Skip
+  Gate -->|"✅ yes"| K1["1️⃣ polled accounts before never-polled ones"]
+  K1 --> K2["2️⃣ a weekly reset still ahead beats none or one already past"]
+  K2 --> K3["3️⃣ soonest weekly reset first ⏰"]
+  K3 --> K4["4️⃣ tie → lowest worst-window %"]
+  K4 --> K5["5️⃣ tie → least recently polled"]
+  K5 --> Pick["⭐ the pick"]
+  style Pick fill:#071825,color:#e9fff9,stroke:#67efd6,stroke-width:2px
+  style Skip fill:#2a1015,color:#ffe9ec,stroke:#ff6b81
+```
+
+| Rule | Why |
+|---|---|
+| 🧊 A reset in the past counts as *no* window | An idle account keeps its last-known reset after the week rolls over. Treating that stale timestamp as "soonest" would start a fresh week on it while another account's quota expired unused. |
+| 🔁 Retries skip what already failed | `?exclude=a,b` drops accounts the client just saw fail; the ranking is otherwise identical. |
+| ⭐ One answer everywhere | `ai usage`, the dashboard's **Next pick** badge, and `/api/select` all show the same account. `ai usage` asks the server (`dry=1`); the dashboard mirrors the same ordering in the browser. |
+
+<details>
+<summary><b>📊 Peek at the queue — <code>GET /api/usage</code></b></summary>
+
+```bash
+curl -s -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL/api/usage/claude" \
+  | jq -r '.[] | "\(.account)\t\(.status)\t7d \(.seven_day.pct)%\tresets in \(.seven_day.resets_in)"'
+```
+
+```text
+spare      at_limit   7d 100%   resets in 3d 6h
+personal   ok         7d 71%    resets in 4d 16h
+work       ok         7d 52%    resets in 9h 42m
+```
+
+`work` is the pick: it is under the cutoff and its week ends first. `spare` is skipped until its reset. Swap `claude` for `codex` for the ChatGPT pool, or drop the suffix for both.
+
+</details>
+
 ### Credential boundaries
 
 Claude OAuth setup tokens belong in **accounts**. Provider API keys belong in **provider_keys**. The proxy reads the provider-key vault and rejects Claude setup tokens at intake and retrieval. The selector returns credentials to authenticated callers, so clients using selection or explicit key retrieval do receive those credentials; proxy clients use the AIGate bearer instead.
@@ -385,7 +429,7 @@ ai kimi -p "explain this repo"
 `test-switching.sh` temporarily changes account availability and asserts that `ai -p` follows the selector, with a real Claude `PONG` at each step:
 
 ```bash
-bash clients/test-switching.sh <accountWithMoreHeadroom> <otherAccount>
+bash clients/test-switching.sh <defaultPick> <otherAccount>   # defaultPick = the ⭐ in `ai usage`
 ```
 
 <details>
