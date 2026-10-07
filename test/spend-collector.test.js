@@ -346,7 +346,7 @@ test('first run skips files older than 7 days (reads only what is appended later
     assert.match(r.line, /files=3 changed=0/);
 
     appendFileSync(w.claudeFile, claudeMsg('msg_fresh', '2026-10-07T03:00:00.000Z', U(9, 9)));
-    // codex joins mid-file: the cumulative counter's history is a baseline, not a charge
+    // codex resumes after being skipped: only the growth since the skipped history is billed
     appendFileSync(w.tcFile, tcLine('2026-10-04T20:05:00.000Z', [255979 + 10, 201344, 614 + 7]));
     appendFileSync(w.tcFile, tcLine('2026-10-04T20:06:00.000Z', [255979 + 30, 201344, 614 + 9]));
     w.touch(w.claudeFile, 0); w.touch(w.tcFile, 0);
@@ -354,8 +354,9 @@ test('first run skips files older than 7 days (reads only what is appended later
     r = await run(w, mock);
     assert.deepEqual(mock.events('claude_code').map((e) => e.source_event_id), ['msg_fresh']);
     const cx = mock.events('codex');
-    assert.equal(cx.length, 1, 'first appended counter line is the baseline, the second is billed');
-    assert.deepEqual([cx[0].input_tokens, cx[0].output_tokens], [20, 2]);
+    assert.equal(cx.length, 2, 'each appended counter line is a real delta against the true cumulative total');
+    assert.deepEqual(cx.map((e) => [e.input_tokens, e.output_tokens]), [[10, 7], [20, 2]]);
+    assert.deepEqual(cx.map((e) => e.source_event_id.split(':').slice(1).join(':')), ['tc:6', 'tc:7']);
     assert.equal(cx[0].project, 'proj-a', 'session metadata is primed from the rollout header');
 
     const w2 = world(); const mock2 = await mockServer();
@@ -377,6 +378,63 @@ test('--since bounds a backfill by file mtime', async () => {
     assert.equal(r.code, 0, r.stderr);
     assert.equal(mock.events().length, 5);
     assert.ok(mock.events().every((e) => e.session_id === 'cfb4bccb9617ff77'));
+  } finally { await mock.close(); w.cleanup(); }
+});
+
+test('baseline rollout that later grows: a following --backfill accepts exactly the ids a clean backfill would', async () => {
+  const w = world(); const mock = await mockServer();
+  const w2 = world(); const mock2 = await mockServer();
+  try {
+    w.touchAll(30);
+    assert.equal((await run(w, mock)).code, 0);
+    appendFileSync(w.tcFile, tcLine('2026-10-04T20:05:00.000Z', [255979 + 10, 201344, 614 + 7]));
+    appendFileSync(w.tcFile, tcLine('2026-10-04T20:06:00.000Z', [255979 + 30, 201344, 614 + 9]));
+    w.touch(w.tcFile, 0);
+    assert.equal((await run(w, mock)).code, 0);
+    assert.equal(mock.events('codex').length, 2);
+    assert.equal((await run(w, mock, ['--backfill'])).code, 0);
+    const accepted = mock.events('codex').map((e) => e.source_event_id);
+    const unique = [...new Set(accepted)];
+
+    writeFileSync(w2.tcFile, readFileSync(w.tcFile));
+    assert.equal((await run(w2, mock2, ['--backfill', '--source', 'codex'])).code, 0);
+    const clean = mock2.events('codex').filter((e) => e.source_event_id.startsWith(TC_UUID));
+    const mine = unique.filter((id) => id.startsWith(TC_UUID));
+    assert.deepEqual(mine.sort(), clean.map((e) => e.source_event_id).sort(), 'same id set as a clean backfill, no :tc:H+n strays');
+    assert.equal(mine.length, clean.length);
+    const billed = mock.events('codex').filter((e) => e.source_event_id.startsWith(TC_UUID));
+    const byId = new Map(billed.map((e) => [e.source_event_id, e]));
+    assert.equal([...byId.values()].reduce((a, e) => a + e.input_tokens, 0), 255979 + 30, 'summed input equals the final cumulative total');
+    assert.equal([...byId.values()].reduce((a, e) => a + e.output_tokens, 0), 614 + 9);
+  } finally { await mock.close(); await mock2.close(); w.cleanup(); w2.cleanup(); }
+});
+
+test('a failed first run keeps the 7-day rule: the next run does not turn into a full backfill', async () => {
+  const w = world(); const mock = await mockServer();
+  try {
+    w.touchAll(30);
+    w.touch(w.claudeFile, 0);
+    mock.status = 503;
+    let r = await run(w, mock);
+    assert.equal(r.code, 2, r.stdout + r.stderr);
+    mock.status = 200; mock.reset();
+    r = await run(w, mock);
+    assert.equal(r.code, 0, r.stderr);
+    const ev = mock.events();
+    assert.equal(ev.length, 5, 'only the recent file is posted');
+    assert.ok(ev.every((e) => e.session_id === 'cfb4bccb9617ff77'));
+    assert.equal(JSON.parse(readFileSync(w.state, 'utf8')).bootstrapped, true);
+  } finally { await mock.close(); w.cleanup(); }
+});
+
+test('--backfill keeps the mode an earlier run fixed for a rollout', async () => {
+  const w = world({ claude: false }); const mock = await mockServer();
+  try {
+    assert.equal((await run(w, mock)).code, 0);
+    const turMode = () => Object.entries(JSON.parse(readFileSync(w.state, 'utf8')).files).find(([k]) => k.endsWith(`${TUR_UUID}.jsonl`))[1].mode;
+    assert.equal(turMode(), 'tur');
+    assert.equal((await run(w, mock, ['--backfill'])).code, 0);
+    assert.equal(turMode(), 'tur');
   } finally { await mock.close(); w.cleanup(); }
 });
 

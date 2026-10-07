@@ -119,13 +119,14 @@ function loadConfig(opts) {
 
 // ── cursor state ────────────────────────────────────────────────────────────────────────────────
 function loadState(file) {
-  if (!existsSync(file)) return { state: { version: 1, sessions_sidecar_offset: 0, files: {} }, fresh: true };
+  if (!existsSync(file)) return { state: { version: 1, sessions_sidecar_offset: 0, files: {}, bootstrapped: false, bootstrap_cutoff_ms: 0 }, fresh: true };
   let st;
   try { st = JSON.parse(readFileSync(file, 'utf8')); } catch (e) { throw new Fatal(`state file ${file} is not valid JSON: ${e.message}`); }
   if (!st || st.version !== 1 || typeof st.files !== 'object' || st.files === null) {
     throw new Fatal(`state file ${file} has an unknown shape; move it aside to start over`);
   }
   if (!Number.isInteger(st.sessions_sidecar_offset)) st.sessions_sidecar_offset = 0;
+  if (st.bootstrapped === undefined) st.bootstrapped = true; // state from before the flag existed
   return { state: st, fresh: false };
 }
 
@@ -177,7 +178,7 @@ function walk(dir, accept, out = []) {
 
 // Reads complete lines from `start`. Returns the byte offset just past the last line handed to
 // `onLine`; a trailing partial line is left for the next run (unless it already parses as JSON).
-function readLines(path, start, onLine) {
+function readLines(path, start, onLine, limit = Infinity) {
   const fd = openSync(path, 'r');
   try {
     const buf = Buffer.allocUnsafe(CHUNK);
@@ -185,7 +186,9 @@ function readLines(path, start, onLine) {
     let offset = start;
     let pos = start;
     for (;;) {
-      const n = readSync(fd, buf, 0, CHUNK, pos);
+      const want = Math.min(CHUNK, limit - pos);
+      if (want <= 0) break;
+      const n = readSync(fd, buf, 0, want, pos);
       if (n === 0) break;
       pos += n;
       const data = carry.length ? Buffer.concat([carry, buf.subarray(0, n)]) : Buffer.from(buf.subarray(0, n));
@@ -195,7 +198,7 @@ function readLines(path, start, onLine) {
       offset += nl + 1;
       carry = data.subarray(nl + 1);
     }
-    if (carry.length) {
+    if (carry.length && limit === Infinity) {
       const tail = carry.toString('utf8');
       let whole = false;
       try { JSON.parse(tail); whole = true; } catch { /* half-written line, wait for the newline */ }
@@ -303,6 +306,39 @@ function codexEvent(st, scope, ts, model, usage, id) {
   };
 }
 
+// Moves the file's cumulative counter to `total` and returns the billable delta, or null when
+// nothing changed. A counter that went backwards is a restarted session and counts from zero.
+function tcAdvance(st, total) {
+  const cur = {};
+  for (const k of TOKEN_KEYS) cur[k] = nat(num(total[k]));
+  const prev = st.tcLast || ZERO_TOTAL;
+  const restarted = cur.input_tokens + cur.output_tokens < prev.input_tokens + prev.output_tokens;
+  const delta = {};
+  let any = false;
+  for (const k of TOKEN_KEYS) {
+    delta[k] = restarted ? cur[k] : Math.max(cur[k] - prev[k], 0);
+    if (delta[k]) any = true;
+  }
+  st.tcLast = cur;
+  return any ? delta : null;
+}
+
+// A rollout skipped on first run (too old) is entered with offset=size and baseline=true. Before
+// its first new bytes are read, the skipped region is replayed once without emitting, so the
+// counter and the `:tc:n` numbering match a from-zero read and a later --backfill dedupes cleanly.
+function codexReplayBaseline(path, st) {
+  const scanned = stats.scanned;
+  const pass = { tc: [], tur: [] };
+  readLines(path, 0, (line) => codexLine(line, st, pass), st.offset);
+  stats.scanned = scanned;
+  if (pass.tc.length) st.mode = 'tc';
+  for (const c of pass.tc) {
+    if (!c.ts) continue;
+    if (tcAdvance(st, c.total)) st.tcIndex++;
+  }
+  st.baseline = false;
+}
+
 // Turns one pass worth of candidates into events and advances the file's counters. The mode is
 // fixed per file: token_count's cumulative counter when present, else per-response usage records.
 function codexFinish(st, pass, scope, out) {
@@ -313,23 +349,8 @@ function codexFinish(st, pass, scope, out) {
   if (st.mode === 'tc') {
     for (const c of pass.tc) {
       if (!c.ts) { stats.errors++; continue; }
-      const cur = {};
-      for (const k of TOKEN_KEYS) cur[k] = nat(num(c.total[k]));
-      if (!st.tcLast && st.baseline) {
-        st.tcLast = cur; // joined mid-file: the counter's history is not ours to bill
-        continue;
-      }
-      const prev = st.tcLast || ZERO_TOTAL;
-      const restarted = cur.input_tokens + cur.output_tokens < prev.input_tokens + prev.output_tokens;
-      const delta = {};
-      let any = false;
-      for (const k of TOKEN_KEYS) {
-        delta[k] = restarted ? cur[k] : Math.max(cur[k] - prev[k], 0);
-        if (delta[k]) any = true;
-      }
-      st.tcLast = cur;
-      if (!any) continue;
-      out.push(codexEvent(st, scope, c.ts, c.model, delta, `${st.threadId}:tc:${++st.tcIndex}`));
+      const delta = tcAdvance(st, c.total);
+      if (delta) out.push(codexEvent(st, scope, c.ts, c.model, delta, `${st.threadId}:tc:${++st.tcIndex}`));
     }
   } else if (st.mode === 'tur') {
     for (const c of pass.tur) {
@@ -395,17 +416,18 @@ function primeCodexMeta(path, st) {
 // Decides where reading starts. Returns { entry, skip }.
 function planFile(f, stat, state, ctx) {
   const prior = state.files[f.path];
-  const mtimeAge = Date.now() - stat.mtimeMs;
   if (ctx.opts.backfill) {
-    if (ctx.opts.since && mtimeAge > ctx.opts.since * DAY_MS) return { skip: true };
-    return { entry: freshEntry(f.source, stat.size, stat.mtimeMs, 0) };
+    if (ctx.opts.since && Date.now() - stat.mtimeMs > ctx.opts.since * DAY_MS) return { skip: true };
+    const e = freshEntry(f.source, stat.size, stat.mtimeMs, 0);
+    if (prior && prior.mode) e.mode = prior.mode; // keep the mode an earlier run settled on
+    return { entry: e };
   }
   if (prior && stat.size >= prior.offset) {
     if (prior.size === stat.size && prior.mtimeMs === stat.mtimeMs) return { skip: true };
     return { entry: structuredClone(prior) };
   }
   if (prior) return { entry: freshEntry(f.source, stat.size, stat.mtimeMs, 0) }; // truncated or replaced
-  if (ctx.fresh && mtimeAge > (ctx.opts.since || 7) * DAY_MS) {
+  if (ctx.bootstrapping && stat.mtimeMs < state.bootstrap_cutoff_ms) {
     const e = freshEntry(f.source, stat.size, stat.mtimeMs, stat.size);
     if (f.source === 'codex') {
       e.threadId = threadIdOf(f.path);
@@ -491,7 +513,10 @@ async function replaySidecar(cfg, state) {
 // ── main run ────────────────────────────────────────────────────────────────────────────────────
 async function run(opts, cfg) {
   const { state, fresh } = loadState(cfg.stateFile);
-  const ctx = { opts, fresh };
+  // The first-run 7-day rule outlives a failed first run: the cutoff is persisted and applies to
+  // every file not yet in state until one run finishes clean.
+  if (fresh) state.bootstrap_cutoff_ms = Date.now() - (opts.since || 7) * DAY_MS;
+  const ctx = { opts, fresh, bootstrapping: !state.bootstrapped };
   const queues = { claude_code: [], codex: [] };
   const live = !opts.dryRun;
   const fileCount = { claude_code: 0, codex: 0 };
@@ -541,6 +566,7 @@ async function run(opts, cfg) {
       }
       const before = entry.offset;
       try {
+        if (f.source === 'codex' && entry.baseline && stat.size > entry.offset) codexReplayBaseline(f.path, entry);
         if (f.source === 'claude_code') {
           if (!entry.sessionId) entry.sessionId = basename(f.path, '.jsonl');
           entry.offset = readLines(f.path, entry.offset, (line) => claudeLine(line, entry, out, f.path));
@@ -566,6 +592,7 @@ async function run(opts, cfg) {
   }
 
   if (live) {
+    if (!failure) state.bootstrapped = true;
     for (const p of Object.keys(state.files)) if (!existsSync(p)) delete state.files[p];
     saveState(cfg.stateFile, state);
   }
