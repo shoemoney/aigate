@@ -109,7 +109,7 @@ The folder also includes an [interactive gallery](docs/screenshots/live-2026-09-
 | **Account selection** | Use it or lose it: of the accounts under the cutoff, the one whose **weekly window resets soonest** is picked first, so quota that is about to expire is spent before quota that carries over. Accounts with nothing spent this week (no weekly reset yet) come after; ties go to the lowest worst-window usage. Skips disabled, parked, and over-cutoff accounts, and recovers eligibility as limits reset. The default cutoff is 95%. |
 | **Usage polling** | Reads real five-hour and seven-day rate-limit utilization every ten minutes. Unchecked usage is shown as unknown rather than a fabricated zero. |
 | **Codex (ChatGPT) accounts** | Accounts carry a `kind` (`claude` or `codex`); the two pools never mix in selection. A Codex row stores the whole `auth.json` encrypted, polls `wham/usage` for real 5h and weekly utilization, and refreshes its own OAuth tokens late and server-side. See [Codex accounts](#codex-chatgpt-accounts). |
-| **Provider registry** | A 65-provider catalog, add-key controls, bulk import, normalized key intake, liveness probes where supported, and masked key hints. |
+| **Provider registry** | A 67-provider catalog, add-key controls, bulk import, normalized key intake, liveness probes where supported, and masked key hints. |
 | **API-key proxy** | Anthropic Messages, OpenAI Chat Completions, and Responses endpoints with provider routing, server-side key injection, streaming, and audited key failover. |
 | **Client integration** | The `ai` front door runs the official `claude` or `codex` binary on the account aigate picks (soonest weekly reset with headroom left), parks exhausted accounts, and retries with the next eligible one. Global overload responses retry the same account. `ai usage` prints every account's live meters. |
 | **Live interface** | WebSocket updates, interactive usage charts, account and key management, a filtered activity feed, responsive navigation, and the shared token background. |
@@ -337,7 +337,7 @@ The repo includes a Claude Code **skill** at [`.claude/skills/add-key/`](.claude
                   or pull a key at runtime (GET /api/keys/:provider)
 ```
 
-It knows the auth flow (source `~/.claude/aigate/env`), the 65-provider catalog, and the add / list / fetch / rotate routes. Distribute it fleet-wide by dropping it in `~/.claude/skills/` on each box — every Claude then knows how to reach the vault.
+It knows the auth flow (source `~/.claude/aigate/env`), the 67-provider catalog, and the add / list / fetch / rotate routes. Distribute it fleet-wide by dropping it in `~/.claude/skills/` on each box — every Claude then knows how to reach the vault.
 
 > [!TIP]
 > **"Unable to connect to API"?** A stale `ANTHROPIC_BASE_URL` silently hijacks
@@ -424,7 +424,7 @@ Use `Authorization: Bearer $AIGATE_TOKEN` for machine clients. The dashboard use
 | `POST` | `/api/events/usage` | set an account's 5h/7d % — the **client statusline-feed** path (the server-side poller writes usage straight to the DB); **404 on unknown account** |
 | `POST` | `/api/events/limit` | `{account, minutes?}` — **TTL-park** an over-limit account (default **15m**, `minutes` clamped 1–360; real usage untouched, auto-unparks when the TTL passes); **404 on unknown account** |
 | `POST` | `/api/events/prompt` | log a prompt `{account, host, cwd, model, prompt}` |
-| `GET` | `/api/providers` | the 65-provider catalog (id, name, key prefix, base URL) |
+| `GET` | `/api/providers` | the 67-provider catalog (id, name, key prefix, base URL) |
 | `GET` / `POST` | `/api/keys` | list (**no secrets**, `first8…last4` hints, `stale` flag) / add `{provider, key, label}` — **sanitized**: trims + un-quotes, **400** on `export`/`NAME=` pastes, provider lowercased, non-fatal `warning` for uncataloged providers **or a key that doesn't match the catalog prefix** |
 | `POST` | `/api/keys/import` | **bulk import** `[{provider,key,label}]` (or `{keys:[…]}`) — one result row per key so a bad entry doesn't sink the batch (max 200) |
 | `GET` | `/api/keys/:provider?exclude=` | newest working key for a provider (audited; name normalized — `BRAVE ` finds `brave`); `exclude=<hint>` skips a just-failed key and serves the next |

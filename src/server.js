@@ -897,7 +897,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, tok.startsWith('sk-ant-') ? { ok: true }
         : { ok: true, warning: "doesn't look like a setup token (sk-ant-…)" });
     }
-    // --- provider catalog (~60 providers) for the add-key dropdown ---
+    // --- provider catalog (see src/providers.js) for the add-key dropdown ---
     if (p === '/api/providers' && req.method === 'GET')
       return json(res, 200, PROVIDERS);
 
