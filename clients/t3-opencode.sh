@@ -16,8 +16,10 @@ AIGATE_DIR="$HOME/.claude/aigate"
 CACHE="$AIGATE_DIR/qwencloud-key"
 key=""
 if [ -n "${AIGATE_URL:-}" ] && [ -n "${AIGATE_TOKEN:-}" ]; then
-  key="$(curl -s -m8 -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL/api/keys/qwencloud" \
+  AUTHF="$(/usr/bin/mktemp)" && chmod 600 "$AUTHF" && printf 'Authorization: Bearer %s\n' "$AIGATE_TOKEN" > "$AUTHF"   # header file keeps the bearer out of argv
+  key="$(curl -s -m8 -H "@$AUTHF" "$AIGATE_URL/api/keys/qwencloud" \
     | python3 -c 'import sys,json;print(json.load(sys.stdin).get("key",""))' 2>/dev/null)" || true
+  rm -f "$AUTHF"
 fi
 if [ -n "$key" ]; then
   umask 077; printf '%s' "$key" > "$CACHE.$$" && mv -f "$CACHE.$$" "$CACHE"
