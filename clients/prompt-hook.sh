@@ -4,7 +4,7 @@
 #   "hooks": { "UserPromptSubmit": [ { "hooks": [
 #     { "type": "command", "command": "bash ~/.claude/aigate/prompt-hook.sh" } ] } ] }
 # Runs LOCALLY on the official client; aigate is never in Anthropic's path.
-# Hooks fire for ALL claude sessions but only cc exports AIGATE_*; fail-open.
+# Hooks fire for ALL claude sessions but only the ai launcher (and the T3/cmux launchers) export AIGATE_*; fail-open.
 [ -n "${AIGATE_URL:-}" ] || { set -a; . "$HOME/.claude/aigate/env" 2>/dev/null; set +a; }
 in="$(cat)"
 # Detach the child's stdio (>/dev/null 2>&1) so it does NOT hold this hook's inherited
@@ -31,7 +31,7 @@ except Exception:
 PY
 # Per-turn account re-evaluation (backgrounded, fail-open). Re-checks the CURRENT
 # account's headroom EVERY turn; if it's exhausted, parks it server-side NOW so every
-# selection — other hosts, this session's next `--continue` relaunch, headless `cc -p`
+# selection — other hosts, this session's next `--continue` relaunch, headless `ai -p`
 # calls — reroutes to a fresh account immediately, not only when this session exits.
 # Cheap cached read first; only pay for a live refresh when already near the cap (≥85,
 # same threshold as aigate-run.sh's supervise loop). aigate stays a SELECTOR: this only
@@ -46,7 +46,7 @@ def call(method, path, timeout):
                  "content-type": "application/json"})
     return urllib.request.urlopen(req, timeout=timeout).read()
 try:
-    acct = os.environ.get("AIGATE_ACCOUNT", "")   # only cc-launched sessions set this
+    acct = os.environ.get("AIGATE_ACCOUNT", "")   # only ai/T3/cmux-launched sessions set this
     if not acct:
         raise SystemExit
     me = next((a for a in json.loads(call("GET", "/api/accounts", 4))

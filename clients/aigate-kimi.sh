@@ -7,12 +7,12 @@
 # endpoint via ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN. Still the real binary, your
 # own provider key, no proxy, no relay, no forged headers.
 #
-#   env:   AIGATE_URL, AIGATE_TOKEN (sourced by cc from ~/.claude/aigate/env)
+#   env:   AIGATE_URL, AIGATE_TOKEN (sourced by ai from ~/.claude/aigate/env)
 #   opt:   CC_KIMI_MODEL (default k3), CC_KIMI_FAST_MODEL (default kimi-for-coding-highspeed),
 #          CC_KIMI_BASE_URL (default https://api.kimi.com/coding),
 #          CC_KIMI_CONTEXT_TOKENS (default: per-model, from the table below)
-#   usage: cc kimi [claude args...]        e.g.  cc kimi -p "explain this repo"
-#          cc --model kimi [claude args...]   (same thing, --model-style selection)
+#   usage: ai kimi [claude args...]        e.g.  ai kimi -p "explain this repo"
+#          ai --model kimi [claude args...]   (same thing, --model-style selection)
 #
 # Also the terminal fallback aigate-run.sh execs into once every Claude account
 # is out of headroom — see fallback_to_kimi there.

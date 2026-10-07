@@ -2,7 +2,7 @@
 # Claude Code statusLine → render a line AND report this account's rate-limit
 # usage to aigate (so idle-ish accounts stay fresh from real use).
 # settings.json: "statusLine": { "type": "command", "command": "bash ~/.claude/aigate/statusline-feed.sh" }
-# Hooks fire for ALL claude sessions but only cc exports AIGATE_*; fail-open.
+# Hooks fire for ALL claude sessions but only the ai launcher (and the T3/cmux launchers) export AIGATE_*; fail-open.
 [ -n "${AIGATE_URL:-}" ] || { set -a; . "$HOME/.claude/aigate/env" 2>/dev/null; set +a; }
 input="$(cat)"
 python3 - "$input" <<'PY'
