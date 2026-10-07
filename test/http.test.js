@@ -7,6 +7,7 @@ import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readdirSync, re
 import { DatabaseSync } from 'node:sqlite';
 import { connect } from 'node:net';
 import WebSocket from 'ws';
+import vm from 'node:vm';
 
 // Isolate this run onto a throwaway DB + token BEFORE importing server.js.
 // process.env takes precedence over any repo .env (Node does not override
@@ -1518,4 +1519,112 @@ test('non-object JSON bodies (null, "str", 42) never 5xx an authenticated POST r
   }
   const r = await fetch(base + '/api/keys/import', { method: 'POST', headers: H, body: JSON.stringify([{ provider: 'nullbodytest', key: 'sk-nullbody-0123456789abcdef' }]) });
   assert.ok(r.status < 400, `array import -> ${r.status}`);
+});
+
+// --- nextPicks parity: the dashboard's client-side "Next pick" star must agree with the server ---
+// public/index.html's nextPicks() re-implements pickRanked's WHERE/ORDER BY (src/server.js); the
+// project rule is that they change together. Run the REAL inline Vue app in a vm (Vue.createApp
+// stubbed to capture the options) against the REAL /api/accounts rows, and compare its pick with
+// GET /api/select?dry=1 for every ORDER BY tier.
+function loadDashboardOptions() {
+  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  const script = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])
+    .find((s) => /Vue\.createApp\(/.test(s));
+  assert.ok(script, 'inline Vue.createApp script found in public/index.html');
+  let captured = null;
+  const el = () => ({ addEventListener() {}, setAttribute() {}, hidden: false, textContent: '', value: '', type: 'password',
+    focus() {}, scrollIntoView() {}, firstElementChild: { className: '' }, lastElementChild: { textContent: '' }, style: {}, clientWidth: 800 });
+  const sandbox = {
+    console, setTimeout, clearTimeout, setInterval, clearInterval, URLSearchParams, AbortSignal, Date, Math, Number, JSON,
+    Promise, Array, Object, String, Boolean, Error, RegExp, Map, Set, Symbol, parseInt, parseFloat, isNaN, isFinite, confirm: () => false,
+    document: { getElementById: el, title: '' },
+    location: { hash: '', search: '', protocol: 'http:', host: 'x', replace() {} },
+    localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+    fetch: () => new Promise(() => {}),                       // never settles: boot never runs
+    WebSocket: function () { return { close() {} }; },
+    CustomEvent: function () {}, matchMedia: () => ({ matches: false }),
+    ResizeObserver: function () { return { observe() {}, disconnect() {} }; },
+    Vue: { createApp(o) { captured = o; return { config: {}, mount() { return {}; } }; } },
+  };
+  sandbox.window = sandbox; sandbox.globalThis = sandbox; sandbox.self = sandbox;
+  sandbox.AIGateSession = { token: '' }; sandbox.aigateLoginMessage = () => {};
+  sandbox.addEventListener = () => {}; sandbox.dispatchEvent = () => {};
+  vm.createContext(sandbox);
+  vm.runInContext(script, sandbox, { filename: 'public/index.html#vue' });
+  assert.ok(captured, 'Vue.createApp was called');
+  return captured;
+}
+
+test('nextPicks parity: dashboard Next-pick star matches /api/select?dry=1 across every ORDER BY tier', async () => {
+  const opts = loadDashboardOptions();
+  const dashboardPicks = (accounts) => {
+    const self = { ...opts.data(), ...opts.methods };
+    for (const [k, fn] of Object.entries(opts.computed || {}))
+      Object.defineProperty(self, k, { get() { return fn.call(self); }, configurable: true });
+    self.accounts = accounts; self.cutoff = 95;               // server CUTOFF default
+    return self.nextPicks;
+  };
+  const now = Math.floor(Date.now() / 1000);
+  const FUT = (h) => now + h * 3600;
+  const ago = (s) => new Date(Date.now() - s * 1000).toISOString().slice(0, 19).replace('T', ' ');
+  // account, pcts, seven_day_reset, usage_updated(secs ago | null), extras  -> expected winner named per scenario
+  const row = (account, five, seven, reset, polledAgo, extra = {}) => ({ account, five, seven, reset, upd: polledAgo == null ? null : ago(polledAgo), ...extra });
+  const scenarios = [
+    ['unpolled sorts last, even with the soonest reset and 0%', [
+      row('unpolled', 0, 0, FUT(1), null), row('polled', 50, 50, FUT(100), 60)], 'polled'],
+    ['future weekly reset beats no reset and a past reset', [
+      row('no-reset', 0, 0, null, 60), row('past-reset', 0, 0, now - 3600, 60), row('future-reset', 80, 80, FUT(120), 60)], 'future-reset'],
+    ['soonest future reset wins over lower usage', [
+      row('later', 5, 5, FUT(150), 60), row('sooner', 70, 70, FUT(10), 60)], 'sooner'],
+    ['same reset: lowest worst-window usage wins', [
+      row('hot', 40, 60, FUT(24), 60), row('cool', 30, 20, FUT(24), 60)], 'cool'],
+    ['same reset and usage: stalest usage_updated wins', [
+      row('fresh', 10, 10, FUT(24), 5), row('stale', 10, 10, FUT(24), 500)], 'stale'],
+    ['no reset anywhere: usage tie-break decides', [
+      row('r-hi', 30, 30, null, 60), row('r-lo', 10, 10, null, 60)], 'r-lo'],
+    ['over-cutoff account is skipped despite the soonest reset', [
+      row('maxed', 99, 1, FUT(1), 60), row('ok', 20, 20, FUT(100), 60)], 'ok'],
+    ['parked, reauth and disabled accounts are skipped', [
+      row('parked', 0, 0, FUT(1), 60, { parked_until: ago(-3600) }), row('reauth', 0, 0, FUT(1), 60, { reauth_needed: 1 }),
+      row('off', 0, 0, FUT(1), 60, { disabled: 1 }), row('live', 60, 60, FUT(100), 60)], 'live'],
+    ['everything over cutoff: no pick on either side', [row('full', 100, 100, FUT(1), 60)], undefined],
+  ];
+  const codexOnly = [
+    ['codex: expired access token is skipped', [
+      row('expired', 0, 0, FUT(1), 60, { token_exp: now - 60 }), row('fresh-tok', 50, 50, FUT(100), 60, { token_exp: FUT(5) })], 'fresh-tok'],
+    ['codex: refresh_unknown is skipped', [
+      row('unknown', 0, 0, FUT(1), 60, { refresh_unknown: 1 }), row('known', 50, 50, FUT(100), 60)], 'known'],
+  ];
+
+  const cols = db.prepare('PRAGMA table_info(accounts)').all().map((c) => c.name);
+  const saved = db.prepare('SELECT * FROM accounts').all();
+  const ins = db.prepare(`INSERT INTO accounts (account, token_enc, kind, five_hour_pct, seven_day_pct, seven_day_reset, usage_updated, token_exp, parked_until, reauth_needed, disabled, refresh_unknown)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const seed = (kind, rows) => rows.forEach((r) => ins.run(`${kind}-${r.account}`, 'x', kind, r.five, r.seven, r.reset, r.upd,
+    r.token_exp ?? null, r.parked_until ?? null, r.reauth_needed ?? 0, r.disabled ?? 0, r.refresh_unknown ?? 0));
+  const picked = async (kind) => {
+    const r = await fetch(base + `/api/select?host=t&dry=1&kind=${kind}`, { headers: H });
+    return r.status === 200 ? (await r.json()).account : undefined;
+  };
+  try {
+    for (const kind of ['claude', 'codex']) {
+      for (const [name, rows, winner] of [...scenarios, ...(kind === 'codex' ? codexOnly : [])]) {
+        db.prepare('DELETE FROM accounts').run();
+        seed(kind, rows);
+        const list = await (await fetch(base + '/api/accounts', { headers: H })).json();
+        const want = winner === undefined ? undefined : `${kind}-${winner}`;
+        assert.equal(await picked(kind), want, `server pick — ${kind}: ${name}`);
+        assert.equal(dashboardPicks(list)[kind], want, `dashboard nextPicks — ${kind}: ${name}`);
+      }
+    }
+    // the two pools never mix: a codex account must not steal the claude star
+    db.prepare('DELETE FROM accounts').run();
+    seed('codex', [row('only', 0, 0, FUT(1), 60)]);
+    assert.equal(dashboardPicks(await (await fetch(base + '/api/accounts', { headers: H })).json()).claude, undefined);
+    assert.equal(await picked('claude'), undefined);
+  } finally {
+    db.prepare('DELETE FROM accounts').run();
+    const put = db.prepare(`INSERT INTO accounts (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`);
+    for (const r of saved) put.run(...cols.map((c) => r[c]));
+  }
 });
