@@ -577,6 +577,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 // Returns { error } (400-worthy) OR { ok, provider, hint, warning }. warning is non-fatal
 // (unknown provider, or key not matching the catalog prefix) — the caller still 200s.
 function vaultOneKey(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { error: 'entry must be an object {provider,key,label}' };
+  if (raw.label != null && typeof raw.label !== 'string') return { error: 'label must be a string' };
   const provider = String(raw.provider || '').trim().toLowerCase();
   if (!provider) return { error: 'provider required' };
   if (/[/\s]/.test(provider)) return { error: 'provider cannot contain spaces or slashes' };
@@ -1018,6 +1020,7 @@ const server = http.createServer(async (req, res) => {
       if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       // check .changes like the sibling mutation routes — disabling an unknown/typo'd
       // account used to no-op yet still return {ok:true} + broadcast, hiding the miss.
+      if (!b || typeof b.disabled !== 'boolean') return json(res, 400, { error: 'disabled must be true or false' });
       if (q.setDisabled.run(b.disabled ? 1 : 0, name).changes === 0) return json(res, 404, { error: 'unknown account ' + name });
       logAccess(name, '', reqIp(req), b.disabled ? 'account-disable' : 'account-enable', 'ok');
       broadcast('accounts', q.listAccounts.all());
@@ -1167,6 +1170,8 @@ const server = http.createServer(async (req, res) => {
       // Connection:close — we paused mid-body, so the socket has unread bytes that would
       // poison a keep-alive reuse (ECONNRESET on the NEXT request); close it cleanly.
       if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', connection: 'close' }); return res.end(JSON.stringify({ error: 'payload too large' })); }
+      for (const f of ['account', 'host', 'cwd', 'model'])
+        if (b[f] != null && typeof b[f] !== 'string') return json(res, 400, { error: f + ' must be a string' });
       // store scrubbed + truncated: every read already substr's to 400 — never retain full prompts
       const prompt = scrub(b.prompt).slice(0, 400);
       q.insReq.run(b.account || '', shortHost(b.host), reqIp(req), b.cwd || '', b.model || '', prompt, b.tokens ?? null);

@@ -952,7 +952,7 @@ test('POST /api/accounts rejects a name containing a slash (path-safety, bug B11
 });
 test('POST /api/accounts/:name/disabled on an unknown account → 404, not a silent ok (bug B11)', async () => {
   const r = await fetch(base + '/api/accounts/nope-not-here/disabled', { method: 'POST', headers: H,
-    body: JSON.stringify({ disabled: 1 }) });
+    body: JSON.stringify({ disabled: true }) });
   assert.equal(r.status, 404);
 });
 test('PATCH /api/accounts/:name — rename keeps label + token, label-only keeps name', async () => {
@@ -1655,4 +1655,18 @@ test('nextPicks parity: dashboard Next-pick star matches /api/select?dry=1 acros
     const put = db.prepare(`INSERT INTO accounts (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`);
     for (const r of saved) put.run(...cols.map((c) => r[c]));
   }
+});
+
+test('body type confusion: bad shapes 400 (or isolate per row) instead of 500', async () => {
+  const post = (path, b) => fetch(base + path, { method: 'POST', headers: H, body: JSON.stringify(b) });
+  const imp = await (await post('/api/keys/import', [null, 42, { provider: 'fal', key: 'abcdefgh12345678WXYZ' }])).json();
+  assert.deepEqual(imp.results.map((r) => r.ok), [false, false, true]);
+  assert.equal((await post('/api/keys', { provider: 'fal', key: 'abcdefgh12345678WXZZ', label: { a: 1 } })).status, 400);
+  assert.equal((await post('/api/keys', { provider: 'fal', key: 'abcdefgh12345678NULL', label: null })).status, 200);
+  for (const f of ['account', 'host', 'cwd', 'model'])
+    assert.equal((await post('/api/events/prompt', { account: 'a', prompt: 'x', [f]: { a: 1 } })).status, 400, f);
+  await post('/api/accounts', { account: 'tc1', setup_token: 'sk-ant-oat01-' + 'x'.repeat(40) });
+  assert.equal((await post('/api/accounts/tc1/disabled', { disabled: 'false' })).status, 400);
+  assert.equal((await post('/api/accounts/tc1/disabled', { disabled: true })).status, 200);
+  assert.equal((await post('/api/accounts/tc1/disabled', { disabled: false })).status, 200);
 });
