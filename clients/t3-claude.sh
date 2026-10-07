@@ -38,10 +38,14 @@ if [ -n "${AIGATE_URL:-}" ] && [ -n "${AIGATE_TOKEN:-}" ]; then
   HOST="$(hostname -s)"
   # -m6 lost to aigate's own 5s sqlite busy_timeout under NAS IO stalls; a miss falls
   # back to keychain auth, which is locked under launchd ("Not logged in"). Retry once.
+  # bearer goes in a mode-600 header file, not argv (visible to any local user via `ps`);
+  # removed before the exec below
+  AUTHF="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/aigate-auth.XXXXXX")" && chmod 600 "$AUTHF" && printf 'Authorization: Bearer %s\n' "$AIGATE_TOKEN" > "$AUTHF"
   for _try in 1 2; do
-    resp="$(/usr/bin/curl -s -m15 -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL/api/select?host=$HOST" 2>/dev/null)" || true
+    resp="$(/usr/bin/curl -s -m15 -H "@$AUTHF" "$AIGATE_URL/api/select?host=$HOST" 2>/dev/null)" || true
     case "$resp" in *setup_token*) break ;; esac
   done
+  rm -f "$AUTHF"
   tok="$(printf '%s' "$resp" | /usr/bin/python3 -c 'import sys,json
 try: print(json.load(sys.stdin).get("setup_token",""))
 except Exception: pass' 2>/dev/null)" || true
