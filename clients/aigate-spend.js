@@ -50,7 +50,9 @@ exit: 0 ok · 2 aigate unreachable / rejected the batch (cursor not advanced) ·
 `;
 
 class Fatal extends Error {}
-class PostFailed extends Error {}
+class PostFailed extends Error {
+  constructor(msg, status) { super(msg); this.status = status; }
+}
 
 const stats = {
   files: 0, changed: 0, scanned: 0, claude: 0, codex: 0, posted: 0, accepted: 0, duplicate: 0,
@@ -460,7 +462,7 @@ async function httpJson(cfg, path, body) {
     }
   }
   const text = await res.text();
-  if (!res.ok) throw new PostFailed(`${path}: HTTP ${res.status} ${text.slice(0, 200)}`);
+  if (!res.ok) throw new PostFailed(`${path}: HTTP ${res.status} ${text.slice(0, 200)}`, res.status);
   try { return JSON.parse(text); } catch { return {}; }
 }
 
@@ -488,6 +490,21 @@ async function postEvents(cfg, source, events, summary) {
   stats.unattributed += nat(r.unattributed);
 }
 
+// A 400 means the server rejected the array over some line in it: halve until the offender is alone,
+// drop it (counted in errors), keep the rest. Transport errors and 5xx still throw.
+async function postSessions(cfg, chunk) {
+  try {
+    await httpJson(cfg, '/api/spend/sessions', { sessions: chunk });
+    stats.sessions += chunk.length;
+  } catch (e) {
+    if (!(e instanceof PostFailed) || e.status !== 400) throw e;
+    if (chunk.length === 1) { stats.errors++; return; }
+    const mid = chunk.length >> 1;
+    await postSessions(cfg, chunk.slice(0, mid));
+    await postSessions(cfg, chunk.slice(mid));
+  }
+}
+
 async function replaySidecar(cfg, state) {
   let size;
   try { size = statSync(cfg.sidecar).size; } catch { return; }
@@ -502,8 +519,7 @@ async function replaySidecar(cfg, state) {
   });
   for (let i = 0; i < sessions.length; i += 1000) {
     const chunk = sessions.slice(i, i + 1000);
-    await httpJson(cfg, '/api/spend/sessions', { sessions: chunk });
-    stats.sessions += chunk.length;
+    await postSessions(cfg, chunk);
   }
   state.sessions_sidecar_offset = end;
   if (end >= size && size > SIDECAR_TRUNCATE_BYTES) {

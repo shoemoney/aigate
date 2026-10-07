@@ -42,6 +42,7 @@ async function mockServer() {
         }
         res.end(JSON.stringify({ accepted, duplicate, rejected: 0, unpriced: 1, unattributed: accepted, errors: [] }));
       } else if (req.url === '/api/spend/sessions') {
+        if (m.rejectSession && body.sessions.some(m.rejectSession)) { res.statusCode = 400; res.end(JSON.stringify({ error: 'bad session' })); return; }
         res.end(JSON.stringify({ upserted: body.sessions.length, resolved: 0 }));
       } else { res.statusCode = 404; res.end('{}'); }
     });
@@ -567,6 +568,34 @@ test('sidecar replay posts new session lines, advances sessions_sidecar_offset, 
     appendFileSync(sidecar, `${JSON.stringify({ ...a, session_id: 'sess-2' })}\n`);
     r = await run(w, mock);
     assert.deepEqual(mock.requests.filter((q) => q.url === '/api/spend/sessions').map((q) => q.body.sessions.map((s) => s.session_id)), [['sess-2']]);
+  } finally { await mock.close(); w.cleanup(); }
+});
+
+test('sidecar replay: one server-rejected (400) line is dropped and counted, the rest and the events still post, offset advances', async () => {
+  const w = world({ claude: false, codex: false }); const mock = await mockServer();
+  try {
+    mock.rejectSession = (s) => s.session_id === 'POISON';
+    const sidecar = join(w.aigateDir, 'spend-sessions.jsonl');
+    const mk = (id) => ({ source: 'claude_code', host: 'testhost', session_id: id, scope: '', account: 'a', kind: 'claude', via: 'hook', ts: '2026-10-06T10:00:00.000Z' });
+    writeFileSync(sidecar, [mk('ok1'), mk('POISON'), mk('ok2')].map((l) => `${JSON.stringify(l)}\n`).join(''));
+    const dir = join(w.claudeRoot, '-home-dev-proj-a');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'sess-p.jsonl'), claudeMsg('msg_P', '2026-10-06T10:00:00.000Z', U(2, 3)));
+    w.touchAll(0);
+    const r = await run(w, mock);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.line, /sessions=2 .*errors=1 /);
+    const ok = mock.requests.filter((q) => q.url === '/api/spend/sessions' && !q.body.sessions.some((s) => s.session_id === 'POISON')).flatMap((q) => q.body.sessions.map((s) => s.session_id));
+    assert.deepEqual(ok, ['ok1', 'ok2']);
+    assert.equal(mock.events().length, 1);
+    assert.equal(JSON.parse(readFileSync(w.state, 'utf8')).sessions_sidecar_offset, readFileSync(sidecar).length);
+
+    // a 5xx still aborts without advancing the offset
+    appendFileSync(sidecar, `${JSON.stringify(mk('later'))}\n`);
+    mock.rejectSession = null; mock.status = 503;
+    const r2 = await run(w, mock);
+    assert.equal(r2.code, 2);
+    assert.ok(JSON.parse(readFileSync(w.state, 'utf8')).sessions_sidecar_offset < readFileSync(sidecar).length);
   } finally { await mock.close(); w.cleanup(); }
 });
 
