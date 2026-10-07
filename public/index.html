@@ -51,7 +51,7 @@ textarea.auth-json{min-height:150px;resize:vertical;font-family:var(--mono);font
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="/#overview" aria-label="AIGate overview"><span class="brand-mark" aria-hidden="true"><i class="fa-solid fa-lock"></i><b>AI</b></span><span><span class="brand-ai">AI</span>Gate</span></a>
-      <nav class="main-nav" aria-label="Main navigation"><a href="/#overview" :class="{active:activeSection==='overview'}" :aria-current="activeSection==='overview'?'page':null"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Overview</a><a href="/#accounts" :class="{active:activeSection==='accounts'}" :aria-current="activeSection==='accounts'?'page':null"><i class="fa-solid fa-user-shield" aria-hidden="true"></i> Accounts</a><a href="/#keys" :class="{active:activeSection==='keys'}" :aria-current="activeSection==='keys'?'page':null"><i class="fa-solid fa-key" aria-hidden="true"></i> API keys</a><a href="/#activity" :class="{active:activeSection==='activity'}" :aria-current="activeSection==='activity'?'page':null"><i class="fa-solid fa-wave-square" aria-hidden="true"></i> Activity</a><a href="/board"><i class="fa-solid fa-list-check" aria-hidden="true"></i> Task board</a></nav>
+      <nav class="main-nav" aria-label="Main navigation"><a href="/#overview" :class="{active:activeSection==='overview'}" :aria-current="activeSection==='overview'?'page':null"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Overview</a><a href="/#accounts" :class="{active:activeSection==='accounts'}" :aria-current="activeSection==='accounts'?'page':null"><i class="fa-solid fa-user-shield" aria-hidden="true"></i> Accounts</a><a href="/#keys" :class="{active:activeSection==='keys'}" :aria-current="activeSection==='keys'?'page':null"><i class="fa-solid fa-key" aria-hidden="true"></i> API keys</a><a href="/#spend" :class="{active:activeSection==='spend'}" :aria-current="activeSection==='spend'?'page':null"><i class="fa-solid fa-coins" aria-hidden="true"></i> Spend</a><a href="/#activity" :class="{active:activeSection==='activity'}" :aria-current="activeSection==='activity'?'page':null"><i class="fa-solid fa-wave-square" aria-hidden="true"></i> Activity</a><a href="/board"><i class="fa-solid fa-list-check" aria-hidden="true"></i> Task board</a></nav>
       <div class="header-actions"><span class="connection" :class="{off:!live}">{{ live?'Live':'Reconnecting' }}</span><button class="btn subtle icon-button" @click="toggleNotifications" :aria-label="notifyOn?'Disable notifications':'Enable notifications'" :aria-pressed="String(notifyOn)"><i class="fa-solid fa-bell" aria-hidden="true"></i></button><button class="btn subtle" @click="logout"><i class="fa-solid fa-lock" aria-hidden="true"></i>Lock</button></div>
     </div>
   </header>
@@ -94,6 +94,32 @@ textarea.auth-json{min-height:150px;resize:vertical;font-family:var(--mono);font
       </div>
     </section>
 
+    <section id="spend" class="workspace-section">
+      <div class="section-head"><div><span class="section-kicker">What the work is worth</span><h2>Spend</h2><p>Four token buckets, kept apart. Subscription value and API-key spend, never blended.</p></div><span class="badge" :class="spendLoading?'dim':'ok'"><i class="fa-solid fa-coins" aria-hidden="true"></i>{{ spendLoading?'Loading':'List-price estimates' }}</span></div>
+      <div class="panel panel-pad empty-state" v-if="spendError"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><div><h3>Spend data unavailable</h3><p>Spend data unavailable: {{ spendError }}</p><button class="btn" @click="loadSpend(true)"><i class="fa-solid fa-rotate" aria-hidden="true"></i>Try again</button></div></div>
+      <template v-else-if="spend">
+        <div class="activity-toolbar"><div class="filter-group" role="group" aria-label="Spend range"><button v-for="r in spendRanges" :key="r.id" class="filter-chip" :class="{active:spendRange===r.id}" @click="setSpendRange(r.id)" :aria-pressed="String(spendRange===r.id)">{{ r.label }}</button></div><div class="filter-group" role="group" aria-label="Group spend by"><button v-for="g in spendGroups" :key="g" class="filter-chip" :class="{active:spendGroup===g}" @click="setSpendGroup(g)" :aria-pressed="String(spendGroup===g)">{{ g }}</button></div></div>
+        <div class="metric-grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
+          <div class="metric"><i class="fa-solid fa-id-card" aria-hidden="true"></i><strong>{{ fmtUsd(spendTotals.value_usd) }}</strong><span>API-equivalent value</span><span class="hint">List price of subscription traffic. Not money paid.</span></div>
+          <div class="metric"><i class="fa-solid fa-credit-card" aria-hidden="true"></i><strong>{{ fmtUsd(spendTotals.spend_usd) }}</strong><span>Spend (API keys, est.)</span><span class="hint">Estimated at list price for key-billed providers.</span></div>
+          <div class="metric"><i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i><strong :title="fmtNum(spendTotals.output_tokens)">{{ fmtCompact(spendTotals.output_tokens) }}</strong><span>Output tokens</span></div>
+          <div class="metric"><i class="fa-solid fa-arrow-down-to-bracket" aria-hidden="true"></i><strong :title="fmtNum(spendTotals.input_tokens)">{{ fmtCompact(spendTotals.input_tokens) }}</strong><span>Input tokens</span></div>
+          <div class="metric"><i class="fa-solid fa-database" aria-hidden="true"></i><strong :title="fmtNum(spendTotals.cache_read_tokens)">{{ fmtCompact(spendTotals.cache_read_tokens) }}</strong><span>Cache read tokens</span></div>
+          <div class="metric"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><strong :title="fmtNum(spendTotals.cache_write_tokens)">{{ fmtCompact(spendTotals.cache_write_tokens) }}</strong><span>Cache write tokens</span><span class="hint">of which 1h: {{ fmtCompact(spendTotals.cache_write_1h_tokens) }}</span></div>
+          <div class="metric" v-if="Number(spendTotals.unknown_usd)>0"><i class="fa-solid fa-circle-question" aria-hidden="true"></i><strong>{{ fmtUsd(spendTotals.unknown_usd) }}</strong><span>Unknown-plan value</span><span class="hint">Priced, but no account is attributed.</span></div>
+        </div>
+        <div class="panel panel-pad" aria-label="Spend data quality">
+          <div class="filter-group"><span v-if="!spendCollectors.length" class="badge crit"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>No collector has ever reported</span><span v-for="c in spendCollectors" :key="c.host+'|'+c.source" class="badge" :class="collectorClass(c)"><i class="fa-solid fa-satellite-dish" aria-hidden="true"></i>{{ c.host }} · {{ c.source }} · updated {{ fmtAge(collectorAge(c)) }} ago</span></div>
+          <p class="hint"><button class="filter-chip" v-if="spendUnpriced.length" @click="spendUnpricedOpen=!spendUnpricedOpen" :aria-expanded="String(spendUnpricedOpen)">{{ fmtNum(spendTotals.unpriced_events) }} events unpriced across {{ spendUnpriced.length }} {{ spendUnpriced.length===1?'model':'models' }}</button><span v-else>{{ fmtNum(spendTotals.unpriced_events) }} events unpriced.</span> <span>{{ fmtNum(spendTotals.unattributed_events) }} events unattributed, shown as "unknown" rather than guessed.</span></p>
+          <ul class="hint" v-if="spendUnpricedOpen"><li v-for="m in spendUnpriced" :key="m.provider+'/'+m.model">{{ m.provider }} / {{ m.model }}: {{ fmtNum(m.events) }} events</li></ul>
+        </div>
+        <div class="panel usage-panel"><div class="section-head"><div><h3>Value and spend over time</h3><p class="hint">Solid bars are subscription value, hatched bars are API-key spend. They sit side by side, never stacked into one total.</p></div></div><div ref="spendChart" class="usage-chart" v-show="spendSeries.length && chartAvailable" role="img" :aria-label="'Spend by '+spendGroup+' over time'"></div><div class="chart-empty" v-if="!spendSeries.length"><i class="fa-solid fa-chart-column" aria-hidden="true"></i><p>No priced events in this range yet.</p></div></div>
+        <div class="panel"><div class="table-scroll"><table><thead><tr><th>{{ spendGroup }}</th><th>Events</th><th>Value</th><th>Spend</th><th>Output</th><th>Input</th><th>Cache read</th><th>Cache write</th></tr></thead><tbody><tr v-for="(g,i) in spendRows" :key="i+'|'+g.label"><td><strong>{{ g.label }}</strong></td><td class="num">{{ fmtNum(g.events) }}</td><td class="num">{{ fmtUsd(g.value_usd) }}</td><td class="num">{{ fmtUsd(g.spend_usd) }}</td><td class="num" :title="fmtNum(g.output_tokens)">{{ fmtCompact(g.output_tokens) }}</td><td class="num" :title="fmtNum(g.input_tokens)">{{ fmtCompact(g.input_tokens) }}</td><td class="num" :title="fmtNum(g.cache_read_tokens)">{{ fmtCompact(g.cache_read_tokens) }}</td><td class="num" :title="fmtNum(g.cache_write_tokens)">{{ fmtCompact(g.cache_write_tokens) }}</td></tr></tbody></table></div></div>
+        <p class="hint">Cache writes on the 1h tier are priced at the 1h rate, so figures run higher than tools that bill every write at the 5m rate.</p>
+      </template>
+      <div class="panel panel-pad empty-state" v-else><i class="fa-solid fa-coins" aria-hidden="true"></i><div><h3>Loading spend</h3><p>Reading the spend ledger.</p></div></div>
+    </section>
+
     <section id="activity" class="workspace-section">
       <div class="section-head"><div><span class="section-kicker">A clear view of everything</span><h2>Live activity</h2><p>Account events and credential access, as they happen.</p></div><span class="connection" :class="{off:!live}">{{ live?'Live connection':'Reconnecting' }}</span></div>
       <div class="activity-layout"><div class="panel"><div class="activity-toolbar"><button class="btn" @click="togglePause" :aria-pressed="String(paused)"><i class="fa-solid" :class="paused?'fa-play':'fa-pause'" aria-hidden="true"></i>{{ paused?'Resume'+(queue.length?' ('+queue.length+')':''):'Pause feed' }}</button><div class="filter-group"><button v-for="a in activityAccounts" :key="a" class="filter-chip" :class="{active:filterAccount===a}" @click="filterAccount=filterAccount===a?'':a" :aria-pressed="String(filterAccount===a)">{{ a }}</button><button class="filter-chip" v-if="filterAccount || filterHost" @click="filterAccount='';filterHost=''">Clear filters</button></div><select v-if="hosts.length" v-model="filterHost" aria-label="Filter activity by host"><option value="">All hosts</option><option v-for="h in hosts" :key="h.host" :value="h.host">{{ h.host || 'Unknown host' }}</option></select></div><div class="activity-feed" role="log" aria-label="Recent activity"><div class="empty-state" v-if="!feedRows.length"><i class="fa-solid fa-wave-square" aria-hidden="true"></i><div><h3>{{ filterAccount || filterHost?'No matching events.':'Listening for your first event.' }}</h3><p>Activity appears here when your accounts and keys are used.</p></div></div><div class="activity-row" v-for="r in feedRows" :key="r.key" :class="{fail:r.fail}"><span class="event-icon"><i class="fa-solid" :class="r.kind==='prompt'?'fa-comment-dots':'fa-key'" aria-hidden="true"></i></span><div><div class="event-title"><strong>{{ r.account || (r.kind==='access'?'Vault access':'AI request') }}</strong><span class="dim">{{ r.host || 'Local' }}</span></div><p class="event-detail">{{ r.model && r.model!=='—'?r.model+' · ':'' }}{{ r.text }}</p></div><span class="event-age">{{ fmtAge((now-r.ts)/1000) }} ago</span></div></div></div><div class="panel host-panel"><h3><i class="fa-solid fa-desktop" aria-hidden="true"></i> By host / device</h3><div class="empty-state" v-if="!hosts.length"><p>Connected hosts appear when they make their first request.</p></div><div class="table-scroll" v-else><table><thead><tr><th>Host</th><th>Requests</th><th>Last seen</th></tr></thead><tbody><tr v-for="h in hosts" :key="h.host"><td>{{ h.host || 'Unknown' }}</td><td class="num">{{ fmtNum(h.requests) }}</td><td>{{ h.last?relTime(h.last):'Not recorded' }}</td></tr></tbody></table></div></div></div>
@@ -131,7 +157,13 @@ const fmtNum=value=>(Number(value)||0).toLocaleString('en-US');
 const kindOf=a=>a&&a.kind==='codex'?'codex':'claude';
 const stampOf=v=>{if(v==null)return 0;const n=Number(v);return Number.isFinite(n)?n:Number(toDate(v))||0;};
 const worstOf=a=>Math.max(Number(a.five_hour_pct)||0,Number(a.seven_day_pct)||0);
-let socket=null,reconnectTimer=0,clockTimer=0,usageChart=null,chartObserver=null,statsTimer=0,eventSequence=0;
+let socket=null,reconnectTimer=0,clockTimer=0,usageChart=null,spendChart=null,spendObserver=null,spendTimer=0,chartObserver=null,statsTimer=0,eventSequence=0;
+const fmtUsd=value=>'$'+(Number(value)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtCompact=value=>{const n=Number(value)||0;const a=Math.abs(n);if(a<1000)return String(Math.round(n));for(const [size,unit] of [[1e12,'T'],[1e9,'B'],[1e6,'M'],[1e3,'K']])if(a>=size)return (n/size).toFixed(a/size>=100?0:a/size>=10?1:2).replace(/(\.\d*?)0+$/,'$1').replace(/\.$/,'')+unit;return String(n);};
+const escHtml=value=>String(value==null?'':value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const SPEND_RANGES=[{id:'24h',label:'24h',ms:864e5,bucket:'hour'},{id:'7d',label:'7d',ms:7*864e5,bucket:'day'},{id:'30d',label:'30d',ms:30*864e5,bucket:'day'}];
+const SPEND_GROUPS=['account','model','project','host','source'];
+const SPEND_COLORS=['#67efd6','#75aefe','#ffc783','#c9a7ff','#ff9bb0','#9be37a','#f0e68c','#7fd3e8','#9ebacc'];
 async function request(path,method='GET',body){
   const headers={};if(body!==undefined)headers['content-type']='application/json';if(window.AIGateSession.token)headers.authorization='Bearer '+window.AIGateSession.token;
   const response=await fetch(path,{method,credentials:'same-origin',headers,body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
@@ -141,7 +173,7 @@ async function request(path,method='GET',body){
 }
 try{
 const app=Vue.createApp({
- data(){return{authed:false,accounts:[],keys:[],hosts:[],providers:[],feed:[],queue:[],paused:false,filterAccount:'',filterHost:'',now:Date.now(),accountsAt:Date.now(),live:false,version:'',activeSection:location.hash.slice(1)||'overview',loadWarning:'',cutoff:95,showAddAccount:false,newAccount:{kind:'claude',name:'',label:'',token:'',authJson:''},accountAdding:false,accountMsg:'',editState:null,editing:false,reauthDrafts:{},refreshing:{},cardMsgs:{},keyDraft:{provider:'',label:'',key:''},keyAdding:false,keyBusy:{},keyQuery:'',keyMsg:'',keySuccess:false,keyWarning:false,dismissed:{},notifyOn:false,toast:'',chartAvailable:!!window.echarts};},
+ data(){return{authed:false,accounts:[],keys:[],hosts:[],providers:[],feed:[],queue:[],paused:false,filterAccount:'',filterHost:'',now:Date.now(),accountsAt:Date.now(),live:false,version:'',activeSection:location.hash.slice(1)||'overview',loadWarning:'',cutoff:95,showAddAccount:false,newAccount:{kind:'claude',name:'',label:'',token:'',authJson:''},accountAdding:false,accountMsg:'',editState:null,editing:false,reauthDrafts:{},refreshing:{},cardMsgs:{},keyDraft:{provider:'',label:'',key:''},keyAdding:false,keyBusy:{},keyQuery:'',keyMsg:'',keySuccess:false,keyWarning:false,dismissed:{},notifyOn:false,toast:'',chartAvailable:!!window.echarts,spend:null,spendError:'',spendLoading:false,spendAt:Date.now(),spendRange:'7d',spendGroup:'account',spendUnpricedOpen:false,spendRanges:SPEND_RANGES,spendGroups:SPEND_GROUPS};},
  computed:{
   claudeAccounts(){return this.accounts.filter(a=>kindOf(a)==='claude');},
   codexAccounts(){return this.accounts.filter(a=>kindOf(a)==='codex');},
@@ -151,6 +183,11 @@ const app=Vue.createApp({
   nextPicks(){const picks={};const now=Date.now()/1000;for(const kind of ['claude','codex']){const pool=this.accounts.filter(a=>kindOf(a)===kind&&this.eligible(a));pool.sort((a,b)=>(Number(a.usage_updated==null)-Number(b.usage_updated==null))||(Number(!(a.seven_day_reset>now))-Number(!(b.seven_day_reset>now)))||((a.seven_day_reset||0)-(b.seven_day_reset||0))||worstOf(a)-worstOf(b)||stampOf(a.usage_updated)-stampOf(b.usage_updated));if(pool.length)picks[kind]=pool[0].account;}return picks;},
   keyRows(){const query=this.keyQuery.trim().toLowerCase();return this.keys.filter(k=>!query||[k.provider,k.label,k.key_hint,k.status].join(' ').toLowerCase().includes(query));},
   providerHint(){const provider=this.providers.find(p=>p.id===this.keyDraft.provider);return provider?provider.name+(provider.prefix?' keys usually begin with '+provider.prefix:''):this.keyDraft.provider?'Custom providers are supported.':'';},
+  spendTotals(){return this.spend&&this.spend.totals||{};},
+  spendRows(){return this.spend&&Array.isArray(this.spend.groups)?this.spend.groups:[];},
+  spendSeries(){return this.spend&&Array.isArray(this.spend.series)?this.spend.series:[];},
+  spendCollectors(){return this.spend&&Array.isArray(this.spend.collectors)?this.spend.collectors:[];},
+  spendUnpriced(){const list=this.spendTotals.unpriced_models;return Array.isArray(list)?list:[];},
   activityAccounts(){return [...new Set(this.feed.map(r=>r.account).filter(Boolean))].sort();},
   feedRows(){return this.feed.filter(r=>(!this.filterAccount||r.account===this.filterAccount)&&(!this.filterHost||r.host===this.filterHost));},
   alerts(){const alerts=[];for(const a of this.accounts){if(a.reauth_needed)alerts.push({id:'auth:'+a.account,text:kindOf(a)==='codex'?a.account+' needs a fresh login to resume access. Re-import its login: run `ai codex adopt` on a box logged into that ChatGPT account.':a.account+' needs a new setup token to resume access.',href:'#accounts'});else if(this.ageOf(a)>1500)alerts.push({id:'stale:'+a.account,text:a.account+' has not reported recent usage. Refresh the account to check its status.',href:'#accounts'});}for(const k of this.keys)if(k.status==='dead')alerts.push({id:'key:'+k.id,text:k.provider+(k.label?' / '+k.label:'')+' failed its last key check.',href:'#keys'});return alerts.filter(a=>!this.dismissed[a.id]);},
@@ -159,6 +196,43 @@ const app=Vue.createApp({
  watch:{accounts:{deep:true,handler(){this.$nextTick(()=>this.drawChart());}}},
  methods:{
   fmtAge,fmtNum,worstOf,kindOf,
+  fmtUsd,fmtCompact,
+  collectorAge(c){return Number(c.age_s||0)+(this.now-this.spendAt)/1000;},
+  collectorClass(c){const age=this.collectorAge(c);return age<2700?'ok':age<10800?'warn':'crit';},
+  setSpendRange(id){if(this.spendRange===id)return;this.spendRange=id;this.loadSpend(true);},
+  setSpendGroup(id){if(this.spendGroup===id)return;this.spendGroup=id;this.loadSpend(true);},
+  async loadSpend(force){
+    if(!this.authed||this.spendLoading&&!force)return;
+    const range=SPEND_RANGES.find(r=>r.id===this.spendRange)||SPEND_RANGES[1];const to=new Date();const from=new Date(to.getTime()-range.ms);
+    const query='from='+encodeURIComponent(from.toISOString())+'&to='+encodeURIComponent(to.toISOString())+'&bucket='+range.bucket+'&group='+this.spendGroup+'&top=8';
+    const stamp=this.spendStamp=(this.spendStamp||0)+1;this.spendLoading=true;
+    try{const data=await request('/api/spend?'+query);if(stamp!==this.spendStamp||!this.authed)return;this.spend=data;this.spendError='';this.spendAt=Date.now();await this.$nextTick();this.drawSpendChart();}
+    catch(error){if(stamp!==this.spendStamp)return;if(this.checkError(error))return;this.spend=null;this.spendError=error.status===404?'this server has no spend endpoint yet (404).':error.message;}
+    finally{if(stamp===this.spendStamp)this.spendLoading=false;}
+  },
+  startSpendTimer(){clearInterval(spendTimer);spendTimer=setInterval(()=>{if(this.authed&&this.activeSection==='spend'&&!document.hidden)this.loadSpend();},300000);},
+  drawSpendChart(){
+    if(!this.authed||!this.spend||!window.echarts||!this.$refs.spendChart||!this.spendSeries.length)return;
+    try{const element=this.$refs.spendChart;if(spendChart&&spendChart.getDom()!==element){spendObserver?.disconnect();spendChart.dispose();spendChart=null;}
+    if(!spendChart){spendChart=echarts.init(element,null,{renderer:'canvas'});spendObserver=new ResizeObserver(()=>spendChart?.resize());spendObserver.observe(element);}
+    const idOf=(key,other)=>other?'\u0000other':key==null?'\u0000unknown':String(key);
+    const groups=this.spendRows.map(g=>({id:idOf(g.key,g.is_other),label:g.label||(g.key==null?'unknown':String(g.key))}));
+    const known=new Set(groups.map(g=>g.id));
+    const rows=new Map();const buckets=[];
+    for(const r of this.spendSeries){let id=idOf(r.key,r.is_other||r.key==='other');if(!known.has(id)){id='\u0000other';if(!known.has(id)){known.add(id);groups.push({id,label:'other'});}}
+      if(!buckets.includes(r.bucket))buckets.push(r.bucket);const k=r.bucket+'\u0001'+id;const t=rows.get(k)||{value_usd:0,spend_usd:0,events:0,input_tokens:0,output_tokens:0,cache_read_tokens:0,cache_write_tokens:0};
+      for(const f of Object.keys(t))t[f]+=Number(r[f])||0;rows.set(k,t);}
+    buckets.sort();const mobile=element.clientWidth<500;
+    const series=[];groups.forEach((g,i)=>{const color=SPEND_COLORS[i%SPEND_COLORS.length];
+      series.push({name:g.label+' · value',type:'bar',stack:'value',data:buckets.map(b=>(rows.get(b+'\u0001'+g.id)||{}).value_usd||0),itemStyle:{color},emphasis:{focus:'series'}});
+      series.push({name:g.label+' · spend',type:'bar',stack:'spend',data:buckets.map(b=>(rows.get(b+'\u0001'+g.id)||{}).spend_usd||0),itemStyle:{color,decal:{symbol:'rect',color:'#0b2130',dashArrayX:[1,0],dashArrayY:[2,4],rotation:Math.PI/4}},emphasis:{focus:'series'}});});
+    const tip=params=>{const bucket=params[0]&&params[0].axisValue;let html='<strong>'+escHtml(bucket)+'</strong>';
+      groups.forEach(g=>{const t=rows.get(bucket+'\u0001'+g.id);if(!t||!(t.value_usd||t.spend_usd||t.events))return;
+        html+='<div style="margin-top:8px"><strong>'+escHtml(g.label)+'</strong> · value '+fmtUsd(t.value_usd)+' · spend '+fmtUsd(t.spend_usd)+'<br>output '+fmtCompact(t.output_tokens)+' · input '+fmtCompact(t.input_tokens)+' · cache read '+fmtCompact(t.cache_read_tokens)+' · cache write '+fmtCompact(t.cache_write_tokens)+'</div>';});
+      return html;};
+    spendChart.setOption({animation:!matchMedia('(prefers-reduced-motion: reduce)').matches,backgroundColor:'transparent',textStyle:{fontFamily:'-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',fontSize:16},aria:{enabled:true},tooltip:{trigger:'axis',confine:true,backgroundColor:'#092236',borderColor:'#4b7187',textStyle:{color:'#eef8fc',fontSize:16},formatter:tip},legend:{bottom:0,left:0,type:'scroll',textStyle:{color:'#c0d6e3',fontSize:16}},grid:{top:16,right:15,bottom:70,left:mobile?60:80,containLabel:false},xAxis:{type:'category',data:buckets,axisLabel:{fontSize:16,color:'#9ebacc'},axisTick:{show:false}},yAxis:{type:'value',axisLabel:{fontSize:16,color:'#9ebacc',formatter:value=>'$'+fmtCompact(value)},splitLine:{lineStyle:{color:'#789cb522'}}},series},true);
+    element.style.height='360px';spendChart.resize();}catch(error){console.warn('AIGate spend chart unavailable',error);}
+  },
   kindLabel(a){return kindOf(a)==='codex'?'Codex'+(a.plan?' · '+a.plan:''):'Claude';},
   showFiveHour(a){return kindOf(a)!=='codex'||!!a.five_hour_reset;},
   eligible(a){if(a.disabled||a.parked||a.reauth_needed||!a.has_token||worstOf(a)>=this.cutoff)return false;return kindOf(a)!=='codex'||(!a.refresh_unknown&&(a.token_exp==null||a.token_exp>Date.now()/1000));},
@@ -175,15 +249,15 @@ const app=Vue.createApp({
   accountStatus(a){if(a.disabled)return{text:'Paused',cls:'dim'};if(a.reauth_needed)return{text:'Needs auth',cls:'crit'};if(a.parked)return{text:'Parked',cls:'warn'};if(!a.has_token)return{text:'No token',cls:'warn'};if(kindOf(a)==='codex'){if(a.refresh_unknown)return{text:'Refresh halted',cls:'crit'};if(a.token_exp!=null&&a.token_exp<=Date.now()/1000)return{text:'Token expired',cls:'warn'};}if(worstOf(a)>=this.cutoff)return{text:'At limit',cls:'warn'};return{text:'Ready',cls:'ok'};},
   showToast(message){this.toast=message;clearTimeout(this.toastTimer);this.toastTimer=setTimeout(()=>this.toast='',4500);},
   checkError(error){if(error.status===401){this.lockLocally();window.aigateLoginMessage('Your session expired. Sign in again.');return true;}return false;},
-  suspendWorkspace(){clearTimeout(reconnectTimer);clearInterval(clockTimer);clearTimeout(statsTimer);chartObserver?.disconnect();chartObserver=null;usageChart?.dispose();usageChart=null;if(socket){socket.onclose=null;socket.close();socket=null;}this.live=false;},
-  lockLocally(){this.authed=false;this.suspendWorkspace();window.aigateLoginMessage('');this.newAccount={kind:'claude',name:'',label:'',token:'',authJson:''};this.keyDraft={provider:'',label:'',key:''};this.editState=null;this.reauthDrafts={};this.accounts=[];this.keys=[];this.hosts=[];this.feed=[];this.queue=[];this.cardMsgs={};this.accountMsg='';this.keyMsg='';this.keyWarning=false;this.keySuccess=false;this.toast='';this.showAddAccount=false;this.dismissed={};this.loadWarning='';this.paused=false;this.filterAccount='';this.filterHost='';const password=document.getElementById('tok');password.value='';password.type='password';const toggle=document.getElementById('password-toggle');toggle.setAttribute('aria-pressed','false');toggle.setAttribute('aria-label','Show password');toggle.firstElementChild.className='fa-solid fa-eye';document.getElementById('app').hidden=true;document.getElementById('login').hidden=false;document.title='AIGate · Your AI, under control';password.focus();},
+  suspendWorkspace(){clearTimeout(reconnectTimer);clearInterval(clockTimer);clearTimeout(statsTimer);clearInterval(spendTimer);spendObserver?.disconnect();spendObserver=null;spendChart?.dispose();spendChart=null;chartObserver?.disconnect();chartObserver=null;usageChart?.dispose();usageChart=null;if(socket){socket.onclose=null;socket.close();socket=null;}this.live=false;},
+  lockLocally(){this.authed=false;this.suspendWorkspace();window.aigateLoginMessage('');this.newAccount={kind:'claude',name:'',label:'',token:'',authJson:''};this.keyDraft={provider:'',label:'',key:''};this.editState=null;this.reauthDrafts={};this.accounts=[];this.keys=[];this.hosts=[];this.feed=[];this.queue=[];this.spend=null;this.spendError='';this.spendUnpricedOpen=false;this.cardMsgs={};this.accountMsg='';this.keyMsg='';this.keyWarning=false;this.keySuccess=false;this.toast='';this.showAddAccount=false;this.dismissed={};this.loadWarning='';this.paused=false;this.filterAccount='';this.filterHost='';const password=document.getElementById('tok');password.value='';password.type='password';const toggle=document.getElementById('password-toggle');toggle.setAttribute('aria-pressed','false');toggle.setAttribute('aria-label','Show password');toggle.firstElementChild.className='fa-solid fa-eye';document.getElementById('app').hidden=true;document.getElementById('login').hidden=false;document.title='AIGate · Your AI, under control';password.focus();},
   async logout(){try{await request('/api/logout','POST');window.AIGateSession.token='';try{localStorage.removeItem('aigate_token');}catch{}this.lockLocally();this.accounts=[];this.keys=[];this.feed=[];}catch(error){this.showToast('Could not end the session. '+error.message);}},
   async boot(){
     const stats=await request('/api/stats');this.accounts=stats.accounts||[];this.hosts=stats.by_host||[];this.accountsAt=Date.now();
     this.authed=true;document.getElementById('app').hidden=false;document.getElementById('login').hidden=true;document.title='AIGate · Control room';
     clearInterval(clockTimer);clockTimer=setInterval(()=>{this.now=Date.now();},1000);
     await this.$nextTick();this.drawChart();this.connect();
-    this.loadSupportingData();
+    this.loadSupportingData();this.startSpendTimer();if(this.activeSection==='spend')this.loadSpend();
     const target=document.getElementById(location.hash.slice(1)||'overview');if(target)target.scrollIntoView({behavior:'instant'});
   },
   async loadSupportingData(){
@@ -230,7 +304,7 @@ const app=Vue.createApp({
     element.style.height=Math.max(290,this.accounts.length*68+95)+'px';usageChart.resize();}catch(error){this.chartAvailable=false;console.warn('AIGate usage chart unavailable',error);}
   }
  },
- mounted(){window.addEventListener('hashchange',()=>{this.activeSection=location.hash.slice(1)||'overview';window.AIGateField?.pulse();});window.addEventListener('pagehide',()=>this.suspendWorkspace());window.addEventListener('pageshow',event=>{if(event.persisted&&this.authed){clearInterval(clockTimer);clockTimer=setInterval(()=>{this.now=Date.now();},1000);this.refreshAll().then(()=>this.$nextTick(()=>this.drawChart()));}});}
+ mounted(){window.addEventListener('hashchange',()=>{this.activeSection=location.hash.slice(1)||'overview';if(this.activeSection==='spend'&&this.authed&&(!this.spend||this.spendError))this.loadSpend();window.AIGateField?.pulse();});window.addEventListener('pagehide',()=>this.suspendWorkspace());window.addEventListener('pageshow',event=>{if(event.persisted&&this.authed){clearInterval(clockTimer);clockTimer=setInterval(()=>{this.now=Date.now();},1000);this.startSpendTimer();this.refreshAll().then(()=>this.$nextTick(()=>this.drawChart()));}});}
 });
 app.config.errorHandler=(error)=>{console.error('AIGate UI error',error);if(!document.getElementById('login').hidden)window.aigateLoginMessage('The workspace could not start. Reload this page to try again.');};
 const workspace=app.mount('#app');
