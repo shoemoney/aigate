@@ -310,13 +310,15 @@ function codexEvent(st, scope, ts, model, usage, id) {
 // nothing changed. A counter that went backwards is a restarted session and counts from zero.
 function tcAdvance(st, total) {
   const cur = {};
-  for (const k of TOKEN_KEYS) cur[k] = nat(num(total[k]));
+  // The cumulative counter is NOT clamped to MAX_INT: long sessions pass 2^31 and a clamped
+  // counter stops moving, silently zeroing every later input/cache delta. Only deltas are clamped.
+  for (const k of TOKEN_KEYS) { const v = num(total[k]); cur[k] = Number.isFinite(v) && v > 0 ? Math.floor(v) : 0; }
   const prev = st.tcLast || ZERO_TOTAL;
   const restarted = cur.input_tokens + cur.output_tokens < prev.input_tokens + prev.output_tokens;
   const delta = {};
   let any = false;
   for (const k of TOKEN_KEYS) {
-    delta[k] = restarted ? cur[k] : Math.max(cur[k] - prev[k], 0);
+    delta[k] = nat(restarted ? cur[k] : cur[k] - prev[k]);
     if (delta[k]) any = true;
   }
   st.tcLast = cur;

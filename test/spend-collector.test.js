@@ -583,3 +583,19 @@ test('prompt and tool text in the transcripts never reaches the wire', async () 
     assert.ok(!JSON.stringify(mock.requests.map((q) => q.body)).includes('SECRET-BODY'));
   } finally { await mock.close(); w.cleanup(); }
 });
+
+test('codex tc: a cumulative counter past 2^31 is not clamped — per-event deltas stay exact on very long sessions', async () => {
+  const w = world({ claude: false, codex: false }); const mock = await mockServer();
+  try {
+    cpSync(join(FIX, 'codex-large'), w.codexHome, { recursive: true });
+    w.touchAll(0);
+    const r = await run(w, mock);
+    assert.equal(r.code, 0, r.stderr);
+    const ev = mock.events('codex');
+    assert.equal(ev.length, 6);
+    assert.ok(ev.every((e) => e.input_tokens === 600_000_000));
+    assert.equal(sum(ev, 'input_tokens'), 3_600_000_000);
+    assert.equal(sum(ev, 'cache_read_tokens'), 3_561_500_000);
+    assert.equal(sum(ev, 'output_tokens'), 11_300);
+  } finally { await mock.close(); w.cleanup(); }
+});
