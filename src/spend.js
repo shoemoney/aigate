@@ -450,7 +450,7 @@ function readSpend(db, url) {
   if (bucket !== 'day' && bucket !== 'hour') return { code: 400, body: { error: 'bucket must be day or hour' } };
   if (bucket === 'hour' && toMs - fromMs > 14 * DAY_MS) return { code: 400, body: { error: 'hour buckets need a range of 14 days or less' } };
   const group = qs.get('group') || 'account';
-  if (!GROUP_EXPR[group]) return { code: 400, body: { error: `group must be one of ${Object.keys(GROUP_EXPR).join(', ')}` } };
+  if (!Object.hasOwn(GROUP_EXPR, group)) return { code: 400, body: { error: `group must be one of ${Object.keys(GROUP_EXPR).join(', ')}` } };
   const topRaw = qs.get('top');
   const top = topRaw == null ? 8 : Number(topRaw);
   if (!Number.isInteger(top) || top < 1 || top > 20) return { code: 400, body: { error: 'top must be an integer 1..20' } };

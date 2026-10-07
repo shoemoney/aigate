@@ -344,7 +344,7 @@ test('GET /api/spend: totals equal the sum of groups (other included), series, c
 });
 
 test('GET /api/spend: bad parameters are 400s, empty ranges are honest zeros', async () => {
-  for (const qs of ['from=nope', 'from=2026-10-07&to=2026-10-01', 'from=2024-01-01&to=2026-10-07', 'bucket=week', 'group=prompt', 'top=0', 'top=21',
+  for (const qs of ['from=nope', 'from=2026-10-07&to=2026-10-01', 'from=2024-01-01&to=2026-10-07', 'bucket=week', 'group=prompt', 'group=constructor', 'group=toString', 'group=__proto__', 'group=hasOwnProperty', 'top=0', 'top=21',
     'bucket=hour&from=2026-09-01&to=2026-10-07']) {
     const r = await get('/api/spend?' + qs);
     assert.equal(r.status, 400, qs);
