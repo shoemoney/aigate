@@ -505,7 +505,7 @@ All `/api/spend*` routes require the bearer token.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/spend?from=&to=&bucket=&group=&top=&account=&source=&host=` | the read model: `totals`, `groups`, `series`, `collectors`, `prices_count`. `from`/`to` take ISO dates (default last 7 days); `bucket` is `day` or `hour` (hour needs 14 days or less); `group` is `account`, `model`, `project`, `host`, `source` or `billing` (default `account`); `top` is 1-20 (default 8), the rest fold into an `other` row. Bad parameters are `400`. |
+| `GET` | `/api/spend?from=&to=&bucket=&group=&top=&account=&source=&host=` | the read model: `totals`, `groups`, `series`, `collectors`, `prices_count`. `from`/`to` take ISO dates (default last 7 days); `bucket` is `day` or `hour` (hour needs 14 days or less); `group` is `account`, `model`, `project`, `host`, `source` or `billing` (default `account`); `top` is 1-20 (default 8), the rest fold into an `other` row. `host` is matched the way collectors report it (case-insensitive, first dot-label, so `MBP.local` = `mbp`). Bad parameters are `400`. |
 | `POST` | `/api/spend/events` | `{source, host, events[]}` collector batch (max 1000 events, `source` is `claude_code` or `codex` (attributable), or one of the import-only `opencode`, `muse`, `hermes`, `qwen`, `kimi`, `gemini` (never attributed)); replies `{accepted, duplicate, unpriced, ...}` and the whole batch is rejected on any invalid event |
 | `GET` / `POST` | `/api/spend/sessions` | list session-to-account mappings (`?limit=`, default 100, max 1000) / upsert them; late mappings re-resolve earlier events |
 | `GET` | `/api/spend/collectors` | per host and source: last post, counts, `collector_version`, `age_s` |
@@ -533,9 +533,9 @@ Use `Authorization: Bearer $AIGATE_TOKEN` for machine clients. The dashboard use
 | `GET` | `/api/usage` · `/api/usage/claude` · `/api/usage/codex` | human-readable usage grouped by provider: per account `status` (`ok` · `at_limit` · `token_expired` (Codex) · `parked` · `reauth_needed` · `refresh_unknown` · `disabled`), `five_hour` / `seven_day` `{pct, resets_in: "3d 4h", resets_at}` (Pro Codex `five_hour` is `null`), `usage_age_s`; **no credentials**; `404` on an unknown provider |
 | `DELETE` | `/api/accounts/:name` | remove |
 | `PATCH` | `/api/accounts/:name` | rename / relabel (the dashboard's per-card edit pill) — body `{account?, label?}`, at least one required. The label lives on the account row, so a rename keeps it and never touches the encrypted token. `400` when nothing to update or the new name is empty / contains spaces or slashes; `404` unknown account; `409` when the new name already exists or a Codex refresh is in flight for the old one; `413` oversized body; replies `{ok, account, label}` (audited `account-rename`) |
-| `POST` | `/api/accounts/:name/disabled` | `{disabled: true/false}` |
+| `POST` | `/api/accounts/:name/disabled` | `{disabled: true/false}` — a real JSON boolean; anything else is `400` and the row is unchanged |
 | `POST` | `/api/accounts/:name/refresh` | **live re-poll** ONE account's real headroom right now (not the 10-min cache) → `{account, five, seven, alive, maxed}` (Codex accounts poll `wham/usage`; `?force=1` first clears a Codex `refresh_unknown` halt); 404 on unknown account, 502 on a poll failure |
-| `POST` | `/api/events/usage` | set an account's 5h/7d % — the **client statusline-feed** path (the server-side poller writes usage straight to the DB); **404 on unknown account** |
+| `POST` | `/api/events/usage` | set an account's 5h/7d % — the **client statusline-feed** path (the server-side poller writes usage straight to the DB); an omitted or non-numeric window keeps its stored value, a number outside 0–100 is `400`; **404 on unknown account** |
 | `POST` | `/api/events/limit` | `{account, minutes?}` — **TTL-park** an over-limit account (default **15m**, `minutes` clamped 1–360; real usage untouched, auto-unparks when the TTL passes); **404 on unknown account** |
 | `POST` | `/api/events/prompt` | log a prompt `{account, host, cwd, model, prompt}` |
 | `GET` | `/api/providers` | the 67-provider catalog (id, name, key prefix, base URL) |
