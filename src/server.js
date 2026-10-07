@@ -1178,7 +1178,12 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req);
       if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       if (!b.account) return json(res, 400, { error: 'account required' });
-      if (q.updUsage.run(Number.isFinite(+b.five_hour_pct) ? +b.five_hour_pct : 0, Number.isFinite(+b.seven_day_pct) ? +b.seven_day_pct : 0, b.account).changes === 0)
+      // omitted / null / non-numeric → NULL so updUsage's COALESCE keeps the stored window; a number outside 0..100 is rejected (a negative would rank the account top pick)
+      const pct = (v) => (v === null || v === undefined || v === '' || typeof v === 'boolean' || !Number.isFinite(+v)) ? null : +v;
+      const five = pct(b.five_hour_pct), seven = pct(b.seven_day_pct);
+      if ([five, seven].some((v) => v !== null && (v < 0 || v > 100)))
+        return json(res, 400, { error: 'five_hour_pct and seven_day_pct must be between 0 and 100' });
+      if (q.updUsage.run(five, seven, b.account).changes === 0)
         return json(res, 404, { error: 'unknown account ' + b.account });
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true });

@@ -255,6 +255,31 @@ test('POST /api/events/usage + /limit for an unknown account → 404, not silent
   }
 });
 
+test('POST /api/events/usage: omitted window keeps stored value, out-of-range → 400 and writes nothing', async () => {
+  await fetch(base + '/api/accounts', { method: 'POST', headers: H,
+    body: JSON.stringify({ account: 'pctacct', setup_token: 'sk-ant-oat01-' + 'x'.repeat(40) }) });
+  const post = (o) => fetch(base + '/api/events/usage', { method: 'POST', headers: H, body: JSON.stringify({ account: 'pctacct', ...o }) });
+  const row = async () => (await (await fetch(base + '/api/accounts', { headers: H })).json()).find((a) => a.account === 'pctacct');
+  assert.equal((await post({ five_hour_pct: 10, seven_day_pct: 99 })).status, 200);
+  assert.equal((await post({ five_hour_pct: 20 })).status, 200);
+  let r = await row();
+  assert.equal(r.five_hour_pct, 20);
+  assert.equal(r.seven_day_pct, 99);                       // omitted window not zeroed
+  assert.equal((await post({ five_hour_pct: null, seven_day_pct: 50 })).status, 200);
+  r = await row();
+  assert.equal(r.five_hour_pct, 20);
+  assert.equal(r.seven_day_pct, 50);
+  for (const o of [{ five_hour_pct: -50 }, { seven_day_pct: 101 }, { five_hour_pct: 1e9 }]) {
+    const x = await post(o);
+    assert.equal(x.status, 400, JSON.stringify(o));
+    assert.ok((await x.json()).error);
+  }
+  r = await row();
+  assert.equal(r.five_hour_pct, 20);
+  assert.equal(r.seven_day_pct, 50);
+  db.prepare('DELETE FROM accounts WHERE account=?').run('pctacct');   // keep shared state intact
+});
+
 test('shortHost: strips everything after the first dot, empty/undefined-safe', () => {
   assert.equal(shortHost('mbp.shoemoney.ai'), 'mbp');
   assert.equal(shortHost('mbp'), 'mbp');
