@@ -418,6 +418,7 @@ Use `Authorization: Bearer $AIGATE_TOKEN` for machine clients. The dashboard use
 | `GET` / `POST` | `/api/accounts` | list (usage, `kind`, `plan`, `token_exp`, **no credentials**) / add Claude `{account, setup_token, label}` or Codex `{kind:"codex", account, auth_json, label}` |
 | `GET` | `/api/usage` · `/api/usage/claude` · `/api/usage/codex` | human-readable usage grouped by provider: per account `status` (`ok` · `at_limit` · `parked` · `reauth_needed` · `refresh_unknown` · `disabled`), `five_hour` / `seven_day` `{pct, resets_in: "3d 4h", resets_at}` (Pro Codex `five_hour` is `null`), `usage_age_s`; **no credentials**; `404` on an unknown provider |
 | `DELETE` | `/api/accounts/:name` | remove |
+| `PATCH` | `/api/accounts/:name` | rename / relabel (the dashboard's per-card edit pill) — body `{account?, label?}`, at least one required. The label lives on the account row, so a rename keeps it and never touches the encrypted token. `400` when nothing to update or the new name is empty / contains spaces or slashes; `404` unknown account; `409` when the new name already exists or a Codex refresh is in flight for the old one; `413` oversized body; replies `{ok, account, label}` (audited `account-rename`) |
 | `POST` | `/api/accounts/:name/disabled` | `{disabled: true/false}` |
 | `POST` | `/api/accounts/:name/refresh` | **live re-poll** ONE account's real headroom right now (not the 10-min cache) → `{account, five, seven, alive, maxed}` (Codex accounts poll `wham/usage`; `?force=1` first clears a Codex `refresh_unknown` halt); 404 on unknown account, 502 on a poll failure |
 | `POST` | `/api/events/usage` | set an account's 5h/7d % — the **client statusline-feed** path (the server-side poller writes usage straight to the DB); **404 on unknown account** |
@@ -476,6 +477,9 @@ Same posture on the OpenAI wire: point the client at `http://<aigate>/v1` with t
 | `AIGATE_WATCHDOG_MS` | `30000` | self-heal watchdog — pings the DB; exits→restart if wedged. `0` disables |
 | `AIGATE_ALLOW_CIDR` | *(empty = all)* | network gate — CIDRs + single IPs. Loopback always OK. |
 | `AIGATE_TRUST_PROXY` | `0` | trust `X-Forwarded-For` for client IP — set `1` **only** behind a proxy you control (else the gate/audit see the proxy IP) |
+| `AIGATE_PROXY_MAIN` | *(empty = passthrough to `anthropic`)* | `/v1/messages` alias for bare `claude-*` models, as `provider:model` (e.g. `kimi:kimi-k3`); a malformed or unknown-provider value is ignored |
+| `AIGATE_PROXY_SMALL` | *(empty = passthrough to `anthropic`)* | same, for haiku-shaped `claude-*` names (the binary's background title-gen/compaction calls) |
+| `AIGATE_PROXY_UPSTREAM_<NAME>` | `ANTHROPIC` `https://api.anthropic.com` · `KIMI` `https://api.kimi.com/coding` · `MUSE` `https://api.meta.ai` · `OPENROUTER` `https://openrouter.ai/api` · `QWEN` `https://dashscope-intl.aliyuncs.com/api/v2/apps/claude-code-proxy` | per-provider base URL override for the `/v1/messages` proxy; trailing slashes are stripped and the env is read on every request. The OpenAI-wire sibling is `AIGATE_OAI_UPSTREAM_<NAME>` |
 
 <details>
 <summary>Advanced env vars (tuning, auth, alerts)</summary>
