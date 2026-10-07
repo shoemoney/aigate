@@ -492,7 +492,7 @@ Rates live in `src/spend-prices.json` (dated, sourced) and are seeded into the `
 
 ### Reconciliation
 
-Checked against otari for 2026-10-03 through 2026-10-06: Codex and Claude token counts match exactly per day. Claude dollars run about 2.6% below otari. A long-context tier that otari applies and aigate does not model is the likely cause, but that is **unverified**.
+Checked against otari: Codex token counts match exactly on every day from 2026-10-03 to 2026-10-06; Claude token counts match exactly on 2026-10-06 and Claude event counts match per day from 2026-09-24 (the oldest transcripts still on disk). Claude dollars run about 2.6% below otari. A long-context tier that otari applies and aigate does not model is the likely cause, but that is **unverified**.
 
 ### Retention
 
