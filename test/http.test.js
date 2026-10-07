@@ -177,7 +177,7 @@ test('POST /api/keys stores a provider key; list returns hint but not the secret
   assert.ok(!JSON.stringify(keys).includes('supersecretkey'));
 });
 
-test('key_hint = first8…last4: same-prefix keys coexist, exact re-POST still upserts', async () => {
+test('key_hint = first8…last4#hash8: same-prefix keys coexist, exact re-POST still upserts', async () => {
   const post = (key) => fetch(base + '/api/keys', { method: 'POST', headers: H,
     body: JSON.stringify({ provider: 'collideco', key }) });
   await post('sk-proj-collide-AAAA');   // shares first 14 chars with the next key…
@@ -841,7 +841,7 @@ test('GET /api/access exposes the audit trail (key-add present, never a raw secr
   const rows = await (await fetch(base + '/api/access', { headers: H })).json();
   assert.ok(rows.some((r) => r.action === 'key-add'), 'key-add row present');
   assert.ok(!JSON.stringify(rows).includes('sk-'));
-  assert.ok(!JSON.stringify(rows).includes('topsecret'));   // only the first8…last4 hint is stored, never the value
+  assert.ok(!JSON.stringify(rows).includes('topsecret'));   // only the first8…last4#hash8 hint is stored, never the value
 });
 
 test('reasoned select-503 writes WHY into the audit result', async () => {
