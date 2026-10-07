@@ -7,7 +7,9 @@
 input="$(cat)"
 python3 - "$input" <<'PY'
 import json, os, sys, urllib.request
-d = json.loads(sys.argv[1] or "{}")
+try: d = json.loads(sys.argv[1] or "{}")
+except ValueError: d = {}
+if not isinstance(d, dict): d = {}
 rl = d.get("rate_limits") or {}
 five = (rl.get("five_hour") or {}).get("used_percentage") or 0
 week = (rl.get("seven_day") or {}).get("used_percentage") or 0
