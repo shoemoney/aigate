@@ -1540,7 +1540,13 @@ server.on('upgrade', (req, socket, head) => {
   const wsAuthed = String(req.headers['sec-websocket-protocol'] || '').split(',')
     .some((p) => p.trim().startsWith('bearer.') && tokenMatches(p.trim().slice(7), TOKEN))
     || (!!DASH_PW && verifySession(SESS_SECRET, parseCookie(req.headers.cookie, SESS_COOKIE)));
-  if (path !== '/ws' || !wsAuthed || !ipAllowed(reqIp(req), allowCidr())) { console.warn('[ws] denied', reqIp(req)); socket.destroy(); return; }
+  // same per-IP brute-force throttle as the HTTP path: a locked IP is refused even with a
+  // valid token, a bad bearer/cookie on /ws counts as a fail, a good one clears the count.
+  const wsAddr = reqIp(req);
+  if (authLocked(wsAddr)) { console.warn('[ws] locked', wsAddr); socket.destroy(); return; }
+  if (path === '/ws' && !wsAuthed) authFail(wsAddr);
+  if (path !== '/ws' || !wsAuthed || !ipAllowed(wsAddr, allowCidr())) { console.warn('[ws] denied', wsAddr); socket.destroy(); return; }
+  authOk(wsAddr);
   wss.handleUpgrade(req, socket, head, (ws) => {
     // a mid-send ECONNRESET (sleeping laptop tab) otherwise emits an unlistened
     // 'error' → uncaughtException → the whole vault daemon restarts

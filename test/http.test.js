@@ -1183,6 +1183,33 @@ test('auth throttle: locks a source IP after too many fails, clears on success, 
   assert.equal(authLocked('127.0.0.1'), false);
 });
 
+test('auth throttle: bad /ws upgrades count toward the lock, and a locked IP cannot upgrade', async () => {
+  const prevTrust = process.env.AIGATE_TRUST_PROXY;
+  process.env.AIGATE_TRUST_PROXY = '1';
+  const ipBad = '203.0.113.91', ipLocked = '203.0.113.92';
+  const upgrade = (ip, bearer) => new Promise((resolve) => {
+    const ws = new WebSocket(base.replace('http', 'ws') + '/ws', ['aigate', 'bearer.' + bearer], { headers: { 'x-forwarded-for': ip } });
+    ws.on('message', () => { ws.close(); resolve(true); });
+    ws.on('error', () => resolve(false));
+    ws.on('close', () => resolve(false));
+  });
+  try {
+    authOk(ipBad); authOk(ipLocked);
+    for (let i = 0; i < 10; i++) assert.equal(await upgrade(ipBad, 'wrong-' + i), false);
+    assert.equal(authLocked(ipBad), true);
+    const r = await fetch(base + '/api/accounts', { headers: { 'x-forwarded-for': ipBad } });
+    assert.equal(r.status, 429);
+
+    for (let i = 0; i < 10; i++) authFail(ipLocked);
+    assert.equal(await upgrade(ipLocked, TOKEN), false);   // valid token, still refused
+    authOk(ipLocked);
+    assert.equal(await upgrade(ipLocked, TOKEN), true);    // lock cleared, accepted
+  } finally {
+    authOk(ipBad); authOk(ipLocked);
+    if (prevTrust === undefined) delete process.env.AIGATE_TRUST_PROXY; else process.env.AIGATE_TRUST_PROXY = prevTrust;
+  }
+});
+
 test('GET /api/metrics returns Prometheus text with the core gauges (F5)', async () => {
   const r = await fetch(base + '/api/metrics', { headers: H });
   assert.equal(r.status, 200);
