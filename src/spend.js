@@ -21,6 +21,7 @@ const EVENT_SOURCES = new Set([...SOURCES, 'opencode', 'muse', 'hermes', 'qwen',
 const KINDS = new Set(['claude', 'codex']);
 
 const ID_RE = /^[A-Za-z0-9._:/-]+$/;
+const HOST_RE = /^[A-Za-z0-9._-]{1,128}$/;
 const ACCT_RE = /^[A-Za-z0-9._:@/+-]{1,128}$/;
 const PRICE_PROVIDER_RE = /^[A-Za-z0-9._:*-]{1,128}$/;
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -258,6 +259,7 @@ function validateBatch(b, now) {
   }
   if (!EVENT_SOURCES.has(b.source)) return { error: 'source must be one of ' + [...EVENT_SOURCES].join(', ') };
   if (typeof b.host !== 'string' || !b.host.trim()) return { error: 'host is required' };
+  if (!HOST_RE.test(b.host)) return { error: 'bad host' };
   if (b.collector_version !== undefined && !(typeof b.collector_version === 'string' && /^[A-Za-z0-9._+-]{1,64}$/.test(b.collector_version)))
     return { error: 'bad collector_version' };
   for (const k of SUMMARY_KEYS) if (b.summary && b.summary[k] !== undefined && !isInt(b.summary[k], Number.MAX_SAFE_INTEGER))
@@ -352,6 +354,7 @@ function validateSessions(b, now) {
     for (const k of Object.keys(x)) if (!SESSION_KEYS.has(k)) return { ...contentError(`sessions[${i}].${k}`, k), index: i };
     if (!SOURCES.has(x.source)) return bad('source must be claude_code or codex');
     if (typeof x.host !== 'string' || !x.host.trim()) return bad('host is required');
+    if (!HOST_RE.test(x.host)) return bad('bad host');
     if (!KINDS.has(x.kind)) return bad('kind must be claude or codex');
     if (typeof x.account !== 'string' || (x.account !== '' && !ACCT_RE.test(x.account))) return bad('bad account');
     const via = x.via ?? '';

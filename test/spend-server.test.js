@@ -443,3 +443,18 @@ test('ingest accepts imported tool sources but never attributes them, and reject
   r = await post('/api/spend/events', { source: 'not-a-tool', host: 'imp-host', events: [ev('x-1')] });
   assert.equal(r.status, 400);
 });
+
+test('host must match a safe charset and length: bad hosts 400 before any write, normal hosts still work', async () => {
+  const before = count();
+  for (const host of ['x'.repeat(5000), 'x'.repeat(129), 'bad\nhost', 'a<b>c', 'has space']) {
+    let r = await post('/api/spend/events', batch(host, [ev('hv-' + host.length)]));
+    assert.equal(r.status, 400, `events: ${JSON.stringify(host.slice(0, 12))}`);
+    r = await post('/api/spend/sessions', { sessions: [{ source: 'claude_code', host, session_id: 's1', account: 'a', kind: 'claude' }] });
+    assert.equal(r.status, 400, `sessions: ${JSON.stringify(host.slice(0, 12))}`);
+  }
+  assert.equal(count(), before, 'a rejected host wrote nothing');
+  for (const host of ['mbp', 'wick', 'hueb', 'hostS', 'a.b_c-1', 'x'.repeat(128)]) {
+    const r = await post('/api/spend/events', batch(host, [ev('hv-ok-' + host)]));
+    assert.equal(r.status, 200, host);
+  }
+});
