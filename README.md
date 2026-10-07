@@ -506,7 +506,7 @@ All `/api/spend*` routes require the bearer token.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/spend?from=&to=&bucket=&group=&top=&account=&source=&host=` | the read model: `totals`, `groups`, `series`, `collectors`, `prices_count`. `from`/`to` take ISO dates (default last 7 days); `bucket` is `day` or `hour` (hour needs 14 days or less); `group` is `account`, `model`, `project`, `host`, `source` or `billing` (default `account`); `top` is 1-20 (default 8), the rest fold into an `other` row. Bad parameters are `400`. |
-| `POST` | `/api/spend/events` | `{source, host, events[]}` collector batch (max 1000 events, `source` is `claude_code` or `codex`); replies `{accepted, duplicate, unpriced, ...}` and the whole batch is rejected on any invalid event |
+| `POST` | `/api/spend/events` | `{source, host, events[]}` collector batch (max 1000 events, `source` is `claude_code` or `codex` (attributable), or one of the import-only `opencode`, `muse`, `hermes`, `qwen`, `kimi`, `gemini` (never attributed)); replies `{accepted, duplicate, unpriced, ...}` and the whole batch is rejected on any invalid event |
 | `GET` / `POST` | `/api/spend/sessions` | list session-to-account mappings (`?limit=`, default 100, max 1000) / upsert them; late mappings re-resolve earlier events |
 | `GET` | `/api/spend/collectors` | per host and source: last post, counts, `collector_version`, `age_s` |
 | `GET` / `PUT` | `/api/spend/prices` | list the price table / add a dated row (`409` if that provider, model and `effective_from` already exist) |
