@@ -675,7 +675,7 @@ export async function handleSpend(req, res, url, ctx) {
 
     if (p === '/api/spend/sessions') {
       if (m === 'GET') {
-        const lim = Math.min(1000, Math.max(1, Number(url.searchParams.get('limit')) || 100));
+        const lim = Math.min(1000, Math.max(1, Math.trunc(Number(url.searchParams.get('limit'))) || 100));
         return json(res, 200, db.prepare(`SELECT source, host, session_id, scope, account, kind, via, first_seen, last_seen FROM spend_sessions
           ORDER BY last_seen DESC, id DESC LIMIT ?`).all(lim));
       }

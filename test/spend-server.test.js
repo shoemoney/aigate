@@ -240,6 +240,16 @@ test('attribution: session upserts are idempotent and replaying old lines does n
   assert.ok(Array.isArray(list) && list.length >= 1 && list.length <= 5);
 });
 
+test('GET /api/spend/sessions: a fractional, huge or garbage limit is a 200 array, never a 500', async () => {
+  for (const lim of ['2.5', '0.4', '-3', '1e9', 'Infinity', 'abc', '']) {
+    const r = await get('/api/spend/sessions?limit=' + lim);
+    assert.equal(r.status, 200, `limit=${lim}`);
+    assert.ok(Array.isArray(await r.json()), `limit=${lim}`);
+  }
+  const two = await (await get('/api/spend/sessions?limit=2.5')).json();
+  assert.ok(two.length <= 2);
+});
+
 test('attribution: codex lease by session_started_at, and an account "" lease closes it', async () => {
   const scope = '/Users/test/.codex';
   await post('/api/spend/sessions', { sessions: [
