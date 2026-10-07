@@ -170,6 +170,9 @@ fi
 # launchd/systemd unit runs node directly with no login shell to find it. No node >= 24 on this
 # box → the script is still installed, nothing is scheduled, and we SAY SO (loud, not silent).
 SPEND_JS="$DIR/aigate-spend.js"
+# The collector is an ES module. Without a package.json beside it node walks up to ~/package.json
+# (or none), warns MODULE_TYPELESS_PACKAGE_JSON and re-parses the file on every 15-min run.
+[ -f "$SPEND_JS" ] && [ ! -f "$DIR/package.json" ] && printf '{"type":"module"}\n' > "$DIR/package.json"
 NODE_BIN=""
 if [ -f "$SPEND_JS" ]; then
   # AIGATE_NODE_BIN wins outright (tests, and a box whose node lives somewhere odd)
