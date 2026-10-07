@@ -208,6 +208,42 @@ report_limit(){
   post_json /api/events/limit "$BODYF"
 }
 
+# ── spend attribution lease ──────────────────────────────────────────────────
+# codex has no hook, and a rollout file carries no account. This script is the only writer
+# of $CODEX_HOME/auth.json, so it LEASES that scope to the account it just put there (or
+# kept there): the collector attributes a rollout to the lease open when its session began.
+# $1 = account name ('' = the on-disk login is not aigate-managed → unknown), $2 = via tag.
+# Sidecar first (the collector replays it if aigate was down), then fire-and-forget POST,
+# both detached so a lease never adds latency to a codex launch. Ids only, never any text.
+post_lease(){
+  python3 - "$CODEX_HOME" "${1:-}" "${2:-ai-codex}" "$HOST" "$AIGATE_DIR" >/dev/null 2>&1 <<'PY' &
+import datetime, json, os, sys, urllib.request
+scope, account, via, host, adir = sys.argv[1:6]
+now = datetime.datetime.now(datetime.timezone.utc)
+line = {"source": "codex", "host": host, "session_id": None, "scope": os.path.realpath(scope),
+        "account": account, "kind": "codex", "via": via,
+        "ts": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
+try:
+    os.makedirs(adir, exist_ok=True)
+    fd = os.open(os.path.join(adir, "spend-sessions.jsonl"), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    try:
+        os.write(fd, (json.dumps(line) + "\n").encode())
+    finally:
+        os.close(fd)
+except Exception:
+    pass
+try:
+    req = urllib.request.Request(
+        os.environ["AIGATE_URL"] + "/api/spend/sessions", data=json.dumps(line).encode(),
+        headers={"Authorization": "Bearer " + os.environ["AIGATE_TOKEN"],
+                 "content-type": "application/json"})
+    urllib.request.urlopen(req, timeout=5).read()
+except Exception:
+    pass
+PY
+  return 0
+}
+
 # ── keeper ───────────────────────────────────────────────────────────────────
 # Keep $AUTH in step with the vault for the account it is ALREADY logged in as.
 # Never picks, never switches account. Fail-open: any aigate trouble → return 0.
@@ -368,6 +404,9 @@ sticky_reuse(){
     return 1
   fi
   WROTE_RT="$(jp "$AUTH" tokens.refresh_token)"
+  # the lease stays open on the account we kept; only post a name we actually know
+  # (an unreachable aigate leaves KEEP_NAME empty — never close a good lease on a guess)
+  [ -n "$KEEP_NAME" ] && post_lease "$KEEP_NAME" sticky-reuse
   echo "aigate → codex account: ${KEEP_NAME:-on-disk login} (kept: another codex is running; AI_CODEX_FORCE=1 to switch)" >&2
   return 0
 }
@@ -494,6 +533,12 @@ if [ "$keep" = 1 ]; then
     KEEP_NOISY=0; keep
   done
   [ "$KEEP_STATE" = down ] && keep_say "aigate still unreachable after retries — giving up until the next tick"
+  # Every tick re-states the lease on this CODEX_HOME: ok/changed = the vault knows this login,
+  # unknown (404) = someone logged in by hand, so close the lease with account:'' within 5 min.
+  case "$KEEP_STATE" in
+    ok|changed) [ -n "$KEEP_NAME" ] && post_lease "$KEEP_NAME" keeper;;
+    unknown) post_lease "" keeper;;
+  esac
   exit 0
 fi
 
@@ -526,6 +571,7 @@ install_pick(){
   backup_once
   write_auth || { echo "aigate: could not write $AUTH" >&2; return 1; }
   WROTE_RT="$(jp "$AUTH" tokens.refresh_token)"
+  post_lease "$(jp "$RESPF" account)" ai-codex    # this scope now runs the account we just wrote
   banner
 }
 

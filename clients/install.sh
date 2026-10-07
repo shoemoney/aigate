@@ -32,7 +32,7 @@ mkdir -p "$(dirname "$ZRC")"
 
 install -m 0755 "$SRC/aigate-run.sh" "$DIR/aigate-run.sh"
 for f in aigate-kimi.sh aigate-muse.sh aigate-codex.sh prompt-hook.sh statusline-feed.sh hydrate.sh \
-         t3-claude.sh t3-codex.sh t3-opencode.sh t3-anthropic-compat.sh cmux-claude.sh; do
+         t3-claude.sh t3-codex.sh t3-opencode.sh t3-anthropic-compat.sh cmux-claude.sh aigate-spend.js; do
   [ -f "$SRC/$f" ] && install -m 0755 "$SRC/$f" "$DIR/$f" || true
 done
 # every non-Anthropic T3 rung is the same script dispatched on its invocation name
@@ -160,6 +160,97 @@ EOF
     { [ -n "$OLDCRON" ] && printf '%s\n' "$OLDCRON"; printf '%s\n' "$CRONLINE"; } | crontab - \
       && echo "installed crontab line for the codex keeper (every 5 min)" \
       || echo "NOTE: could not install the keeper crontab line" >&2
+  fi
+fi
+
+# Spend collector: every 15 min `aigate-spend.js` tails the local claude/codex transcripts and
+# posts content-free usage events to aigate. Same unit-file-always / activation-only-on-a-real-root
+# posture as the keeper above, and the same AIGATE_NO_LAUNCHD/SYSTEMD/CRON switches.
+# It needs node >= 24 (node:sqlite-era builtins): resolved HERE, at install time, because the
+# launchd/systemd unit runs node directly with no login shell to find it. No node >= 24 on this
+# box → the script is still installed, nothing is scheduled, and we SAY SO (loud, not silent).
+SPEND_JS="$DIR/aigate-spend.js"
+NODE_BIN=""
+if [ -f "$SPEND_JS" ]; then
+  # AIGATE_NODE_BIN wins outright (tests, and a box whose node lives somewhere odd)
+  NODE_CANDS="${AIGATE_NODE_BIN:-}"
+  [ -n "$NODE_CANDS" ] || NODE_CANDS="$(command -v node 2>/dev/null || true) /opt/homebrew/bin/node /usr/local/bin/node $ROOT/.local/bin/node"
+  for p in $NODE_CANDS; do
+    [ -n "$p" ] && [ -x "$p" ] || continue
+    nv="$("$p" -e 'process.stdout.write(String(process.versions.node.split(".")[0]))' 2>/dev/null || true)"
+    [ -n "$nv" ] && [ "$nv" -ge 24 ] 2>/dev/null && { NODE_BIN="$p"; break; } || true
+  done
+  [ -n "$NODE_BIN" ] || echo "NOTE: spend collector not scheduled — node >= 24 not found" >&2
+fi
+if [ -n "$NODE_BIN" ]; then
+  if [ "$OS" = "Darwin" ]; then
+    SLABEL="ai.shoemoney.aigate-spend"
+    SPLIST="$ROOT/Library/LaunchAgents/$SLABEL.plist"
+    mkdir -p "$ROOT/Library/LaunchAgents"
+    cat > "$SPLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$SLABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$NODE_BIN</string>
+    <string>$SPEND_JS</string>
+  </array>
+  <key>StartInterval</key><integer>900</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>$DIR/spend.log</string>
+  <key>StandardErrorPath</key><string>$DIR/spend.log</string>
+</dict>
+</plist>
+EOF
+    chmod 644 "$SPLIST"
+    if [ "${AIGATE_NO_LAUNCHD:-0}" != 1 ] && [ "$ACTIVATE" = 1 ]; then
+      UIDN="$(id -u)"
+      launchctl bootout "gui/$UIDN/$SLABEL" >/dev/null 2>&1 || true
+      launchctl bootstrap "gui/$UIDN" "$SPLIST" >/dev/null 2>&1 \
+        && echo "loaded launchd agent $SLABEL (spend collector, every 15 min)" \
+        || echo "NOTE: could not load $SLABEL — run: launchctl bootstrap gui/$UIDN $SPLIST" >&2
+    fi
+  else
+    UDIR="$ROOT/.config/systemd/user"
+    mkdir -p "$UDIR"
+    cat > "$UDIR/aigate-spend.service" <<EOF
+[Unit]
+Description=aigate spend collector (tail local transcripts, post usage events)
+
+[Service]
+Type=oneshot
+ExecStart=$NODE_BIN $SPEND_JS
+EOF
+    cat > "$UDIR/aigate-spend.timer" <<EOF
+[Unit]
+Description=aigate spend collector, every 15 minutes
+
+[Timer]
+OnBootSec=120
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+    SPEND_DONE=0
+    if [ "${AIGATE_NO_SYSTEMD:-0}" != 1 ] && [ "$ACTIVATE" = 1 ] && command -v systemctl >/dev/null 2>&1 \
+       && systemctl --user show-environment >/dev/null 2>&1; then
+      systemctl --user daemon-reload >/dev/null 2>&1 || true
+      if systemctl --user enable --now aigate-spend.timer >/dev/null 2>&1; then
+        SPEND_DONE=1; echo "enabled systemd user timer aigate-spend.timer (spend collector, every 15 min)"
+      fi
+    fi
+    if [ "$SPEND_DONE" = 0 ] && [ "${AIGATE_NO_CRON:-0}" != 1 ] && [ "$ACTIVATE" = 1 ] && command -v crontab >/dev/null 2>&1; then
+      SCRONLINE="*/15 * * * * $NODE_BIN $SPEND_JS >> $DIR/spend.log 2>&1 # aigate-spend"
+      SOLDCRON="$(crontab -l 2>/dev/null | grep -v '# aigate-spend$' || true)"   # read fully BEFORE rewriting
+      { [ -n "$SOLDCRON" ] && printf '%s\n' "$SOLDCRON"; printf '%s\n' "$SCRONLINE"; } | crontab - \
+        && echo "installed crontab line for the spend collector (every 15 min)" \
+        || echo "NOTE: could not install the spend collector crontab line" >&2
+    fi
   fi
 fi
 

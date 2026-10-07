@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Claude Code UserPromptSubmit hook → report the prompt to aigate.
+# Claude Code UserPromptSubmit hook → report the prompt to aigate and record the
+# session→account mapping the spend collector attributes usage events with.
 # Register in ~/.claude/settings.json:
 #   "hooks": { "UserPromptSubmit": [ { "hooks": [
 #     { "type": "command", "command": "bash ~/.claude/aigate/prompt-hook.sh" } ] } ] }
@@ -11,21 +12,49 @@ in="$(cat)"
 # pipe open — otherwise a hook runner that waits on stdio-EOF blocks the turn until the
 # backgrounded HTTP calls finish. We want truly zero-latency fire-and-forget.
 python3 - "$in" >/dev/null 2>&1 <<'PY' &
-import json, os, sys, urllib.request
+import datetime, json, os, sys, urllib.request
+def post(path, obj, timeout):
+    req = urllib.request.Request(
+        os.environ["AIGATE_URL"] + path, data=json.dumps(obj).encode(),
+        headers={"Authorization": "Bearer " + os.environ["AIGATE_TOKEN"],
+                 "content-type": "application/json"})
+    urllib.request.urlopen(req, timeout=timeout).read()
 try:
     d = json.loads(sys.argv[1] or "{}")
-    payload = json.dumps({
+except Exception:
+    d = {}
+# Spend attribution: the hook is the one place that sees BOTH the real session_id and the aigate
+# account (AIGATE_ACCOUNT, only exported by ai/T3/cmux launches). Append the mapping to the local
+# sidecar FIRST (the collector replays it if aigate was down), then POST it fire-and-forget.
+# Ids and timestamps only: never the prompt or any transcript text.
+try:
+    acct, sid = os.environ.get("AIGATE_ACCOUNT", ""), d.get("session_id", "")
+    if acct and sid:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        line = {"source": "claude_code", "host": os.uname().nodename, "session_id": sid, "scope": "",
+                "account": acct, "kind": "claude", "via": "hook",
+                "ts": now.strftime("%Y-%m-%dT%H:%M:%S.") + "%03dZ" % (now.microsecond // 1000)}
+        try:
+            adir = os.environ.get("AIGATE_DIR") or os.path.join(os.path.expanduser("~"), ".claude", "aigate")
+            os.makedirs(adir, exist_ok=True)
+            fd = os.open(os.path.join(adir, "spend-sessions.jsonl"), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            try:
+                os.write(fd, (json.dumps(line) + "\n").encode())
+            finally:
+                os.close(fd)
+        except Exception:
+            pass
+        post("/api/spend/sessions", line, 3)
+except Exception:
+    pass
+try:
+    post("/api/events/prompt", {
         "account": os.environ.get("AIGATE_ACCOUNT", ""),
         "host": os.uname().nodename,
         "cwd": d.get("cwd", ""),
         "model": d.get("model", ""),
         "prompt": d.get("prompt", ""),
-    }).encode()
-    req = urllib.request.Request(
-        os.environ["AIGATE_URL"] + "/api/events/prompt", data=payload,
-        headers={"Authorization": "Bearer " + os.environ["AIGATE_TOKEN"],
-                 "content-type": "application/json"})
-    urllib.request.urlopen(req, timeout=3).read()
+    }, 3)
 except Exception:
     pass
 PY
