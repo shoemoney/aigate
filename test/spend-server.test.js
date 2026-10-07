@@ -428,11 +428,18 @@ test('otari-only sources (muse, opencode, …) are accepted, never attributed, a
 });
 
 test('ingest accepts imported tool sources but never attributes them, and rejects unknown sources', async () => {
+  const scope = '/Users/imp/.codex';
+  const lease = await post('/api/spend/sessions', { source: 'codex', host: 'imp-host', session_id: null, scope, account: 'imp-acct',
+    kind: 'codex', via: 'test', ts: new Date(Date.now() - 3600e3).toISOString() });
+  assert.equal(lease.status, 200);
   const ev = (id) => ({ source_event_id: id, ts: new Date(Date.now() - 60e3).toISOString(), provider: 'meta', model: 'muse-spark-1.3',
     input_tokens: 1, output_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, cache_write_1h_tokens: 0,
-    cache_tokens_in_prompt: true, status: 'success', project: 'p', session_id: null, session_started_at: null, scope: '/Users/x/.codex' });
+    cache_tokens_in_prompt: true, status: 'success', project: 'p', session_id: null, session_started_at: null, scope });
   let r = await post('/api/spend/events', { source: 'muse', host: 'imp-host', events: [ev('muse-imp-1')] });
-  assert.equal(r.status, 200); assert.equal(r.body.accepted, 1); assert.equal(r.body.unattributed, 1);
+  assert.equal(r.status, 200);
+  const j = await r.json();
+  assert.equal(j.accepted, 1);
+  assert.equal(j.unattributed, 1, 'an imported muse event must not borrow the codex lease on the same scope');
   r = await post('/api/spend/events', { source: 'not-a-tool', host: 'imp-host', events: [ev('x-1')] });
   assert.equal(r.status, 400);
 });
