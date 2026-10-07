@@ -41,8 +41,11 @@ CACHE="$HOME/.claude/aigate/kimi-key"                     # mode 600, plaintext 
 # Pull the sk-kimi key from the vault (audited: host+IP). Fetch-first so a rotated
 # key wins immediately; fall back to the cache only when the vault is unreachable,
 # so a swarm of parallel launches survives a vault blip mid-run.
-key="$(curl -s -m8 -H "Authorization: Bearer $AIGATE_TOKEN" "$AIGATE_URL/api/keys/kimi" \
+# auth header goes in a mode-600 file, not argv (visible via `ps`); removed before the final exec, which skips EXIT traps
+AUTHF="$(mktemp)"; chmod 600 "$AUTHF"; printf 'Authorization: Bearer %s\n' "$AIGATE_TOKEN" > "$AUTHF"
+key="$(curl -s -m8 -H "@$AUTHF" "$AIGATE_URL/api/keys/kimi" \
   | python3 -c 'import sys,json;print(json.load(sys.stdin).get("key",""))' 2>/dev/null)"
+rm -f "$AUTHF"
 if [ -n "$key" ]; then
   umask 077; printf '%s' "$key" > "$CACHE.$$" && mv -f "$CACHE.$$" "$CACHE"   # atomic: a swarm can't tear it
 elif [ -f "$CACHE" ]; then
