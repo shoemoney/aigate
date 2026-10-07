@@ -39,7 +39,7 @@ server) and static-checks `clients/aigate-run.sh`:
 - **Per-turn parking** — when the current account is **≥85 % + live-refresh-confirmed
   maxed**, the hook `POST`s `/api/events/limit` to park it immediately (fleet-wide
   reroute); with headroom it does **nothing** (and skips the costly refresh).
-- **Fail-open** — a non-`cc` session (no `AIGATE_ACCOUNT`) triggers **zero**
+- **Fail-open** — a session not launched by `ai` (no `AIGATE_ACCOUNT`) triggers **zero**
   selection side effects.
 - **Zero turn latency** — both backgrounded blocks detach stdio, so the hook
   returns instantly regardless of the HTTP calls (the test polls the mock rather

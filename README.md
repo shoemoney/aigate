@@ -16,7 +16,7 @@ Node.js 24+ · SQLite · One runtime dependency · MIT
 
 [![AIGate master-password entry: mint AI lock branding over a navy flying-token background](docs/screenshots/live-2026-09-15/01-entry-desktop.png)](docs/screenshots/live-2026-09-15/01-entry-desktop.png)
 
-**One vault. A clear view of what is using it.** AIGate stores your credentials, selects Claude **and Codex (ChatGPT)** accounts by available headroom, proxies requests for supported API-key providers, and brings usage and activity into one live workspace.
+**One vault. A clear view of what is using it.** AIGate stores your credentials, selects Claude **and Codex (ChatGPT)** accounts use-it-or-lose-it (soonest weekly reset among those with headroom), proxies requests for supported API-key providers, and brings usage and activity into one live workspace.
 
 Claude and Codex subscription requests run through the official `claude` and `codex` binaries directly; AIGate only picks the account and hands over its credential. API-key proxy requests use the provider-key vault. These are separate paths; see [credential boundaries](#credential-boundaries).
 

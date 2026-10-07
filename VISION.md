@@ -27,8 +27,8 @@ Born from three real pains:
 - **Vault** — every key encrypted at rest; clients hold only an aigate token, never raw keys.
 - **Secure proxy** (API providers) — clients call aigate; it injects the real key,
   forwards, and logs the request + spend. This is standard & safe for API keys.
-- **Selector** (Claude subs) — never proxies Anthropic; picks the account with the
-  most headroom and runs the **official** `claude` binary with its token (accepted
+- **Selector** (Claude subs) — never proxies Anthropic; picks the eligible account whose
+  weekly window resets soonest (use it or lose it) and runs the **official** `claude` binary with its token (accepted
   architecture, won't flag accounts).
 - **Live usage/spend** — WebSocket dashboard: per-key usage bars, streaming feed,
   per-host/device stats, 🚨 runaway.
