@@ -545,14 +545,15 @@ const reqIp = (req) => clientIp(req.headers, req.socket.remoteAddress, { trustPr
 const shortHost = (h) => String(h || '').split('.')[0];
 // collect Buffers and decode ONCE: coercing each chunk to a string splits a multibyte
 // UTF-8 sequence (emoji/CJK) across TCP boundaries into replacement chars; the 1MB cap
-// must count bytes, not UTF-16 units. Never rejects (bad/oversized body → {}).
+// must count bytes, not UTF-16 units. Never rejects (bad/oversized body → {}); JSON that is
+// neither an object nor an array (null, "str", 42) is {} too, so handlers can always dereference it.
 const body = (req) => new Promise((resolve) => {
   const chunks = []; let n = 0, settled = false;
   const done = (v) => { if (!settled) { settled = true; resolve(v); } };
   // stop buffering past 1MB but DON'T destroy the socket — the handler still needs
   // a live connection to send its 413 back; pause so we ignore the rest of the body.
   req.on('data', (c) => { n += c.length; if (n > 1e6) { req.pause(); return done({ __oversized: true }); } chunks.push(c); }); // sentinel — 413 paths below send connection: close
-  req.on('end', () => { try { done(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch { done({}); } });
+  req.on('end', () => { try { const v = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}; done(v && typeof v === 'object' ? v : {}); } catch { done({}); } });
   // a client abort / socket error must still settle the promise, else the awaiting
   // handler hangs forever holding the request open (slow-loris-style pre-handler leak).
   req.on('close', () => done({}));

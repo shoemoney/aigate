@@ -1481,3 +1481,14 @@ test('select is use-it-or-lose-it: soonest weekly reset under the cutoff wins, u
       r.five_hour_reset, r.seven_day_reset, r.usage_updated, r.account);
   }
 });
+
+test('non-object JSON bodies (null, "str", 42) never 5xx an authenticated POST route; import still takes an array', async () => {
+  const routes = ['/api/events/prompt', '/api/board', '/api/accounts', '/api/events/limit', '/api/events/usage',
+    '/api/keys/import', '/api/keys', '/api/board/reorder', '/api/codex/sync'];
+  for (const p of routes) for (const b of ['null', '"str"', '42']) {
+    const r = await fetch(base + p, { method: 'POST', headers: H, body: b });
+    assert.ok(r.status < 500, `${p} ${b} -> ${r.status}`);
+  }
+  const r = await fetch(base + '/api/keys/import', { method: 'POST', headers: H, body: JSON.stringify([{ provider: 'nullbodytest', key: 'sk-nullbody-0123456789abcdef' }]) });
+  assert.ok(r.status < 400, `array import -> ${r.status}`);
+});
