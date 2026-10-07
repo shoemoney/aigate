@@ -9,9 +9,9 @@ framework — Node 24's built-in test runner + a couple of shell scripts.
 |-------|----------------|--------|
 | **Unit** (`test/lib.test.js`) | Vault crypto (GCM tamper-detect), CIDR/IP gate, timing-safe token compare, static-path containment, token-liveness classifier | `npm test` |
 | **HTTP integration** (`test/http.test.js`) | Every route end-to-end on a throwaway DB: auth gate, accounts/keys round-trips (secrets never leak), **sanitized key intake** (quote-strip, `export`/`NAME=` → 400, `first8…last4` hints, normalized lookups), selector, **exclude retry**, **TTL parking** (+ 404 on unknown accounts), reauth-skip, **boot canary**, **vault backups**, `/health` selectable parity, providers catalog, **WS `bearer.<token>` subprotocol auth** | `npm test` |
-| **Client behavior** (`test/switching-client.test.js`) | The `[Y/n]` prompt is gone (interactive **auto-switch**), and `prompt-hook.sh` re-evaluates the account **every turn** — parks it when exhausted, leaves it alone with headroom, no-ops on non-`cc` sessions — driven against a **mock aigate**; backgrounded work is stdio-detached (**zero turn latency**) | `npm test` |
+| **Client behavior** (`test/switching-client.test.js`) | The `[Y/n]` prompt is gone (interactive **auto-switch**), and `prompt-hook.sh` re-evaluates the account **every turn** — parks it when exhausted, leaves it alone with headroom, no-ops on sessions without `AIGATE_ACCOUNT` — driven against a **mock aigate**; backgrounded work is stdio-detached (**zero turn latency**) | `npm test` |
 | **Dashboard smoke** (manual) | The key-add UI adds → persists → deletes with the secret masked — every route it touches is already covered by the HTTP tests | see below |
-| **Fleet integration** (`clients/test-switching.sh`) | A real Pi runs `cc -p` through aigate, and account selection **switches** correctly as accounts are disabled/enabled — logged in the DB | see below |
+| **Fleet integration** (`clients/test-switching.sh`) | A real Pi runs `ai -p` through aigate, and account selection **switches** correctly as accounts are disabled/enabled — logged in the DB | see below |
 
 ## Unit + HTTP (`node --test`, zero deps)
 
@@ -60,7 +60,7 @@ stays clean.
 
 ## Fleet switching test — the real proof 🔁
 
-Installs the client on a box, then flips accounts and watches `cc` follow.
+Installs the client on a box, then flips accounts and watches `ai` follow.
 
 ```bash
 # on the target box (e.g. a Pi):
@@ -69,7 +69,7 @@ bash clients/test-switching.sh <accountWithMoreHeadroom> <otherAccount>
 ```
 
 It toggles `disabled` on each account and asserts the selected account flips,
-with a real `cc -p 'PONG'` succeeding every time. Then confirm the audit trail:
+with a real `ai -p 'PONG'` succeeding every time. Then confirm the audit trail:
 
 ```bash
 sqlite3 data/aigate.db \
@@ -80,7 +80,7 @@ sqlite3 data/aigate.db \
 
 ### Verified run (2026-07-08, Pi `twojeffs` → `aigate.shoemoney.ai`)
 
-| State | Expected | Picked | `cc -p` result |
+| State | Expected | Picked | `ai -p` result |
 |-------|----------|--------|----------------|
 | both enabled | shoemoney (1% vs 19%) | shoemoney | `PONG` |
 | shoemoney disabled | personal | personal | `PONG` |
@@ -91,7 +91,7 @@ Every switch landed in `access_log` (`select`/`ok`) and `request_log`.
 
 ## Over-limit detect + retry
 
-`cc -p` captures claude's output with **clean stdout** (banners + claude's
+`ai -p` captures claude's output with **clean stdout** (banners + claude's
 stderr never pollute the piped result) and classifies the failure:
 
 - **transient 529/overload** → **waits 10s and retries the SAME account** (no park — 529 is
