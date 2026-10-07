@@ -23,6 +23,7 @@ import { pipeline } from 'node:stream/promises';
 import { WebSocketServer } from 'ws';
 import { makeVault, rtHash, ledgerVerdict, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot, resetsIn } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
+import { ensureSchema, seedIfNeeded, pruneOld, handleSpend } from './spend.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -235,6 +236,7 @@ function openDb(path = DB_PATH) {
   }
 }
 const db = openDb();
+ensureSchema(db); seedIfNeeded(db);   // spend collector tables + one-time price seed (src/spend.js)
 
 // key canary: fail LOUD at boot if ENC_KEY can't decrypt this vault, instead of
 // decrypt() exploding deep inside /api/select later. First boot writes it.
@@ -1519,6 +1521,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/v1/chat/completions' && req.method === 'POST') return oaiProxy('/chat/completions');
     if (p === '/v1/responses' && req.method === 'POST') return oaiProxy('/responses');
 
+    if (p === '/api/spend' || p.startsWith('/api/spend/')) return handleSpend(req, res, url, { db, reqIp, json, body, shortHost, logAccess });
     return json(res, 404, { error: 'not found' });
   } catch (e) {
     // malformed %-encoding in a path segment throws URIError from decodeURIComponent —
@@ -1980,6 +1983,7 @@ function backupNow() {
     // Retention runs BEFORE the snapshot so a failing backup (full disk) can't starve it.
     db.exec(`DELETE FROM request_log WHERE ts < datetime('now','-30 days')`);
     db.exec(`DELETE FROM access_log WHERE ts < datetime('now','-30 days')`);
+    pruneOld(db);   // usage_events retention (AIGATE_SPEND_RETENTION_DAYS, default 400, 0 = forever)
     const cutoff = Date.now() - 14 * 86400000;
     for (const f of readdirSync(BACKUP_DIR)) {
       const m = /^aigate-(\d{4}-\d{2}-\d{2})\.db$/.exec(f);
