@@ -1475,6 +1475,9 @@ test('GET /api/usage groups accounts by provider with day/hour reset countdowns 
     db.prepare(`UPDATE accounts SET seven_day_pct=100 WHERE account='usage-codex'`).run();
     const maxed = (await (await fetch(base + '/api/usage/codex', { headers: H })).json()).find((a) => a.account === 'usage-codex');
     assert.equal(maxed.status, 'at_limit');   // over the cutoff must not read as "ok"
+    db.prepare(`UPDATE accounts SET seven_day_pct=7, token_exp=? WHERE account='usage-codex'`).run(Math.floor(Date.now() / 1000) - 60);
+    const expired = (await (await fetch(base + '/api/usage/codex', { headers: H })).json()).find((a) => a.account === 'usage-codex');
+    assert.equal(expired.status, 'token_expired');   // pickRanked skips it, so it must not read "ok" either
 
     assert.equal((await fetch(base + '/api/usage/gemini', { headers: H })).status, 404);
     assert.equal((await fetch(base + '/api/usage')).status, 401);

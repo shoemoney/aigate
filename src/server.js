@@ -841,6 +841,7 @@ const server = http.createServer(async (req, res) => {
         out[kind].push({
           account: a.account, label: a.label, plan: a.plan,
           status: a.disabled ? 'disabled' : a.reauth_needed ? 'reauth_needed' : a.refresh_unknown ? 'refresh_unknown' : a.parked ? 'parked'
+            : kind === 'codex' && a.token_exp != null && a.token_exp * 1000 <= now ? 'token_expired'
             : Math.max(a.five_hour_pct || 0, a.seven_day_pct || 0) >= CUTOFF ? 'at_limit' : 'ok',
           // Pro Codex plans have no short window (reset stays null) — hide it rather than show a fake 0%
           five_hour: win(a.five_hour_pct, a.five_hour_reset, kind === 'codex' && a.five_hour_reset == null),
