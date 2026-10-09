@@ -33,7 +33,7 @@ mkdir -p "$(dirname "$ZRC")"
 install -m 0755 "$SRC/aigate-run.sh" "$DIR/aigate-run.sh"
 for f in aigate-kimi.sh aigate-muse.sh aigate-codex.sh prompt-hook.sh statusline-feed.sh hydrate.sh \
          t3-claude.sh t3-codex.sh t3-opencode.sh t3-anthropic-compat.sh cmux-claude.sh aigate-spend.js \
-         t3-kimi-cli.sh t3-qwen-cli.sh t3-muse-cli.sh t3-facebook-cli.sh t3-gemini-cli.sh; do
+         t3-kimi-cli.sh t3-qwen-cli.sh t3-muse-cli.sh t3-facebook-cli.sh t3-gemini-cli.sh aigate-ultra.sh; do
   [ -f "$SRC/$f" ] && install -m 0755 "$SRC/$f" "$DIR/$f" || true
 done
 # every non-Anthropic T3 rung is the same script dispatched on its invocation name
@@ -272,6 +272,8 @@ EOF
 
 # `ai` (routes claude / codex / kimi / muse through aigate) and `ai-desktop` live in BIN.
 install -m 0755 "$SRC/ai" "$BIN/ai"
+# qwen-ultra / kimi-ultra / amber-ultra: the real CLIs on the Qwen token plan, one dispatcher
+for n in qwen kimi amber; do ln -sfn "$DIR/aigate-ultra.sh" "$BIN/$n-ultra"; done
 [ -f "$SRC/ai-desktop" ] && install -m 0755 "$SRC/ai-desktop" "$BIN/ai-desktop" || true
 # the old `cc` this installer used to write: remove ONLY if it is still our own text
 # (a user's own `cc` -- or the C compiler -- is never touched).

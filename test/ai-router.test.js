@@ -192,8 +192,9 @@ test('install.sh into a scratch root: ai, ai-desktop, wrappers, t3 symlinks; ret
   const r = spawnSync(BASH, [join(CLIENTS, 'install.sh')], { env, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   for (const f of ['ai', 'ai-desktop']) assert.ok(existsSync(join(bin, f)), f);
+  for (const n of ['qwen', 'kimi', 'amber']) assert.equal(readlinkSync(join(bin, `${n}-ultra`)), join(ag, 'aigate-ultra.sh'));
   for (const f of ['aigate-run.sh', 'aigate-codex.sh', 'aigate-kimi.sh', 'aigate-muse.sh', 't3-claude.sh', 't3-codex.sh', 't3-opencode.sh', 't3-anthropic-compat.sh', 'cmux-claude.sh', 'version',
-    't3-kimi-cli.sh', 't3-qwen-cli.sh', 't3-muse-cli.sh', 't3-facebook-cli.sh', 't3-gemini-cli.sh'])
+    't3-kimi-cli.sh', 't3-qwen-cli.sh', 't3-muse-cli.sh', 't3-facebook-cli.sh', 't3-gemini-cli.sh', 'aigate-ultra.sh'])
     assert.ok(existsSync(join(ag, f)), f);
   for (const n of ['kimi', 'muse', 'facebook', 'qwen', 'openrouter', 'aigate']) {
     const p = join(ag, `t3-${n}.sh`);
