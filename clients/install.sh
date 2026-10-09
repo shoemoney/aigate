@@ -32,8 +32,8 @@ mkdir -p "$(dirname "$ZRC")"
 
 install -m 0755 "$SRC/aigate-run.sh" "$DIR/aigate-run.sh"
 for f in aigate-kimi.sh aigate-muse.sh aigate-codex.sh prompt-hook.sh statusline-feed.sh hydrate.sh \
-         t3-claude.sh t3-codex.sh t3-opencode.sh t3-qwen-code.sh t3-muse-fb.sh t3-anthropic-compat.sh \
-         cmux-claude.sh aigate-spend.js; do
+         t3-claude.sh t3-codex.sh t3-opencode.sh t3-anthropic-compat.sh cmux-claude.sh aigate-spend.js \
+         t3-kimi-cli.sh t3-qwen-cli.sh t3-muse-cli.sh t3-facebook-cli.sh t3-gemini-cli.sh; do
   [ -f "$SRC/$f" ] && install -m 0755 "$SRC/$f" "$DIR/$f" || true
 done
 # every non-Anthropic T3 rung is the same script dispatched on its invocation name
