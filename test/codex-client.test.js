@@ -1,4 +1,4 @@
-// aigate-codex.sh / t3-codex.sh: select a Codex account, write auth.json, run the
+// aigate-codex.sh / t3-codex-cli.sh: select a Codex account, write auth.json, run the
 // (fake) codex binary, sync rotated tokens back. Real bash scripts, mock aigate.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +11,7 @@ import { dirname, resolve, join } from 'node:path';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CODEX_SH = join(ROOT, 'clients', 'aigate-codex.sh');
-const T3_CODEX = join(ROOT, 'clients', 't3-codex.sh');
+const T3_CODEX = join(ROOT, 'clients', 't3-codex-cli.sh');
 const now = () => Math.floor(Date.now() / 1000);
 
 import { BASH, PATH_ENV } from './helpers/bash32.js';
@@ -310,7 +310,7 @@ test('--adopt: POSTs the local auth.json to /api/codex/sync', async (t) => {
   assert.equal(mock.calls[0].body.auth_json.tokens.refresh_token, 'rt-local');
 });
 
-test('t3-codex.sh: writes the pick then execs real codex with args untouched', async (t) => {
+test('t3-codex-cli.sh: writes the pick then execs real codex with args untouched', async (t) => {
   const sb = sandbox(); t.after(sb.cleanup);
   const mock = await startMock(defaultHandler(pick('acct1', 'rt-1'))); t.after(mock.close);
   const dir = join(sb.home, '.claude', 'aigate');
@@ -322,7 +322,7 @@ test('t3-codex.sh: writes the pick then execs real codex with args untouched', a
   assert.equal(sb.runs().length, 1, 'real codex ran exactly once');
 });
 
-test('t3-codex.sh: fail-safe — wrapper missing, aigate down, aigate 503, wrapper crashing: real codex still runs, argv untouched', async (t) => {
+test('t3-codex-cli.sh: fail-safe — wrapper missing, aigate down, aigate 503, wrapper crashing: real codex still runs, argv untouched', async (t) => {
   const argv = ['app-server', '--listen', 'stdio://', '-c', 'x=1'];
   const install = (sb, body) => {
     const w = join(sb.home, '.claude', 'aigate', 'aigate-codex.sh');
@@ -505,7 +505,7 @@ test('STICKY: a live codex for this CODEX_HOME keeps its account; select is neve
   assert.ok(!mock.calls.some((c) => c.path === '/api/select'), 'no select');
   assert.match(r.stderr, /kept: another codex is running/);
 
-  // --write-only (what t3-codex.sh / ai-desktop use) is sticky too
+  // --write-only (what t3-codex-cli.sh / ai-desktop use) is sticky too
   const w = await run(sb, CODEX_SH, ['--write-only'], { AIGATE_URL: mock.url });
   assert.equal(w.code, 0, w.stderr); assert.equal(readAuth(sb).tokens.account_id, 'aid-live');
   assert.ok(!mock.calls.some((c) => c.path === '/api/select'));
@@ -570,7 +570,7 @@ test('STICKY off: AI_CODEX_FORCE=1, a codex under a DIFFERENT CODEX_HOME, or our
   assert.equal(readAuth(sb).tokens.account_id, 'aid-better', `FORCE switches: ${forced.stderr}`);
 });
 
-test('t3-codex.sh is sticky: a live codex keeps its account and real codex still execs', async (t) => {
+test('t3-codex-cli.sh is sticky: a live codex keeps its account and real codex still execs', async (t) => {
   const sb = sandbox(); t.after(sb.cleanup);
   const mock = await startMock((c) => {
     if (c.path === '/api/codex/auth') return [200, vaultAuth('live', 'rt-live', 'aid-live', '2026-10-06T12:00:00Z')];
@@ -914,10 +914,10 @@ test('codex binary: highest --version wins (numeric, not lexical), cmux shims ex
   }
 });
 
-test('codex binary: the resolver block is byte-identical in aigate-codex.sh, t3-codex.sh and ai', () => {
+test('codex binary: the resolver block is byte-identical in aigate-codex.sh, t3-codex-cli.sh and ai', () => {
   const blk = (f) => /# >>> aigate-codex-bin[\s\S]*?# <<< aigate-codex-bin/.exec(readFileSync(join(ROOT, 'clients', f), 'utf8'))?.[0];
   assert.ok(blk('aigate-codex.sh'));
-  assert.equal(blk('t3-codex.sh'), blk('aigate-codex.sh'));
+  assert.equal(blk('t3-codex-cli.sh'), blk('aigate-codex.sh'));
   assert.equal(blk('ai'), blk('aigate-codex.sh'));
 });
 

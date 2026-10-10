@@ -9,7 +9,7 @@
 set -u
 AIGATE_DIR="${AIGATE_DIR:-$HOME/.claude/aigate}"
 
-# >>> aigate-codex-bin (byte-identical in aigate-codex.sh, t3-codex.sh, ai; test/codex-client.test.js enforces it)
+# >>> aigate-codex-bin (byte-identical in aigate-codex.sh, t3-codex-cli.sh, ai; test/codex-client.test.js enforces it)
 # Which codex binary? AIGATE_CODEX_BIN wins. Else the HIGHEST `--version` among the usual
 # installs, so a stale ~/.local/bin/codex never shadows a newer brew one. The decision is cached
 # 1h in $AIGATE_DIR/codex-bin.cache keyed by candidate mtimes: launches don't pay N version calls.
@@ -74,7 +74,7 @@ aigate_codex_bin(){
 }
 # <<< aigate-codex-bin
 
-REAL="$(aigate_codex_bin)" || { echo "t3-codex: no real codex binary found" >&2; exit 127; }
+REAL="$(aigate_codex_bin)" || { echo "t3-codex-cli: no real codex binary found" >&2; exit 127; }
 export AIGATE_CODEX_BIN="$REAL"
 if [ -x "$AIGATE_DIR/aigate-codex.sh" ]; then
   # quiet by design: T3 owns stdout/stderr of the driver

@@ -193,13 +193,14 @@ test('install.sh into a scratch root: ai, ai-desktop, wrappers, t3 symlinks; ret
   assert.equal(r.status, 0, r.stderr);
   for (const f of ['ai', 'ai-desktop']) assert.ok(existsSync(join(bin, f)), f);
   for (const n of ['qwen', 'kimi', 'amber']) assert.equal(readlinkSync(join(bin, `${n}-ultra`)), join(ag, 'aigate-ultra.sh'));
-  for (const f of ['aigate-run.sh', 'aigate-codex.sh', 'aigate-kimi.sh', 'aigate-muse.sh', 't3-claude.sh', 't3-codex.sh', 't3-opencode.sh', 't3-anthropic-compat.sh', 'cmux-claude.sh', 'version',
+  for (const f of ['aigate-run.sh', 'aigate-codex.sh', 'aigate-kimi.sh', 'aigate-muse.sh', 't3-claude.sh', 't3-codex-cli.sh', 't3-opencode.sh', 't3-anthropic-compat.sh', 'cmux-claude.sh', 'version',
     't3-kimi-cli.sh', 't3-qwen-cli.sh', 't3-muse-cli.sh', 't3-facebook-cli.sh', 't3-gemini-cli.sh', 'aigate-ultra.sh'])
     assert.ok(existsSync(join(ag, f)), f);
   for (const n of ['kimi', 'muse', 'facebook', 'qwen', 'openrouter', 'aigate']) {
     const p = join(ag, `t3-${n}.sh`);
     assert.ok(lstatSync(p).isSymbolicLink(), p); assert.equal(readlinkSync(p), 't3-anthropic-compat.sh');
   }
+  assert.equal(readlinkSync(join(ag, 't3-codex.sh')), 't3-codex-cli.sh', 'old t3-codex.sh name still resolves');
   assert.ok(!existsSync(join(ag, 'aigate-gpt.sh')));
   assert.ok(readdirSync(ag).some((f) => f.startsWith('aigate-gpt.sh.bak-removed-')), 'moved, not deleted');
   assert.ok(!existsSync(join(bin, 'cc')), "installer's own old cc removed");
@@ -245,13 +246,13 @@ test('every clients/ shell script passes bash -n', () => {
 test('shellcheck (errors only) on the new/changed scripts, if installed', (t) => {
   const has = spawnSync('shellcheck', ['--version']);
   if (has.error) return t.skip('shellcheck not installed');
-  const files = ['ai', 'ai-desktop', 'aigate-codex.sh', 't3-codex.sh', 'install.sh', 'aigate-run.sh'].map((f) => join(CLIENTS, f));
+  const files = ['ai', 'ai-desktop', 'aigate-codex.sh', 't3-codex-cli.sh', 'install.sh', 'aigate-run.sh'].map((f) => join(CLIENTS, f));
   const r = spawnSync('shellcheck', ['-S', 'error', '-s', 'bash', ...files], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stdout);
 });
 
 test('bash 3.2 hygiene: no associative arrays / mapfile in new scripts', () => {
-  for (const f of ['ai', 'ai-desktop', 'aigate-codex.sh', 't3-codex.sh']) {
+  for (const f of ['ai', 'ai-desktop', 'aigate-codex.sh', 't3-codex-cli.sh']) {
     const s = readFileSync(join(CLIENTS, f), 'utf8');
     assert.ok(!/declare -A|\bmapfile\b|\breadarray\b/.test(s), f);
   }

@@ -32,7 +32,7 @@ mkdir -p "$(dirname "$ZRC")"
 
 install -m 0755 "$SRC/aigate-run.sh" "$DIR/aigate-run.sh"
 for f in aigate-kimi.sh aigate-muse.sh aigate-codex.sh prompt-hook.sh statusline-feed.sh hydrate.sh \
-         t3-claude.sh t3-codex.sh t3-opencode.sh t3-anthropic-compat.sh cmux-claude.sh aigate-spend.js \
+         t3-claude.sh t3-codex-cli.sh t3-opencode.sh t3-anthropic-compat.sh cmux-claude.sh aigate-spend.js \
          t3-kimi-cli.sh t3-qwen-cli.sh t3-muse-cli.sh t3-facebook-cli.sh t3-gemini-cli.sh aigate-ultra.sh; do
   [ -f "$SRC/$f" ] && install -m 0755 "$SRC/$f" "$DIR/$f" || true
 done
@@ -40,6 +40,8 @@ done
 for n in kimi muse facebook qwen openrouter aigate; do
   ln -sfn t3-anthropic-compat.sh "$DIR/t3-$n.sh"
 done
+# old name, still in older T3 settings backups
+ln -sfn t3-codex-cli.sh "$DIR/t3-codex.sh"
 # aigate-gpt.sh (the CPA-era codex shim) is retired: aigate-codex.sh replaces it.
 # Move it aside instead of deleting.
 if [ -e "$DIR/aigate-gpt.sh" ]; then

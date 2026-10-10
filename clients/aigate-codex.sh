@@ -38,7 +38,7 @@ AUTH="$CODEX_HOME/auth.json"
 MODEL="${AI_GPT_MODEL:-gpt-6.1-sol}"
 EFFORT="${AI_GPT_EFFORT:-high}"
 
-# >>> aigate-codex-bin (byte-identical in aigate-codex.sh, t3-codex.sh, ai; test/codex-client.test.js enforces it)
+# >>> aigate-codex-bin (byte-identical in aigate-codex.sh, t3-codex-cli.sh, ai; test/codex-client.test.js enforces it)
 # Which codex binary? AIGATE_CODEX_BIN wins. Else the HIGHEST `--version` among the usual
 # installs, so a stale ~/.local/bin/codex never shadows a newer brew one. The decision is cached
 # 1h in $AIGATE_DIR/codex-bin.cache keyed by candidate mtimes: launches don't pay N version calls.
