@@ -1,5 +1,5 @@
 // aigate-ultra.sh: qwen-ultra / kimi-ultra / amber-ultra run the real qwen, kimi and opencode
-// CLIs on each provider's top plan (qwen + amber: Qwen token plan; kimi: the Kimi plan).
+// CLIs on each provider's top plan (qwen: Qwen token plan; kimi: the Kimi plan; amber: grok-4.6 on OpenRouter).
 // One script dispatched on its name. Fake CLIs, mock aigate.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,7 +19,7 @@ const TP_URL = 'https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-m
 // stands in for qwen / kimi / opencode: records argv and the env the dispatcher sets
 const FAKE = `#!/bin/bash
 printf 'ARG %s\\n' "$@" >> "$FAKE_LOG"
-for v in OPENAI_API_KEY OPENAI_BASE_URL QWEN_TOKENPLAN_KEY KIMI_CODE_HOME OPENCODE_CONFIG_CONTENT; do
+for v in OPENAI_API_KEY OPENAI_BASE_URL QWEN_TOKENPLAN_KEY AMBER_OPENROUTER_KEY KIMI_CODE_HOME OPENCODE_CONFIG_CONTENT; do
   printf '%s=%s\\n' "$v" "$(printenv "$v")" >> "$FAKE_LOG"
 done
 `;
@@ -66,7 +66,8 @@ function startMock(handler) {
     r({ calls, url: `http://127.0.0.1:${server.address().port}`, close: () => server.close() })));
 }
 
-const vault = () => startMock((url) => (url === '/api/keys/qwen-tokenplan' ? [200, { key: 'sk-sp-test' }] : [404, {}]));
+const KEYS = { '/api/keys/qwen-tokenplan': 'sk-sp-test', '/api/keys/openrouter': 'sk-or-test' };
+const vault = () => startMock((url) => (KEYS[url] ? [200, { key: KEYS[url] }] : [404, {}]));
 
 test('qwen-ultra: real qwen on the token plan, yolo like the zsh fn, key cached 0600', async (t) => {
   const sb = sandbox(); t.after(sb.cleanup);
@@ -111,27 +112,31 @@ test('kimi-ultra: real kimi on the Kimi plan (no token-plan key), K3, never-ask 
   assert.deepEqual(sb.args(), ['ARG acp']);
 });
 
-test('amber-ultra: opencode sees ONLY the Amber Sinclair model, on the token plan, with room for the global context', async (t) => {
+test('amber-ultra: opencode sees ONLY Amber Sinclair = uncensored grok-4.6 on OpenRouter, with room for the global context', async (t) => {
   const sb = sandbox(); t.after(sb.cleanup);
   const mock = await vault(); t.after(mock.close);
   let r = await run(sb, 'amber-ultra', [], { AIGATE_URL: mock.url, AIGATE_TOKEN: 'tok' });
   assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(mock.calls.map((c) => c.path), ['/api/keys/openrouter']);
+  assert.equal(sb.env('AMBER_OPENROUTER_KEY'), 'sk-or-test');
+  assert.equal(sb.env('QWEN_TOKENPLAN_KEY'), '', 'no token-plan key for Amber');
   let cfg = JSON.parse(sb.env('OPENCODE_CONFIG_CONTENT'));
-  assert.deepEqual(cfg.enabled_providers, ['tokenplan']);
-  const tp = cfg.provider.tokenplan;
-  assert.equal(tp.options.baseURL, TP_URL);
-  assert.equal(tp.options.apiKey, '{env:QWEN_TOKENPLAN_KEY}', 'key stays in env, not in the config text');
-  assert.deepEqual(Object.keys(tp.models), ['AmberSinclair']);
-  assert.equal(tp.models.AmberSinclair.id, 'qwen3.8-max');
+  assert.deepEqual(cfg.enabled_providers, ['amber']);
+  const p = cfg.provider.amber;
+  assert.equal(p.options.baseURL, 'https://openrouter.ai/api/v1');
+  assert.equal(p.options.apiKey, '{env:AMBER_OPENROUTER_KEY}', 'key stays in env, not in the config text');
+  assert.ok(!sb.env('OPENCODE_CONFIG_CONTENT').includes('sk-or-test'));
+  assert.deepEqual(Object.keys(p.models), ['AmberSinclair']);
+  assert.equal(p.models.AmberSinclair.id, 'x-ai/grok-4.6');
   // global skills + MCP tools put turn one at ~128K; below that opencode compacts every reply
-  assert.ok(tp.models.AmberSinclair.limit.context >= 200000);
+  assert.ok(p.models.AmberSinclair.limit.context >= 200000);
   assert.equal(cfg.default_agent, 'amber');
-  for (const a of ['amber', 'build', 'plan', 'grok']) assert.equal(cfg.agent[a].model, 'tokenplan/AmberSinclair', a);
+  for (const a of ['amber', 'build', 'plan', 'grok']) assert.equal(cfg.agent[a].model, 'amber/AmberSinclair', a);
   assert.equal(cfg.agent.amber.prompt, `{file:${join(sb.home, '.config', 'opencode', 'prompts', 'grok.md')}}`);
   rmSync(sb.log);
-  r = await run(sb, 'amber-ultra', ['run', 'hi'], { AIGATE_URL: mock.url, AIGATE_TOKEN: 'tok', AMBER_MODEL: 'qwen3.7-plus' });
+  r = await run(sb, 'amber-ultra', ['run', 'hi'], { AIGATE_URL: mock.url, AIGATE_TOKEN: 'tok', AMBER_MODEL: 'x-ai/grok-4.7' });
   cfg = JSON.parse(sb.env('OPENCODE_CONFIG_CONTENT'));
-  assert.equal(cfg.provider.tokenplan.models.AmberSinclair.id, 'qwen3.7-plus');
+  assert.equal(cfg.provider.amber.models.AmberSinclair.id, 'x-ai/grok-4.7');
   assert.deepEqual(sb.args(), ['ARG run', 'ARG hi']);
 });
 
@@ -143,10 +148,15 @@ test('ultra: vault down → cached key; no cache → exit 1 and no CLI starts; u
   assert.match(r.stderr, /add-key qwen-tokenplan/);
   assert.deepEqual(sb.lines(), []);
   writeFileSync(join(sb.home, '.claude', 'aigate', 'qwen-tokenplan-key'), 'sk-sp-cached');
-  r = await run(sb, 'amber-ultra', [], down);
+  r = await run(sb, 'qwen-ultra', [], down);
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stderr, /cached qwen-tokenplan key/);
   assert.equal(sb.env('QWEN_TOKENPLAN_KEY'), 'sk-sp-cached');
+  rmSync(sb.log);
+  r = await run(sb, 'amber-ultra', [], down);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /add-key openrouter/);
+  assert.deepEqual(sb.lines(), [], 'no Amber without her own key');
   r = await run(sb, 'mystery-ultra', [], down);
   assert.equal(r.code, 64);
 });
