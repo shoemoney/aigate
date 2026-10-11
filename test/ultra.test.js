@@ -1,5 +1,6 @@
 // aigate-ultra.sh: qwen-ultra / kimi-ultra / amber-ultra run the real qwen, kimi and opencode
-// CLIs on the Qwen token plan. One script dispatched on its name. Fake CLIs, mock aigate.
+// CLIs on each provider's top plan (qwen + amber: Qwen token plan; kimi: the Kimi plan).
+// One script dispatched on its name. Fake CLIs, mock aigate.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -89,21 +90,25 @@ test('qwen-ultra: management subcommands get no yolo flag', async (t) => {
   assert.deepEqual(sb.args(), ['ARG mcp', 'ARG list']);
 });
 
-test('kimi-ultra: own KIMI_CODE_HOME, token-plan provider reads the key from env, never from the file', async (t) => {
+test('kimi-ultra: real kimi on the Kimi plan (no token-plan key), K3, never-ask only when interactive', async (t) => {
   const sb = sandbox(); t.after(sb.cleanup);
   const mock = await vault(); t.after(mock.close);
-  const r = await run(sb, 'kimi-ultra', ['-p', 'hi'], { AIGATE_URL: mock.url, AIGATE_TOKEN: 'tok' });
+  const env = { AIGATE_URL: mock.url, AIGATE_TOKEN: 'tok' };
+  let r = await run(sb, 'kimi-ultra', [], env);
   assert.equal(r.code, 0, r.stderr);
-  const home = join(sb.home, '.kimi-code-ultra');
-  assert.equal(sb.env('KIMI_CODE_HOME'), home);
-  assert.equal(sb.env('QWEN_TOKENPLAN_KEY'), 'sk-sp-test');
-  assert.deepEqual(sb.args(), ['ARG -p', 'ARG hi']);
-  const cfg = readFileSync(join(home, 'config.toml'), 'utf8');
-  assert.match(cfg, /default_model = "tokenplan\/qwen3\.8-max"/);
-  assert.match(cfg, /api_key_env = "QWEN_TOKENPLAN_KEY"/);
-  assert.ok(cfg.includes(`base_url = "${TP_URL}"`));
-  assert.ok(!cfg.includes('sk-sp-test'), 'key must not be written into config.toml');
-  assert.match(cfg, /\[models\."tokenplan\/qwen3\.8-max"\][^[]*max_context_size = 262144/);
+  assert.deepEqual(sb.args(), ['ARG -m', 'ARG kimi-code/k3', 'ARG --auto']);
+  assert.deepEqual(mock.calls, [], 'never fetches the token-plan key');
+  assert.equal(sb.env('QWEN_TOKENPLAN_KEY'), '');
+  assert.equal(sb.env('KIMI_CODE_HOME'), '', 'plain ~/.kimi-code login');
+  rmSync(sb.log);
+  r = await run(sb, 'kimi-ultra', ['-p', 'hi'], env);   // kimi refuses --auto with --prompt
+  assert.deepEqual(sb.args(), ['ARG -m', 'ARG kimi-code/k3', 'ARG -p', 'ARG hi']);
+  rmSync(sb.log);
+  r = await run(sb, 'kimi-ultra', ['--model', 'kimi-code/kimi-for-coding'], env);
+  assert.deepEqual(sb.args(), ['ARG --auto', 'ARG --model', 'ARG kimi-code/kimi-for-coding']);
+  rmSync(sb.log);
+  r = await run(sb, 'kimi-ultra', ['acp'], env);
+  assert.deepEqual(sb.args(), ['ARG acp']);
 });
 
 test('amber-ultra: opencode sees ONLY the Amber Sinclair model, on the token plan, with room for the global context', async (t) => {
@@ -138,7 +143,7 @@ test('ultra: vault down → cached key; no cache → exit 1 and no CLI starts; u
   assert.match(r.stderr, /add-key qwen-tokenplan/);
   assert.deepEqual(sb.lines(), []);
   writeFileSync(join(sb.home, '.claude', 'aigate', 'qwen-tokenplan-key'), 'sk-sp-cached');
-  r = await run(sb, 'kimi-ultra', [], down);
+  r = await run(sb, 'amber-ultra', [], down);
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stderr, /cached qwen-tokenplan key/);
   assert.equal(sb.env('QWEN_TOKENPLAN_KEY'), 'sk-sp-cached');
