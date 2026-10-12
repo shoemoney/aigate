@@ -9,16 +9,6 @@ for c in "${MUSE_BIN:-}" "$HOME/.local/bin/muse" /opt/homebrew/bin/muse /usr/loc
 done
 [ -n "${REAL:-}" ] || { echo "t3-facebook-cli: no muse binary found" >&2; exit 127; }
 
-# T3 polls --version every minute. A real muse start logs ~650 SecTrust lines plus as many from
-# trustd (a third of this Mac's unified log), so answer from a cache keyed on the installed build.
-if [ "$*" = --version ] && [ -s "$HOME/.local/bin/.muse-version" ]; then
-  key="$REAL $(cat "$HOME/.local/bin/.muse-version")" cache="$HOME/.cache/t3-muse-version"
-  [ -s "$cache" ] && [ "$(head -1 "$cache")" = "$key" ] && { tail -n +2 "$cache"; exit 0; }
-  out="$("$REAL" --version)" || exit
-  mkdir -p "${cache%/*}" && printf '%s\n%s\n' "$key" "$out" > "$cache.$$" && mv -f "$cache.$$" "$cache"
-  printf '%s\n' "$out"; exit 0
-fi
-
 # T3's version probe must not wait on the vault
 case "${1:-}" in --version|-V|--help|-h) exec "$REAL" "$@";; esac
 
