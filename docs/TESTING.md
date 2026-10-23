@@ -15,6 +15,8 @@ framework — Node 24's built-in test runner + a couple of shell scripts.
 | **Codex client** (`test/codex-client.test.js`) | `aigate-codex.sh` / `t3-codex-cli.sh` / `ai` against a mock aigate and a fake `codex`: 0600 `auth.json`, print-mode flag translation and retry on usage limits, pre/post token sync, `--write-only` / `--adopt` / `--keep` keeper, sticky live-session accounts, signal exits, fail-open, `install.sh` launchd/systemd/cron wiring, binary resolver | `npm test` |
 | **Anthropic proxy** (`test/proxy.test.js`) | `POST /v1/messages` + `GET /v1/models` for API-key providers: Anthropic-shaped 401/400 envelopes, tier-alias and `provider:model` routing, the setup-token guard, key failover, 429 passthrough, SSE streaming and client-abort teardown, 529 when no key is vaulted, muse and qwen routing | `npm test` |
 | **OpenAI proxy** (`test/oai-proxy.test.js`) | `POST /v1/chat/completions` and `/v1/responses`, the OpenAI-shape mirror of the proxy suite: OpenAI error envelopes, bare-model routing (openai, qwencloud, deepseek, grok, sonar, openrouter fallback), upstream URL shape, body passthrough, failover, 429, SSE, 529, superset `/v1/models` rows | `npm test` |
+| **Transparent credential proxy** | Manually registered client keys, encrypted single-field and multi-field credentials, administrator separation, original request/response bytes and application headers, streaming, complete encrypted capture and interrupted/error outcomes; local fake upstreams and temporary data only | `npm test` |
+| **Proxy credential rotation** (`test/proxy-rotation.test.js`) | Structured credentials re-encrypt atomically with legacy vault rows; existing traffic metadata, orphan capture files, or an unreadable capture directory refuse rotation before any ciphertext changes | `npm test` |
 | **`ai` router + installer** (`test/ai-router.test.js`) | The `ai` entry-point route table and fail-open guards, `ai usage` (grouping, ★ picks, `--json`, 80-col fit, unreachable server), `install.sh` into a scratch root, plus static hygiene on `clients/` (`bash -n`, shellcheck, bash 3.2 compatibility, no CLIProxyAPI references) | `npm test` |
 | **Spend pricing** (`test/spend-pricing.test.js`) | Pure price arithmetic: micro-dollar conversion, Anthropic vs OpenAI cache conventions, 1h cache-write clamp, no-rate meters bill as fresh input, long-context tier at 272001 input tokens, half-up rounding and BigInt precision, `pickRate` (dated, exact beats prefix, unknown stays null, Kimi coding plan unpriced), billing class, seed integrity, space-bunny at exactly 1/5 of `claude-opus-5-5` | `npm test` |
 | **Spend server** (`test/spend-server.test.js`) | Every `/api/spend*` route behind the auth gate, price seed once, ingest dedupe (replay and in-batch), whole-batch validation, pricing at ingest and `unpriced_models`, session attribution in both arrival orders plus the time rule and Codex leases, billing classes, `GET /api/spend` totals equal sum of groups with no `tokens` key, 400s for bad parameters, price PUT/reprice, retention prune, audit rows carry counts only | `npm test` |
@@ -38,6 +40,46 @@ actual HTTP — including the WebSocket upgrade.
 Covers, among others, the four bugs fixed during hardening (static-file sibling
 leak, XFF spoof, auth-compare crash, `ip2int` garbage) — each has a
 failed-before/passes-after regression test.
+
+## Transparent relay acceptance
+
+The [transparent proxy guide](TRANSPARENT-PROXY.md) defines the contract and its
+authentication, addressing, and HTTP transport exceptions. Its tests use local
+HTTP upstreams and throwaway databases/event directories; they need no live
+provider credential or deployed service.
+
+Acceptance covers manually adding and revoking a client binding; rejecting
+unknown credentials without creating vault rows; denying client-key access to
+administration and traffic downloads; encrypted multi-field storage; and a clear
+422 when an unsupported credential adapter is selected. AWS bundle storage is
+tested independently of AWS signing, which is not implemented.
+
+Preset-key checks cover independent `.env` key slots, startup validation and
+administrator separation, `/proxy/<provider>` prefix removal with the remaining
+raw path/query preserved, manually provisioned credential selection, and
+missing/unsupported credentials failing without creating vault rows.
+
+Relay checks compare exact body bytes, original paths and query strings,
+application headers and duplicates, upstream status and errors, binary and
+compressed content, multipart uploads, and SSE arriving before stream completion.
+Interim-response checks cover 103 headers without `Link`, duplicate header pairs,
+and pipelined response order; 100 Continue is tested as a per-connection handshake.
+They also cover no automatic retries, disconnect teardown, and logging failure.
+Capture checks exercise full encrypted headers/body events, paginated retrieval,
+streamed downloads, and recovery of interrupted exchanges. Existing model-routing
+proxy tests remain compatibility checks for the older administrator-token path;
+their failover/model rewriting is not the transparent relay contract.
+
+Run the focused relay, capture, and rotation tests, then the complete suite:
+
+```bash
+node --test test/transparent-proxy-http.test.js test/proxy-traffic.test.js test/proxy-rotation.test.js test/transproxy-presets.test.js
+npm test
+```
+
+Test success proves the local
+HTTP implementation; it does not prove a production reverse proxy preserves the
+same headers or that an untested provider accepts a request.
 
 ## Continuous re-eval + auto-switch (client behavior) 🔄
 

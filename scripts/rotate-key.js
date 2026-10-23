@@ -8,6 +8,8 @@
  * a crash mid-rotation rolls back cleanly rather than leaving a half-migrated vault.
  *
  * BACK UP data/aigate.db first (or just copy the newest data/backups/aigate-*.db).
+ * Stop the daemon before running. Rotation is refused while encrypted proxy traffic
+ * exists, because its external capture files cannot join the database transaction.
  *
  * Usage:
  *   AIGATE_ENCRYPTION_KEY=<current hex>  node scripts/rotate-key.js <newHexKey>
@@ -16,6 +18,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readdirSync } from 'node:fs';
 import { makeVault } from '../src/lib.js';
 
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -38,19 +41,39 @@ const canary = db.prepare(`SELECT v FROM meta WHERE k='canary'`).get();
 if (canary) { try { oldV.decrypt(canary.v); } catch { console.error('FATAL: the current AIGATE_ENCRYPTION_KEY does not decrypt this vault — aborting, nothing changed'); process.exit(1); } }
 
 const reenc = (enc) => newV.encrypt(oldV.decrypt(enc));   // throws on any bad row → whole txn rolls back
-let accounts = 0, keys = 0;
-db.exec('BEGIN');
+let accounts = 0, keys = 0, credentials = 0;
+db.exec('BEGIN IMMEDIATE');
 try {
+  const tables = new Set(db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all().map((r) => r.name));
+  // Check both sources: a capture file may survive a failed metadata insert, and a
+  // record may survive a missing file. Either means rotation must stop, preserving
+  // the old key for all historical traffic instead of silently orphaning it.
+  const hasTrafficRows = tables.has('proxy_traffic') && !!db.prepare('SELECT 1 FROM proxy_traffic LIMIT 1').get();
+  let hasTrafficFiles;
+  try {
+    hasTrafficFiles = readdirSync(join(dirname(DB_PATH), 'proxy-traffic')).some((name) => name.endsWith('.events'));
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw new Error('cannot inspect encrypted proxy traffic; rotation refused');
+    hasTrafficFiles = false;
+  }
+  if (hasTrafficRows || hasTrafficFiles) throw new Error('encrypted proxy traffic exists; rotation refused because capture-file key rotation is not supported');
+
   for (const r of db.prepare(`SELECT account, token_enc FROM accounts WHERE token_enc IS NOT NULL`).all()) {
     db.prepare(`UPDATE accounts SET token_enc=? WHERE account=?`).run(reenc(r.token_enc), r.account); accounts++;
   }
   for (const r of db.prepare(`SELECT id, key_enc FROM provider_keys`).all()) {
     db.prepare(`UPDATE provider_keys SET key_enc=? WHERE id=?`).run(reenc(r.key_enc), r.id); keys++;
   }
+  if (tables.has('proxy_credentials')) {
+    const updateCredential = db.prepare('UPDATE proxy_credentials SET fields_enc=? WHERE id=?');
+    for (const r of db.prepare('SELECT id,fields_enc FROM proxy_credentials').all()) {
+      updateCredential.run(reenc(r.fields_enc), r.id); credentials++;
+    }
+  }
   // rewrite the canary under the NEW key so the next boot's guard passes
   db.prepare(`INSERT INTO meta(k,v) VALUES('canary',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v`).run(newV.encrypt('aigate-canary'));
   db.exec('COMMIT');
 } catch (e) { db.exec('ROLLBACK'); console.error('FATAL: rotation failed, rolled back — nothing changed:', String((e && e.message) || e)); process.exit(1); }
 db.close();
-console.log(`rotated ${accounts} account token(s) + ${keys} provider key(s).`);
-console.log(`NEXT: set AIGATE_ENCRYPTION_KEY=${NEW} in .env and restart aigate.`);
+console.log(`rotated ${accounts} account token(s) + ${keys} provider key(s) + ${credentials} proxy credential set(s).`);
+console.log('NEXT: set AIGATE_ENCRYPTION_KEY to the supplied new key in .env and restart aigate.');

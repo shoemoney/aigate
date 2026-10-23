@@ -18,7 +18,9 @@ Node.js 24+ · SQLite · One runtime dependency · MIT
 
 **One vault. A clear view of what is using it.** AIGate stores your credentials, picks Claude **and Codex (ChatGPT)** accounts use-it-or-lose-it style (the soonest weekly reset among accounts with headroom goes first), proxies requests for supported API-key providers, and brings usage and activity into one live workspace.
 
-Claude and Codex subscription requests run through the official `claude` and `codex` binaries directly; AIGate only picks the account and hands over its credential. API-key proxy requests use the provider-key vault. These are separate paths; see [credential boundaries](#credential-boundaries).
+Claude and Codex subscription requests run through the official `claude` and `codex` binaries directly; AIGate only picks the account and hands over its credential. API-key proxy requests use manually registered provider credentials. These are separate paths; see [credential boundaries](#credential-boundaries).
+
+**Transparent proxy:** configure one or two proxy-only keys in `.env`, manually add provider credentials, then use a base URL such as `$AIGATE_URL/proxy/openai/v1`. AIGate substitutes the provider credential while retaining application headers and body bytes, with explicit authentication and HTTP transport exceptions. Complete traffic records are encrypted at rest and available to administrators. See the [transparent proxy guide](docs/TRANSPARENT-PROXY.md) for setup, isolated client bindings, full logging, and multi-field credential storage.
 
 | Vault | Observe | Operate |
 |---|---|---|
@@ -187,7 +189,9 @@ work       ok         7d 52%    resets in 9h 42m
 
 ### Credential boundaries
 
-Claude OAuth setup tokens belong in **accounts**. Provider API keys belong in **provider_keys**. The proxy reads the provider-key vault and rejects Claude setup tokens at intake and retrieval. The selector returns credentials to authenticated callers, so clients using selection or explicit key retrieval do receive those credentials; proxy clients use the AIGate bearer instead.
+Claude OAuth setup tokens belong in **accounts**. Provider API keys belong in **provider_keys** or the transparent proxy's encrypted **proxy_credentials** bundles. Proxy handlers never select subscription credentials from `accounts`, and reject Claude setup tokens at intake and retrieval. The selector returns credentials to authenticated callers, so clients using selection or explicit key retrieval do receive those credentials.
+
+Transparent proxy clients use either optional `.env` keys `AIGATE_PROXY_TOKEN` / `AIGATE_PROXY_TOKEN_2` with `/proxy/<provider>/...`, or a manually registered key hashed in **proxy_clients** and bound to a specific credential. None grants administrative access. Preset keys use the newest manually registered API-key credential for the selected provider; explicit bindings isolate a particular credential. The older model-routing proxy retains the AIGate administrator bearer for compatibility; its behavior differs from the [transparent relay](docs/TRANSPARENT-PROXY.md). Provider credentials and client bindings are created only through explicit authenticated administrative actions, never learned from proxy traffic.
 
 For the project's policy analysis and source references, read [COMPLIANCE.md](COMPLIANCE.md). The software's routing architecture does not guarantee an account's policy status.
 
@@ -524,6 +528,8 @@ The **Spend** section loads on boot and every 5 minutes. It shows 24h / 7d / 30d
 
 Use `Authorization: Bearer $AIGATE_TOKEN` for machine clients. The dashboard uses its signed session cookie. Health checks, the session probe, and login/logout do not require a bearer; network restrictions still apply.
 
+The transparent relay uses a preset proxy-only key or a separately registered client key instead of the administrator bearer. Its credential, client-binding, and complete-traffic APIs are documented in the [transparent proxy guide](docs/TRANSPARENT-PROXY.md#administrative-endpoints).
+
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/health` · `/healthz` | **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` (Claude pool only) plus observability numbers `poll_age_s, backup_age_s, poll_ok, poll_failed` + a `parked` / `reauth` / `disabled` / `over_cutoff` tally and the Codex counters `codex_accounts, codex_selectable, codex_reauth, codex_poll_age_s, codex_refresh_unknown`. The pre-codex fields (`accounts`, `selectable`, `poll_age_s`, `parked`, `reauth`, `disabled`, `over_cutoff`) describe **Claude only** (all numbers, no secrets; autoheal reads only the status) (generic 503 if the DB is wedged) |
@@ -584,7 +590,10 @@ Same posture on the OpenAI wire: point the client at `http://<aigate>/v1` with t
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `AIGATE_TOKEN` | — *(required)* | bearer authentication for machine clients |
+| `AIGATE_TOKEN` | — *(required)* | administrator bearer; transparent relay clients use preset or separately registered proxy-only keys |
+| `AIGATE_PROXY_TOKEN` / `AIGATE_PROXY_TOKEN_2` | *(empty = disabled)* | optional independent proxy-only keys for `/proxy/<provider>/...`; never grant administration or traffic-log access |
+| `AIGATE_TRANSPARENT_UPSTREAM_<PROVIDER>` | provider catalog | optional trusted upstream origin/path prefix for a preset provider route |
+| `AIGATE_TRANSPARENT_TIMEOUT_MS` | `300000` | transparent relay upstream inactivity timeout in milliseconds; minimum `1000` |
 | `AIGATE_DASHBOARD_PASSWORD` | *(empty = disabled)* | master password for browser access; empty leaves bearer authentication only |
 | `AIGATE_ENCRYPTION_KEY` | — *(required)* | 32-byte hex (AES-256-GCM). `openssl rand -hex 32` |
 | `PORT` / `HOST` | `20200` / `0.0.0.0` | bind |

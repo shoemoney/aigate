@@ -7,9 +7,9 @@
  * ingests prompt + usage events from the fleet's Claude Code hooks, and streams
  * everything live over WebSocket to a dashboard.
  *
- * It is NOT a proxy — it never sits in Anthropic's request path. This daemon is a
- * selector: it picks the account and hands its token to the official `claude`
- * binary via CLAUDE_CODE_OAUTH_TOKEN, and records what happened (via local hooks).
+ * Subscription account selection hands a token to the official CLI directly.
+ * Manually provisioned provider API credentials can also serve the transparent
+ * HTTP proxy; that path captures complete encrypted application traffic.
  */
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
@@ -24,6 +24,7 @@ import { WebSocketServer } from 'ws';
 import { makeVault, rtHash, ledgerVerdict, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot, resetsIn } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
 import { ensureSchema, seedIfNeeded, pruneOld, handleSpend } from './spend.js';
+import { createTransparentProxy } from './transparent-proxy.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -704,6 +705,7 @@ function rawJsonBody(req, maxBytes = PROXY_BODY_MAX) {
 }
 
 // ---- routes -------------------------------------------------------------
+const transparentProxy = await createTransparentProxy({ db, encrypt, decrypt, dbPath: DB_PATH, masterToken: TOKEN, reqIp, authFail, authLocked, authOk });
 const server = http.createServer(async (req, res) => {
   // a malformed target ('//', protocol-relative) makes new URL throw; in an async
   // handler that's an unhandled rejection → socket hangs (pre-auth DoS). 404 it.
@@ -715,6 +717,10 @@ const server = http.createServer(async (req, res) => {
     console.warn('[net] denied', reqIp(req), req.method, p);   // stderr only — unauth clients must not write DB rows
     return json(res, 403, { error: 'forbidden (network)' });
   }
+
+  try { if (await transparentProxy.handle(req, res)) return; }
+  catch { if (!res.headersSent) return json(res, 503, { error: 'proxy unavailable' }); res.destroy(); return; }
+  if (req.aigateExpectContinue) res.writeContinue();
 
   // health probe (no bearer — supervisors/watchdog don't have it; still gated
   // by network, and loopback/docker healthchecks are always allowed). db-backed:
@@ -829,6 +835,7 @@ const server = http.createServer(async (req, res) => {
   authOk(clientAddr);
 
   try {
+    if (await transparentProxy.admin(req, res, url, { json, body })) return;
     // --- accounts / vault ---
     if (p === '/api/accounts' && req.method === 'GET')
       return json(res, 200, q.listAccounts.all());
@@ -978,6 +985,7 @@ const server = http.createServer(async (req, res) => {
       // RETURNING: a typo'd id used to no-op with {ok:true} — surface it as a 404
       const dead = q.delKey.get(Number(p.split('/').pop()));
       if (!dead) return json(res, 404, { error: 'unknown key id' });
+      db.prepare('DELETE FROM proxy_clients WHERE key_id=?').run(Number(p.split('/').pop()));
       logAccess(dead.provider, '', reqIp(req), 'key-delete', dead.key_hint);
       broadcast('keys', q.listKeys.all());
       return json(res, 200, { ok: true });
@@ -1549,6 +1557,7 @@ server.on('upgrade', (req, socket, head) => {
   // same '//' trap as the request handler, but this listener is SYNC — an unguarded
   // throw here is uncaughtException → shutdown(1) → autoheal crash-loop, pre-auth
   let path; try { path = new URL(req.url, 'http://x').pathname; } catch { socket.destroy(); return; }
+  if (path !== '/ws' && ipAllowed(reqIp(req), allowCidr())) { void transparentProxy.unsupported(req, socket, head); return; }
   // bearer rides the subprotocol (machine clients); a browser on the master password
   // has no token in-page, so also accept its signed session cookie (same as authed()).
   const wsAuthed = String(req.headers['sec-websocket-protocol'] || '').split(',')
@@ -1569,6 +1578,15 @@ server.on('upgrade', (req, socket, head) => {
     ws.on('pong', () => { ws.isAlive = true; });
     ws.send(JSON.stringify({ type: 'accounts', data: q.listAccounts.all(), ts: new Date().toISOString() }));
   });
+});
+
+server.on('checkContinue', (req, res) => {
+  req.aigateExpectContinue = true;
+  server.emit('request', req, res);
+});
+server.on('connect', (req, socket, head) => {
+  if (!ipAllowed(reqIp(req), allowCidr())) { socket.destroy(); return; }
+  void transparentProxy.unsupported(req, socket, head);
 });
 
 // ---- usage poller ------------------------------------------------------
