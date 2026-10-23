@@ -58,7 +58,7 @@ Dependencies were installed with `npm ci` in the isolated worktree.
 Final focused command:
 
 ```sh
-rtk proxy node --test --test-timeout=20000 test/proxy-traffic.test.js test/transparent-proxy-http.test.js test/transproxy-presets.test.js test/proxy-rotation.test.js test/transproxy-failure-boundaries.test.js test/transproxy-session-cookie.test.js
+rtk proxy node --test --test-timeout=20000 test/proxy-traffic.test.js test/transparent-proxy-http.test.js test/transproxy-presets.test.js test/proxy-rotation.test.js test/transproxy-failure-boundaries.test.js test/transproxy-session-cookie.test.js test/transproxy-upgrade-abort.test.js test/transproxy-upstream-upgrade.test.js
 ```
 
 All automated fixtures use temporary databases, dummy credentials and local
