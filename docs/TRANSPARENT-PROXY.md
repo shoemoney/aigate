@@ -40,6 +40,12 @@ TCP packets, HTTP chunk boundaries, or the original header whitespace. CONNECT,
 WebSocket upgrades, and realtime protocols are unsupported. `/api*`, `/health`,
 `/healthz`, and `/ws` remain AIGate routes.
 
+If an upstream unexpectedly replies with 101 Switching Protocols, its status,
+original headers, and any initial upgrade bytes already received are captured.
+AIGate closes that connection immediately and returns a captured 501 rejection
+to the client; it does not establish an upgraded tunnel or accept further tunnel
+traffic.
+
 Send exactly one `Authorization: Bearer <client-key>` or `x-api-key: <client-key>`
 header. Duplicate or conflicting authentication is rejected. A key in a query
 parameter is not accepted as proxy authentication.
@@ -307,10 +313,14 @@ curl -sS "$AIGATE_URL/api/proxy/traffic/1/events" \
 
 Each NDJSON object has `sequence`, `type`, and `at`. Event types include `request`,
 `forward`, `request_body`, `request_end`, `response`, `response_body`,
-`response_end`, `information`, `error`, `end`, and `interrupted`. Concatenate the base64-decoded
-`data` fields of each `request_body` or `response_body` event in sequence to
-reconstruct that direction's body. Event segmentation reflects capture reads,
-not the provider's original network packet boundaries.
+`response_end`, `information`, `upstream_upgrade`, `upstream_upgrade_body`,
+`error`, `end`, and `interrupted`. Concatenate the base64-decoded `data` fields of
+each `request_body` or `response_body` event in sequence to reconstruct that
+direction's body. `upstream_upgrade` records an unsupported upstream 101;
+`upstream_upgrade_body` contains its initial observed binary bytes. Keep those
+bytes separate from `response_body`, which contains the gateway's client-facing
+501 rejection in that case. Event segmentation reflects capture reads, not the
+provider's original network packet boundaries.
 
 Preset-key exchanges have `client_id: null` in metadata because they are not
 database client bindings; their provider and the original request are still

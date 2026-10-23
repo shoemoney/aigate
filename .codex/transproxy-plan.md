@@ -73,6 +73,8 @@ documented authentication/Host/hop/framing exceptions.
 - [x] Remove only gateway-owned administrative cookies from upstream requests and downstream Set-Cookie.
 - [x] Make concurrent fault handling single-flight before asynchronous capture writes.
 - [x] Record cancellation before capture setup and prevent provider contact after setup-time aborts.
+- [x] Own raw CONNECT/upgrade socket errors before asynchronous rejection capture.
+- [x] Preserve observed upstream 101 headers/head while rejecting upgrades and stopping timed-out upstreams immediately.
 
 ## Phase 3: complete encrypted captures
 
@@ -122,6 +124,10 @@ The first final review attempt at `0aad353` found three major issues: gateway
 session-cookie forwarding, concurrent fault responses, and cancellation during
 asynchronous capture setup. Fixes and deterministic regressions are a separate
 milestone; both final passes must be repeated on the corrected commit.
+The second attempt at `626d3f4` passed scope/privacy review but found a raw socket
+error handoff during unsupported-protocol rejection. Its focused audit also
+identified omitted upstream 101 evidence. These fixes require another fresh pair
+of final-tip reviews after validation.
 
 ## Deferred AWS milestone
 

@@ -5,8 +5,8 @@ Base: `967ff056ee632c986673711c619f573709bf8620`.
 
 ## Automated acceptance
 
-- Final complete suite after review and fixture corrections: `npm test`,
-  Node 24.16.0, 487 passed with zero failures/skips/cancellations (exit 0).
+- Final complete suite after review, fixture and socket corrections: `npm test`,
+  Node 24.16.0, 493 passed with zero failures/skips/cancellations (exit 0).
   The log records the executable path and runtime version before the command.
 - Untouched baseline: `npm test`, Node 26.12.0, 446 passed, no failures/skips.
 - Initial implementation suite at `0aad353`: `npm test` with Node 24.16.0 first on PATH,
@@ -104,6 +104,11 @@ Baseline comparison and fixture evidence are retained as
 `aigate-transproxy-codex-race-first-attempt.log`. Failed checks are retained,
 including `aigate-transproxy-node24-full-fixed.log`.
 The final passing complete log is `aigate-transproxy-node24-full-final.log`.
+That 487-test checkpoint was superseded by the final 493-test socket-corrected
+suite in `aigate-transproxy-node24-full-socket-final.log`. Final focused socket
+evidence is `aigate-transproxy-socket-fix-focused.log`,
+`aigate-transproxy-node26-focused-socket-fixed.log`, and
+`aigate-transproxy-upstream-upgrade.log`.
 
 Final review reports and readiness receipts are stored outside the working tree
 under the shared Git directory's `studio/` path and identify the exact final
@@ -116,6 +121,23 @@ during asynchronous capture setup. Its failed reports are retained under
 `studio/reviews/`. The fixes and deterministic regression results are recorded
 above. Two new final-tip reviews must pass before local readiness; the initial
 green tests alone do not establish acceptance.
+
+At `626d3f4`, the fresh first pass passed; the second found missing error ownership
+on raw CONNECT/upgrade sockets while capture fsync was pending. A scoped audit
+also found dropped unsolicited upstream 101 headers/initial bytes. The next fix
+owns detached sockets before awaiting logging, records observed upstream upgrade
+evidence separately from the downstream rejection, and immediately stops a
+timed-out upstream before asynchronous error capture. Another fresh review pair
+is required after validating that correction.
+
+Socket correction evidence: all eight focused proxy files passed 47/47 on Node
+24.16.0 and independently on Node 26.12.0, with runtime headers in the logs and
+no asynchronous/socket/file-descriptor warnings. Four cases use real peer resets
+during request/response capture for CONNECT and upgrade; two additional cases
+verify complete unsolicited 101 evidence and immediate upstream timeout teardown
+while logging is held. The latter file also passed its independent standalone
+2/2 run. Original upstream upgrade head bytes are separate from client-facing
+synthetic response bytes.
 
 ## Scope and limitations
 

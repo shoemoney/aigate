@@ -184,17 +184,18 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
       try { await capture.append('information', { status: 100, headers: [], generated: true }); if (await stopIfCancelled()) return; res.writeContinue(); }
       catch { await capture.finish('logging_error').catch(() => {}); res.destroy(); return; }
     }
-    const fault = (code, reason, error) => {
+    const fault = (code, reason, error, beforeError) => {
       if (finished) return Promise.resolve();
       if (faulting) return faultPromise;
       // Admit exactly one terminal error before awaiting capture fsync. Timeout,
       // upload and response errors can all arrive while that write is pending.
       faulting = true;
+      outgoing?.destroy(); incoming?.destroy();
       faultPromise = (async () => {
         try {
+          if (beforeError) await beforeError();
           if (await stopIfCancelled()) return;
           await capture.append('error', { reason, code: error?.code || null });
-          outgoing?.destroy(); incoming?.destroy();
           if (await stopIfCancelled()) return;
           if (!res.headersSent && !res.destroyed) {
             status = code;
@@ -256,7 +257,24 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
       });
       outgoing.setTimeout(timeout, () => { void fault(504, 'upstream timed out'); });
       outgoing.on('error', e => { if (!incoming?.complete) void fault(502, 'upstream connection failed', e); });
-      outgoing.on('upgrade', (_response, socket) => { socket.destroy(); void fault(501, 'upgraded protocols are not supported'); });
+      outgoing.on('upgrade', (response, socket, bodyHead) => {
+        // The protocol handoff removes Node's socket error ownership. Accept no
+        // upgraded traffic, but retain the headers and initial bytes observed.
+        socket.on('error', () => {}); socket.destroy();
+        const writes = [capture.append('upstream_upgrade', {
+          status: response.statusCode, status_message: response.statusMessage,
+          headers: response.rawHeaders, http_version: response.httpVersion,
+          head_bytes: bodyHead.length,
+        })];
+        // Admit already-observed evidence before the terminal-fault lock can
+        // decline a second error; each encrypted event remains bounded in size.
+        for (let i = 0; i < bodyHead.length; i += 65536) writes.push(capture.append('upstream_upgrade_body', {
+          encoding: 'base64', data: bodyHead.subarray(i, i + 65536).toString('base64'),
+        }));
+        const observed = Promise.all(writes);
+        void observed.catch(() => { void complete('logging_error'); res.destroy(); });
+        void fault(501, 'upgraded protocols are not supported', null, () => observed);
+      });
       outgoing.on('information', (information) => {
         void (async () => {
           try {
@@ -309,19 +327,60 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
   return {
     traffic,
     async unsupported(req, socket, head = Buffer.alloc(0)) {
-      const auth = authentication(req);
-      let preset = false;
-      try { preset = presetTokens().some(token => tokenMatches(auth.token, token)); } catch { /* reject invalid configuration */ }
-      const binding = auth.token ? bindingFor.get(hash(auth.token)) : null;
-      const status = binding || preset ? 501 : 401;
-      let capture;
+      let capture, status = null, finishing, setupDone = false, writing = false;
+      let peerGone = socket.destroyed, socketError = null;
+      const finish = (state) => {
+        // Preserve the already-received upgrade head before admitting a terminal
+        // record, including when the peer resets while capture.start is syncing.
+        if (!capture || !setupDone) return Promise.resolve();
+        if (!finishing) finishing = capture.finish(state, status, socketError ? { socket_error: socketError } : {})
+          .catch(() => { socket.destroy(); });
+        return finishing;
+      };
+      // Node removes its HTTP socket error listener at CONNECT/upgrade handoff.
+      // Own errors and closure synchronously, before the first capture await;
+      // retain the error listener for the raw socket's remaining lifetime.
+      socket.on('error', (error) => {
+        peerGone = true; socketError = error.code || 'socket_error';
+        void finish('client_abort'); socket.destroy();
+      });
+      socket.once('close', () => {
+        if (!writing || !socket.writableFinished) peerGone = true;
+        void finish(peerGone ? 'client_abort' : 'rejected');
+      });
+      socket.once('finish', () => {
+        if (!writing) peerGone = true;
+        void finish(peerGone ? 'client_abort' : 'rejected');
+      });
+      const unavailable = () => {
+        if (socket.destroyed || socket.writableEnded) peerGone = true;
+        return peerGone;
+      };
       try {
+        const auth = authentication(req);
+        let preset = false;
+        try { preset = presetTokens().some(token => tokenMatches(auth.token, token)); } catch { /* reject invalid configuration */ }
+        const binding = auth.token ? bindingFor.get(hash(auth.token)) : null;
+        const rejectionStatus = binding || preset ? 501 : 401;
         capture = await traffic.start({ clientId: binding?.id, provider: binding?.provider, method: req.method, target: req.url, http_version: req.httpVersion, headers: req.rawHeaders, peer: reqIp(req) });
         if (head.length) await capture.chunk('request', head);
+        setupDone = true;
+        if (unavailable()) { await finish('client_abort'); return; }
+        status = rejectionStatus;
         await capture.append('response', { status, generated: true, reason: 'CONNECT and upgraded protocols are not supported', headers: ['Connection', 'close', 'Content-Length', '0'] });
-        await capture.finish('rejected', status);
+        if (unavailable()) { await finish('client_abort'); return; }
+        const written = new Promise((resolve) => {
+          const done = () => { socket.off('finish', done); socket.off('close', done); resolve(); };
+          socket.once('finish', done); socket.once('close', done);
+        });
+        writing = true;
         socket.end(`HTTP/1.1 ${status} ${status === 501 ? 'Not Implemented' : 'Unauthorized'}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
-      } catch { socket.destroy(); if (capture) try { await capture.finish('logging_error'); } catch { /* unavailable storage */ } }
+        await written;
+        await finish(peerGone ? 'client_abort' : 'rejected');
+      } catch {
+        setupDone = true;
+        await finish(peerGone ? 'client_abort' : 'logging_error'); socket.destroy();
+      }
     },
     async handle(req, res) {
       let p;
