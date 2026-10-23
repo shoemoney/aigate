@@ -199,9 +199,10 @@ test('plain claude select keeps {account, setup_token} and only ADDS usage field
 test('ranking by worst window; ?exclude walks to the next; Pro weekly-only writes five=0', async () => {
   const hi = mkAuth(), lo = mkAuth();
   await add('hi', hi); await add('lo', lo);
+  const resetAt = now() + 1000;                                  // equal resets make usage the tie-breaker
   usageFor = (tok) => tok === hi.tokens.access_token
-    ? { status: 200, body: usage(win(40, 604800)) }
-    : { status: 200, body: usage(win(10, 604800)) };
+    ? { status: 200, body: usage(win(40, 604800, resetAt)) }
+    : { status: 200, body: usage(win(10, 604800, resetAt)) };
   await poll('hi'); await poll('lo');
   assert.equal(row('lo').seven_day_pct, 10);
   assert.equal(row('lo').five_hour_pct, 0);                       // no 5h window → explicit 0
@@ -522,15 +523,38 @@ test('invalid_grant is spent once: later polls of the reauth row never touch the
 test('select awaits an in-flight refresh (never the pre-rotation token); rename/overwrite 409 meanwhile', async () => {
   const a = mkAuth({ expIn: 600 }); await add('race', a);
   usageFor = (tok) => tok === a.tokens.access_token ? { status: 401, body: {} } : { status: 200, body: usage(win(3, 604800)) };
-  const pollP = poll('race');                                     // starts a refresh (40ms upstream delay)
-  await new Promise((r) => setTimeout(r, 15));
-  const rn = await fetch(base + '/api/accounts/race', { method: 'PATCH', headers: H, body: JSON.stringify({ account: 'race2' }) });
-  assert.equal(rn.status, 409);
-  assert.equal((await add('race', mkAuth({ acct: a.tokens.account_id }))).status, 409);
-  const j = await (await select('?kind=codex')).json();
+  let enteredRefresh, releaseRefresh, observedSelect;
+  const refreshEntered = new Promise((r) => { enteredRefresh = r; });
+  const refreshReleased = new Promise((r) => { releaseRefresh = r; });
+  const selectObserved = new Promise((r) => { observedSelect = r; });
+  tokenHandler = async (body) => {
+    enteredRefresh();
+    await refreshReleased;
+    return defaultTokenHandler(body);
+  };
+  const onRequest = (req) => {
+    if (req.url === '/api/select?kind=codex') observedSelect();
+  };
+  server.on('request', onRequest);
+  const pollP = poll('race');
+  let selectP, selectSettled = false;
+  try {
+    await refreshEntered;                                        // refresh is held, regardless of scheduler load
+    const rn = await fetch(base + '/api/accounts/race', { method: 'PATCH', headers: H, body: JSON.stringify({ account: 'race2' }) });
+    assert.equal(rn.status, 409);
+    assert.equal((await add('race', mkAuth({ acct: a.tokens.account_id }))).status, 409);
+    selectP = select('?kind=codex').then((r) => { selectSettled = true; return r; });
+    await selectObserved;                                        // the request actually arrived before release
+    await new Promise(setImmediate);                             // allow its handler to reach the refresh await
+    assert.equal(selectSettled, false);
+  } finally {
+    releaseRefresh();
+    server.off('request', onRequest);
+    await pollP;
+  }
+  const j = await (await selectP).json();
   assert.notEqual(j.auth_json.tokens.access_token, a.tokens.access_token);
   assert.equal(j.auth_json.tokens.refresh_token, 'rt-rotated-1');
-  await pollP;
   assert.equal(tokenHits.length, 1);
 });
 

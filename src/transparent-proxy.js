@@ -11,12 +11,12 @@ const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-au
 const reserved = (p) => p.startsWith('/api') || p === '/health' || p === '/healthz' || p === '/ws';
 const safeInt = (v, fallback, max) => /^\d+$/.test(String(v ?? '')) ? Math.min(max, Number(v)) : fallback;
 const pairs = (raw) => Array.from({ length: raw.length / 2 }, (_, i) => [raw[i * 2], raw[i * 2 + 1]]);
-function informational(res, information) {
+function informational(res, information, sessionCookie) {
   // Node's public 103 writer drops responses without Link and normalizes header
   // pairs. Use the same queued OutgoingMessage writer used by writeContinue and
   // writeEarlyHints, retaining pipelined-response ordering (never socket.write).
   if (typeof res._writeRaw !== 'function') throw new Error('informational response writer is unavailable');
-  const headers = relayHeaders(information.rawHeaders);
+  const headers = relayHeaders(information.rawHeaders, { sessionCookie });
   let message = `HTTP/1.1 ${information.statusCode} ${information.statusMessage}\r\n`;
   for (let i = 0; i < headers.length; i += 2) {
     http.validateHeaderName(headers[i]); http.validateHeaderValue(headers[i], headers[i + 1]);
@@ -48,7 +48,7 @@ function authentication(req) {
   if (!value || /[\s,]/.test(value)) return { error: 'invalid x-api-key' };
   return { token: value, header };
 }
-function relayHeaders(raw, { upstream, authHeader, key } = {}) {
+function relayHeaders(raw, { upstream, authHeader, key, sessionCookie, requestCookies = !!upstream } = {}) {
   const connection = new Set();
   for (let i = 0; i < raw.length; i += 2) if (raw[i].toLowerCase() === 'connection') {
     for (const name of raw[i + 1].split(',')) connection.add(name.trim().toLowerCase());
@@ -58,6 +58,19 @@ function relayHeaders(raw, { upstream, authHeader, key } = {}) {
   for (let i = 0; i < raw.length; i += 2) {
     const name = raw[i].toLowerCase();
     if (HOP.has(name) || connection.has(name)) continue;
+    // A browser's gateway session is a vault credential, never an application
+    // cookie for the provider. Keep unrelated cookies byte-for-byte where no
+    // gateway cookie is present, and remove only the reserved cookie otherwise.
+    if (sessionCookie && requestCookies && name === 'cookie') {
+      const parts = raw[i + 1].split(';');
+      const kept = parts.filter(part => part.trim().split('=', 1)[0].trim() !== sessionCookie);
+      if (kept.length !== parts.length) {
+        const value = kept.join(';').trimStart();
+        if (value) out.push(raw[i], value);
+        continue;
+      }
+    }
+    if (sessionCookie && !requestCookies && name === 'set-cookie' && raw[i + 1].trimStart().split('=', 1)[0].trim() === sessionCookie) continue;
     if (upstream && name === 'host') { out.push(raw[i], upstream.host); hasHost = true; continue; }
     if (upstream && (name === 'authorization' || name === 'x-api-key')) {
       const canonical = authHeader === 'x-api-key' ? 'x-api-key' : 'Authorization';
@@ -91,7 +104,7 @@ function supportedAdapter(provider, explicitUpstream = false) {
   return explicitUpstream;
 }
 
-export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, masterToken, reqIp, authFail, authLocked, authOk }) {
+export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, masterToken, sessionCookie = 'aigate_sess', reqIp, authFail, authLocked, authOk }) {
   db.exec(`CREATE TABLE IF NOT EXISTS proxy_credentials (
     id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, label TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL, fields_enc TEXT NOT NULL, field_names TEXT NOT NULL,
@@ -132,34 +145,74 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
   };
 
   async function relay(req, res, binding, invalid) {
-    let capture;
-    try {
-      capture = await traffic.start({ clientId: binding?.id, provider: binding?.provider, method: req.method, target: req.url, http_version: req.httpVersion, headers: req.rawHeaders, peer: reqIp(req) });
-    } catch { res.writeHead(503, { 'content-type': 'application/json', connection: 'close' }); res.end('{"error":{"message":"traffic capture unavailable","type":"api_error"}}'); return; }
-    if (req.aigateExpectContinue) {
-      try { await capture.append('information', { status: 100, headers: [], generated: true }); res.writeContinue(); }
-      catch { await capture.finish('logging_error').catch(() => {}); res.destroy(); return; }
-    }
-    let status = null, finished = false, outgoing, incoming, requestFinished = false, responseFinished = false;
+    // Generated errors are captured with their explicit application headers;
+    // do not add an unrecorded Date header behind that capture.
+    res.sendDate = false;
+    let capture, status = null, finished = false, faulting = false, faultPromise;
+    let outgoing, incoming, requestFinished = false, responseFinished = false;
+    let clientGone = req.aborted || (res.destroyed && !res.writableFinished);
     const complete = async (state, extra) => {
       if (finished) return;
       finished = true;
       try { await capture.finish(state, status, extra); } catch { if (!res.destroyed) res.destroy(); }
     };
-    const fault = async (code, reason, error) => {
-      if (finished) return;
-      try { await capture.append('error', { reason, code: error?.code || null }); } catch { res.destroy(); await complete('logging_error'); outgoing?.destroy(); incoming?.destroy(); return; }
+    // Install admission before capture.start's first disk await. A fully parsed
+    // request may have no later 'aborted' event when its response socket closes.
+    const clientAbort = () => {
+      clientGone = true;
       outgoing?.destroy(); incoming?.destroy();
-      if (!res.headersSent && !res.destroyed) {
-        status = code;
-        const error = { message: reason, type: code === 401 ? 'authentication_error' : 'api_error' };
-        const anthropic = !/^\/v1\/(?:chat\/completions|responses)(?:\?|$)/.test(req.url);
-        const bytes = Buffer.from(JSON.stringify(anthropic ? { type: 'error', error } : { error }));
-        try { await capture.append('response', { status, headers: ['content-type', 'application/json', 'connection', 'close'], generated: true }); await capture.chunk('response', bytes); }
-        catch { res.destroy(); await complete('logging_error'); return; }
-        res.writeHead(status, { 'content-type': 'application/json', connection: 'close' }); res.end(bytes);
-      } else if (!res.destroyed) res.destroy();
-      await complete(code === 401 ? 'rejected' : 'error', { reason });
+      if (capture && !finished) void complete('client_abort');
+    };
+    req.on('aborted', clientAbort);
+    res.on('close', () => { if (!res.writableFinished) clientAbort(); });
+    res.on('finish', () => {
+      responseFinished = true;
+      if (requestFinished && !finished && !faulting) void complete('complete');
+    });
+    const stopIfCancelled = async () => {
+      if (!clientGone && !req.aborted && !(res.destroyed && !res.writableFinished)) return false;
+      clientGone = true;
+      outgoing?.destroy(); incoming?.destroy();
+      await complete('client_abort');
+      return true;
+    };
+    try {
+      capture = await traffic.start({ clientId: binding?.id, provider: binding?.provider, method: req.method, target: req.url, http_version: req.httpVersion, headers: req.rawHeaders, peer: reqIp(req) });
+    } catch { if (!clientGone && !res.destroyed) { res.writeHead(503, { 'content-type': 'application/json', connection: 'close' }); res.end('{"error":{"message":"traffic capture unavailable","type":"api_error"}}'); } return; }
+    if (await stopIfCancelled()) return;
+    if (req.aigateExpectContinue) {
+      try { await capture.append('information', { status: 100, headers: [], generated: true }); if (await stopIfCancelled()) return; res.writeContinue(); }
+      catch { await capture.finish('logging_error').catch(() => {}); res.destroy(); return; }
+    }
+    const fault = (code, reason, error) => {
+      if (finished) return Promise.resolve();
+      if (faulting) return faultPromise;
+      // Admit exactly one terminal error before awaiting capture fsync. Timeout,
+      // upload and response errors can all arrive while that write is pending.
+      faulting = true;
+      faultPromise = (async () => {
+        try {
+          if (await stopIfCancelled()) return;
+          await capture.append('error', { reason, code: error?.code || null });
+          outgoing?.destroy(); incoming?.destroy();
+          if (await stopIfCancelled()) return;
+          if (!res.headersSent && !res.destroyed) {
+            status = code;
+            const responseError = { message: reason, type: code === 401 ? 'authentication_error' : 'api_error' };
+            const anthropic = !/^\/v1\/(?:chat\/completions|responses)(?:\?|$)/.test(req.url);
+            const bytes = Buffer.from(JSON.stringify(anthropic ? { type: 'error', error: responseError } : { error: responseError }));
+            await capture.append('response', { status, headers: ['content-type', 'application/json', 'connection', 'close'], generated: true });
+            await capture.chunk('response', bytes);
+            if (await stopIfCancelled()) return;
+            res.writeHead(status, { 'content-type': 'application/json', connection: 'close' }); res.end(bytes);
+          } else if (!res.destroyed) res.destroy();
+          await complete(code === 401 ? 'rejected' : 'error', { reason });
+        } catch {
+          outgoing?.destroy(); incoming?.destroy(); res.destroy();
+          await complete(clientGone ? 'client_abort' : 'logging_error');
+        }
+      })();
+      return faultPromise;
     };
     const reject = async (code, reason) => {
       // Drain and record rejected bodies too; no unbounded buffering or key intake.
@@ -189,22 +242,13 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
     if (req.method === 'CONNECT' || req.headers.upgrade) return reject(501, 'CONNECT and upgraded protocols are not supported');
     const destination = new URL(binding.upstream);
     const path = destination.pathname.replace(/\/$/, '') + target;
-    const headers = relayHeaders(req.rawHeaders, { upstream: destination, authHeader: binding.provider === 'anthropic' ? 'x-api-key' : 'authorization', key });
+    const headers = relayHeaders(req.rawHeaders, { upstream: destination, authHeader: binding.provider === 'anthropic' ? 'x-api-key' : 'authorization', key, sessionCookie });
     // Without explicit framing Node omits chunked bodies on GET/DELETE. The
     // transfer-coding belongs to each leg; regenerate it for these uploads.
     if (req.headers['transfer-encoding'] && !headers.some((v, i) => i % 2 === 0 && v.toLowerCase() === 'content-length')) headers.push('Transfer-Encoding', 'chunked');
     try { await capture.append('forward', { method: req.method, target: path, upstream: destination.origin, headers }); }
     catch { return fault(503, 'traffic capture unavailable'); }
-    const clientAbort = () => {
-      if (finished) return;
-      outgoing?.destroy(); incoming?.destroy(); void complete('client_abort');
-    };
-    req.on('aborted', clientAbort);
-    res.on('close', () => { if (!res.writableFinished) clientAbort(); });
-    res.on('finish', () => {
-      responseFinished = true;
-      if (requestFinished && !finished) void complete('complete');
-    });
+    if (await stopIfCancelled()) return;
     const timeout = Math.max(1000, Number(process.env.AIGATE_TRANSPARENT_TIMEOUT_MS) || 300000);
     try {
       outgoing = (destination.protocol === 'https:' ? https : http).request(destination, {
@@ -219,26 +263,29 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
             await capture.append('information', { status: information.statusCode, status_message: information.statusMessage, headers: information.rawHeaders });
             // The downstream 100 was already sent and captured for its own
             // Expect handshake. Do not send that transport handshake twice.
-            if (information.statusCode !== 100) informational(res, information);
+            if (!finished && !faulting && !clientGone && information.statusCode !== 100) informational(res, information, sessionCookie);
           } catch { await fault(503, 'traffic capture unavailable'); }
         })();
       });
       outgoing.on('response', (response) => {
         incoming = response;
+        if (finished || faulting || clientGone) { response.destroy(); return; }
         void (async () => {
           try {
             status = response.statusCode;
-            const responseHeaders = relayHeaders(response.rawHeaders);
+            const responseHeaders = relayHeaders(response.rawHeaders, { sessionCookie });
             await capture.append('response', { status, status_message: response.statusMessage, headers: response.rawHeaders, forwarded_headers: responseHeaders, http_version: response.httpVersion });
+            if (finished || faulting || await stopIfCancelled()) { response.destroy(); return; }
             res.sendDate = false;
             res.writeHead(status, response.statusMessage, responseHeaders);
             res.flushHeaders();
             for await (const chunk of response) {
               await capture.chunk('response', chunk);
+              if (finished || faulting || await stopIfCancelled()) { response.destroy(); return; }
               if (!res.write(chunk)) await drain(res);
             }
             await capture.append('response_end', { trailers: response.rawTrailers });
-            const trailers = relayHeaders(response.rawTrailers);
+            const trailers = relayHeaders(response.rawTrailers, { sessionCookie });
             if (trailers.length) res.addTrailers(pairs(trailers));
             res.end();
           } catch (e) { if (!finished) await fault(502, 'upstream stream or traffic capture failed', e); }
@@ -247,14 +294,15 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
       for await (const chunk of req) {
         if (finished) break;
         await capture.chunk('request', chunk);
+        if (finished || await stopIfCancelled()) break;
         if (!outgoing.destroyed && !outgoing.writableEnded && !outgoing.write(chunk)) await drain(outgoing);
       }
       if (!finished) {
         await capture.append('request_end', { trailers: req.rawTrailers });
         requestFinished = true;
-        const trailers = relayHeaders(req.rawTrailers);
+        const trailers = relayHeaders(req.rawTrailers, { sessionCookie, requestCookies: true });
         if (!outgoing.destroyed) { if (trailers.length) outgoing.addTrailers(pairs(trailers)); outgoing.end(); }
-        if (responseFinished) await complete('complete');
+        if (responseFinished && !faulting) await complete('complete');
       }
     } catch (e) { if (!finished) await fault(502, 'request forwarding or traffic capture failed', e); }
   }

@@ -65,6 +65,10 @@ compressed content, multipart uploads, and SSE arriving before stream completion
 Interim-response checks cover 103 headers without `Link`, duplicate header pairs,
 and pipelined response order; 100 Continue is tested as a per-connection handshake.
 They also cover no automatic retries, disconnect teardown, and logging failure.
+Failure-boundary checks cover cancellation before upstream contact and a single
+terminal outcome when failures overlap. Session-cookie checks remove only the
+gateway-owned `aigate_sess` credential from relayed cookies, preserve other
+application cookies, and retain the original headers in encrypted capture.
 Capture checks exercise full encrypted headers/body events, paginated retrieval,
 streamed downloads, and recovery of interrupted exchanges. Existing model-routing
 proxy tests remain compatibility checks for the older administrator-token path;
@@ -73,7 +77,7 @@ their failover/model rewriting is not the transparent relay contract.
 Run the focused relay, capture, and rotation tests, then the complete suite:
 
 ```bash
-node --test test/transparent-proxy-http.test.js test/proxy-traffic.test.js test/proxy-rotation.test.js test/transproxy-presets.test.js
+node --test test/transparent-proxy-http.test.js test/proxy-traffic.test.js test/proxy-rotation.test.js test/transproxy-presets.test.js test/transproxy-failure-boundaries.test.js test/transproxy-session-cookie.test.js
 npm test
 ```
 

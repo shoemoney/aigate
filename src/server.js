@@ -705,7 +705,7 @@ function rawJsonBody(req, maxBytes = PROXY_BODY_MAX) {
 }
 
 // ---- routes -------------------------------------------------------------
-const transparentProxy = await createTransparentProxy({ db, encrypt, decrypt, dbPath: DB_PATH, masterToken: TOKEN, reqIp, authFail, authLocked, authOk });
+const transparentProxy = await createTransparentProxy({ db, encrypt, decrypt, dbPath: DB_PATH, masterToken: TOKEN, sessionCookie: SESS_COOKIE, reqIp, authFail, authLocked, authOk });
 const server = http.createServer(async (req, res) => {
   // a malformed target ('//', protocol-relative) makes new URL throw; in an async
   // handler that's an unhandled rejection → socket hangs (pre-auth DoS). 404 it.

@@ -23,6 +23,10 @@ The necessary exceptions are explicit:
 
 - The client authentication header is replaced with the configured provider key.
   Anthropic uses `x-api-key`; supported bearer providers use `Authorization: Bearer`.
+- AIGate's own `aigate_sess` administrator-session cookie is removed from outgoing
+  `Cookie` headers. Upstream `Set-Cookie` fields targeting that same gateway-owned
+  name are excluded from the downstream response. Other application cookies are
+  retained.
 - `Host` addresses the configured upstream. An optional operator-supplied upstream
   path prefix is prepended to the original request target. Preset-key routing
   removes only the `/proxy/<provider>` prefix; the remaining raw path and query
@@ -255,6 +259,10 @@ headers, targets, and body events are encrypted at rest using the existing vault
 key. An administrative download decrypts them in full. Metadata lists contain
 IDs, timestamps, provider, status/state, and byte counts, with no headers or body
 content.
+
+The original incoming and upstream response headers are still captured when
+gateway-session cookie isolation removes a field from the relay. Recorded
+forwarded headers show the effective request and response after those removals.
 
 The SQLite `proxy_traffic` table indexes per-exchange encrypted event files under
 `proxy-traffic/` beside `AIGATE_DB`. The directory has mode 0700 and new files have

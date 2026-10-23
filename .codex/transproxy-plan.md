@@ -70,6 +70,9 @@ documented authentication/Host/hop/framing exceptions.
 - [x] Restrict destinations to operator-controlled configuration.
 - [x] Tear down upstream on client cancellation and handle upload/response failures.
 - [x] Explicitly reject unsupported CONNECT/WebSocket upgrades.
+- [x] Remove only gateway-owned administrative cookies from upstream requests and downstream Set-Cookie.
+- [x] Make concurrent fault handling single-flight before asynchronous capture writes.
+- [x] Record cancellation before capture setup and prevent provider contact after setup-time aborts.
 
 ## Phase 3: complete encrypted captures
 
@@ -93,6 +96,7 @@ Milestone: the final local commit passes CI and two fresh independent reviews.
 - [x] Validate manual-only provisioning, admin isolation, failure captures and restart recovery.
 - [x] Run new focused tests and legacy proxy/auth regressions.
 - [x] Run the full `npm test` suite; use Node 24 to match CI when available.
+- [x] Replace existing concurrency-fixture timer assumptions and unequal-reset tie fixtures with explicit conditions.
 - [x] Commit only explicit intended paths and inspect scope.
 - [ ] Obtain two fresh reviews pinned to exact final BASE/HEAD; fix significant findings.
 - [ ] Re-run both final reviews after any subsequent commit.
@@ -113,6 +117,11 @@ Use all available independent agent slots. Serialize shared validation and Git
 integration. Builders preserve concurrent changes and do not commit or publish.
 Named Studio roles are unavailable in this runtime; fresh native agents receive
 the same role-specific briefs. Final reviews use distinct fresh contexts.
+
+The first final review attempt at `0aad353` found three major issues: gateway
+session-cookie forwarding, concurrent fault responses, and cancellation during
+asynchronous capture setup. Fixes and deterministic regressions are a separate
+milestone; both final passes must be repeated on the corrected commit.
 
 ## Deferred AWS milestone
 
