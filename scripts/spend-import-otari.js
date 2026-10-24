@@ -9,6 +9,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { decimalMicros } from '../src/spend-catalog.js';
 
 const VERSION = 'otari-import';
 const DEFAULT_DB = '/Users/shoemoney/Projects/otari/otari.db';
@@ -22,6 +23,7 @@ const EVENT_KEYS = new Set([
   'source_event_id', 'ts', 'provider', 'model', 'input_tokens', 'output_tokens', 'cache_read_tokens',
   'cache_write_tokens', 'cache_write_1h_tokens', 'cache_tokens_in_prompt', 'status', 'project',
   'session_id', 'session_started_at', 'scope',
+  'source_cost_micros', 'source_cost_kind', 'source_pricing_reference',
 ]);
 
 const HELP = `spend-import-otari — copy otari usage history into aigate's spend ledger
@@ -91,7 +93,7 @@ function readEnvFile(file) {
   return out;
 }
 
-function loadConfig() {
+export function loadConfig() {
   const file = readEnvFile(join(homedir(), '.claude', 'aigate', 'env'));
   const pick = (k) => process.env[k] || file[k] || '';
   return { url: pick('AIGATE_URL').replace(/\/+$/, ''), token: pick('AIGATE_TOKEN') };
@@ -166,6 +168,11 @@ export function mapRow(r) {
     session_started_at: null,
     scope: '',
   };
+  if (r.source_cost != null) {
+    event.source_cost_micros=decimalMicros(r.source_cost);
+    event.source_cost_kind=['claude_code','codex'].includes(r.source)?'api_equivalent':'reported_unknown';
+  }
+  if (r.pricing_reference != null) event.source_pricing_reference=String(r.pricing_reference).replace(/[\u0000-\u001f]/g,'').slice(0,511);
   for (const k of Object.keys(event)) if (!EVENT_KEYS.has(k)) throw new Fatal(`refusing to send unexpected event field "${k}"`);
   return { host, event };
 }
@@ -186,7 +193,12 @@ async function postBatch(cfg, source, host, events) {
   }
   const text = await res.text();
   if (!res.ok) throw new PostFailed(`${source}/${host}: HTTP ${res.status} ${text.slice(0, 200)}`);
-  try { return JSON.parse(text); } catch { return {}; }
+  let result;
+  try { result=JSON.parse(text); } catch { throw new PostFailed(`${source}/${host}: malformed JSON success response`); }
+  if (!result || !['accepted','duplicate','rejected'].every(k=>Number.isSafeInteger(result[k]) && result[k]>=0)
+    || result.accepted+result.duplicate+result.rejected!==events.length || result.rejected!==0)
+    throw new PostFailed(`${source}/${host}: invalid or rejected ingest result`);
+  return result;
 }
 
 const blank = () => ({ read: 0, skipped: 0, posted: 0, accepted: 0, duplicate: 0, rejected: 0 });
@@ -194,20 +206,26 @@ export const newStats = () => Object.fromEntries(SOURCES.map((s) => [s, blank()]
 
 // Mutates `stats` as it goes so a failure part-way still reports how far it got.
 export async function run(opts, cfg, stats, out = process.stdout) {
-  const db = new DatabaseSync(`file:${opts.db}?immutable=1`, { readOnly: true });
+  const db = new DatabaseSync(opts.db, { readOnly: true });
   try {
+    db.exec('BEGIN'); // coherent read snapshot, including committed rows in a live WAL
+    const columns=new Set(db.prepare('PRAGMA table_info(usage_logs)').all().map(r=>r.name));
+    const cost=columns.has('cost')?'CAST(cost AS TEXT)':'NULL';
+    const reference=columns.has('pricing_reference')?'pricing_reference':'NULL';
     const wanted = opts.sources || (opts.source === 'all' ? SOURCES : [opts.source]);
     const where = [`source IN (${wanted.map(() => '?').join(',')})`];
     const params = [...wanted];
     if (opts.before != null) { where.push('timestamp < ?'); params.push(otariBound(opts.before)); }
     if (opts.since != null) { where.push('timestamp >= ?'); params.push(otariBound(opts.since)); }
     const stmt = db.prepare(`SELECT source, source_event_id, timestamp, provider, model, status, source_label, prompt_tokens,
-      completion_tokens, cache_read_tokens, cache_write_tokens, cache_write_1h_tokens, cache_tokens_in_prompt
+      completion_tokens, cache_read_tokens, cache_write_tokens, cache_write_1h_tokens, cache_tokens_in_prompt,
+      ${cost} AS source_cost, ${reference} AS pricing_reference
       FROM usage_logs WHERE ${where.join(' AND ')} ORDER BY timestamp`);
 
     const buffers = new Map();   // `${source}\0${host}` -> events
     const dry = new Map();       // same key -> count, dry-run only
     let sample = null;
+    const facts={first_ts:null,last_ts:null,models:{},input_tokens:0,output_tokens:0,cache_read_tokens:0,cache_write_tokens:0};
 
     const flush = async (source, host, events) => {
       const s = stats[source];
@@ -223,6 +241,10 @@ export async function run(opts, cfg, stats, out = process.stdout) {
       s.read++;
       const m = row.source_event_id ? mapRow(row) : null;
       if (!m) { s.skipped++; continue; }
+      facts.first_ts ??= m.event.ts; facts.last_ts=m.event.ts;
+      const modelKey=`${m.event.provider}/${m.event.model}`;
+      facts.models[modelKey]=(facts.models[modelKey]||0)+1;
+      for(const field of ['input_tokens','output_tokens','cache_read_tokens','cache_write_tokens']) facts[field]+=m.event[field];
       const key = `${row.source}\0${m.host}`;
       if (opts.dryRun) {
         dry.set(key, (dry.get(key) || 0) + 1);
@@ -247,8 +269,10 @@ export async function run(opts, cfg, stats, out = process.stdout) {
         out.write(`would post ${n} ${source} events for host=${host}\n`);
       }
       if (sample) out.write(`sample ${JSON.stringify(sample)}\n`);
+      out.write(`facts ${JSON.stringify(facts)}\n`);
     }
   } finally {
+    try { db.exec('ROLLBACK'); } catch { /* failed before transaction */ }
     db.close();
   }
 }

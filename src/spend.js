@@ -5,6 +5,7 @@
  * server.js keeps a four-line hook: ensureSchema + seedIfNeeded at boot, pruneOld in backupNow,
  * and the /api/spend dispatch (after the auth gate).
  */
+import { ensureCatalogSchema, readCatalog, readCatalogHistory, importCatalog } from './spend-catalog.js';
 import { seedPrices, pickRate, priceEvent, billingClass, toMicros, fromMicros } from './spend-pricing.js';
 
 const SEED_SENTINEL = 'spend_prices_seed_v1';
@@ -30,7 +31,7 @@ const BATCH_KEYS = new Set(['source', 'host', 'collector_version', 'summary', 'e
 const SUMMARY_KEYS = new Set(['files', 'scanned', 'errors']);
 const EVENT_KEYS = new Set(['source_event_id', 'ts', 'provider', 'model', 'input_tokens', 'output_tokens', 'cache_read_tokens',
   'cache_write_tokens', 'cache_write_1h_tokens', 'cache_tokens_in_prompt', 'duration_ms', 'status', 'project', 'session_id',
-  'session_started_at', 'scope']);
+  'session_started_at', 'scope', 'source_cost_micros', 'source_cost_kind', 'source_pricing_reference']);
 const SESSION_KEYS = new Set(['source', 'host', 'session_id', 'scope', 'account', 'kind', 'via', 'ts']);
 // belt and braces: these are refused by name with the content message even though the allow-list already excludes them
 const FORBIDDEN = new Set(['prompt', 'completion', 'content', 'messages', 'text', 'input', 'output', 'tool_input', 'tool_output',
@@ -111,6 +112,13 @@ export function ensureSchema(db) {
       PRIMARY KEY(host, source)
     );
   `);
+  const columns = new Set(db.prepare('PRAGMA table_info(usage_events)').all().map(r => r.name));
+  for (const [name, type] of [['source_cost_micros','INTEGER'], ['source_cost_kind','TEXT'], ['source_pricing_reference','TEXT']])
+    if (!columns.has(name)) db.exec(`ALTER TABLE usage_events ADD COLUMN ${name} ${type}`);
+  ensureCatalogSchema(db);
+  // Recognize unchanged bundled prices when upgrading an existing database.
+  const seedTag = db.prepare(`UPDATE spend_prices SET catalog_source='seed' WHERE provider=? AND model=? AND effective_from=? AND note=? AND input_micros=? AND output_micros=? AND catalog_source='manual'`);
+  for (const r of seedPrices()) seedTag.run(r.provider,r.model,r.effective_from,r.note,r.input_micros,r.output_micros);
 }
 
 const PRICE_COLS = 'provider, model, match, effective_from, input_micros, output_micros, cache_read_micros, cache_write_micros, cache_write_1h_micros, tiers_json, note';
@@ -119,7 +127,7 @@ const PRICE_COLS = 'provider, model, match, effective_from, input_micros, output
 // Returns how many rows it inserted (0 when already seeded).
 export function seedIfNeeded(db) {
   if (db.prepare(`SELECT 1 FROM meta WHERE k=?`).get(SEED_SENTINEL)) return 0;
-  const ins = db.prepare(`INSERT OR IGNORE INTO spend_prices(${PRICE_COLS}) VALUES(?,?,?,?,?,?,?,?,?,?,?)`);
+  const ins = db.prepare(`INSERT OR IGNORE INTO spend_prices(${PRICE_COLS},catalog_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,'seed')`);
   let n = 0;
   db.exec('BEGIN');
   try {
@@ -166,8 +174,8 @@ function stmts(db) {
   s = {
     insEvent: db.prepare(`INSERT INTO usage_events(source, source_event_id, ts, provider, model, input_tokens, output_tokens,
       cache_read_tokens, cache_write_tokens, cache_write_1h_tokens, cache_tokens_in_prompt, duration_ms, status, host, project,
-      session_id, session_started_at, scope, account, account_kind, attributed_by, billing, cost_micros, price_id, priced_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source, source_event_id) DO NOTHING`),
+      session_id, session_started_at, scope, account, account_kind, attributed_by, billing, cost_micros, price_id, priced_at, source_cost_micros, source_cost_kind, source_pricing_reference)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source, source_event_id) DO NOTHING`),
     claudeMap: db.prepare(`SELECT account, kind, first_seen FROM spend_sessions WHERE source='claude_code' AND host=? AND session_id=? ORDER BY first_seen, id`),
     codexMap: db.prepare(`SELECT account, kind, first_seen FROM spend_sessions WHERE source='codex' AND host=? AND scope=? ORDER BY first_seen, id`),
     predecessor: db.prepare(`SELECT id, account, first_seen, last_seen FROM spend_sessions WHERE source=? AND host=? AND session_id IS ? AND scope=?
@@ -274,6 +282,10 @@ function validateBatch(b, now) {
     if (!ts) return bad('bad ts');
     if (typeof e.provider !== 'string' || e.provider.length > 128 || !ID_RE.test(e.provider)) return bad('bad provider');
     if (typeof e.model !== 'string' || e.model.length > 256 || !ID_RE.test(e.model)) return bad('bad model');
+    if (e.source_cost_micros != null && !isInt(e.source_cost_micros, Number.MAX_SAFE_INTEGER)) return bad('bad source_cost_micros');
+    if (e.source_cost_kind != null && !['api_equivalent','reported_unknown','reported_cash'].includes(e.source_cost_kind)) return bad('bad source_cost_kind');
+    if (e.source_cost_micros != null && !e.source_cost_kind) return bad('source_cost_kind is required with source cost');
+    if (e.source_pricing_reference != null && !(typeof e.source_pricing_reference === 'string' && e.source_pricing_reference.length <= 511 && !/[\u0000-\u001f]/.test(e.source_pricing_reference))) return bad('bad source_pricing_reference');
     const tok = {};
     for (const k of ['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens', 'cache_write_1h_tokens']) {
       const v = e[k] ?? 0;
@@ -291,6 +303,7 @@ function validateBatch(b, now) {
     if (e.session_started_at != null) { startedAt = parseTs(e.session_started_at, now); if (!startedAt) return bad('bad session_started_at'); }
     if (e.scope != null && !(typeof e.scope === 'string' && e.scope.length <= 1024 && !/[\u0000-\u001f]/.test(e.scope))) return bad('bad scope');
     events.push({
+      source_cost_micros: e.source_cost_micros ?? null, source_cost_kind: e.source_cost_kind ?? null, source_pricing_reference: e.source_pricing_reference ?? null,
       source_event_id: e.source_event_id, ts, provider: e.provider, model: e.model, ...tok,
       cache_tokens_in_prompt: cip === true || cip === 1 ? 1 : 0,
       duration_ms: e.duration_ms ?? null, status: e.status ?? null, project: e.project || '',
@@ -320,7 +333,7 @@ function ingestBatch(db, v) {
       const r = s.insEvent.run(v.source, e.source_event_id, e.ts, e.provider, e.model, e.input_tokens, e.output_tokens,
         e.cache_read_tokens, e.cache_write_tokens, e.cache_write_1h_tokens, e.cache_tokens_in_prompt, e.duration_ms, e.status,
         host, e.project, e.session_id, e.session_started_at, e.scope, account, attr ? attr.kind : null, attr ? attr.via : null,
-        billingClass(e.provider, account), cost, rate ? rate.id : null, rate ? nowIso : null);
+        billingClass(e.provider, account), cost, rate ? rate.id : null, rate ? nowIso : null, e.source_cost_micros, e.source_cost_kind, e.source_pricing_reference);
       if (Number(r.changes) === 0) { duplicate++; continue; }
       accepted++;
       if (!maxTs || e.ts > maxTs) maxTs = e.ts;
@@ -337,6 +350,26 @@ function ingestBatch(db, v) {
   });
   return { accepted, duplicate, rejected: 0, unpriced, unattributed,
     unpriced_models: [...unpricedModels.values()].sort((a, b) => b.events - a.events), errors: [] };
+}
+
+// Trusted relay hook only. Public collector JSON cannot supply account attribution.
+// Anthropic message IDs are the collector's identity too: replay/history stays one row.
+export function recordProxyUsage(db, {message_id, model, ts, usage, account, host='proxy', project='', complete=true} = {}) {
+  if (!complete || !usage || !isInt(usage.input_tokens) || !isInt(usage.output_tokens)) return {accepted:0,duplicate:0,skipped:1};
+  if (typeof account !== 'string' || !ACCT_RE.test(account)) throw new TypeError('trusted account is required');
+  const cw = usage.cache_creation_input_tokens ?? 0;
+  const e = {source_event_id:message_id, model, provider:'anthropic', ts:ts ?? new Date().toISOString(),
+    input_tokens:usage.input_tokens,output_tokens:usage.output_tokens,cache_read_tokens:usage.cache_read_input_tokens ?? 0,
+    cache_write_tokens:cw,cache_write_1h_tokens:usage.cache_creation?.ephemeral_1h_input_tokens ?? 0,
+    cache_tokens_in_prompt:false,status:'success',project};
+  const v=validateBatch({source:'claude_code',host,events:[e]},Date.now());
+  if (!v.ok) throw new TypeError(v.error);
+  const out=ingestBatch(db,v);
+  // Never change settled cost, token counts, price or an existing attribution.
+  db.prepare(`UPDATE usage_events SET account=?,account_kind='claude',attributed_by='proxy',billing='subscription'
+    WHERE source='claude_code' AND source_event_id=? AND account IS NULL`).run(account,message_id);
+  if (out.accepted) out.unattributed=0;
+  return out;
 }
 
 // ---- sessions (DESIGN 4.2) ----------------------------------------------
@@ -692,6 +725,21 @@ export async function handleSpend(req, res, url, ctx) {
     }
 
     if (p === '/api/spend/collectors') return m === 'GET' ? json(res, 200, collectorRows(db)) : wrong();
+
+    if (p === '/api/spend/catalog' || p === '/api/spend/catalog/history') {
+      if (m !== 'GET') return wrong();
+      try { return json(res, 200, p.endsWith('/history') ? readCatalogHistory(db, url.searchParams) : readCatalog(db, url.searchParams)); }
+      catch (e) { if (e instanceof TypeError) return json(res, 400, {error:e.message}); throw e; }
+    }
+    if (p === '/api/spend/catalog/import') {
+      if (m !== 'POST') return wrong();
+      const b = await ctx.body(req);
+      if (b && b.__oversized) return tooBig(res);
+      let out;
+      try { out = importCatalog(db, b); } catch(e) { if(e instanceof TypeError) return json(res,400,{error:e.message}); throw e; }
+      if (!out.dry_run) { priceCache.delete(db); ctx.logAccess('spend', '', ctx.reqIp(req), 'catalog-import', `inserted ${out.inserted} duplicate ${out.duplicate} conflicts ${out.conflicts}`); }
+      return json(res,200,out);
+    }
 
     if (p === '/api/spend/prices') {
       if (m === 'GET') return json(res, 200, db.prepare(`SELECT * FROM spend_prices ORDER BY provider, model, effective_from`).all().map(priceOut));

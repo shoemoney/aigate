@@ -97,6 +97,10 @@ export function pickRate(rows, provider, model, ts) {
         const exactB = b.match === 'prefix' ? 0 : 1;
         if (exactA !== exactB) return exactB - exactA;
         if (a.match === 'prefix' && a.model.length !== b.model.length) return b.model.length - a.model.length;
+        // Operator-set rates remain authoritative over imported catalog refreshes.
+        const manualA = a.catalog_source === 'manual' ? 1 : 0;
+        const manualB = b.catalog_source === 'manual' ? 1 : 0;
+        if (manualA !== manualB) return manualB - manualA;
         return Date.parse(b.effective_from) - Date.parse(a.effective_from);
       });
       return hits[0];
