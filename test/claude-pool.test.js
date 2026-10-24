@@ -39,7 +39,8 @@ async function fixture(t, options = {}) {
 test('quota parser preserves zero and fractional headroom and rejects unknown or duplicate headers', () => {
   assert.equal(parseClaudeQuotaHeaders(quota(0, .995)).five_hour.remaining_pct, 100);
   assert.equal(parseClaudeQuotaHeaders(quota(0, .995)).seven_day.remaining_pct, .5);
-  for (const bad of ['', 'NaN', '-1', '1.1', 'unknown']) assert.equal(parseClaudeQuotaHeaders({ 'anthropic-ratelimit-unified-5h-utilization': bad }).five_hour.used_pct, null);
+  for (const bad of ['', 'NaN', '-1', 'Infinity', 'unknown']) assert.equal(parseClaudeQuotaHeaders({ 'anthropic-ratelimit-unified-5h-utilization': bad }).five_hour.used_pct, null);
+  assert.equal(parseClaudeQuotaHeaders(quota(1.1)).five_hour.used_pct, 100);
   assert.equal(parseClaudeQuotaHeaders([...quota(), 'ANTHROPIC-RATELIMIT-UNIFIED-5H-UTILIZATION', '0']).five_hour.used_pct, null);
 });
 
@@ -67,6 +68,15 @@ test('window freshness is independent; missing fields never become full capacity
   const state = f.pool.status().accounts[0];
   assert.equal(state.five_hour.fresh, true); assert.equal(state.seven_day.fresh, false); assert.equal(state.reason, 'usage_stale');
   assert.equal(state.five_hour.resets_at, null);
+  assert.equal(f.pool.acquire(), null);
+});
+
+test('new utilization above one replaces previous positive allowance with exhausted state', async t => {
+  const f = await fixture(t); f.add('a'); f.pool.observeHeaders('a', quota(.1, .2)); assert.ok(f.pool.acquire());
+  f.advance(1); f.pool.observeHeaders('a', quota(1.1, .2));
+  const state = f.pool.status().accounts[0]; assert.equal(state.reason, 'exhausted'); assert.equal(state.five_hour.remaining_pct, 0); assert.equal(f.pool.acquire(), null);
+  f.advance(1); f.pool.observeHeaders('a', ['anthropic-ratelimit-unified-5h-utilization', 'malformed']);
+  assert.equal(f.pool.status().accounts[0].five_hour.observed_at, new Date(BASE + 1).toISOString());
   assert.equal(f.pool.acquire(), null);
 });
 
@@ -130,6 +140,35 @@ test('leases, affinity, exclusions and cancellation are bounded and deterministi
   const cancel = new AbortController(); cancel.abort(); assert.throws(() => f.pool.acquire({ signal: cancel.signal }), { name: 'AbortError' });
 });
 
+test('a same-millisecond response from an older lease cannot clear newer shared exhaustion', async t => {
+  const f = await fixture(t); f.add('a'); f.add('b');
+  f.pool.setMetadata('a', { quota_scope: 'shared' }); f.pool.setMetadata('b', { quota_scope: 'shared' });
+  f.pool.observeHeaders('a', quota()); const lease = f.pool.acquire();
+  f.pool.markExhausted('b', { window: 'seven_day', resetAt: BASE + 100000 });
+  const observed = f.pool.observeHeaders('a', quota(), { fingerprint: lease.fingerprint, tokenEnvelope: lease.tokenEnvelope,
+    revision: lease.revision, generation: lease.generation, startedAt: lease.startedAt, status: 200 });
+  assert.equal(observed.applied, false); assert.equal(f.pool.status().accounts.every(a => a.reason === 'exhausted'), true);
+  f.advance(100001); assert.equal(f.pool.acquire(), null, 'old positive meters remain stale after the block expires');
+});
+
+test('concurrent newer observations cannot hide authoritative exhaustion from another lease', async t => {
+  const f = await fixture(t); f.add('a'); f.pool.observeHeaders('a', quota()); const lease = f.pool.acquire();
+  f.pool.observeHeaders('a', quota(.1, .1));
+  f.pool.observeHeaders('a', quota(1.1, .1), { fingerprint: lease.fingerprint, revision: lease.revision,
+    generation: lease.generation, tokenEnvelope: lease.tokenEnvelope, startedAt: lease.startedAt });
+  assert.equal(f.pool.status().accounts[0].five_hour.remaining_pct, 0); assert.equal(f.pool.acquire(), null);
+});
+
+test('manual scope changes invalidate already admitted observations across the old shared scope', async t => {
+  const f = await fixture(t); f.add('a'); f.add('b');
+  f.pool.setMetadata('a', { quota_scope: 'shared' }); f.pool.setMetadata('b', { quota_scope: 'shared' });
+  f.pool.observeHeaders('a', quota()); const lease = f.pool.acquire({ affinity: 'b' });
+  f.pool.setMetadata('a', { quota_scope: 'other' });
+  const observed = f.pool.observeHeaders('b', quota(1), { fingerprint: lease.fingerprint, revision: lease.revision,
+    generation: lease.generation, tokenEnvelope: lease.tokenEnvelope, startedAt: lease.startedAt });
+  assert.equal(observed.applied, false); assert.equal(f.pool.status().accounts.every(a => a.five_hour.used_pct === 0), true);
+});
+
 test('single flight clears failures and scheduled refresh runs every five minutes without overlap', async t => {
   let calls = 0, callback, delay; const gate = deferred();
   const timers = { setTimeout(fn, ms) { callback = fn; delay = ms; return 1; }, clearTimeout() { callback = null; } };
@@ -149,6 +188,15 @@ test('authentication errors require reauth; generic permission failures do not',
   f.pool.observeHeaders('a', [], { status: 403, errorType: 'authentication_error' });
   assert.equal(f.pool.status().accounts.find(a => a.account === 'a').reason, 'reauth_needed'); assert.equal(f.pool.status().accounts.find(a => a.account === 'b').last_error, null);
   f.pool.observeHeaders('a', quota()); assert.equal(f.pool.status().accounts.find(a => a.account === 'a').eligible, true);
+});
+
+test('scheduler can refresh Claude and Codex through one shared callback', async t => {
+  let callback, delay, cycles = 0; const timers = { setTimeout(fn, ms) { callback = fn; delay = ms; return 1; }, clearTimeout() {} };
+  const f = await fixture(t, { timers }); f.add('a');
+  f.pool.start({ immediate: false, refresh: async () => { cycles++; await f.pool.refreshAll(); } });
+  assert.equal(delay, 300000); f.advance(300000); callback(); await tick();
+  assert.equal(cycles, 1); assert.equal(f.pool.status().next_poll_at, new Date(BASE + 600000).toISOString());
+  assert.equal(f.pool.status().next_account, 'a');
 });
 
 test('shutdown cancels a probe even when injected transport ignores abort', async t => {

@@ -31,7 +31,7 @@ export function parseClaudeQuotaHeaders(raw) {
     const value = headers.get(`anthropic-ratelimit-unified-${short}-utilization`);
     const text = value == null ? '' : String(value).trim();
     const number = text === '' ? NaN : Number(text);
-    const used = Number.isFinite(number) && number >= 0 && number <= 1 ? number * 100 : null;
+    const used = Number.isFinite(number) && number >= 0 ? Math.min(number, 1) * 100 : null;
     result[window] = { used_pct: used, remaining_pct: used == null ? null : 100 - used,
       reset_ms: epoch(headers.get(`anthropic-ratelimit-unified-${short}-reset`)), present: value != null };
   }
@@ -51,7 +51,7 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
     account TEXT PRIMARY KEY, quota_scope TEXT, credential_expires_at INTEGER, expiry_fingerprint TEXT,
     last_used_at INTEGER NOT NULL DEFAULT 0
   ); CREATE TABLE IF NOT EXISTS claude_pool_usage (
-    account TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0,
+    account TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0, generation INTEGER NOT NULL DEFAULT 0,
     five_used REAL, five_reset INTEGER, five_observed INTEGER, seven_used REAL, seven_reset INTEGER, seven_observed INTEGER,
     source TEXT, last_error TEXT, last_capture_id INTEGER, last_poll_started INTEGER, last_poll_finished INTEGER
   ); CREATE TABLE IF NOT EXISTS claude_pool_blocks (
@@ -59,18 +59,20 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
     until_ms INTEGER NOT NULL, observed_at INTEGER NOT NULL, reason TEXT NOT NULL,
     PRIMARY KEY(scope_key,model_family,window)
   )`);
+  if (!db.prepare('PRAGMA table_info(claude_pool_usage)').all().some(column => column.name === 'generation'))
+    db.exec('ALTER TABLE claude_pool_usage ADD COLUMN generation INTEGER NOT NULL DEFAULT 0');
   const allAccounts = db.prepare("SELECT account,label,token_enc,kind,token_exp,disabled,reauth_needed,parked_until FROM accounts WHERE kind='claude' AND token_enc IS NOT NULL ORDER BY account");
   const getAccount = db.prepare("SELECT account,label,token_enc,kind,token_exp,disabled,reauth_needed,parked_until FROM accounts WHERE account=? AND kind='claude' AND token_enc IS NOT NULL");
   const getMeta = db.prepare('SELECT * FROM claude_pool_metadata WHERE account=?');
   const getUsage = db.prepare('SELECT * FROM claude_pool_usage WHERE account=?');
   const ensureUsage = db.prepare(`INSERT INTO claude_pool_usage(account,fingerprint) VALUES(?,?)
-    ON CONFLICT(account) DO UPDATE SET fingerprint=excluded.fingerprint,revision=claude_pool_usage.revision+1,
+    ON CONFLICT(account) DO UPDATE SET fingerprint=excluded.fingerprint,revision=claude_pool_usage.revision+1,generation=claude_pool_usage.generation+1,
     five_used=NULL,five_reset=NULL,five_observed=NULL,seven_used=NULL,seven_reset=NULL,seven_observed=NULL,
     source=NULL,last_error=NULL,last_capture_id=NULL,last_poll_started=NULL,last_poll_finished=NULL
     WHERE claude_pool_usage.fingerprint<>excluded.fingerprint`);
   const ensureMeta = db.prepare('INSERT OR IGNORE INTO claude_pool_metadata(account) VALUES(?)');
   const leases = new Map(), refreshing = new Map(), controllers = new Set();
-  let cycle = null, timer = null, started = false, stopped = false;
+  let cycle = null, timer = null, started = false, stopped = false, scheduledRefresh = refreshAll;
   let lastStarted = null, lastCompleted = null, nextPoll = null;
 
   function load(raw) {
@@ -164,7 +166,8 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
     if (!candidate) return null;
     const { row, item } = candidate;
     const lease = { account: row.account, token: row.token, leaseId: randomUUID(), scopeId: item.quota_scope,
-      snapshot: { ...item, selected_at: iso(clock()) }, fingerprint: row.fingerprint };
+      snapshot: { ...item, selected_at: iso(clock()) }, fingerprint: row.fingerprint,
+      revision: row.usage.revision, generation: row.usage.generation, startedAt: clock(), tokenEnvelope: row.token_enc };
     leases.set(lease.leaseId, lease);
     db.prepare('UPDATE claude_pool_metadata SET last_used_at=? WHERE account=?').run(clock(), row.account);
     return lease;
@@ -179,16 +182,25 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
     const current = load(getAccount.get(account));
     if (!current || current.invalid) return { applied: false, reason: 'account_unavailable' };
     if (options.tokenEnvelope && current.token_enc !== options.tokenEnvelope) return { applied: false, reason: 'newer_credential_or_observation' };
-    if (options.fingerprint && !observationCurrent(account, options.fingerprint, options.revision)) return { applied: false, reason: 'newer_credential_or_observation' };
+    if (options.fingerprint && !observationCurrent(account, options.fingerprint)) return { applied: false, reason: 'newer_credential_or_observation' };
+    if (options.generation != null && options.generation !== current.usage.generation) return { applied: false, reason: 'newer_credential_or_observation' };
+    const superseded = options.revision != null && options.revision !== current.usage.revision;
+    if (superseded && options.source === 'probe') return { applied: false, reason: 'newer_credential_or_observation' };
     const at = options.observedAt ?? clock();
     if (!Number.isFinite(at) || at > clock()) return { applied: false, reason: 'invalid_observation_time' };
-    const parsed = parseClaudeQuotaHeaders(rawHeaders), valid = WINDOWS.filter(window => parsed[window].used_pct != null);
+    const parsed = parseClaudeQuotaHeaders(rawHeaders);
+    // A request admitted before a newer observation cannot restore availability.
+    // It can still report exhaustion, which only reduces the available allowance.
+    if (superseded) for (const window of WINDOWS) if (parsed[window].used_pct < 100) {
+      parsed[window].used_pct = null; parsed[window].remaining_pct = null;
+    }
+    const valid = WINDOWS.filter(window => parsed[window].used_pct != null);
     const httpStatus = options.status ?? 200;
     const alive = httpStatus >= 200 && httpStatus < 300 || httpStatus === 429 && valid.length > 0;
     const authFailure = httpStatus === 401 || (httpStatus === 403 && options.errorType === 'authentication_error');
     const authUpdate = db.prepare('UPDATE accounts SET reauth_needed=? WHERE account=?');
     if (authFailure) authUpdate.run(1, account);
-    else if (alive) authUpdate.run(0, account);
+    else if (alive && !superseded) authUpdate.run(0, account);
     const members = scopeMembers(current);
     for (const row of members) {
       if (row.account !== account && options.source === 'probe' && row.disabled) continue;
@@ -210,7 +222,7 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
       }
       // A successful inference is a current observation, unlike delayed cost analytics.
       // It can clear only global windows it proves positive, or the same model family.
-      if (httpStatus >= 200 && httpStatus < 300) for (const block of blocksFor(row, options.model)) {
+      if (!superseded && httpStatus >= 200 && httpStatus < 300) for (const block of blocksFor(row, options.model)) {
         if (options.startedAt != null && options.startedAt < block.observed_at) continue;
         const positive = block.model_family ? family(options.model) === block.model_family && httpStatus >= 200 && httpStatus < 300
           : block.window === 'account' ? valid.length === 2 && valid.every(window => parsed[window].remaining_pct > 0)
@@ -225,7 +237,9 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
   function observeHeaders(account, rawHeaders, options = {}) { return applyObservation(account, rawHeaders, { ...options, source: options.source || 'response' }); }
   function markExhausted(account, options = {}) {
     const row = load(getAccount.get(account));
-    if (!row || row.invalid || (options.fingerprint && row.fingerprint !== options.fingerprint)) return false;
+    if (!row || row.invalid || (options.fingerprint && row.fingerprint !== options.fingerprint)
+      || (options.tokenEnvelope && options.tokenEnvelope !== row.token_enc)
+      || (options.generation != null && options.generation !== row.usage.generation)) return false;
     const at = options.observedAt ?? clock(), window = options.window || 'account';
     if (!['five_hour', 'seven_day', 'account', 'model'].includes(window)) throw new TypeError('invalid quota exhaustion window');
     const modelFamily = options.modelFamily || (window === 'model' ? family(options.model) : '');
@@ -243,6 +257,7 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
   function setMetadata(account, data) {
     const row = load(getAccount.get(account));
     if (!row || row.invalid) throw Object.assign(new Error('unknown Claude account'), { statusCode: 404 });
+    const previousMembers = scopeMembers(row);
     const allowed = new Set(['quota_scope', 'credential_expires_at']);
     if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).some(key => !allowed.has(key))) throw new TypeError('invalid Claude account metadata');
     const expiry = data.credential_expires_at === null ? null : epoch(data.credential_expires_at);
@@ -254,7 +269,8 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
     if (data.credential_expires_at !== undefined) {
       db.prepare('UPDATE claude_pool_metadata SET credential_expires_at=?,expiry_fingerprint=? WHERE account=?').run(expiry, row.fingerprint, account);
     }
-    db.prepare('UPDATE claude_pool_usage SET revision=revision+1 WHERE account=?').run(account);
+    const names = new Set([...previousMembers, ...scopeMembers(load(getAccount.get(account)))].map(member => member.account));
+    for (const name of names) db.prepare('UPDATE claude_pool_usage SET revision=revision+1,generation=generation+1 WHERE account=?').run(name);
     return status().accounts.find(item => item.account === account);
   }
   function refreshAccount(account, { signal } = {}) {
@@ -262,7 +278,7 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
     if (refreshing.has(account)) return refreshing.get(account);
     const row = load(getAccount.get(account));
     if (!row || row.invalid) return Promise.resolve({ account, error: 'account_unavailable' });
-    const controller = new AbortController(), startedAt = clock(), revision = row.usage.revision;
+    const controller = new AbortController(), startedAt = clock(), revision = row.usage.revision, generation = row.usage.generation;
     controllers.add(controller);
     const abort = () => controller.abort(); signal?.addEventListener('abort', abort, { once: true });
     db.prepare('UPDATE claude_pool_usage SET last_poll_started=? WHERE account=?').run(startedAt, account);
@@ -282,7 +298,7 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
         });
         if (controller.signal.aborted) throw abortError();
         const applied = applyObservation(account, result.rawHeaders || result.headers, { ...result,
-          fingerprint: row.fingerprint, tokenEnvelope: row.token_enc, revision, startedAt, observedAt: result.observedAt ?? clock(), source: 'probe' });
+          fingerprint: row.fingerprint, tokenEnvelope: row.token_enc, revision, generation, startedAt, observedAt: result.observedAt ?? clock(), source: 'probe' });
         if (observationCurrent(account, row.fingerprint)) db.prepare('UPDATE claude_pool_usage SET last_poll_finished=?,last_error=? WHERE account=?')
           .run(clock(), applied.applied ? null : applied.reason || applied.note || `probe_http_${result.status}`, account);
         return { ...applied, account, capture_id: result.capture_id || null };
@@ -325,7 +341,7 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
     if (!started || stopped || pollMs <= 0) return;
     timer = timers.setTimeout(() => {
       timer = null;
-      void refreshAll().catch(() => {}).finally(() => {
+      void Promise.resolve().then(() => scheduledRefresh()).catch(() => {}).finally(() => {
         if (!started || stopped) return;
         do { nextPoll += pollMs; } while (nextPoll <= clock());
         schedule();
@@ -333,10 +349,12 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
     }, Math.max(0, nextPoll - clock()));
     timer?.unref?.();
   }
-  function start({ immediate = true } = {}) {
+  function start({ immediate = true, refresh = refreshAll } = {}) {
+    if (typeof refresh !== 'function') throw new TypeError('refresh must be a function');
     if (started || pollMs <= 0) return;
+    scheduledRefresh = refresh;
     stopped = false; started = true; nextPoll = clock() + pollMs; schedule();
-    if (immediate) void refreshAll().catch(() => {});
+    if (immediate) void Promise.resolve().then(() => scheduledRefresh()).catch(() => {});
   }
   async function stop() {
     started = false; stopped = true; nextPoll = null;
