@@ -1,0 +1,193 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import http from 'node:http';
+import { once } from 'node:events';
+import { mkdtempSync, rmSync, readFileSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
+import { createClaudePool, parseClaudeQuotaHeaders } from '../src/claude-pool.js';
+import { createClaudeUsageProbe } from '../src/claude-usage-probe.js';
+import { createTrafficStore } from '../src/proxy-traffic.js';
+import { makeVault } from '../src/lib.js';
+
+const BASE = Date.UTC(2026, 9, 23);
+const quota = (five = 0, seven = 0, reset = BASE + 86400000) => [
+  'anthropic-ratelimit-unified-5h-utilization', String(five),
+  'anthropic-ratelimit-unified-7d-utilization', String(seven),
+  'anthropic-ratelimit-unified-5h-reset', String((BASE + 18000000) / 1000),
+  'anthropic-ratelimit-unified-7d-reset', String(reset / 1000),
+];
+const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+const tick = () => new Promise(resolve => setImmediate(resolve));
+async function fixture(t, options = {}) {
+  const db = new DatabaseSync(':memory:');
+  const vault = makeVault(randomBytes(32));
+  db.exec(`CREATE TABLE accounts(account TEXT PRIMARY KEY,label TEXT,token_enc TEXT,kind TEXT DEFAULT 'claude',token_exp INTEGER,
+    disabled INTEGER DEFAULT 0,reauth_needed INTEGER DEFAULT 0,parked_until TEXT,
+    five_hour_pct REAL DEFAULT 0,seven_day_pct REAL DEFAULT 0,five_hour_reset REAL,seven_day_reset REAL,usage_updated TEXT)`);
+  let now = BASE;
+  const pool = await createClaudePool({ db, ...vault, clock: () => now, probe: async () => ({ status: 200, rawHeaders: quota(), observedAt: now }), ...options });
+  t.after(async () => { await pool.stop(); db.close(); });
+  return { db, pool, now: () => now, advance: ms => { now += ms; }, add: (name, token = 'sk-ant-oat01-test-' + name, extra = {}) => {
+    db.prepare('INSERT INTO accounts(account,label,token_enc,kind,disabled,reauth_needed,parked_until,token_exp) VALUES(?,?,?,?,?,?,?,?)')
+      .run(name, name, vault.encrypt(token), extra.kind || 'claude', extra.disabled || 0, extra.reauth_needed || 0, extra.parked_until || null, extra.token_exp || null);
+  }, replace: (name, token) => db.prepare('UPDATE accounts SET token_enc=? WHERE account=?').run(vault.encrypt(token), name) };
+}
+
+test('quota parser preserves zero and fractional headroom and rejects unknown or duplicate headers', () => {
+  assert.equal(parseClaudeQuotaHeaders(quota(0, .995)).five_hour.remaining_pct, 100);
+  assert.equal(parseClaudeQuotaHeaders(quota(0, .995)).seven_day.remaining_pct, .5);
+  for (const bad of ['', 'NaN', '-1', '1.1', 'unknown']) assert.equal(parseClaudeQuotaHeaders({ 'anthropic-ratelimit-unified-5h-utilization': bad }).five_hour.used_pct, null);
+  assert.equal(parseClaudeQuotaHeaders([...quota(), 'ANTHROPIC-RATELIMIT-UNIFIED-5H-UTILIZATION', '0']).five_hour.used_pct, null);
+});
+
+test('fresh positive allowance in BOTH windows is required; earliest future weekly reset wins', async t => {
+  const f = await fixture(t); for (const name of ['late', 'soon', 'spent', 'unknown', 'past', 'api']) f.add(name, undefined, name === 'api' ? { kind: 'codex' } : {});
+  f.pool.observeHeaders('late', quota(0, 0, BASE + 200000));
+  f.pool.observeHeaders('soon', quota(.995, .995, BASE + 100000));
+  f.pool.observeHeaders('spent', quota(1, 0, BASE + 50000));
+  f.pool.observeHeaders('past', quota(0, 0, BASE - 1));
+  const status = f.pool.status();
+  assert.equal(status.next_account, 'soon');
+  assert.equal(status.accounts.find(a => a.account === 'soon').five_hour.remaining_pct, .5);
+  assert.equal(status.accounts.find(a => a.account === 'spent').reason, 'exhausted');
+  assert.equal(status.accounts.find(a => a.account === 'unknown').reason, 'usage_unknown');
+  assert.equal(status.accounts.some(a => a.account === 'api'), false);
+  assert.equal(JSON.stringify(status).includes('sk-ant'), false);
+  assert.equal(status.accounts.find(a => a.account === 'late').credential_expires_at, null);
+  const lease = f.pool.acquire(); assert.equal(lease.account, 'soon'); assert.match(lease.token, /^sk-ant-oat/); f.pool.release(lease);
+});
+
+test('window freshness is independent; missing fields never become full capacity', async t => {
+  const f = await fixture(t); f.add('a');
+  f.pool.observeHeaders('a', quota(.2, .3)); f.advance(600001);
+  f.pool.observeHeaders('a', ['anthropic-ratelimit-unified-5h-utilization', '0']);
+  const state = f.pool.status().accounts[0];
+  assert.equal(state.five_hour.fresh, true); assert.equal(state.seven_day.fresh, false); assert.equal(state.reason, 'usage_stale');
+  assert.equal(state.five_hour.resets_at, null);
+  assert.equal(f.pool.acquire(), null);
+});
+
+test('manual metadata expiration, disabled, parked and reauth accounts are excluded without deleting credentials', async t => {
+  const f = await fixture(t); f.add('expired'); f.add('disabled', undefined, { disabled: 1 }); f.add('reauth', undefined, { reauth_needed: 1 }); f.add('parked', undefined, { parked_until: new Date(BASE + 10000).toISOString() });
+  for (const account of ['expired', 'disabled', 'reauth', 'parked']) f.pool.observeHeaders(account, quota(), { status: 529 });
+  f.pool.setMetadata('expired', { credential_expires_at: new Date(BASE - 1).toISOString() });
+  assert.deepEqual(Object.fromEntries(f.pool.status().accounts.map(a => [a.account, a.reason])), { disabled: 'disabled', expired: 'credential_expired', parked: 'parked', reauth: 'reauth_needed' });
+  assert.throws(() => f.pool.setMetadata('expired', { quota_scope: 'wrong', credential_expires_at: 'bad' }));
+  assert.equal(f.pool.status().accounts.find(a => a.account === 'expired').quota_scope, 'expired');
+  f.replace('expired', 'sk-ant-oat01-new');
+  assert.equal(f.pool.status().accounts.find(a => a.account === 'expired').credential_expires_at, null);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 4);
+});
+
+test('shared scopes and identical credentials share usage, exhaustion, and one polling representative', async t => {
+  let calls = 0;
+  const f = await fixture(t, { probe: async () => { calls++; return { status: 200, rawHeaders: quota(.25, .5) }; } });
+  f.add('a', 'sk-ant-oat01-same'); f.add('b', 'sk-ant-oat01-same'); f.add('c');
+  f.pool.setMetadata('a', { quota_scope: 'subscription-one' }); f.pool.setMetadata('b', { quota_scope: 'subscription-two' }); f.pool.setMetadata('c', { quota_scope: 'subscription-two' });
+  await f.pool.refreshAll(); assert.equal(calls, 1);
+  assert.equal(f.pool.status().accounts.every(a => a.five_hour.used_pct === 25), true);
+  f.advance(1); f.pool.markExhausted('a', { window: 'seven_day', resetAt: BASE + 100000 });
+  assert.equal(f.pool.status().accounts.every(a => a.reason === 'exhausted'), true);
+  f.pool.observeHeaders('a', quota(0, 0), { status: 429 });
+  assert.equal(f.pool.acquire(), null, '429 positive headers do not clear authoritative exhaustion');
+  f.advance(1); f.pool.observeHeaders('a', quota(0, 0), { status: 200 }); assert.ok(f.pool.acquire());
+});
+
+test('model-family cooldowns do not exhaust other models; bare throttles never mark allowances spent', async t => {
+  const f = await fixture(t); f.add('a'); f.pool.observeHeaders('a', quota(.1, .2));
+  f.pool.markExhausted('a', { window: 'model', model: 'claude-opus-4-6', resetAt: BASE + 100000 });
+  assert.equal(f.pool.status({ model: 'claude-opus-4-6' }).accounts[0].reason, 'model_cooldown');
+  assert.equal(f.pool.status({ model: 'claude-sonnet-4-6' }).accounts[0].eligible, true);
+  assert.deepEqual(f.pool.status().accounts[0].cooldowns, [{ model: 'opus', until: new Date(BASE + 100000).toISOString() }]);
+  f.pool.observeHeaders('a', [], { status: 429 }); f.pool.observeHeaders('a', [], { status: 529 });
+  assert.equal(f.pool.status().accounts[0].five_hour.used_pct, 10);
+  f.pool.observeHeaders('a', quota(.1, .2), { model: 'claude-sonnet-4-6' });
+  assert.equal(f.pool.status({ model: 'claude-opus-4-6' }).accounts[0].reason, 'model_cooldown');
+});
+
+test('delayed probes cannot resurrect a replaced/deleted credential or overwrite newer exhaustion', async t => {
+  const gate = deferred(); const f = await fixture(t, { probe: () => gate.promise }); f.add('a');
+  const pending = f.pool.refreshAccount('a'); await tick(); f.replace('a', 'sk-ant-oat01-replaced');
+  gate.resolve({ status: 200, rawHeaders: quota(0, 0) }); const result = await pending;
+  assert.equal(result.applied, false); assert.equal(f.pool.status().accounts[0].reason, 'usage_unknown');
+  const second = deferred(); const g = await fixture(t, { probe: () => second.promise }); g.add('a');
+  const poll = g.pool.refreshAccount('a'); await tick(); g.advance(1); g.pool.markExhausted('a', { window: 'seven_day', resetAt: BASE + 100000 });
+  second.resolve({ status: 200, rawHeaders: quota() }); assert.equal((await poll).applied, false); assert.equal(g.pool.status().accounts[0].reason, 'exhausted');
+  const third = deferred(); const h = await fixture(t, { probe: () => third.promise }); h.add('a');
+  const deleted = h.pool.refreshAccount('a'); await tick(); h.db.prepare('DELETE FROM accounts WHERE account=?').run('a'); third.resolve({ status: 200, rawHeaders: quota() });
+  assert.equal((await deleted).applied, false); assert.equal(h.pool.status().accounts.length, 0);
+});
+
+test('leases, affinity, exclusions and cancellation are bounded and deterministic', async t => {
+  const f = await fixture(t, { maxInFlight: 1 }); f.add('a'); f.add('b');
+  f.pool.observeHeaders('a', quota()); f.pool.observeHeaders('b', quota());
+  const first = f.pool.acquire(); assert.equal(first.account, 'a'); const second = f.pool.acquire(); assert.equal(second.account, 'b'); assert.equal(f.pool.acquire(), null);
+  f.pool.release(first); assert.equal(f.pool.acquire({ excludeAccounts: ['a'] }), null);
+  f.pool.release(second); assert.equal(f.pool.acquire({ affinity: 'b' }).account, 'b');
+  const cancel = new AbortController(); cancel.abort(); assert.throws(() => f.pool.acquire({ signal: cancel.signal }), { name: 'AbortError' });
+});
+
+test('single flight clears failures and scheduled refresh runs every five minutes without overlap', async t => {
+  let calls = 0, callback, delay; const gate = deferred();
+  const timers = { setTimeout(fn, ms) { callback = fn; delay = ms; return 1; }, clearTimeout() { callback = null; } };
+  const f = await fixture(t, { timers, probe: () => { calls++; return gate.promise; } }); f.add('a');
+  f.pool.start({ immediate: false }); assert.equal(delay, 300000); f.advance(300000); callback(); await tick(); assert.equal(calls, 1);
+  const same = f.pool.refreshAll(); assert.equal(f.pool.refreshAll(), same); await tick(); assert.equal(calls, 1);
+  gate.resolve({ status: 200, rawHeaders: quota() }); await same; await tick(); assert.equal(delay, 300000);
+  await f.pool.stop(); assert.equal(callback, null); assert.equal(f.pool.status().next_poll_at, null);
+  let failures = 0; const g = await fixture(t, { probe: () => { failures++; throw new Error('private secret'); } }); g.add('a');
+  await g.pool.refreshAccount('a'); await g.pool.refreshAccount('a'); assert.equal(failures, 2); assert.equal(g.pool.status().refreshing, false);
+  assert.equal(JSON.stringify(g.pool.status()).includes('private secret'), false);
+});
+
+test('authentication errors require reauth; generic permission failures do not', async t => {
+  const f = await fixture(t); f.add('a'); f.add('b'); f.pool.setMetadata('a', { quota_scope: 'same' }); f.pool.setMetadata('b', { quota_scope: 'same' });
+  f.pool.observeHeaders('a', quota()); f.pool.observeHeaders('a', [], { status: 403 }); assert.equal(f.pool.status().next_account, 'a');
+  f.pool.observeHeaders('a', [], { status: 403, errorType: 'authentication_error' });
+  assert.equal(f.pool.status().accounts.find(a => a.account === 'a').reason, 'reauth_needed'); assert.equal(f.pool.status().accounts.find(a => a.account === 'b').last_error, null);
+  f.pool.observeHeaders('a', quota()); assert.equal(f.pool.status().accounts.find(a => a.account === 'a').eligible, true);
+});
+
+test('shutdown cancels a probe even when injected transport ignores abort', async t => {
+  const f = await fixture(t, { probe: () => new Promise(() => {}) }); f.add('a');
+  const pending = f.pool.refreshAccount('a'); await tick(); await f.pool.stop();
+  assert.equal((await pending).error, 'probe_cancelled'); assert.equal(f.pool.status().refreshing, false);
+});
+
+test('native probe makes one tiny inference and captures exact encrypted request, response and trailers', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'aigate-probe-test-')); const db = new DatabaseSync(':memory:'); const vault = makeVault(randomBytes(32));
+  const store = await createTrafficStore({ db, directory, ...vault }); let received, hits = 0;
+  const body = randomBytes(100000);
+  const server = http.createServer(async (req, res) => {
+    hits++; const pieces = []; for await (const chunk of req) pieces.push(chunk);
+    received = { headers: req.headers, body: JSON.parse(Buffer.concat(pieces)), path: req.url };
+    res.writeHead(200, [...quota(.1, .2), 'Trailer', 'x-test-trailer', 'X-Repeated', 'one', 'X-Repeated', 'two']); res.write(body); res.addTrailers({ 'x-test-trailer': 'last' }); res.end();
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(async () => { await new Promise(resolve => server.close(resolve)); db.close(); rmSync(directory, { recursive: true, force: true }); });
+  const upstream = `http://127.0.0.1:${server.address().port}`;
+  const probe = createClaudeUsageProbe({ getTrafficStore: () => store, upstream, clock: () => BASE });
+  const result = await probe({ account: 'a', token: 'sk-ant-oat01-PROBE_SECRET' });
+  assert.equal(hits, 1); assert.equal(received.path, '/v1/messages'); assert.equal(received.body.max_tokens, 1); assert.match(received.headers['user-agent'], /^aigate\//); assert.equal(result.status, 200);
+  const events = []; for await (const event of store.events(result.capture_id)) events.push(event);
+  assert.equal(events[0].consumes_allowance, true); assert.equal(events[0].headers.includes('Bearer sk-ant-oat01-PROBE_SECRET'), true);
+  assert.deepEqual(Buffer.concat(events.filter(e => e.type === 'response_body').map(e => Buffer.from(e.data, 'base64'))), body);
+  assert.deepEqual(events.find(e => e.type === 'response_end').trailers, ['x-test-trailer', 'last']);
+  assert.equal(readFileSync(join(directory, readdirSync(directory)[0])).includes('PROBE_SECRET'), false);
+  await assert.rejects(createClaudeUsageProbe({ upstream })({ account: 'a', token: 'never' }), { code: 'CAPTURE_UNAVAILABLE' }); assert.equal(hits, 1);
+});
+
+test('probe cancellation and capture failure stop egress; HTTP deadline is bounded', async t => {
+  let hits = 0; const server = http.createServer(() => { hits++; }); server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const upstream = `http://127.0.0.1:${server.address().port}`; const records = [];
+  const capture = { id: 1, async append(type, data) { records.push({ type, data }); }, async chunk() {}, async finish() {} };
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(createClaudeUsageProbe({ upstream, getTrafficStore: () => ({ start: async () => capture }) })({ token: 'secret', signal: controller.signal }), { name: 'AbortError' });
+  await assert.rejects(createClaudeUsageProbe({ upstream, getTrafficStore: () => ({ start: async () => ({ ...capture, chunk: async () => { throw new Error('disk full'); } }) }) })({ token: 'secret' }), /disk full/);
+  assert.equal(hits, 0);
+  await assert.rejects(createClaudeUsageProbe({ upstream, timeoutMs: 40, getTrafficStore: () => ({ start: async () => capture }) })({ token: 'secret' }), { code: 'PROBE_TIMEOUT' }); assert.equal(hits, 1);
+});
