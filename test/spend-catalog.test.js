@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { ensureSchema, handleSpend, recordProxyUsage } from '../src/spend.js';
 import { importCatalog, readCatalog, readCatalogHistory, decimalMicros, digest } from '../src/spend-catalog.js';
-import { pickRate, priceEvent } from '../src/spend-pricing.js';
+import { pickRate, priceEvent, seedPrices } from '../src/spend-pricing.js';
 import { normalizeSnapshot, normalizeHistorical, readOtariPrices, run as importPrices } from '../scripts/spend-import-otari-prices.js';
 import { mapRow, run as importUsage, newStats } from '../scripts/spend-import-otari.js';
 
@@ -17,6 +17,47 @@ const base={source:'otari',snapshot:{hash:digest('fixture'),source_as_of:'2026-0
   prices:[{provider:'anthropic',model:'test-model',effective_from:'2026-09-01T00:00:00Z',input_usd:'3',output_usd:'15',cache_read_usd:'0.3',cache_write_usd:'3.75',cache_write_1h_usd:'6',tiers:[{min_input_tokens:200000,input_usd:'6',output_usd:'22.5'}]}]};
 const clone=()=>structuredClone(base);
 const params=o=>new URLSearchParams(o);
+
+test('legacy provenance migration recognizes only complete unchanged seeds and never retags explicit manual rows on restart',()=>{
+  const db=new DatabaseSync(':memory:');
+  db.exec(`CREATE TABLE spend_prices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,provider TEXT NOT NULL,model TEXT NOT NULL,
+    match TEXT NOT NULL DEFAULT 'exact',effective_from TEXT NOT NULL,
+    input_micros INTEGER NOT NULL,output_micros INTEGER NOT NULL,
+    cache_read_micros INTEGER,cache_write_micros INTEGER,cache_write_1h_micros INTEGER,
+    tiers_json TEXT NOT NULL DEFAULT '[]',note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UNIQUE(provider,model,effective_from));`);
+  const seeds=seedPrices().slice(0,6).map(r=>({...r}));
+  seeds[1].cache_read_micros=(seeds[1].cache_read_micros ?? 0)+123;
+  seeds[2].tiers_json=JSON.stringify([{min_input_tokens:100,input_micros:123456}]);
+  seeds[3].match=seeds[3].match==='exact'?'prefix':'exact';
+  seeds[4].cache_write_micros=(seeds[4].cache_write_micros ?? 0)+456;
+  seeds[5].cache_write_1h_micros=(seeds[5].cache_write_1h_micros ?? 0)+789;
+  const insert=db.prepare(`INSERT INTO spend_prices(provider,model,match,effective_from,input_micros,output_micros,cache_read_micros,cache_write_micros,cache_write_1h_micros,tiers_json,note) VALUES(?,?,?,?,?,?,?,?,?,?,?)`);
+  for(const r of seeds) insert.run(r.provider,r.model,r.match,r.effective_from,r.input_micros,r.output_micros,r.cache_read_micros,r.cache_write_micros,r.cache_write_1h_micros,r.tiers_json,r.note);
+  try {
+    ensureSchema(db);
+    const rows=db.prepare('SELECT * FROM spend_prices ORDER BY id').all();
+    assert.equal(rows[0].catalog_source,'seed');
+    for(const r of rows.slice(1)) assert.equal(r.catalog_source,'manual');
+    for(let i=0;i<seeds.length;i++) for(const field of ['match','cache_read_micros','cache_write_micros','cache_write_1h_micros','tiers_json']) assert.equal(rows[i][field],seeds[i][field]);
+    // An operator can intentionally mark an otherwise seed-identical price manual.
+    db.prepare("UPDATE spend_prices SET catalog_source='manual' WHERE id=?").run(rows[0].id);
+    recordProxyUsage(db,{message_id:'msg-migrated-manual',model:seeds[1].model,account:'acct',ts:'2026-10-20',usage:{input_tokens:0,output_tokens:0,cache_read_input_tokens:1000000}});
+    const settled=db.prepare('SELECT cost_micros,price_id FROM usage_events').get();
+    assert.equal(settled.cost_micros,seeds[1].cache_read_micros);
+    const imported={source:'otari',snapshot:{hash:digest('newer-than-custom-manual'),source_as_of:'2026-10-01'},prices:[{
+      provider:seeds[1].provider,model:seeds[1].model,effective_from:'2026-10-01',input_usd:999,output_usd:999,cache_read_usd:999
+    }]};
+    importCatalog(db,imported);
+    ensureSchema(db);
+    assert.equal(db.prepare('SELECT catalog_source FROM spend_prices WHERE id=?').get(rows[0].id).catalog_source,'manual');
+    const rates=db.prepare('SELECT * FROM spend_prices').all();
+    assert.equal(pickRate(rates,seeds[1].provider,seeds[1].model,'2026-10-20').id,rows[1].id);
+    assert.deepEqual(db.prepare('SELECT cost_micros,price_id FROM usage_events').get(),settled);
+  }finally{db.close();}
+});
 
 test('decimal rates use exact exponent conversion and half-up microdollars',()=>{
   assert.equal(decimalMicros('1.2345675'),1234568);

@@ -1,205 +1,101 @@
-<div align="center">
+# Request paths and credential boundaries
 
-# ⚖️ aigate — Compliance
+AIGate provides an encrypted credential vault, account selection, provider
+API-key proxies, and an explicit Claude Code subscription pool. This document
+describes which component sends each request and where credentials are used.
 
-### *Multi-account Claude, the way Anthropic says is allowed — with receipts.*
+## Request paths
 
-![stance](https://img.shields.io/badge/Claude-no--relay_·_official_binary_only-8A2BE2)
-![accounts](https://img.shields.io/badge/multiple_MAX_accounts-not_against_ToS-brightgreen)
-![tenancy](https://img.shields.io/badge/single--tenant-your_own_accounts_only-blue)
-
-</div>
-
----
-
-> [!IMPORTANT]
-> **The one rule that decides everything: *who makes the request?***
-> A third-party harness that **spoofs** the official client with your subscription token → **banned.**
-> The **real `claude` binary**, running **your own** accounts → **accepted.**
-> **aigate is architected to always be the second thing.** For Claude it is a *selector*, never a proxy — it picks which account's token the *official* binary launches with, then gets out of the way. It is **never in Anthropic's request path**.
-
----
-
-## 🧭 TL;DR
-
-| ✅ aigate does | ❌ aigate never does |
-|---|---|
-| Runs the **official `claude` binary** | Spoof / impersonate the Claude Code client |
-| Balances **your own** accounts by real headroom | Route requests **on behalf of other users** |
-| Injects the picked account's token into the **official client** (clean credential store, no shadow login) | Extract tokens to feed a third-party harness |
-| Stays **single-tenant** (just you) | Resell / share access, or pool for a team |
-| Runs the **official `codex` binary** on **your own** ChatGPT logins | Relay Codex/ChatGPT traffic, or sit in its request path |
-| Uses a real proxy **only for API-key providers** (OpenAI, fal, …) | Proxy/relay **Claude or ChatGPT subscription OAuth** |
-
-If you can't say "these are **my** accounts and **I'm** the only user," you're outside what this doc covers — use an [API key](https://platform.claude.com/) instead.
-
----
-
-## 🚧 The line, drawn
-
-**Anthropic's enforcement targets exactly two things:** (1) **reselling or sharing** accounts, and (2) **harnesses that spoof the official client** — forged headers, no telemetry ([their eng's own words](https://x.com/trq212/status/2009689809875591565)). aigate does **neither**: it never resells or shares, and it runs the *real* `claude` binary, so there are **no forged headers** and Anthropic sees normal, honest telemetry.
-
-```mermaid
-flowchart TB
-  subgraph banned["❌ BANNED — the relay/spoof pattern"]
-    direction LR
-    B1["your app / harness"] --> B2["🚨 proxy relays the OAuth token<br/>+ spoofs the official client"] --> B3["Anthropic<br/><i>unusual traffic, no telemetry</i>"]
-    note1["OpenClaw · OpenCode · ccflare ·<br/>claude-relay-service · teamclaude"]
-  end
-  subgraph ok["✅ ACCEPTED — the selector pattern (aigate)"]
-    direction LR
-    A1["aigate<br/>pick account: soonest reset w/ headroom"] -.only picks.-> A2["official <b>claude</b> binary<br/>own account token · real headers"] --> A3["Anthropic<br/><i>direct · real telemetry</i>"]
-    note2["your own accounts · single-tenant ·<br/>CLAUDE_CODE_OAUTH_TOKEN (sanctioned)"]
-  end
-```
-
----
-
-## ✅ The three tests aigate passes
-
-| Test | ❌ Banned tools | ✅ aigate |
+| Path | Credential source | Model request path |
 |---|---|---|
-| **Who makes the request?** | a proxy spoofing the client | the **official `claude` binary** |
-| **Whose accounts?** | routes on behalf of *other users* / resells | **only your own** |
-| **Evading limits?** | sharding one workload to dodge caps | picks headroom for *ordinary individual use* |
+| Claude account selection through `/api/select` | Manually added Claude account | AIGate returns the selected token; the official `claude` client connects directly to Anthropic. |
+| Codex account selection through `/api/select?kind=codex` | Manually added Codex `auth.json` | The launcher writes the selected authentication file; the official `codex` client connects directly to ChatGPT. |
+| Transparent `/proxy/<provider>/...` API-key routes | Manually added provider API key | The application connects to AIGate; AIGate substitutes the provider credential and forwards the request. |
+| Explicit `/proxy/claude-code/...` | Manually added Claude Code setup tokens in `accounts` | The official Claude Code client connects to AIGate with a stable gateway key; AIGate selects an account and forwards the request to Anthropic. |
+| Legacy administrator-token model-routing proxy | Manually added provider API keys | AIGate routes the request using the older model/provider mapping behavior documented in the README. |
 
----
+The Claude Code pool is in the inference request path. The original selector
+paths remain available, and Codex subscription inference retains its direct
+official-client path. Provider API-key proxy routes and the Claude Code pool use
+separate credential sources.
 
-## 📜 What Anthropic actually says (verbatim)
+## Manual credential registration and access
 
-From Anthropic's **[Claude Code — Legal & Compliance](https://code.claude.com/docs/en/legal-and-compliance)** page:
+Claude setup tokens are registered as `accounts.kind='claude'`. Codex
+authentication files are registered as `accounts.kind='codex'`. Provider API keys
+belong in `provider_keys` or an encrypted `proxy_credentials` entry. API-key
+intake rejects Claude setup tokens, and API-key relays reject them if found in a
+configured API credential. The explicit Claude Code pool reads Claude accounts.
 
-> "OAuth authentication is intended exclusively for purchasers of Claude Free, Pro, Max, Team, and Enterprise subscription plans and is designed to support **ordinary use of Claude Code and other native Anthropic applications**."
+Credential creation requires an authenticated administrative action. Proxy
+requests, quota probes and historical usage/pricing imports do not create
+credentials. AIGate does not discover credentials from request traffic, SDK
+configuration, AWS profiles or instance metadata. Existing Codex sync updates an
+already registered account.
 
-> "Anthropic does not permit third-party developers to offer Claude.ai login or to **route requests through Free, Pro, or Max plan credentials on behalf of their users**."
+`AIGATE_PROXY_TOKEN` and `AIGATE_PROXY_TOKEN_2` are stable proxy-only gateway keys.
+Manually registered client bindings can pin an API-key client to one credential.
+These keys do not grant vault administration, credential retrieval or traffic-log
+downloads. The administrator bearer or an authenticated dashboard session
+controls those operations. Credential lists expose metadata; explicit selector
+and key-fetch APIs return credentials to authenticated administrators.
 
-> "Advertised usage limits for Pro and Max plans assume **ordinary, individual usage** of Claude Code and the Agent SDK."
+## Claude Code pool behavior
 
-**Read closely:** the prohibition is scoped to developers routing subscription credentials **on behalf of *their users*** — i.e. serving *other people*. Running the official binary on your *own* accounts, as the *only* user, is the "ordinary, individual usage" lane. aigate is built to stay in it.
+The client creates its normal model request, application headers and system
+attribution. AIGate substitutes the chosen account's Bearer token while keeping
+the requested model and body bytes. It does not forge client fingerprints,
+User-Agent strings or system attribution. Required OAuth capability headers are
+configured on the client and forwarded with its other beta values.
 
----
+The pool requires fresh, known remaining allowance above zero in both five-hour
+and weekly windows, preferring the eligible account whose weekly reset is
+soonest. Manual quota scopes group tokens sharing a subscription; credential
+expiry is separate metadata. A confirmed quota admission rejection can select
+another compatible account before upstream output is exposed. Generic
+throttling, overload, ambiguous transport failures and partial streams do not
+cause hidden quota replay.
 
-## 📎 Receipts — the primary sources
+AIGate also constructs its own minimal inference probes to observe quota
+headers every five minutes by default. These consume allowance, identify
+themselves with AIGate's usage-probe User-Agent, and receive full encrypted
+traffic capture. They do not impersonate the official client. Setup tokens are
+replaced manually when expired or revoked.
 
-| Source | What it establishes | Verified |
-|---|---|---|
-| ⚖️ [Anthropic — Claude Code Legal & Compliance](https://code.claude.com/docs/en/legal-and-compliance) | The authoritative policy (quotes above). | ✅ fetched live |
-| 🐦 [Thariq Shihipar (@trq212), Claude Code @ Anthropic — Jan 9, 2026](https://x.com/trq212/status/2009689809875591565) | Names the **banned** pattern: *"we tightened our safeguards against **spoofing the Claude Code harness** … third-party harnesses using Claude subscriptions … are **prohibited** by our Terms of Service."* aigate runs the real binary — no spoofing. | ✅ thread confirmed |
-| 🐦 [Thariq Shihipar — Feb 19, 2026](https://x.com/trq212/status/2024212378402095389) | *"Nothing is changing about how you can use the Agent SDK and MAX subscriptions."* | ⚠️ via 2 write-ups |
-| 🗞️ Anthropic → The New Stack (Feb 2026) | *"Nothing changes around how customers have been using their account and Anthropic **will not be canceling accounts**."* | ⚠️ press-reported |
-| 🧩 [anthropics/claude-code #261](https://github.com/anthropics/claude-code/issues/261) · [#33430](https://github.com/anthropics/claude-code/issues/33430) | Anthropic's **own repo** treating **multiple accounts on one machine** (and per-account `CLAUDE_CONFIG_DIR` isolation) as an ordinary, supported setup. | ✅ primary repo |
+## Forwarding and complete traffic capture
 
-> [!NOTE]
-> **On the ⚠️ rows:** the two tweet/press items are cross-referenced from multiple independent write-ups citing the exact URL + quote, but X blocks automated fetching, so we can't machine-verify them the way we did the legal page and the Jan 9 thread. Treat the ✅ rows as load-bearing; the ⚠️ rows as strong corroboration. If any link rots, open an issue — this file is meant to stay true.
+Transparent routes retain application headers, request/response body bytes,
+model names, query encoding and upstream error bodies subject to the documented
+authentication and HTTP transport handling. AIGate replaces authentication,
+addresses the configured upstream in `Host`, removes the routing mount prefix,
+and handles connection headers and transfer framing for each HTTP connection.
+It removes its own `aigate_sess` cookie from provider-bound traffic and excludes
+upstream cookies targeting that gateway-owned name. Other application cookies
+are retained. The [transparent proxy guide](docs/TRANSPARENT-PROXY.md) defines
+the full relay contract and replay limits.
 
----
+Complete captures contain raw request and response bytes, including credential
+values. They are encrypted at rest with the vault encryption key; administrative
+downloads decrypt the complete record. The Claude pool separately records each
+attempt's account, quota observation, effective headers, upstream response and
+retry decision. Its bounded replay files are also encrypted. Capture or replay
+failure stops forwarding. Metadata lists do not expose captured headers or body
+content, and legacy summary logs are separate from these complete records.
 
-## 🛡️ How aigate stays on the accepted side (mechanically)
+## Codex refresh ownership
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant Host as 🖥️ your box
-  participant AG as 🛡️ aigate (selector)
-  participant CL as 🤖 official claude binary
-  participant AN as 🟣 Anthropic
-  Host->>AG: GET /api/select  (which of MY accounts has headroom?)
-  AG-->>Host: { account, setup_token }  📝 audited (IP + host)
-  Note over Host,CL: injected account token, clean credential store — no relay, no spoofed headers
-  Host->>CL: run OFFICIAL claude with that account's token
-  CL->>AN: normal Claude Code request 🔑 (direct, real telemetry)
-  AN-->>CL: response + rate-limit headers
-  Note over AG,AN: aigate polls headroom on its OWN tokens, never in the request path
-```
+The existing Codex path stores `auth.json` encrypted, reads account usage through
+the configured usage endpoint and refreshes expiring credentials server-side.
+Refresh operations are single-flight per account, and rotated credentials are
+persisted before being returned. An uncertain refresh outcome halts automatic
+refresh; the external refresh ledger protects against reuse after restoring an
+older database. The client keeper can adopt the vault's current authentication
+file. These usage and authentication calls do not relay Codex model inference.
 
-- **Official binary, always.** aigate hands a token to the real `claude` client. It never crafts, spoofs, or relays a request to `api.anthropic.com` on Claude's behalf.
-- **The picked account actually serves.** aigate injects the chosen account's token via `CLAUDE_CODE_OAUTH_TOKEN` into the official client and keeps the credential store clean of any stale/competing login — so the account you *picked* is the account that *serves*, with no cross-account bleed. (Anthropic also blesses per-account [`CLAUDE_CONFIG_DIR`](https://github.com/anthropics/claude-code/issues/261) isolation if you'd rather use that.)
-- **Your accounts only.** Tokens are stored AES-256-GCM encrypted and only ever handed back to *your* boxes. No third party, no other users.
-- **Honest telemetry.** Because it's the real client, Anthropic sees normal usage patterns — the *opposite* of the "unusual traffic without telemetry" that triggers enforcement.
+## Technical references
 
----
-
-## ⚠️ Where *you* could still cross the line (respect this)
-
-aigate keeps the **architecture** compliant; it can't stop you from **using** it in a banned way. Don't:
-
-| ❌ Don't | Why |
-|---|---|
-| Shard one heavy 24/7 workload across N accounts to beat the weekly cap | **Limit evasion** — bannable *even with the official binary* |
-| Ship a token to a machine used by a **different person** | Crosses into "on behalf of another user" |
-| Point aigate's Claude path at a relay/proxy | That's the spoofing pattern; keep the **no-relay-for-Claude guardrail sacred** |
-| Resell or share account access | Explicit ToS violation, instant ban |
-| Over-drain a subscription for API-grade work | Prefer an **API-key fallback** (Console pay-go) |
-
-**When in doubt:** if the work is programmatic/heavy or another human benefits, use an **[API key](https://platform.claude.com/)** — it's the sanctioned path and it's what aigate's roadmap proxy is *for* (API-key providers only).
-
----
-
-## 🧠 The Codex (ChatGPT) half
-
-Codex accounts follow the **same selector pattern** as Claude: aigate is a vault and a picker, **never a relay**. The official `codex` binary makes every request to ChatGPT itself, with its own headers and telemetry; aigate is not in that path.
-
-| ✅ aigate does (Codex) | ❌ aigate never does (Codex) |
-|---|---|
-| Stores **your own** ChatGPT logins (`auth.json`) AES-256-GCM encrypted | Hold, share, or hand out logins that are not yours |
-| Writes the picked account's **`auth.json`** for the **official `codex` binary** to read | Proxy, relay, or rewrite Codex's requests |
-| **Reads `chatgpt.com/backend-api/wham/usage`** with the account's own token to learn headroom | Send prompts or model traffic anywhere |
-| **Refreshes tokens** through OpenAI's official token endpoint (`auth.openai.com/oauth/token`) using the **public Codex CLI client id**, the same call the binary itself makes | Mint tokens by any other route, or use a private or borrowed client id |
-| Stays single-tenant: your boxes, your accounts | Resell, pool for others, or serve another person's session |
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant Host as 🖥️ your box
-  participant AG as 🛡️ aigate (selector)
-  participant CX as 🤖 official codex binary
-  participant OA as 🟢 ChatGPT / OpenAI
-  Host->>AG: GET /api/select?kind=codex  (which of MY accounts has headroom?)
-  AG-->>Host: { account, auth_json }  📝 audited (IP + host)
-  Host->>CX: write ~/.codex/auth.json, run OFFICIAL codex
-  CX->>OA: normal Codex request 🔑 (direct, real client)
-  Note over AG,OA: aigate only polls wham/usage + refreshes via the official token endpoint
-```
-
-- **Official binary, always.** aigate's whole footprint on the client is one file, `auth.json`, written atomically with mode 600. A pre-existing login is backed up once (`auth.json.bak-pre-aigate-*`). The request path to ChatGPT never touches aigate.
-- **Two server-side calls, both the client's own.** The usage read (`wham/usage`) and the token refresh are the calls the official client makes for itself; aigate makes them on your behalf for **your** accounts only, and does not follow redirects, since both carry live credentials.
-- **Refresh late.** Rotating a refresh token orphans every other holder of that login (such as the Codex desktop app), so aigate refreshes only when the access token is near expiry (default: within four days, `AIGATE_CODEX_REFRESH_AHEAD_S`). A client whose own login rotated can sync the newer one back with `POST /api/codex/sync`, and a per-box **keeper** (launchd every 5 minutes on macOS, a `systemd --user` timer or cron on Linux) pulls the vault's current login via `GET /api/codex/auth` so a long-lived codex never spends a token the vault already rotated. While a codex process is live, `ai codex` keeps its on-disk account instead of switching it.
-- **Honest identity.** The usage read identifies itself as `aigate/<ver> (codex-usage)`; it does not pose as the Codex client. The refresh call sends the public Codex CLI `client_id` because OAuth requires the refresh to come from the client the tokens were issued to; that is a protocol requirement, not a disguise, and the call sends no fake user-agent.
-- **If a refresh outcome is uncertain, aigate stops.** Only errors that provably happened before the request was sent are retried; anything else halts auto-refresh (`refresh_unknown`) rather than risk spending a single-use token twice. A ledger kept outside the database (`codex-ledger.json`) makes a restored backup halt the same way instead of replaying a spent token.
-- **Your accounts only.** The same single-tenant rule as Claude applies. Don't spread one heavy workload across many ChatGPT accounts to beat limits, and don't put a login on a machine used by someone else.
-- **Policy status is yours to check.** Unlike the Claude section above, this document quotes no OpenAI policy and makes no claim that a given ChatGPT plan permits multiple personal accounts. Read OpenAI's current terms for your plan. What aigate guarantees is the architecture: official binary, your own logins, no relay.
-
-### 🖥️ Desktop apps
-
-- **ChatGPT/Codex desktop:** `ai desktop codex` only writes `auth.json` and restarts the app, which reads that file itself.
-- **Claude Desktop:** **display-only.** aigate can show which account it recommends but does not inject anything into the app, and cannot: the app launches its Code runtime with its own signed-in credential. Nothing here works around or overrides the app's own login.
-
-### 🧹 CLIProxyAPI is gone
-
-Earlier Codex routing went through CLIProxyAPI, a local OAuth-pooling proxy. That component has been **removed and is no longer used**: the installer retires the `aigate-gpt.sh` shim, and Codex goes directly through the official binary via `aigate-codex.sh`. No proxy sits between your machine and ChatGPT any more.
-
----
-
-## 🔀 The non-Claude half (API keys are different)
-
-The prohibition above is about **Claude subscription OAuth**; the same no-relay rule is kept for ChatGPT subscription logins. Ordinary **API keys** (OpenAI, OpenRouter, Gemini, Groq, fal, …) are *meant* for programmatic use — so aigate's **secure proxy** (`POST /v1/messages`, `GET /v1/models`) injects those server-side freely. That's a normal API gateway and carries none of the subscription-OAuth restrictions.
-
-The API-key proxy reads the manually populated `provider_keys` registry or the transparent relay's encrypted `proxy_credentials` bundles, never the subscription-account vault (`accounts`). A key that looks like a Claude Code setup token (`sk-ant-oat…`) is refused by proxy credential intake and retrieval. The legacy model-routing handlers skip a poisoned row and try the next API key; the transparent relay rejects the configured credential and never silently retries another one.
-
-The [transparent relay](docs/TRANSPARENT-PROXY.md) uses optional preset proxy-only keys with provider-specific URL paths, or manually registered client-key bindings to individual credentials. Neither authorizes administrative access. It preserves application headers and body bytes apart from credential substitution, the provider-routing URL prefix, upstream addressing, and required HTTP connection handling. Its complete traffic captures include credential values encrypted at rest; administrative downloads decrypt those values. These are separate from the existing summary audit logs. Neither proxy requests nor credential refresh/sync create new provider credentials automatically.
-
-| Provider type | aigate mode | In the request path? | Compliance |
-|---|---|---|---|
-| **Claude subscriptions** (OAuth) | 🎯 Selector — official binary | ❌ never | ✅ accepted architecture |
-| **Codex / ChatGPT logins** | 🎯 Selector — official `codex` binary; aigate writes `auth.json`, reads `wham/usage`, refreshes via the official token endpoint | ❌ never | ✅ same no-relay architecture; plan terms are yours to check |
-| **API-key providers** | 🔀 Secure proxy — `openrouter`, `kimi`, `anthropic` (API keys only) | ✅ standard | ✅ normal for API keys |
-
----
-
-<div align="center">
-
-**⚖️ Personal · honest · visible.** Multiple *personal* subscriptions via the official client is fine — pooling or reselling for others is not. aigate exists to give you the visibility to stay honest. 🛡️
-
-*Found a link that rotted, or a policy that changed? [Open an issue](https://github.com/shoemoney/aigate/issues) — compliance docs are only useful if they stay true.*
-
-</div>
+- [AIGate setup, selector and spend APIs](README.md)
+- [Transparent proxy setup, account pool, capture and administration](docs/TRANSPARENT-PROXY.md)
+- [Anthropic: connect Claude Code to an LLM gateway](https://code.claude.com/docs/en/llm-gateway-connect)
+- [Anthropic: Claude Code gateway compatibility guide](https://code.claude.com/docs/en/llm-gateway-protocol)
+- [Anthropic: Claude Code authentication](https://code.claude.com/docs/en/authentication)

@@ -199,7 +199,7 @@ Claude OAuth setup tokens belong in **accounts**. The explicit `/proxy/claude-co
 
 Transparent proxy clients use either optional `.env` keys `AIGATE_PROXY_TOKEN` / `AIGATE_PROXY_TOKEN_2` with `/proxy/<provider>/...`, or a manually registered key hashed in **proxy_clients** and bound to a specific API credential. None grants administrative access. Preset API-key routes use the newest manually registered credential for their provider; `/proxy/claude-code` uses the quota-aware account pool. Explicit bindings isolate one API credential. The older model-routing proxy retains the AIGate administrator bearer for compatibility; its behavior differs from the [transparent relay](docs/TRANSPARENT-PROXY.md). Credentials and client bindings require explicit authenticated administrative actions and are never learned from proxy traffic.
 
-For the project's policy analysis and source references, read [COMPLIANCE.md](COMPLIANCE.md). The software's routing architecture does not guarantee an account's policy status.
+For request paths, credential boundaries and technical references, read [COMPLIANCE.md](COMPLIANCE.md).
 
 ### Codex (ChatGPT) accounts
 

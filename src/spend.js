@@ -115,10 +115,19 @@ export function ensureSchema(db) {
   const columns = new Set(db.prepare('PRAGMA table_info(usage_events)').all().map(r => r.name));
   for (const [name, type] of [['source_cost_micros','INTEGER'], ['source_cost_kind','TEXT'], ['source_pricing_reference','TEXT']])
     if (!columns.has(name)) db.exec(`ALTER TABLE usage_events ADD COLUMN ${name} ${type}`);
+  const legacyPriceProvenance = !db.prepare('PRAGMA table_info(spend_prices)').all().some(r => r.name === 'catalog_source');
   ensureCatalogSchema(db);
-  // Recognize unchanged bundled prices when upgrading an existing database.
-  const seedTag = db.prepare(`UPDATE spend_prices SET catalog_source='seed' WHERE provider=? AND model=? AND effective_from=? AND note=? AND input_micros=? AND output_micros=? AND catalog_source='manual'`);
-  for (const r of seedPrices()) seedTag.run(r.provider,r.model,r.effective_from,r.note,r.input_micros,r.output_micros);
+  // Only the legacy schema lacks provenance. Recognize a bundled row only if
+  // every pricing field is unchanged; later explicit manual provenance wins.
+  if (legacyPriceProvenance) {
+    const seedTag = db.prepare(`UPDATE spend_prices SET catalog_source='seed'
+      WHERE provider=? AND model=? AND effective_from=? AND note=? AND match=?
+      AND input_micros=? AND output_micros=? AND cache_read_micros IS ?
+      AND cache_write_micros IS ? AND cache_write_1h_micros IS ? AND tiers_json=?
+      AND catalog_source='manual'`);
+    for (const r of seedPrices()) seedTag.run(r.provider,r.model,r.effective_from,r.note,r.match,
+      r.input_micros,r.output_micros,r.cache_read_micros,r.cache_write_micros,r.cache_write_1h_micros,r.tiers_json);
+  }
 }
 
 const PRICE_COLS = 'provider, model, match, effective_from, input_micros, output_micros, cache_read_micros, cache_write_micros, cache_write_1h_micros, tiers_json, note';

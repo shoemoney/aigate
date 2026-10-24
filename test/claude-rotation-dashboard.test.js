@@ -93,3 +93,25 @@ test('Codex card status retains its existing cutoff and refresh branches',()=>{
 test('rate display accepts legacy numeric strings while keeping missing rates unpriced',()=>{const app=loadOptions();assert.equal(app.rateLabel('0.30'),'$0.3');assert.equal(app.rateLabel('15'),'$15');assert.equal(app.rateLabel(null),'Unpriced');assert.equal(app.rateLabel(undefined),'Unpriced');assert.equal(app.rateLabel('invalid'),'Unpriced');});
 
 test('chart tooltips wrap long provider and model names within narrow screens',()=>{const app=loadOptions();const tooltip=app.chartBase().tooltip;assert.equal(tooltip.enterable,true);assert.match(tooltip.extraCssText,/max-width:min\(100%,calc\(100vw - 48px\)\)/);assert.match(tooltip.extraCssText,/white-space:normal/);assert.match(tooltip.extraCssText,/overflow-wrap:anywhere/);assert.match(tooltip.extraCssText,/max-height:65vh/);assert.match(tooltip.extraCssText,/overflow:auto/);assert.equal(tooltip.textStyle.fontSize,18);});
+
+test('expiry-only metadata edits omit quota scope and preserve existing quota observations',async()=>{
+ const calls=[];const candidate={...status.accounts[0],quota_scope:'implicit-account-fallback',credential_expires_at:null};const before=JSON.stringify(candidate);
+ const app=loadOptions((url,init)=>{calls.push([url,init]);return json(200,status)});app.setMetadataDraft(candidate,'credential_expires_at','2027-03-01T12:30');
+ assert.deepEqual(Object.keys(app.metadataDrafts[candidate.account]),['credential_expires_at']);await app.saveRotationMetadata(candidate);
+ assert.deepEqual(JSON.parse(calls[0][1].body),{credential_expires_at:new Date('2027-03-01T12:30').toISOString()});assert.equal(JSON.stringify(candidate),before,'editing expiry never changes candidate quota scope or windows');assert.equal(app.metadataDrafts[candidate.account],undefined);assert.equal(app.metadataMessages[candidate.account],'Metadata saved.');
+});
+test('clearing only quota scope sends null and leaves expiry untouched',async()=>{
+ const calls=[];const candidate={...status.accounts[0],credential_expires_at:'2027-01-01T00:00:00Z'};const app=loadOptions((url,init)=>{calls.push([url,init]);return json(200,status)});
+ app.setMetadataDraft(candidate,'quota_scope','   ');await app.saveRotationMetadata(candidate);assert.deepEqual(JSON.parse(calls[0][1].body),{quota_scope:null});assert.equal(candidate.credential_expires_at,'2027-01-01T00:00:00Z');
+});
+test('editing only quota scope trims the payload without writing displayed expiry defaults',async()=>{
+ const calls=[];const app=loadOptions((url,init)=>{calls.push([url,init]);return json(200,status)});const candidate=status.accounts[0];app.setMetadataDraft(candidate,'quota_scope','  shared-plan  ');await app.saveRotationMetadata(candidate);
+ assert.deepEqual(JSON.parse(calls[0][1].body),{quota_scope:'shared-plan'});assert.equal(app.metadataMessages[candidate.account],'Metadata saved.');assert.equal(app.metadataBusy,'');assert.equal(app.metadataDrafts[candidate.account],undefined);
+});
+test('failed metadata saves preserve edited fields and report the server error',async()=>{
+ const calls=[];const app=loadOptions((url,init)=>{calls.push([url,init]);return json(400,{error:'Unknown quota scope'})});const candidate=status.accounts[0];app.setMetadataDraft(candidate,'quota_scope','  requested-scope  ');await app.saveRotationMetadata(candidate);
+ assert.deepEqual(JSON.parse(calls[0][1].body),{quota_scope:'requested-scope'});assert.equal(calls.length,1,'failed update does not reload or mutate usage');assert.equal(app.metadataMessages[candidate.account],'Unknown quota scope');assert.equal(app.metadataDrafts[candidate.account].quota_scope,'  requested-scope  ');assert.equal(app.metadataBusy,'');
+});
+test('untouched metadata form sends nothing and clearing only expiry sends null',async()=>{
+ const calls=[];const app=loadOptions((url,init)=>{calls.push([url,init]);return json(200,status)});const candidate={...status.accounts[0],credential_expires_at:'2027-01-01T00:00:00Z'};await app.saveRotationMetadata(candidate);assert.equal(calls.length,0);app.setMetadataDraft(candidate,'credential_expires_at','');await app.saveRotationMetadata(candidate);assert.deepEqual(JSON.parse(calls[0][1].body),{credential_expires_at:null});
+});
