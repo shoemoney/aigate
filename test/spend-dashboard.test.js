@@ -180,5 +180,5 @@ test('Spend hover includes the unknown-plan value actually drawn in imported his
  app.spend={groups:[{key:'unknown',label:'unknown'}],series:[{bucket:'2026-10-03',key:'unknown',value_usd:0,unknown_usd:2100,spend_usd:5,events:2}],totals:{},collectors:[]};
  app.$refs.spendChart={clientWidth:800,style:{}};app.drawSpendChart();
  assert.equal(options.series.find(s=>s.name==='unknown · unknown plan').data[0],2100);
- const hover=options.tooltip.formatter([{axisValue:'2026-10-03'}]);assert.ok(hover.includes('subscription value $0.00'));assert.ok(hover.includes('unknown-plan value $2,100.00'));assert.ok(hover.includes('API spend $5.00'));
+ const hover=options.tooltip.formatter([{axisValue:'2026-10-03'}]);assert.ok(hover.includes('subscription value $0.00'));assert.ok(hover.includes('unknown-plan value $2,100.00'));assert.ok(hover.includes('API spend $5.00'));assert.match(options.tooltip.extraCssText,/white-space:normal/);assert.match(options.tooltip.extraCssText,/max-width:/);assert.match(options.tooltip.extraCssText,/overflow:auto/);assert.equal(options.tooltip.enterable,true);
 });
