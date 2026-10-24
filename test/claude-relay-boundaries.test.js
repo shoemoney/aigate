@@ -22,6 +22,16 @@ const deadline = async promise => { let timer; try { return await Promise.race([
 const upstream = http.createServer((req, res) => { hits.push(req.headers.authorization); req.resume(); upstreamHandler(req, res); });
 const admin = (path, method = 'GET', body) => fetch(base + path, { method, headers: { authorization: 'Bearer ' + adminToken, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
 const consumer = () => fetch(base + '/proxy/claude-code/v1/messages', { method: 'POST', headers: { authorization: 'Bearer ' + gateway, 'content-type': 'application/json' }, body: '{"model":"claude-sonnet-4-6","max_tokens":5,"messages":[]}' });
+const visibleConsumer = (model = 'claude-sonnet-4-6') => new Promise((resolve, reject) => {
+  const information = [], request = http.request(base + '/proxy/claude-code/v1/messages', { method: 'POST',
+    headers: { authorization: 'Bearer ' + gateway, 'content-type': 'application/json' } }, response => {
+    const chunks = []; response.on('data', chunk => chunks.push(chunk)); response.on('error', reject);
+    response.on('end', () => resolve({ status: response.statusCode, statusMessage: response.statusMessage,
+      headers: response.headers, trailers: response.rawTrailers, body: Buffer.concat(chunks), information }));
+  });
+  request.on('information', info => information.push({ status: info.statusCode, headers: info.headers }));
+  request.on('error', reject); request.end(JSON.stringify({ model, max_tokens: 5, messages: [] }));
+});
 const gateEvent = (predicate, fail = false) => { activeGate = { predicate, fail, entered: deferred(), release: deferred(), used: false }; return activeGate; };
 const latestId = () => db.prepare('SELECT coalesce(max(id),0) id FROM proxy_traffic').get().id;
 const recordAfter = async id => {
@@ -104,4 +114,94 @@ test('an upstream informational response prevents hidden quota failover', async 
   reset(); upstreamHandler = (_req, res) => { res.writeEarlyHints({ link: '</app.css>; rel=preload' }); res.writeHead(429, { 'anthropic-ratelimit-unified-5h-utilization': '1', 'content-type': 'text/plain' }); res.end('original quota response'); };
   const id = latestId(), response = await consumer(); assert.equal(response.status, 429); assert.equal(await response.text(), 'original quota response');
   const row = await recordAfter(id); assert.equal(hits.length, 1); assert.equal(row.events.filter(event => event.type === 'attempt_start').length, 1); assert.ok(row.events.some(event => event.type === 'information' && event.status === 103));
+});
+
+for (const [claim, positive] of [['five_hour', false], ['seven_day', false], ['seven_day_sonnet', false], ['seven_day_sonnet', true]]) test(`visible103 preserves ${claim} refusal with ${positive ? 'positive utilization' : 'claim-only headers'} and blocks the next matching request`, async () => {
+  reset(); const resetAt = Math.floor(Date.now() / 1000) + 500, body = Buffer.from('original quota response\nwith every byte preserved');
+  const revision = db.prepare("SELECT revision FROM claude_pool_usage WHERE account='a'").get().revision;
+  upstreamHandler = (_req, res) => {
+    res.writeEarlyHints({ link: '</app.css>; rel=preload' });
+    res.writeHead(429, 'Original Quota Refusal', { 'content-type': 'text/plain', 'retry-after': '17',
+      'x-original': ['first', 'second'], Trailer: 'X-Quota-Trailer', 'anthropic-ratelimit-unified-status': 'rejected',
+      'anthropic-ratelimit-unified-representative-claim': claim, 'anthropic-ratelimit-unified-reset': String(resetAt),
+      ...(positive ? { 'anthropic-ratelimit-unified-5h-utilization': '.1', 'anthropic-ratelimit-unified-7d-utilization': '.2' } : {}) });
+    res.write(body.subarray(0, 9)); res.addTrailers({ 'X-Quota-Trailer': 'original trailer' }); res.end(body.subarray(9));
+  };
+  const id = latestId(), response = await visibleConsumer(), row = await recordAfter(id);
+  assert.equal(response.status, 429); assert.equal(response.statusMessage, 'Original Quota Refusal'); assert.deepEqual(response.body, body);
+  assert.equal(response.headers['retry-after'], '17'); assert.equal(response.headers['x-original'], 'first, second');
+  assert.deepEqual(response.trailers, ['X-Quota-Trailer', 'original trailer']);
+  assert.deepEqual(response.information, [{ status: 103, headers: { link: '</app.css>; rel=preload' } }]);
+  assert.deepEqual(hits, ['Bearer sk-ant-oat01-manual-boundary-a']); assert.equal(row.state, 'complete');
+  const starts = row.events.filter(event => event.type === 'attempt_start'); assert.equal(starts.length, 1);
+  const attemptId = starts[0].attempt_id;
+  assert.equal(row.events.find(event => event.type === 'attempt_response').withheld, false);
+  const outcomes = row.events.filter(event => event.type === 'attempt_outcome'); assert.equal(outcomes.length, 1);
+  assert.equal(outcomes[0].attempt_id, attemptId); assert.equal(outcomes[0].outcome, 'quota_refused'); assert.equal(outcomes[0].cooldown_applied, true);
+  assert.deepEqual(row.events.filter(event => event.type === 'attempt_decision').map(event => [event.attempt_id, event.decision, event.reason]),
+    [[attemptId, 'return_quota_response', 'response_already_visible']]);
+  for (const type of ['attempt_response_body', 'response_body']) assert.deepEqual(Buffer.concat(row.events.filter(event => event.type === type)
+    .map(event => Buffer.from(event.data, 'base64'))), body);
+  for (const type of ['attempt_response_end', 'response_end']) assert.deepEqual(row.events.find(event => event.type === type).trailers, response.trailers);
+  assert.equal(row.events.filter(event => event.type === 'end').length, 1);
+  assert.equal(db.prepare("SELECT revision FROM claude_pool_usage WHERE account='a'").get().revision, revision + (positive ? 2 : 1), 'record the refusal once, independently of utilization');
+  const state = claudePool.status({ model: 'claude-sonnet-4-6' }), a = state.accounts.find(account => account.account === 'a');
+  assert.equal(a.eligible, false); assert.equal(a.five_hour.remaining_pct, 90); assert.equal(a.seven_day.remaining_pct, 80);
+  assert.equal(a.cooldown_until, new Date(resetAt * 1000).toISOString());
+  assert.deepEqual(a.cooldowns, claim === 'seven_day_sonnet' ? [{ model: 'sonnet', until: new Date(resetAt * 1000).toISOString() }] : []);
+  assert.deepEqual(db.prepare('SELECT DISTINCT model_family,window,until_ms,reason FROM claude_pool_blocks').all().map(block => ({ ...block })),
+    [{ model_family: claim === 'seven_day_sonnet' ? 'sonnet' : '', window: claim === 'seven_day_sonnet' ? 'model' : claim,
+      until_ms: resetAt * 1000, reason: claim === 'seven_day_sonnet' ? 'model_quota_exhausted' : 'quota_exhausted' }]);
+  assert.equal(state.accounts.find(account => account.account === 'b').eligible, true);
+  assert.equal(claudePool.status({ model: 'claude-opus-4-6' }).accounts.find(account => account.account === 'a').eligible, claim === 'seven_day_sonnet');
+  upstreamHandler = (_req, res) => res.end('next request'); const nextId = latestId(), next = await visibleConsumer();
+  assert.equal(next.status, 200); assert.equal(next.body.toString(), 'next request'); await recordAfter(nextId);
+  assert.deepEqual(hits, ['Bearer sk-ant-oat01-manual-boundary-a', 'Bearer sk-ant-oat01-manual-boundary-b']);
+});
+
+for (const change of ['credential', 'scope']) test(`visible quota refusal cannot block a newer ${change} generation`, async () => {
+  reset(); upstreamHandler = (_req, res) => {
+    res.writeEarlyHints({ link: '</app.css>; rel=preload' });
+    res.writeHead(429, { 'anthropic-ratelimit-unified-status': 'rejected', 'anthropic-ratelimit-unified-representative-claim': 'seven_day_sonnet',
+      'anthropic-ratelimit-unified-reset': String(Math.floor(Date.now() / 1000) + 500) }); res.end('original refusal');
+  };
+  const id = latestId(), gate = gateEvent(event => event?.type === 'attempt_response'), pending = visibleConsumer();
+  try {
+    await deadline(gate.entered.promise);
+    if (change === 'credential') assert.equal((await admin('/api/accounts', 'POST', { account: 'a', setup_token: 'sk-ant-oat01-new-boundary-credential' })).status, 200);
+    else claudePool.setMetadata('a', { quota_scope: 'new-boundary-scope' });
+    claudePool.observeHeaders('a', ['anthropic-ratelimit-unified-5h-utilization', '.1', 'anthropic-ratelimit-unified-7d-utilization', '.2'], { status: 200 });
+    const revision = db.prepare("SELECT revision FROM claude_pool_usage WHERE account='a'").get().revision;
+    gate.release.resolve(); const response = await deadline(pending), row = await recordAfter(id);
+    assert.equal(response.status, 429); assert.equal(response.body.toString(), 'original refusal'); assert.equal(hits.length, 1);
+    assert.equal(row.events.find(event => event.type === 'attempt_outcome').cooldown_applied, false);
+    assert.equal(row.events.filter(event => event.type === 'attempt_start').length, 1);
+    assert.equal(db.prepare('SELECT count(*) n FROM claude_pool_blocks').get().n, 0);
+    assert.equal(db.prepare("SELECT revision FROM claude_pool_usage WHERE account='a'").get().revision, revision);
+    assert.equal(claudePool.status({ model: 'claude-sonnet-4-6' }).accounts.find(account => account.account === 'a').eligible, true);
+  } finally {
+    gate.release.resolve(); activeGate = null;
+    if (change === 'credential') await admin('/api/accounts', 'POST', { account: 'a', setup_token: 'sk-ant-oat01-manual-boundary-a' });
+    else claudePool.setMetadata('a', { quota_scope: null });
+  }
+});
+
+for (const [label, status, claim, model] of [['bare429', 429, null, 'claude-sonnet-4-6'],
+  ['overload529', 529, 'seven_day_sonnet', 'claude-sonnet-4-6'], ['unrelated family', 429, 'seven_day_opus', 'claude-sonnet-4-6'],
+  ['partial family name', 429, 'seven_day_sonnet', 'claude-sonnetish-4-6']]) test(`visible103 ${label} does not exhaust or retry`, async () => {
+  reset(); upstreamHandler = (_req, res) => {
+    res.writeEarlyHints({ link: '</app.css>; rel=preload' });
+    res.writeHead(status, { 'content-type': 'text/plain', ...(claim ? { 'anthropic-ratelimit-unified-status': 'rejected',
+      'anthropic-ratelimit-unified-representative-claim': claim, 'anthropic-ratelimit-unified-reset': String(Math.floor(Date.now() / 1000) + 500) } : {}) });
+    res.end('original refusal');
+  };
+  const id = latestId(), response = await visibleConsumer(model), row = await recordAfter(id);
+  assert.equal(response.status, status); assert.equal(response.body.toString(), 'original refusal'); assert.equal(response.information[0].status, 103);
+  assert.equal(hits.length, 1); assert.equal(row.events.filter(event => event.type === 'attempt_start').length, 1);
+  assert.deepEqual(row.events.filter(event => event.type === 'attempt_decision'), []);
+  assert.equal(row.events.find(event => event.type === 'attempt_outcome').outcome, 'forwarded');
+  assert.equal(claudePool.status({ model }).accounts.find(account => account.account === 'a').eligible, true);
+  assert.equal(db.prepare('SELECT count(*) n FROM claude_pool_blocks').get().n, 0);
+  upstreamHandler = (_req, res) => res.end('next request'); const nextId = latestId(); await visibleConsumer(model); await recordAfter(nextId);
+  assert.deepEqual(hits, ['Bearer sk-ant-oat01-manual-boundary-a', 'Bearer sk-ant-oat01-manual-boundary-a']);
 });

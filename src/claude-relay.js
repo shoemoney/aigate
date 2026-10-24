@@ -190,6 +190,10 @@ export function createClaudeRelay({ pool, traffic, replayStore, relayHeaders, in
           await pool.observeHeaders(selected.account, response.rawHeaders, { status: response.statusCode, fingerprint: selected.fingerprint,
             revision: selected.revision, startedAt: selected.startedAt ?? startedAt, tokenEnvelope: selected.tokenEnvelope,
             generation: selected.generation, model: model || requestModel, capture_id: capture.id });
+          // Refusal is quota evidence even when earlier visible information has
+          // made replay unsafe. Keep the credential/scope guards on this write.
+          const cooldownApplied = refusal ? await pool.markExhausted(selected.account, { ...refusal, model: model || requestModel,
+            fingerprint: selected.fingerprint, tokenEnvelope: selected.tokenEnvelope, generation: selected.generation }) : false;
           const held = withholding ? await replayStore.start() : null;
           const usage = usageObserver(response.headers);
           let authErrorBytes = 0, authErrorChunks = [];
@@ -227,13 +231,14 @@ export function createClaudeRelay({ pool, traffic, replayStore, relayHeaders, in
                 capture_id: capture.id,
               });
             }
+            if (refusal) {
+              await capture.append('attempt_outcome', { attempt_id: attemptId, outcome: 'quota_refused', cooldown: refusal,
+                cooldown_applied: cooldownApplied, account: selected.account,
+                quota: pool.status({ model: model || requestModel }).accounts.find(row => row.account === selected.account) });
+            }
             if (held) {
               request.destroy();
               await held.seal(response.rawTrailers);
-              await pool.markExhausted(selected.account, { ...refusal, model: model || requestModel,
-                fingerprint: selected.fingerprint, tokenEnvelope: selected.tokenEnvelope, generation: selected.generation });
-              await capture.append('attempt_outcome', { attempt_id: attemptId, outcome: 'quota_refused', cooldown: refusal,
-                account: selected.account, quota: pool.status({ model: model || requestModel }).accounts.find(row => row.account === selected.account) });
               await uploadComplete;
               if (unavailable()) return;
               const safe = uploadDone && metadata && typeof metadata.model === 'string' && metadata.model.length <= 256 && attemptCount < maxAttempts;
@@ -254,12 +259,14 @@ export function createClaudeRelay({ pool, traffic, replayStore, relayHeaders, in
                 if (!res.write(chunk)) await waitDrain(res);
               }
             } else {
+              if (refusal) await capture.append('attempt_decision', { attempt_id: attemptId, decision: 'return_quota_response',
+                reason: generation ? 'response_already_visible' : 'request_not_generation' });
               const measured = response.statusCode >= 200 && response.statusCode < 300 ? usage.finish() : null;
               if (measured && recordUsage) {
                 const result = recordUsage({ message_id: measured.id, model: measured.model, ts: new Date().toISOString(), usage: measured.usage, account: selected.account, complete: true });
                 await capture.append('usage', { attempt_id: attemptId, message_id: measured.id, model: measured.model, result });
               }
-              await capture.append('attempt_outcome', { attempt_id: attemptId, outcome: 'forwarded', status: response.statusCode });
+              if (!refusal) await capture.append('attempt_outcome', { attempt_id: attemptId, outcome: 'forwarded', status: response.statusCode });
             }
             await capture.append('response_end', { attempt_id: attemptId, trailers: response.rawTrailers });
             if (unavailable()) return;
