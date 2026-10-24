@@ -83,7 +83,7 @@ test('loadSpend: asks /api/spend with range, bucket and group, then exposes the 
     groups: [{ key: 'a', label: 'a · claude', events: 3, input_tokens: 10, output_tokens: 20, cache_read_tokens: 3000, cache_write_tokens: 400, value_usd: 1.5, spend_usd: 0.25 }],
     series: [], collectors: [],
   };
-  const app = loadOptions((url) => { if (String(url).startsWith('/api/spend')) urls.push(String(url));
+  const app = loadOptions((url) => { if (String(url).startsWith('/api/spend?')) urls.push(String(url));
     return json(200, payload); });
   await app.loadSpend(true);
   assert.equal(urls.length, 1);
@@ -133,7 +133,7 @@ test('formatters: dollars and compact counts', () => {
 test('spend refresh runs on a 5 minute timer and fetches whichever section is in view', async () => {
   const urls = [];
   const timers = [];
-  const app = loadOptions((url) => { if (String(url).startsWith('/api/spend')) urls.push(String(url)); return json(200, { totals: {}, groups: [], series: [], collectors: [] }); },
+  const app = loadOptions((url) => { if (String(url).startsWith('/api/spend?')) urls.push(String(url)); return json(200, { totals: {}, groups: [], series: [], collectors: [] }); },
     { setInterval: (fn, ms) => { timers.push({ fn, ms }); return timers.length; } });
   app.activeSection = 'overview';
   app.startSpendTimer();
@@ -147,7 +147,7 @@ test('spend refresh runs on a 5 minute timer and fetches whichever section is in
 
 test('boot loads spend even when the hash is not #spend, so scrolling down never shows a stale Loading panel', async () => {
   const urls = [];
-  const app = loadOptions((url) => { if (String(url).startsWith('/api/spend')) urls.push(String(url));
+  const app = loadOptions((url) => { if (String(url).startsWith('/api/spend?')) urls.push(String(url));
     return json(200, { accounts: [], by_host: [], totals: {}, groups: [], series: [], collectors: [] }); },
     { setInterval: () => 0, clearInterval() {} });
   app.activeSection = 'overview';
