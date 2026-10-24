@@ -201,6 +201,28 @@ Transparent proxy clients use either optional `.env` keys `AIGATE_PROXY_TOKEN` /
 
 For request paths, credential boundaries and technical references, read [COMPLIANCE.md](COMPLIANCE.md).
 
+### Interactive provider setup
+
+Use the executable [provider setup scripts](setupscripts/README.md) to register
+credentials manually, one account at a time:
+
+```bash
+./setupscripts/codex_aigate_setup_script
+./setupscripts/claude_code_aigate_setup_script
+./setupscripts/aws_aigate_setup_script
+./setupscripts/fal_aigate_setup_script
+./setupscripts/replicate_aigate_setup_script
+./setupscripts/openrouter_aigate_setup_script
+```
+
+Every catalog provider has a `<provider>_aigate_setup_script` launcher. Native
+login scripts use fresh temporary authentication folders and remove them after
+the attempt; API-key scripts use hidden manual input. Direct saves require the
+Aigate administrator token and metadata read-back. AWS collects its complete
+access-key, secret, region and optional session-token bundle. Native Muse, Kimi
+Code and Grok bundles, plus cloud signing bundles, are stored with explicit
+storage-only limits; their registration does not enable a new proxy adapter.
+
 ### Codex (ChatGPT) accounts
 
 Codex accounts sit in the same `accounts` table as Claude accounts, partitioned by `kind` (`claude` default, or `codex`). Selection, health counts, and the dashboard keep the two pools separate; Claude fields and `/health` counters keep their original meaning.

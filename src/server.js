@@ -315,6 +315,9 @@ const q = {
   upsertAccount: db.prepare(`INSERT INTO accounts(account,token_enc,label,kind,plan,token_exp,ext_id) VALUES(?,?,?,?,?,?,?)
     ON CONFLICT(account) DO UPDATE SET token_enc=excluded.token_enc, label=excluded.label, reauth_needed=0,
       kind=excluded.kind, plan=excluded.plan, token_exp=excluded.token_exp, ext_id=excluded.ext_id, refresh_unknown=0`),
+  // Setup intake can explicitly require a new name. The PRIMARY KEY arbitrates
+  // this across processes; a preflight read alone would race another writer.
+  insertAccount: db.prepare(`INSERT INTO accounts(account,token_enc,label,kind,plan,token_exp,ext_id) VALUES(?,?,?,?,?,?,?)`),
   // parked computed in the SAME clock domain as pickRanked — clients get a plain 0/1
   // instead of parsing a bare sqlite UTC string (no Z) in the right timezone.
   listAccounts: db.prepare(`SELECT account,label,kind,plan,token_exp,ext_id,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset,usage_updated,disabled,reauth_needed,refresh_unknown,parked_until,
@@ -873,6 +876,16 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/accounts' && req.method === 'POST') {
       const b = await body(req);
       if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
+      if (b.create_only !== undefined && typeof b.create_only !== 'boolean') return json(res, 400, { error: 'create_only must be boolean' });
+      const writeAccount = (...values) => {
+        try { return (b.create_only === true ? q.insertAccount : q.upsertAccount).run(...values); }
+        catch (error) {
+          // Node's SQLite extended error code for a PRIMARY KEY/UNIQUE conflict.
+          // Let unrelated database errors follow the normal 500 path.
+          if (b.create_only === true && (error.errcode === 1555 || error.errcode === 2067)) return null;
+          throw error;
+        }
+      };
       const kind = b.kind === undefined ? 'claude' : String(b.kind);
       if (kind !== 'claude' && kind !== 'codex') return json(res, 400, { error: "kind must be 'claude' or 'codex'" });
       if (kind === 'codex') {
@@ -892,7 +905,8 @@ const server = http.createServer(async (req, res) => {
         const dup = q.codexByExt.get(n.account_id);
         if (dup && dup.account !== b.account) return json(res, 409, { error: 'that ChatGPT account is already vaulted as ' + dup.account });
         if (prior && codexInflight.has(b.account)) return json(res, 409, { error: 'a refresh is in flight for ' + b.account + ' — retry in a moment' });
-        durably(() => q.upsertAccount.run(b.account, encrypt(JSON.stringify(n.auth)), b.label || n.email || '', 'codex', n.plan, n.exp, n.account_id));
+        const written = durably(() => writeAccount(b.account, encrypt(JSON.stringify(n.auth)), b.label || n.email || '', 'codex', n.plan, n.exp, n.account_id));
+        if (written === null) return json(res, 409, { error: 'account ' + b.account + ' already exists' });
         ledgerNote(n.auth);
         logAccess(b.account, '', reqIp(req), prior ? 'account-overwrite' : 'account-add', b.label || n.email || '');
         broadcast('accounts', q.listAccounts.all());
@@ -911,7 +925,8 @@ const server = http.createServer(async (req, res) => {
       const priorRow = q.getToken.get(b.account);   // BEFORE upsert — overwrite vs add
       if (priorRow && priorRow.kind === 'codex') return json(res, 409, { error: 'account ' + b.account + ' already exists as a Codex account' });
       const existed = !!priorRow;
-      q.upsertAccount.run(b.account, encrypt(tok), b.label || '', 'claude', null, null, null);
+      const written = writeAccount(b.account, encrypt(tok), b.label || '', 'claude', null, null, null);
+      if (written === null) return json(res, 409, { error: 'account ' + b.account + ' already exists' });
       logAccess(b.account, '', reqIp(req), existed ? 'account-overwrite' : 'account-add', b.label || '');
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, tok.startsWith('sk-ant-') ? { ok: true }
