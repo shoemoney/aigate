@@ -115,3 +115,33 @@ test('failed metadata saves preserve edited fields and report the server error',
 test('untouched metadata form sends nothing and clearing only expiry sends null',async()=>{
  const calls=[];const app=loadOptions((url,init)=>{calls.push([url,init]);return json(200,status)});const candidate={...status.accounts[0],credential_expires_at:'2027-01-01T00:00:00Z'};await app.saveRotationMetadata(candidate);assert.equal(calls.length,0);app.setMetadataDraft(candidate,'credential_expires_at','');await app.saveRotationMetadata(candidate);assert.deepEqual(JSON.parse(calls[0][1].body),{credential_expires_at:null});
 });
+
+test('metadata maps isolate __proto__ and constructor accounts without inherited drafts or prototype mutations',async()=>{
+ const calls=[];const app=loadOptions((url,init)=>{calls.push([url,init]);return json(200,status)});
+ const intrinsicPrototype=vm.runInContext('Object.getPrototypeOf({})',app.$sandbox);const before=Object.getOwnPropertyDescriptors(intrinsicPrototype);const sharedBefore=Object.getOwnPropertyDescriptors(Object.prototype);
+ assert.equal(Object.getPrototypeOf(app.metadataDrafts),null);assert.equal(Object.getPrototypeOf(app.metadataMessages),null);assert.equal(app.metadataDrafts.__proto__,undefined);assert.equal(app.metadataDrafts.constructor,undefined);assert.equal(app.metadataMessages.constructor,undefined);
+ const proto={account:'__proto__',quota_scope:'implicit-proto'},constructor={account:'constructor',quota_scope:'implicit-constructor'};
+ await app.saveRotationMetadata(proto);await app.saveRotationMetadata(constructor);assert.equal(calls.length,0,'inherited names never provide an untouched draft');
+ app.setMetadataDraft(proto,'credential_expires_at','');app.setMetadataDraft(constructor,'quota_scope','  separate-scope  ');
+ assert.equal(Object.getPrototypeOf(app.metadataDrafts.__proto__),null);assert.equal(Object.getPrototypeOf(app.metadataDrafts.constructor),null);assert.notEqual(app.metadataDrafts.__proto__,app.metadataDrafts.constructor);assert.deepEqual(Object.keys(app.metadataDrafts.__proto__),['credential_expires_at']);assert.deepEqual(Object.keys(app.metadataDrafts.constructor),['quota_scope']);
+ await app.saveRotationMetadata(proto);assert.deepEqual(JSON.parse(calls[0][1].body),{credential_expires_at:null});assert.equal(calls[0][0],'/api/proxy/claude-code/accounts/__proto__/metadata');assert.equal(app.metadataMessages.__proto__,'Metadata saved.');
+ await app.saveRotationMetadata(constructor);const posted=calls.filter(([url])=>url.endsWith('/metadata'));assert.deepEqual(JSON.parse(posted[1][1].body),{quota_scope:'separate-scope'});assert.equal(app.metadataMessages.constructor,'Metadata saved.');assert.equal(app.metadataDrafts.__proto__,undefined);assert.equal(app.metadataDrafts.constructor,undefined);
+ assert.deepEqual(Object.getOwnPropertyDescriptors(intrinsicPrototype),before);assert.deepEqual(Object.getOwnPropertyDescriptors(Object.prototype),sharedBefore);
+ app.lockLocally();assert.equal(Object.getPrototypeOf(app.metadataDrafts),null);assert.equal(Object.getPrototypeOf(app.metadataMessages),null);assert.equal(app.metadataDrafts.__proto__,undefined);assert.equal(app.metadataMessages.constructor,undefined);
+});
+test('special account metadata clear/error paths retain independent own entries',async()=>{
+ const calls=[];let fail=true;const app=loadOptions((url,init)=>{calls.push([url,init]);return url.endsWith('/metadata')&&fail?json(400,{error:'Rejected scope'}):json(200,status)});const candidate={account:'__proto__'};
+ app.setMetadataDraft(candidate,'quota_scope','  ');app.setMetadataDraft({account:'constructor'},'credential_expires_at','');await app.saveRotationMetadata(candidate);
+ assert.deepEqual(JSON.parse(calls[0][1].body),{quota_scope:null});assert.equal(app.metadataMessages.__proto__,'Rejected scope');assert.equal(app.metadataDrafts.__proto__.quota_scope,'  ');assert.equal(app.metadataDrafts.constructor.credential_expires_at,'');assert.equal(app.metadataMessages.constructor,undefined);
+ fail=false;await app.saveRotationMetadata(candidate);assert.equal(app.metadataMessages.__proto__,'Metadata saved.');assert.equal(app.metadataDrafts.__proto__,undefined);assert.equal(app.metadataDrafts.constructor.credential_expires_at,'');
+});
+test('all new charts recreate instances and observers when v-if recovery replaces their DOM',()=>{
+ for(const [method,ref]of [['drawRotationChart','rotationChart'],['drawCatalogChart','catalogChart'],['drawHistoryChart','historyChart']]){
+  const initialized=[],observers=[];const app=loadOptions(undefined,{echarts:{init:el=>{const chart={el,disposed:0,renders:0,getDom(){return el},setOption(){this.renders++},resize(){},dispose(){this.disposed++}};initialized.push(chart);return chart}},ResizeObserver:function(callback){const observer={callback,target:null,disconnected:0,observe(el){this.target=el},disconnect(){this.disconnected++}};observers.push(observer);return observer}});
+  app.rotation=status;app.catalogItems=[{model:'old',provider:'anthropic',unit:'USD / 1M tokens',priced:true,input_usd:3,output_usd:15}];app.priceHistory={versions:[{effective_from:'2024-01-01T00:00:00Z',input_usd:3,output_usd:15}]};const first={clientWidth:800,style:{}},replacement={clientWidth:390,style:{}};
+  app.$refs[ref]=first;app[method]();app[method]();assert.equal(initialized.length,1,method+' reuses same DOM');assert.equal(observers.length,1);assert.equal(initialized[0].renders,2);assert.equal(observers[0].target,first);
+  app.$refs[ref]=null;app[method]();assert.equal(initialized.length,1,'missing v-if ref does not initialize');
+  app.$refs[ref]=replacement;app[method]();assert.equal(initialized[0].disposed,1,method+' disposes detached instance');assert.equal(observers[0].disconnected,1,method+' disconnects old observer');assert.equal(initialized.length,2);assert.equal(initialized[1].el,replacement);assert.equal(observers.length,2);assert.equal(observers[1].target,replacement);assert.equal(initialized[1].renders,1);
+  app[method]();assert.equal(initialized.length,2,'recovered DOM reuses replacement instance');assert.equal(initialized[1].renders,2);assert.equal(observers[1].disconnected,0);
+ }
+});
