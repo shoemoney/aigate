@@ -1,4 +1,5 @@
 import test, { before, after } from 'node:test';
+import http from 'node:http';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -31,12 +32,27 @@ const { server, db, backupNow, openDb, isWeakToken, pollProviderKeys, authFail, 
 const BACKUPS = join(TMP, 'backups');   // dirname(DB)/backups
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
+let claudeProbeResult;
+const claudeProbe = http.createServer((req, res) => {
+  req.resume(); req.on('end', () => {
+    if (claudeProbeResult?.disconnect) { req.socket.destroy(); return; }
+    const next = claudeProbeResult || { status: 500, headers: {} };
+    res.writeHead(next.status, { 'content-type': 'application/json', ...next.headers });
+    res.end(next.status === 401 || next.status === 403 ? '{"error":{"type":"authentication_error"}}' : '{}');
+  });
+});
+const cannedClaude = (status, u5, u7) => ({ status, headers: u5 == null ? {} : {
+  'anthropic-ratelimit-unified-5h-utilization': u5, 'anthropic-ratelimit-unified-7d-utilization': u7,
+} });
 
 before(async () => {
+  await new Promise(resolve => claudeProbe.listen(0, '127.0.0.1', resolve));
+  process.env.AIGATE_TRANSPARENT_UPSTREAM_CLAUDE_CODE = `http://127.0.0.1:${claudeProbe.address().port}`;
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
 after(() => {
+  claudeProbe.closeAllConnections(); claudeProbe.close();
   server.close();
   try { db.close(); } catch { /* already closed */ }
   for (const f of [DB, DB + '-wal', DB + '-shm']) { try { rmSync(f); } catch { /* gone */ } }
@@ -722,59 +738,52 @@ test('daemon survives an abrupt WS client death; broadcast still reaches a healt
   live.close();
 });
 
-test('POST /api/accounts/:name/refresh — fetch-mocked poll drives usage, maxed, and the reauth round-trip', async () => {
-  // URL-routing mock: anthropic.com gets the canned response, everything else
-  // (this suite's own 127.0.0.1 calls) delegates to the real fetch.
+test('POST /api/accounts/:name/refresh — captured native poll drives usage, maxed, and the reauth round-trip', async () => {
   const realFetch = globalThis.fetch;
-  let next;
-  const canned = (status, u5, u7) => new Response('{}', { status, headers: u5 == null ? {} : {
-    'anthropic-ratelimit-unified-5h-utilization': u5, 'anthropic-ratelimit-unified-7d-utilization': u7 } });
-  globalThis.fetch = (url, opts) =>
-    String(url).startsWith('https://api.anthropic.com') ? Promise.resolve(next) : realFetch(url, opts);
+  const canned = cannedClaude;
   const refresh = async (name) => (await realFetch(base + `/api/accounts/${name}/refresh`, { method: 'POST', headers: H })).json();
   const acct = async (name) => (await (await realFetch(base + '/api/accounts', { headers: H })).json()).find((a) => a.account === name);
   try {
     db.prepare("UPDATE accounts SET reauth_needed=0,disabled=0,parked_until=NULL,five_hour_pct=50,seven_day_pct=50,usage_updated=datetime('now')").run();
 
-    next = canned(200, '0.42', '0.10');                    // (a) headers land in the row, under cutoff
+    claudeProbeResult = canned(200, '0.42', '0.10');                    // (a) headers land in the row, under cutoff
     let r = await refresh('bob');
     assert.deepEqual([r.five, r.seven, r.maxed], [42, 10, 0]);
     const b = await acct('bob');
     assert.equal(b.five_hour_pct, 42);
     assert.equal(b.seven_day_pct, 10);
 
-    next = canned(200, '0.99', '0.99');                    // (b) over the 95 cutoff → maxed
+    claudeProbeResult = canned(200, '0.99', '0.99');                    // (b) over the 95 cutoff → maxed
     assert.equal((await refresh('bob')).maxed, 1);
 
     db.prepare('UPDATE accounts SET five_hour_pct=5,seven_day_pct=5 WHERE account=?').run('bob');
-    next = canned(401);                                    // (c) dead token → reauth flag, select skips
+    claudeProbeResult = canned(401);                                    // (c) dead token → reauth flag, select skips
     r = await refresh('bob');
     assert.equal(r.alive, false);
     assert.equal((await acct('bob')).reauth_needed, 1);
     let j = await (await realFetch(base + '/api/select?host=t', { headers: H })).json();
     assert.equal(j.account, 'alice');                      // bob (5%) would win were it not flagged
 
-    next = canned(200, '0.05', '0.05');                    // (d) good poll → flag clears, selectable again
+    claudeProbeResult = canned(200, '0.05', '0.05');                    // (d) good poll → flag clears, selectable again
     r = await refresh('bob');
     assert.equal(r.alive, true);
     assert.equal((await acct('bob')).reauth_needed, 0);
     j = await (await realFetch(base + '/api/select?host=t', { headers: H })).json();
     assert.equal(j.account, 'bob');
-  } finally { globalThis.fetch = realFetch; }
+  } finally { claudeProbeResult = null; }
 });
 
 test('POST /api/accounts/:name/refresh — poll failure → 502 with error, usage untouched', async () => {
   const realFetch = globalThis.fetch;
-  globalThis.fetch = (url, opts) =>
-    String(url).startsWith('https://api.anthropic.com') ? Promise.reject(new Error('anthropic unreachable')) : realFetch(url, opts);
+  claudeProbeResult = { disconnect: true };
   try {
     db.prepare('UPDATE accounts SET five_hour_pct=42,seven_day_pct=10 WHERE account=?').run('bob');
     const r = await realFetch(base + '/api/accounts/bob/refresh', { method: 'POST', headers: H });
     assert.equal(r.status, 502);                             // NOT 200 {alive:true,maxed:0}
-    assert.match((await r.json()).error, /unreachable/);
+    assert.match((await r.json()).error, /ECONNRESET|probe_failed/);
     const b = (await (await realFetch(base + '/api/accounts', { headers: H })).json()).find((a) => a.account === 'bob');
     assert.equal(b.five_hour_pct, 42);                       // poller stays authoritative
-  } finally { globalThis.fetch = realFetch; }
+  } finally { claudeProbeResult = null; }
 });
 
 test('GET a missing file under public/ → 404 (static branch falls through, never hangs)', async () => {
@@ -1043,22 +1052,20 @@ test('oversized POST body → 413, no hollow row written (bug B6)', async () => 
 
 test('poll: a present-but-unparseable rate header keeps last-known-good, never phantom-0 (bug B7)', async () => {
   const realFetch = globalThis.fetch;
-  let next;
-  const canned = (status, u5, u7) => new Response('{}', { status, headers: (u5 == null ? {} : {
-    'anthropic-ratelimit-unified-5h-utilization': u5, 'anthropic-ratelimit-unified-7d-utilization': u7 }) });
-  globalThis.fetch = (url, opts) =>
-    String(url).startsWith('https://api.anthropic.com') ? Promise.resolve(next) : realFetch(url, opts);
+  const canned = cannedClaude;
   const refresh = async (name) => (await realFetch(base + `/api/accounts/${name}/refresh`, { method: 'POST', headers: H })).json();
   const acct = async (name) => (await (await realFetch(base + '/api/accounts', { headers: H })).json()).find((a) => a.account === name);
   try {
     db.prepare("UPDATE accounts SET reauth_needed=0,disabled=0,parked_until=NULL,five_hour_pct=77,seven_day_pct=77,usage_updated=datetime('now') WHERE account=?").run('bob');
-    next = canned(200, 'not-a-number', '0.10');   // 5h header is garbage
+    claudeProbeResult = canned(200, '0.77', '0.77');
+    await refresh('bob');                         // prime the authoritative pool with a real captured observation
+    claudeProbeResult = canned(200, 'not-a-number', '0.10');   // 5h header is garbage
     const r = await refresh('bob');
     assert.equal(r.five, null);                    // no usage written this cycle
     const b = await acct('bob');
     assert.equal(b.five_hour_pct, 77);             // kept last-known-good, NOT zeroed
-    assert.equal(b.seven_day_pct, 77);
-  } finally { globalThis.fetch = realFetch; }
+    assert.equal(b.seven_day_pct, 10);              // valid independent window still updates
+  } finally { claudeProbeResult = null; }
 });
 
 test('/api/capabilities label reflects the SERVED (newest) key, not lexical max (bug B8)', async () => {
@@ -1583,13 +1590,14 @@ function loadDashboardOptions() {
   return captured;
 }
 
-test('nextPicks parity: dashboard Next-pick star matches /api/select?dry=1 across every ORDER BY tier', async () => {
+test('nextPicks parity: Codex follows legacy selector; Claude follows strict observed pool status', async () => {
   const opts = loadDashboardOptions();
-  const dashboardPicks = (accounts) => {
+  const dashboardPicks = (accounts, rotation) => {
     const self = { ...opts.data(), ...opts.methods };
     for (const [k, fn] of Object.entries(opts.computed || {}))
       Object.defineProperty(self, k, { get() { return fn.call(self); }, configurable: true });
     self.accounts = accounts; self.cutoff = 95;               // server CUTOFF default
+    if (rotation) self.rotation = rotation;
     return self.nextPicks;
   };
   const now = Math.floor(Date.now() / 1000);
@@ -1642,7 +1650,7 @@ test('nextPicks parity: dashboard Next-pick star matches /api/select?dry=1 acros
         const list = await (await fetch(base + '/api/accounts', { headers: H })).json();
         const want = winner === undefined ? undefined : `${kind}-${winner}`;
         assert.equal(await picked(kind), want, `server pick — ${kind}: ${name}`);
-        assert.equal(dashboardPicks(list)[kind], want, `dashboard nextPicks — ${kind}: ${name}`);
+        if (kind === 'codex') assert.equal(dashboardPicks(list)[kind], want, `dashboard nextPicks — ${kind}: ${name}`);
       }
     }
     // the two pools never mix: a codex account must not steal the claude star
@@ -1650,7 +1658,23 @@ test('nextPicks parity: dashboard Next-pick star matches /api/select?dry=1 acros
     seed('codex', [row('only', 0, 0, FUT(1), 60)]);
     assert.equal(dashboardPicks(await (await fetch(base + '/api/accounts', { headers: H })).json()).claude, undefined);
     assert.equal(await picked('claude'), undefined);
+    // Claude's proxy policy intentionally differs from the old 95% handout
+    // selector: any positive remaining allowance is usable when both are fresh.
+    db.prepare('DELETE FROM accounts').run();
+    for (const account of ['strict-a', 'strict-b']) {
+      assert.equal((await fetch(base + '/api/accounts', { method: 'POST', headers: H,
+        body: JSON.stringify({ account, setup_token: 'sk-ant-oat01-manually-entered-' + account }) })).status, 200);
+      claudeProbeResult = cannedClaude(200, account === 'strict-a' ? '.99' : '.1', '.1');
+      claudeProbeResult.headers['anthropic-ratelimit-unified-7d-reset'] = String(FUT(account === 'strict-a' ? 1 : 100));
+      assert.equal((await fetch(base + `/api/accounts/${account}/refresh`, { method: 'POST', headers: H })).status, 200);
+    }
+    const list = await (await fetch(base + '/api/accounts', { headers: H })).json();
+    const rotation = await (await fetch(base + '/api/proxy/claude-code/status', { headers: H })).json();
+    assert.equal(rotation.next_account, 'strict-a');
+    assert.equal(dashboardPicks(list, rotation).claude, 'strict-a');
+    assert.equal(dashboardPicks(list).claude, undefined, 'unknown pool state must never fabricate a pick');
   } finally {
+    claudeProbeResult = null;
     db.prepare('DELETE FROM accounts').run();
     const put = db.prepare(`INSERT INTO accounts (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`);
     for (const r of saved) put.run(...cols.map((c) => r[c]));

@@ -23,8 +23,9 @@ import { pipeline } from 'node:stream/promises';
 import { WebSocketServer } from 'ws';
 import { makeVault, rtHash, ledgerVerdict, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot, resetsIn } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
-import { ensureSchema, seedIfNeeded, pruneOld, handleSpend } from './spend.js';
+import { ensureSchema, seedIfNeeded, pruneOld, handleSpend, recordProxyUsage } from './spend.js';
 import { createTransparentProxy } from './transparent-proxy.js';
+import { createClaudePool } from './claude-pool.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -65,7 +66,7 @@ const CUTOFF = envNum('AIGATE_HEADROOM_CUTOFF', 95);
 const AUTH_MAX_FAILS = envNum('AIGATE_AUTH_MAX_FAILS', 10);
 const AUTH_WINDOW_MS = envNum('AIGATE_AUTH_WINDOW_MS', 60000);
 const AUTH_LOCK_MS = envNum('AIGATE_AUTH_LOCK_MS', 300000);
-const POLL_MS = envNum('AIGATE_POLL_MS', 600000); // 10 min
+const POLL_MS = envNum('AIGATE_POLL_MS', 300000); // five-minute allowance observations
 const KEY_POLL_MS = envNum('AIGATE_KEY_POLL_MS', 3600000); // 1h
 const WATCHDOG_MS = envNum('AIGATE_WATCHDOG_MS', 30000);
 // Optional network gate (defense-in-depth under the bearer token). Comma-sep
@@ -705,7 +706,14 @@ function rawJsonBody(req, maxBytes = PROXY_BODY_MAX) {
 }
 
 // ---- routes -------------------------------------------------------------
-const transparentProxy = await createTransparentProxy({ db, encrypt, decrypt, dbPath: DB_PATH, masterToken: TOKEN, sessionCookie: SESS_COOKIE, reqIp, authFail, authLocked, authOk });
+let transparentProxy;
+const claudePool = await createClaudePool({ db, decrypt, pollMs: POLL_MS,
+  maxAgeMs: envNum('AIGATE_CLAUDE_QUOTA_MAX_AGE_MS', 600000),
+  getTrafficStore: () => transparentProxy?.traffic,
+  upstream: () => process.env.AIGATE_TRANSPARENT_UPSTREAM_CLAUDE_CODE || process.env.AIGATE_PROXY_UPSTREAM_ANTHROPIC || 'https://api.anthropic.com' });
+transparentProxy = await createTransparentProxy({ db, encrypt, decrypt, dbPath: DB_PATH, masterToken: TOKEN,
+  sessionCookie: SESS_COOKIE, reqIp, authFail, authLocked, authOk, claudePool,
+  recordUsage: event => recordProxyUsage(db, event) });
 const server = http.createServer(async (req, res) => {
   // a malformed target ('//', protocol-relative) makes new URL throw; in an async
   // handler that's an unhandled rejection → socket hangs (pre-auth DoS). 404 it.
@@ -995,6 +1003,7 @@ const server = http.createServer(async (req, res) => {
       if (codexInflight.has(name)) return json(res, 409, { error: 'a refresh is in flight for ' + name + ' — retry in a moment' });
       const dead = q.delAccount.get(name);
       if (!dead) return json(res, 404, { error: 'unknown account' });
+      claudePool.forgetAccount(name);
       logAccess(name, '', reqIp(req), 'account-delete', dead.label);
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true });
@@ -1051,7 +1060,7 @@ const server = http.createServer(async (req, res) => {
           logAccess(name, '', reqIp(req), 'codex-refresh', 'refresh_unknown cleared (force)');
         }
         r = await pollCodexUsage(name, auth, { noRefresh: !!(cx && (cx.disabled || cx.reauth_needed)) });
-      } else r = await pollAccountUsage(name, tok);   // updates usage/reauth in the DB
+      } else r = await claudePool.refreshAccount(name);   // same captured probe as the automatic poller
       // poll failure (timeout/outage) → 502, DB untouched — a 200 {alive:true,maxed:0} here
       // would read as "healthy and empty" exactly when the client must keep-or-switch
       if (r.error) return json(res, 502, { account: name, error: r.error });
@@ -1594,54 +1603,6 @@ server.on('connect', (req, socket, head) => {
 // update the vault. No proxy: this is aigate polling on its own tokens so
 // selection/skip stays accurate and auto-recovers after a reset window.
 const allTokensStmt = db.prepare(`SELECT account, token_enc, kind, disabled, reauth_needed FROM accounts WHERE token_enc IS NOT NULL`);
-async function pollAccountUsage(account, token) {
-  try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        authorization: 'Bearer ' + token,
-        'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'oauth-2025-04-20',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
-      signal: AbortSignal.timeout(15000),
-      // never follow a redirect: this request carries a live OAuth token as Bearer,
-      // and a hijacked-DNS 30x could bounce it to an attacker-controlled host.
-      redirect: 'error',
-    });
-    // status + headers are all we read — cancel the body or undici pins the connection until GC
-    r.body?.cancel().catch(() => {});
-    // 401/403 = token expired/revoked → flag for reauth so /api/select skips it;
-    // any authenticated response clears the flag (auto-recovers after re-token).
-    const alive = tokenIsAlive(r.status);
-    q.setReauth.run(alive ? 0 : 1, account);
-    const u5 = r.headers.get('anthropic-ratelimit-unified-5h-utilization');
-    const u7 = r.headers.get('anthropic-ratelimit-unified-7d-utilization');
-    if (u5 == null && u7 == null)
-      return { account, status: r.status, alive, note: alive ? 'no rate-limit headers' : 'auth failed — needs reauth' };
-    const f5 = parseFloat(u5), f7 = parseFloat(u7);
-    // a header that's PRESENT but unparseable (Anthropic renamed/reformatted it) must
-    // not become a phantom 0% = "max headroom" that then gets selected FIRST and routes
-    // traffic to an exhausted token. Keep the last-known-good % and alarm instead.
-    if ((u5 != null && Number.isNaN(f5)) || (u7 != null && Number.isNaN(f7))) {
-      console.warn('[poll] E_HEADER_DRIFT unparseable rate header for', account, JSON.stringify({ u5, u7 }));
-      return { account, status: r.status, alive, note: 'unparseable rate header — kept last-known-good' };
-    }
-    const five = u5 == null ? null : Math.round(f5 * 100);
-    const seven = u7 == null ? null : Math.round(f7 * 100);
-    q.updUsage.run(five, seven, account);
-    // window reset times (unix epoch seconds) — for the dashboard's "resets …" line.
-    // Absent/garbage → null → COALESCE keeps the last-known value.
-    const rs5 = parseInt(r.headers.get('anthropic-ratelimit-unified-5h-reset'), 10);
-    const rs7 = parseInt(r.headers.get('anthropic-ratelimit-unified-7d-reset'), 10);
-    q.updResets.run(Number.isFinite(rs5) ? rs5 : null, Number.isFinite(rs7) ? rs7 : null, account);
-    return { account, five, seven, status: r.status, alive };
-  } catch (e) {
-    // network error: can't tell if the token is dead → leave the flag as-is
-    return { account, error: String((e && e.message) || e) };
-  }
-}
 // ---- codex (ChatGPT) accounts: owned refresh + usage poll ----------------
 // aigate owns the OAuth refresh for Codex rows (clients receive a fresh auth.json). Refresh
 // tokens ROTATE with reuse detection, so exactly ONE caller may spend a given refresh token:
@@ -1908,7 +1869,8 @@ async function pollUsage() {
   try {
     // parallel: one hung/dead token no longer makes the cycle N×15s and stalls later accounts.
     // node:sqlite is sync so the interleaved DB writes stay serialized on the event loop.
-    const results = await Promise.all(allTokensStmt.all().map(async (row) => {
+    const claudeResults = await claudePool.refreshAll();
+    const codexResults = await Promise.all(allTokensStmt.all().filter(row => row.kind === 'codex').map(async (row) => {
       let tok;
       // no exit: partial failure stays partial, and a restart won't fix a key mismatch
       try { tok = decrypt(row.token_enc); }
@@ -1917,10 +1879,11 @@ async function pollUsage() {
       if (row.kind === 'codex') {
         let auth; try { auth = JSON.parse(tok); } catch { return { account: row.account, error: 'decrypt' }; }
         res = await pollCodexUsage(row.account, auth, { noRefresh: !!(row.disabled || row.reauth_needed) });
-      } else res = await pollAccountUsage(row.account, tok);
+      }
       console.log('[poll]', new Date().toISOString(), JSON.stringify(res));
       return { ...res, kind: row.kind };
     }));
+    const results = [...claudeResults.map(result => ({ ...result, kind: 'claude' })), ...codexResults];
     // record cycle health so /health (and thus fleet autoheal/dashboard) can see poller degradation
     // claude rows only: ok/failed predate codex and fleet autoheal reads them via /health
     const cl = results.filter((r) => r && r.kind !== 'codex');
@@ -2034,6 +1997,7 @@ function backupNow() {
 // supervisor (docker restart:unless-stopped / launchd KeepAlive) revives us —
 // that's the self-heal. On a signal we exit 0 for a clean stop.
 function shutdown(code) {
+  void claudePool.stop();
   try { server.close(); } catch { /* not listening */ }
   try { db.close(); } catch { /* already closed */ }
   process.exit(code);
@@ -2069,7 +2033,7 @@ if (isMain) {
 
   // poller cycles are wrapped so a rejected cycle logs instead of crashing
   const poll = () => pollUsage().catch((e) => console.error('[poll] cycle failed', e));
-  if (POLL_MS > 0) { setTimeout(poll, 8000); setInterval(poll, POLL_MS); }
+  if (POLL_MS > 0) claudePool.start({ refresh: poll });
 
   // provider-key liveness runs on its own (slower) cadence — keys change far less
   // often than account headroom. Offset from the account poll so they don't burst together.
@@ -2089,4 +2053,4 @@ if (isMain) {
     console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
 }
 
-export { server, db, pollUsage, pollProviderKeys, backupNow, openDb, isWeakToken, authFail, authLocked, authOk, shortHost };
+export { server, db, pollUsage, pollProviderKeys, backupNow, openDb, isWeakToken, authFail, authLocked, authOk, shortHost, claudePool, transparentProxy };

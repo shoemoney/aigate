@@ -5,6 +5,8 @@ import { join, dirname } from 'node:path';
 import { createTrafficStore } from './proxy-traffic.js';
 import { PROVIDER_BY_ID } from './providers.js';
 import { tokenMatches } from './lib.js';
+import { createReplayStore } from './proxy-replay.js';
+import { createClaudeRelay } from './claude-relay.js';
 
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'transfer-encoding', 'upgrade']);
@@ -89,6 +91,7 @@ function upstreamUrl(value) {
   return url.href.replace(/\/+$/, '');
 }
 function defaultUpstream(provider) {
+  if (provider === 'claude-code') return 'https://api.anthropic.com';
   if (provider === 'kimi') return 'https://api.kimi.com/coding';
   const base = PROVIDER_BY_ID.get(provider)?.base;
   if (!base) return null;
@@ -97,6 +100,7 @@ function defaultUpstream(provider) {
   return base.replace(/\/v1\/?$/, '');
 }
 function supportedAdapter(provider, explicitUpstream = false) {
+  if (provider === 'claude-code') return true;
   const metadata = PROVIDER_BY_ID.get(provider);
   if (provider === 'aws') return false;
   if (['anthropic', 'kimi', 'muse'].includes(provider)) return true;
@@ -104,7 +108,7 @@ function supportedAdapter(provider, explicitUpstream = false) {
   return explicitUpstream;
 }
 
-export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, masterToken, sessionCookie = 'aigate_sess', reqIp, authFail, authLocked, authOk }) {
+export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, masterToken, sessionCookie = 'aigate_sess', reqIp, authFail, authLocked, authOk, claudePool, recordUsage }) {
   db.exec(`CREATE TABLE IF NOT EXISTS proxy_credentials (
     id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, label TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL, fields_enc TEXT NOT NULL, field_names TEXT NOT NULL,
@@ -117,6 +121,9 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
     CHECK ((key_id IS NULL) != (credential_id IS NULL))
   )`);
   const traffic = await createTrafficStore({ db, directory: join(dirname(dbPath), 'proxy-traffic'), encrypt, decrypt });
+  const replayStore = await createReplayStore({ directory: join(dirname(dbPath), 'proxy-replay'), encrypt, decrypt,
+    maxBytes: safeInt(process.env.AIGATE_CLAUDE_REPLAY_MAX_BYTES, 64 * 1024 * 1024, 1024 * 1024 * 1024) });
+  const claudeRelay = claudePool && createClaudeRelay({ pool: claudePool, traffic, replayStore, relayHeaders, informational, reqIp, recordUsage, sessionCookie });
   const bindingFor = db.prepare('SELECT * FROM proxy_clients WHERE token_hash=?');
   const keyFor = db.prepare('SELECT provider,key_enc,status FROM provider_keys WHERE id=?');
   const credentialFor = db.prepare('SELECT * FROM proxy_credentials WHERE id=?');
@@ -136,6 +143,9 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
     let upstream;
     try { upstream = upstreamUrl(process.env['AIGATE_TRANSPARENT_UPSTREAM_' + provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')] || defaultUpstream(provider)); }
     catch { return { invalid: { status: 503, reason: 'provider upstream is not configured correctly' } }; }
+    if (provider === 'claude-code') return claudeRelay
+      ? { binding: { provider, upstream, relay_target: match[2], account_pool: true } }
+      : { invalid: { status: 503, reason: 'Claude Code pool unavailable' } };
     const credential = db.prepare("SELECT id FROM proxy_credentials WHERE provider=? AND kind='api_key' ORDER BY id DESC LIMIT 1").get(provider);
     if (credential) return { binding: { provider, credential_id: credential.id, upstream, relay_target: match[2] } };
     if (db.prepare('SELECT id FROM proxy_credentials WHERE provider=? LIMIT 1').get(provider)) return { invalid: { status: 422, reason: 'credential kind requires an unsupported signing adapter' } };
@@ -395,7 +405,10 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
         const route = presetBinding(req);
         const ip = reqIp(req);
         if (authLocked(ip)) { await relay(req, res, route.binding, { status: 429, reason: 'too many authentication failures' }); return true; }
-        authOk(ip); await relay(req, res, route.binding, route.invalid); return true;
+        authOk(ip);
+        if (route.binding?.account_pool && !route.invalid) await claudeRelay(req, res, route.binding);
+        else await relay(req, res, route.binding, route.invalid);
+        return true;
       }
       const binding = auth.token ? bindingFor.get(hash(auth.token)) : null;
       if (!binding && !p.startsWith('/v1') && !p.startsWith('/proxy/')) return false;
@@ -408,6 +421,20 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
     },
     async admin(req, res, url, { json, body }) {
       const p = url.pathname;
+      if (claudePool && p === '/api/proxy/claude-code/status' && req.method === 'GET') {
+        json(res, 200, claudePool.status({ model: url.searchParams.get('model') || undefined })); return true;
+      }
+      if (claudePool && p === '/api/proxy/claude-code/refresh' && req.method === 'POST') {
+        const results = await claudePool.refreshAll();
+        json(res, 200, { ...claudePool.status({ model: url.searchParams.get('model') || undefined }), results }); return true;
+      }
+      const accountMetadata = /^\/api\/proxy\/claude-code\/accounts\/([^/]+)\/metadata$/.exec(p);
+      if (claudePool && accountMetadata && req.method === 'POST') {
+        const data = await body(req);
+        try { json(res, 200, claudePool.setMetadata(decodeURIComponent(accountMetadata[1]), data)); }
+        catch (error) { json(res, error.statusCode || 400, { error: error.message }); }
+        return true;
+      }
       if (p === '/api/proxy/credentials' && req.method === 'GET') { json(res, 200, credentials()); return true; }
       if (p === '/api/proxy/credentials' && req.method === 'POST') {
         const data = await body(req);

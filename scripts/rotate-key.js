@@ -57,6 +57,10 @@ try {
     hasTrafficFiles = false;
   }
   if (hasTrafficRows || hasTrafficFiles) throw new Error('encrypted proxy traffic exists; rotation refused because capture-file key rotation is not supported');
+  try {
+    if (readdirSync(join(dirname(DB_PATH), 'proxy-replay')).length)
+      throw new Error('encrypted proxy replay exists; rotation refused because replay-file key rotation is not supported');
+  } catch (error) { if (error.code !== 'ENOENT') throw error; }
 
   for (const r of db.prepare(`SELECT account, token_enc FROM accounts WHERE token_enc IS NOT NULL`).all()) {
     db.prepare(`UPDATE accounts SET token_enc=? WHERE account=?`).run(reenc(r.token_enc), r.account); accounts++;

@@ -270,7 +270,18 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
       db.prepare('UPDATE claude_pool_metadata SET credential_expires_at=?,expiry_fingerprint=? WHERE account=?').run(expiry, row.fingerprint, account);
     }
     const names = new Set([...previousMembers, ...scopeMembers(load(getAccount.get(account)))].map(member => member.account));
-    for (const name of names) db.prepare('UPDATE claude_pool_usage SET revision=revision+1,generation=generation+1 WHERE account=?').run(name);
+    const scopeChanged = data.quota_scope !== undefined && data.quota_scope !== (row.meta.quota_scope ?? null);
+    for (const name of names) {
+      db.prepare('UPDATE claude_pool_usage SET revision=revision+1,generation=generation+1 WHERE account=?').run(name);
+      if (scopeChanged) {
+        // Independent observations cannot prove the allowance of a newly mapped
+        // subscription. Both merging and splitting require a fresh observation.
+        db.prepare(`UPDATE claude_pool_usage SET five_used=NULL,five_reset=NULL,five_observed=NULL,
+          seven_used=NULL,seven_reset=NULL,seven_observed=NULL,source=NULL,last_capture_id=NULL,last_error='quota_scope_changed'
+          WHERE account=?`).run(name);
+        db.prepare('UPDATE accounts SET usage_updated=NULL WHERE account=?').run(name);
+      }
+    }
     return status().accounts.find(item => item.account === account);
   }
   function refreshAccount(account, { signal } = {}) {

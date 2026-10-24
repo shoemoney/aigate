@@ -166,7 +166,45 @@ test('manual scope changes invalidate already admitted observations across the o
   f.pool.setMetadata('a', { quota_scope: 'other' });
   const observed = f.pool.observeHeaders('b', quota(1), { fingerprint: lease.fingerprint, revision: lease.revision,
     generation: lease.generation, tokenEnvelope: lease.tokenEnvelope, startedAt: lease.startedAt });
-  assert.equal(observed.applied, false); assert.equal(f.pool.status().accounts.every(a => a.five_hour.used_pct === 0), true);
+  assert.equal(observed.applied, false); assert.equal(f.pool.status().accounts.every(a => a.five_hour.used_pct === null), true);
+});
+
+test('merging conflicting subscription meters invalidates both until one fresh probe restores consistency', async t => {
+  const f = await fixture(t); f.add('a'); f.add('b');
+  f.pool.observeHeaders('a', quota(.1, .1)); f.pool.observeHeaders('b', quota(1, .5));
+  assert.equal(f.pool.status().next_account, 'a');
+  f.pool.setMetadata('a', { quota_scope: 'same-subscription' });
+  f.pool.setMetadata('b', { quota_scope: 'same-subscription' });
+  assert.equal(f.pool.acquire(), null);
+  assert.equal(f.pool.status().accounts.every(a => a.five_hour.used_pct === null && a.seven_day.used_pct === null), true);
+  await f.pool.refreshAccount('a');
+  assert.equal(f.pool.status().accounts.every(a => a.eligible && a.five_hour.used_pct === 0 && a.seven_day.used_pct === 0), true);
+});
+
+test('scope splitting invalidates both former groups and probes only restore their current members', async t => {
+  const f = await fixture(t); f.add('a'); f.add('b');
+  f.pool.setMetadata('a', { quota_scope: 'shared' }); f.pool.setMetadata('b', { quota_scope: 'shared' });
+  f.pool.observeHeaders('a', quota(.2, .3));
+  f.pool.setMetadata('a', { quota_scope: null });
+  assert.equal(f.pool.status().accounts.every(a => !a.eligible && a.five_hour.used_pct === null), true);
+  await f.pool.refreshAccount('a');
+  assert.equal(f.pool.status().accounts.find(a => a.account === 'a').eligible, true);
+  assert.equal(f.pool.status().accounts.find(a => a.account === 'b').reason, 'usage_unknown');
+  await f.pool.refreshAccount('b'); assert.equal(f.pool.status().accounts.every(a => a.eligible), true);
+});
+
+test('transitive fingerprint membership is invalidated together and expiry-only edits preserve real meters', async t => {
+  const f = await fixture(t); f.add('a', 'sk-ant-oat01-identical'); f.add('b', 'sk-ant-oat01-identical'); f.add('c');
+  f.pool.setMetadata('a', { quota_scope: 'one' }); f.pool.setMetadata('b', { quota_scope: 'two' }); f.pool.setMetadata('c', { quota_scope: 'two' });
+  f.pool.observeHeaders('a', quota(.25, .5));
+  f.pool.setMetadata('c', { credential_expires_at: new Date(BASE + 100000).toISOString() });
+  assert.equal(f.pool.status().accounts.every(a => a.five_hour.used_pct === 25 && a.seven_day.used_pct === 50), true);
+  f.pool.setMetadata('b', { quota_scope: 'three' });
+  assert.equal(f.pool.status().accounts.every(a => a.five_hour.used_pct === null), true);
+  await f.pool.refreshAccount('a');
+  assert.equal(f.pool.status().accounts.filter(a => ['a', 'b'].includes(a.account)).every(a => a.eligible), true);
+  assert.equal(f.pool.status().accounts.find(a => a.account === 'c').reason, 'usage_unknown');
+  await f.pool.refreshAccount('c'); assert.equal(f.pool.status().accounts.every(a => a.eligible), true);
 });
 
 test('single flight clears failures and scheduled refresh runs every five minutes without overlap', async t => {
