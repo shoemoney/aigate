@@ -2,7 +2,8 @@ import http from 'node:http';
 import https from 'node:https';
 import { randomUUID } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
-import { parseClaudeQuotaHeaders } from './claude-pool.js';
+import { classifyClaudeExhaustion } from './claude-quota.js';
+export { classifyClaudeExhaustion } from './claude-quota.js';
 
 const pairs = raw => Array.from({ length: raw.length / 2 }, (_, i) => [raw[i * 2], raw[i * 2 + 1]]);
 const number = (value, fallback, max) => /^\d+$/.test(String(value ?? '')) && Number(value) > 0 ? Math.min(Number(value), max) : fallback;
@@ -42,32 +43,6 @@ function resourceBound(value) {
   // are stateless instructions. Only actual account-bound resource references
   // constrain failover; recursively inspect context objects for those references.
   return Object.entries(value).some(([key, item]) => ['file_id', 'container', 'container_id', 'mcp_servers', 'workspace_id', 'organization_id'].includes(key) && item != null || resourceBound(item));
-}
-
-export function classifyClaudeExhaustion(status, rawHeaders) {
-  if (status !== 429) return null;
-  const quota = parseClaudeQuotaHeaders(rawHeaders);
-  for (const window of ['seven_day', 'five_hour']) if (quota[window].remaining_pct === 0)
-    return { window, resetAt: quota[window].reset_ms, reason: 'quota_exhausted' };
-  // The representative claim names the actual rejecting window. Require the
-  // provider's explicit rejected status; a generic throttling 429 is insufficient.
-  const fields = new Map();
-  for (let i = 0; i < rawHeaders.length; i += 2) {
-    const key = rawHeaders[i].toLowerCase(); fields.set(key, fields.has(key) ? null : rawHeaders[i + 1]);
-  }
-  if (fields.get('anthropic-ratelimit-unified-status') !== 'rejected') return null;
-  const claim = fields.get('anthropic-ratelimit-unified-representative-claim');
-  const rawReset = Number(fields.get('anthropic-ratelimit-unified-reset'));
-  const reset = Number.isFinite(rawReset) ? (rawReset < 1e12 ? rawReset * 1000 : rawReset) : null;
-  if (claim === 'five_hour' || claim === 'seven_day') {
-    const resetAt = quota[claim].reset_ms || reset;
-    return resetAt > Date.now() ? { window: claim, resetAt, reason: 'quota_exhausted' } : null;
-  }
-  if ((claim === 'seven_day_opus' || claim === 'seven_day_sonnet') && reset > Date.now()) return {
-    window: 'model', modelFamily: claim.slice('seven_day_'.length),
-    resetAt: reset, reason: 'model_quota_exhausted',
-  };
-  return null;
 }
 
 function usageObserver(headers) {

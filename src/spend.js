@@ -374,7 +374,10 @@ function ingestBatch(db, v) {
 // Anthropic message IDs are the collector's identity too: replay/history stays one row.
 export function recordProxyUsage(db, {message_id, model, ts, usage, account, host='proxy', project='', complete=true} = {}) {
   if (!complete || !usage || !isInt(usage.input_tokens) || !isInt(usage.output_tokens)) return {accepted:0,duplicate:0,skipped:1};
-  if (typeof account !== 'string' || !ACCT_RE.test(account)) throw new TypeError('trusted account is required');
+  // This identity comes from the selected vault lease, whose admission rules
+  // allow punctuation, Unicode and long names. Public collector/session rules
+  // are separate and must not restrict an already admitted trusted identity.
+  if (typeof account !== 'string' || !account || /[/\s]/.test(account)) throw new TypeError('trusted account is required');
   const cw = usage.cache_creation_input_tokens ?? 0;
   const e = {source_event_id:message_id, model, provider:'anthropic', ts:ts ?? new Date().toISOString(),
     input_tokens:usage.input_tokens,output_tokens:usage.output_tokens,cache_read_tokens:usage.cache_read_input_tokens ?? 0,

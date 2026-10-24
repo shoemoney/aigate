@@ -6,6 +6,10 @@ import { mkdir, chmod, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
+const TERMINALS = new Set(['end', 'interrupted']);
+const STATES = new Set(['complete', 'rejected', 'error', 'client_abort', 'logging_error', 'interrupted']);
+const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+
 export async function createTrafficStore({ db, directory, encrypt, decrypt }) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await chmod(directory, 0o700);
@@ -26,33 +30,63 @@ export async function createTrafficStore({ db, directory, encrypt, decrypt }) {
   const readEvents = async function* (row) {
     const stream = createReadStream(fileFor(row));
     const lines = createInterface({ input: stream, crlfDelay: Infinity });
-    let sequence = 0, last;
+    let sequence = 0, last, terminal = false, requestBytes = 0, responseBytes = 0;
     try {
       for await (const line of lines) if (line) {
         const record = JSON.parse(decrypt(line));
         if (record.capture_id !== row.file_id || record.sequence !== sequence) throw new Error('traffic event identity or ordering mismatch');
+        if (terminal) throw new Error('traffic capture contains an event after its terminal record');
+        if (!record.event || typeof record.event !== 'object' || typeof record.event.type !== 'string') throw new Error('invalid traffic event');
+        if (sequence === 0 && record.event.type !== 'request') throw new Error('traffic capture is missing its initial request');
+        if (record.event.type === 'request_body') requestBytes += Buffer.from(record.event.data, 'base64').length;
+        if (record.event.type === 'response_body') responseBytes += Buffer.from(record.event.data, 'base64').length;
+        if (TERMINALS.has(record.event.type)) {
+          const event = record.event;
+          if (typeof event.at !== 'string' || !Number.isFinite(Date.parse(event.at))) throw new Error('invalid traffic terminal timestamp');
+          if (event.type === 'end' && !STATES.has(event.state)) throw new Error('invalid traffic terminal state');
+          if (event.type === 'interrupted' && own(event, 'state') && event.state !== 'interrupted') throw new Error('invalid traffic interrupted state');
+          if (event.type === 'end' && !own(event, 'status')) throw new Error('traffic terminal is missing its status');
+          if (own(event, 'status') && event.status !== null && (!Number.isInteger(event.status) || event.status < 100 || event.status > 999)) throw new Error('invalid traffic terminal status');
+          if ((event.type === 'end' || own(event, 'request_bytes')) && event.request_bytes !== requestBytes
+            || (event.type === 'end' || own(event, 'response_bytes')) && event.response_bytes !== responseBytes) throw new Error('traffic terminal byte counts do not match captured events');
+          terminal = true;
+        }
         last = record.event;
         yield { sequence: sequence++, ...record.event };
       }
+      if (!sequence) throw new Error('traffic capture is missing its initial request');
       if (!['running', 'logging_error'].includes(row.state) && !['end', 'interrupted'].includes(last?.type)) throw new Error('traffic capture is missing its terminal event');
     } finally { lines.close(); stream.destroy(); }
   };
-  // A request still running after a process restart was interrupted, not complete.
+  // The authenticated terminal reaches disk before the SQL update. Reconcile
+  // that crash gap from its original terminal instead of appending another one.
+  // Only a valid capture without any terminal was interrupted by the restart.
   for (const row of db.prepare("SELECT * FROM proxy_traffic WHERE state='running'").all()) {
-    let file;
+    let file, recovered;
     try {
-      let sequence = 0, requestBytes = 0, responseBytes = 0, status = row.status;
+      let sequence = 0, requestBytes = 0, responseBytes = 0, status = row.status, terminal;
       for await (const event of readEvents(row)) {
         sequence++;
         if (event.type === 'request_body') requestBytes += Buffer.from(event.data, 'base64').length;
         if (event.type === 'response_body') responseBytes += Buffer.from(event.data, 'base64').length;
         if (event.type === 'response') status = event.status;
+        if (TERMINALS.has(event.type)) terminal = event;
       }
-      file = await open(fileFor(row), 'a', 0o600);
-      await writeEvent(file, row.file_id, sequence, { type: 'interrupted', at: new Date().toISOString(), reason: 'process restarted before completion' });
-      update.run(new Date().toISOString(), 'interrupted', status, requestBytes, responseBytes, row.id);
-    } catch { update.run(new Date().toISOString(), 'logging_error', row.status, row.request_bytes, row.response_bytes, row.id); }
+      if (!terminal) {
+        terminal = { type: 'interrupted', at: new Date().toISOString(), state: 'interrupted', status,
+          request_bytes: requestBytes, response_bytes: responseBytes, reason: 'process restarted before completion' };
+        file = await open(fileFor(row), 'a', 0o600);
+        await writeEvent(file, row.file_id, sequence, terminal);
+      }
+      recovered = [terminal.at, terminal.type === 'end' ? terminal.state : 'interrupted',
+        own(terminal, 'status') ? terminal.status : status, requestBytes, responseBytes, row.id];
+    } catch {
+      update.run(new Date().toISOString(), 'logging_error', row.status, row.request_bytes, row.response_bytes, row.id);
+    }
     finally { if (file) await file.close(); }
+    // A SQL failure leaves the still-running row recoverable. In particular, do
+    // not replace a durable valid end/interrupted record with logging_error.
+    if (recovered) update.run(...recovered);
   }
   return {
     async start({ clientId = null, provider = null, ...request }) {
@@ -86,12 +120,16 @@ export async function createTrafficStore({ db, directory, encrypt, decrypt }) {
           if (finishing) return finishing;
           closing = true;
           finishing = (async () => {
+            let terminalWritten = false;
             try {
               await writes;
-              await writeEvent(file, fileId, sequence++, { type: 'end', at: new Date().toISOString(), state, status, request_bytes: requestBytes, response_bytes: responseBytes, ...extra });
-              update.run(new Date().toISOString(), state, status, requestBytes, responseBytes, id);
+              const at = new Date().toISOString();
+              await writeEvent(file, fileId, sequence++, { ...extra, type: 'end', at, state, status, request_bytes: requestBytes, response_bytes: responseBytes });
+              terminalWritten = true;
+              update.run(at, state, status, requestBytes, responseBytes, id);
             } catch (e) {
-              update.run(new Date().toISOString(), 'logging_error', status, requestBytes, responseBytes, id); throw e;
+              if (!terminalWritten) update.run(new Date().toISOString(), 'logging_error', status, requestBytes, responseBytes, id);
+              throw e;
             } finally { closed = true; await file.close(); }
           })();
           return finishing;
@@ -113,13 +151,15 @@ export async function createTrafficStore({ db, directory, encrypt, decrypt }) {
       yield* readEvents(row);
     },
     async page(id, after = -1, limit = 100) {
-      const events = [];
+      const events = []; let nextAfter = null;
       for await (const event of this.events(id)) {
         if (event.sequence <= after) continue;
-        if (events.length === limit) return { events, next_after: events.at(-1).sequence };
+        // Validate the complete capture before returning a page of an apparently
+        // completed exchange. Keep only this page in memory while scanning.
+        if (events.length === limit) { nextAfter ??= events.at(-1).sequence; continue; }
         events.push(event);
       }
-      return { events, next_after: null };
+      return { events, next_after: nextAfter };
     },
     async download(id, res) {
       res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="proxy-traffic-${id}.ndjson"` });

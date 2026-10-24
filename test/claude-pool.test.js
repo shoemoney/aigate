@@ -19,6 +19,11 @@ const quota = (five = 0, seven = 0, reset = BASE + 86400000) => [
   'anthropic-ratelimit-unified-5h-reset', String((BASE + 18000000) / 1000),
   'anthropic-ratelimit-unified-7d-reset', String(reset / 1000),
 ];
+const rejection = (claim = 'five_hour', reset = BASE + 100000) => [
+  'anthropic-ratelimit-unified-status', 'rejected',
+  'anthropic-ratelimit-unified-representative-claim', claim,
+  'anthropic-ratelimit-unified-reset', String(reset / 1000),
+];
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 async function fixture(t, options = {}) {
@@ -116,6 +121,53 @@ test('model-family cooldowns do not exhaust other models; bare throttles never m
   assert.equal(f.pool.status().accounts[0].five_hour.used_pct, 10);
   f.pool.observeHeaders('a', quota(.1, .2), { model: 'claude-sonnet-4-6' });
   assert.equal(f.pool.status({ model: 'claude-opus-4-6' }).accounts[0].reason, 'model_cooldown');
+});
+
+test('claim-only probe rejection blocks the shared subscription without inventing utilization and a fresh probe recovers it', async t => {
+  let result = { status: 429, rawHeaders: rejection() };
+  const f = await fixture(t, { probe: async () => result }); f.add('a'); f.add('b');
+  f.pool.setMetadata('a', { quota_scope: 'shared' }); f.pool.setMetadata('b', { quota_scope: 'shared' });
+  f.pool.observeHeaders('a', quota(.1, .2)); assert.ok(f.pool.acquire()); f.advance(1);
+  const refreshed = await f.pool.refreshAccount('a'); assert.equal(refreshed.applied, true); assert.equal(refreshed.exhaustion.window, 'five_hour');
+  assert.equal(f.pool.status().accounts.every(a => a.reason === 'exhausted'), true); assert.equal(f.pool.acquire(), null);
+  assert.equal(f.pool.status().accounts.every(a => a.five_hour.used_pct === 10 && a.seven_day.used_pct === 20), true);
+  assert.equal(f.pool.status().accounts.every(a => a.five_hour.observed_at === new Date(BASE).toISOString()), true);
+  result = { status: 200, rawHeaders: quota(.2, .3) }; f.advance(1); await f.pool.refreshAccount('b');
+  assert.equal(f.pool.status().accounts.every(a => a.eligible && a.five_hour.used_pct === 20), true);
+});
+
+test('probe exhaustion classifier uses the injected clock and requires an actual matching requested model', async t => {
+  let result = { status: 429, rawHeaders: rejection('seven_day_opus'), model: 'claude-haiku-4-5-20251001' };
+  const f = await fixture(t, { probe: async () => result }); f.add('a'); f.pool.observeHeaders('a', quota(.1, .2));
+  await f.pool.refreshAccount('a'); assert.equal(f.pool.status().accounts[0].cooldowns.length, 0);
+  result = { status: 429, rawHeaders: rejection('seven_day_opus') }; await f.pool.refreshAccount('a');
+  assert.equal(f.pool.status().accounts[0].cooldowns.length, 0, 'unknown model cannot establish a family block');
+  result = { status: 429, rawHeaders: rejection('seven_day_opus'), model: 'claude-opus-4-6' }; await f.pool.refreshAccount('a');
+  assert.equal(f.pool.status({ model: 'claude-opus-4-6' }).accounts[0].reason, 'model_cooldown');
+  assert.equal(f.pool.status({ model: 'claude-sonnet-4-6' }).accounts[0].eligible, true);
+});
+
+test('bare 429, global overload and expired or unknown claims do not exhaust the probe pool', async t => {
+  let result; const f = await fixture(t, { probe: async () => result }); f.add('a'); f.pool.observeHeaders('a', quota(.1, .2));
+  for (result of [ { status: 429, rawHeaders: [] }, { status: 529, rawHeaders: rejection() },
+    { status: 429, rawHeaders: rejection('unknown') }, { status: 429, rawHeaders: rejection('five_hour', BASE - 1) } ]) {
+    await f.pool.refreshAccount('a'); assert.equal(f.pool.status().accounts[0].eligible, true);
+    assert.equal(f.pool.status().accounts[0].five_hour.used_pct, 10);
+  }
+});
+
+test('claim-only rejected probes cannot mutate replaced, deleted, renamed or remapped identities', async t => {
+  for (const mutation of ['replace', 'delete', 'rename', 'scope']) {
+    const gate = deferred(); const f = await fixture(t, { probe: () => gate.promise }); f.add('a'); f.add('b');
+    f.pool.setMetadata('a', { quota_scope: 'shared' }); f.pool.setMetadata('b', { quota_scope: 'shared' }); f.pool.observeHeaders('a', quota(.1, .2));
+    const pending = f.pool.refreshAccount('a'); await tick();
+    if (mutation === 'replace') f.replace('a', 'sk-ant-oat01-new');
+    else if (mutation === 'delete') { f.db.prepare('DELETE FROM accounts WHERE account=?').run('a'); f.pool.forgetAccount('a'); }
+    else if (mutation === 'rename') f.pool.renameAccount('a', 'renamed');
+    else f.pool.setMetadata('a', { quota_scope: 'other' });
+    gate.resolve({ status: 429, rawHeaders: rejection() }); assert.equal((await pending).applied, false, mutation);
+    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM claude_pool_blocks').get().n, 0, mutation);
+  }
 });
 
 test('delayed probes cannot resurrect a replaced/deleted credential or overwrite newer exhaustion', async t => {
@@ -313,6 +365,7 @@ test('native probe makes one tiny inference and captures exact encrypted request
   const probe = createClaudeUsageProbe({ getTrafficStore: () => store, upstream, clock: () => BASE });
   const result = await probe({ account: 'a', token: 'sk-ant-oat01-PROBE_SECRET' });
   assert.equal(hits, 1); assert.equal(received.path, '/v1/messages'); assert.equal(received.body.max_tokens, 1); assert.match(received.headers['user-agent'], /^aigate\//); assert.equal(result.status, 200);
+  assert.equal(result.model, received.body.model);
   const events = []; for await (const event of store.events(result.capture_id)) events.push(event);
   assert.equal(events[0].consumes_allowance, true); assert.equal(events[0].headers.includes('Bearer sk-ant-oat01-PROBE_SECRET'), true);
   assert.deepEqual(Buffer.concat(events.filter(e => e.type === 'response_body').map(e => Buffer.from(e.data, 'base64'))), body);

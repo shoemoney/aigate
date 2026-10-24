@@ -42,11 +42,137 @@ test('unfinished requests are marked interrupted when storage reopens', async ()
   try {
     const store = await createTrafficStore({ db, directory, ...vault });
     const capture = await store.start({ method: 'GET', target: '/' });
+    await capture.chunk('request', Buffer.from('unfinished'));
+    await capture.finish('complete', 200);
+    // Simulate process death before the terminal write, using a closed handle.
+    const row = db.prepare('SELECT file_id FROM proxy_traffic WHERE id=?').get(capture.id);
+    const file = join(directory, row.file_id + '.events');
+    writeFileSync(file, readFileSync(file, 'utf8').trim().split('\n').slice(0, -1).join('\n') + '\n');
+    db.prepare("UPDATE proxy_traffic SET state='running',finished=NULL,status=NULL,request_bytes=0,response_bytes=0 WHERE id=?").run(capture.id);
     const reopened = await createTrafficStore({ db, directory, ...vault });
     assert.equal(reopened.get(capture.id).state, 'interrupted');
-    assert.equal((await reopened.page(capture.id)).events.at(-1).type, 'interrupted');
-    await capture.finish('interrupted');
+    const events = (await reopened.page(capture.id)).events;
+    assert.equal(events.at(-1).type, 'interrupted');
+    assert.equal(events.at(-1).request_bytes, 10);
+    const saved = readFileSync(file, 'utf8');
+    await createTrafficStore({ db, directory, ...vault });
+    assert.equal(readFileSync(file, 'utf8'), saved);
   } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+// Fail the SQL metadata update after the encrypted terminal fsync. This emulates
+// the exact crash gap without adding a production test hook or keeping stale
+// capture handles alive across the simulated restart.
+function failMetadataOnce(db) {
+  let failed = false;
+  return {
+    exec: sql => db.exec(sql),
+    prepare(sql) {
+      const statement = db.prepare(sql);
+      if (!sql.startsWith('UPDATE proxy_traffic SET finished=')) return statement;
+      return { run(...args) {
+        if (!failed) { failed = true; throw new Error('fixture crash after durable terminal'); }
+        return statement.run(...args);
+      } };
+    },
+  };
+}
+
+test('a durable end survives metadata-update failure and repeated recovery without a second terminal', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'aigate-traffic-end-gap-'));
+  const db = new DatabaseSync(':memory:'), vault = makeVault(randomBytes(32));
+  try {
+    const store = await createTrafficStore({ db: failMetadataOnce(db), directory, ...vault });
+    const capture = await store.start({ method: 'POST', target: '/completed' });
+    await capture.chunk('request', Buffer.from('request bytes'));
+    await capture.append('response', { status: 207, headers: [] });
+    await capture.chunk('response', Buffer.from('response bytes'));
+    await assert.rejects(capture.finish('complete', 207), /fixture crash/);
+    assert.equal(store.get(capture.id).state, 'running');
+    const row = db.prepare('SELECT file_id FROM proxy_traffic WHERE id=?').get(capture.id);
+    const file = join(directory, row.file_id + '.events'), before = readFileSync(file, 'utf8');
+    const terminal = JSON.parse(vault.decrypt(before.trim().split('\n').at(-1))).event;
+    assert.equal(terminal.type, 'end');
+    for (let i = 0; i < 3; i++) {
+      const reopened = await createTrafficStore({ db, directory, ...vault });
+      assert.deepEqual(reopened.get(capture.id), {
+        id: capture.id, started: store.get(capture.id).started, finished: terminal.at,
+        client_id: null, provider: null, status: 207, state: 'complete', request_bytes: 13, response_bytes: 14,
+      });
+      const events = (await reopened.page(capture.id)).events;
+      assert.equal(events.filter(event => ['end', 'interrupted'].includes(event.type)).length, 1);
+      assert.equal(readFileSync(file, 'utf8'), before);
+    }
+  } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('recovery interruption is idempotent across its own terminal-fsync to metadata-update crash gap', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'aigate-traffic-interrupted-gap-'));
+  const db = new DatabaseSync(':memory:'), vault = makeVault(randomBytes(32));
+  try {
+    const store = await createTrafficStore({ db, directory, ...vault });
+    const capture = await store.start({ method: 'POST', target: '/unfinished' });
+    await capture.chunk('request', Buffer.from('abc'));
+    await capture.append('response', { status: 202, headers: [] });
+    await capture.chunk('response', Buffer.from('xy'));
+    await capture.finish('complete', 202);
+    const row = db.prepare('SELECT file_id FROM proxy_traffic WHERE id=?').get(capture.id), file = join(directory, row.file_id + '.events');
+    writeFileSync(file, readFileSync(file, 'utf8').trim().split('\n').slice(0, -1).join('\n') + '\n');
+    db.prepare("UPDATE proxy_traffic SET state='running',finished=NULL,status=NULL,request_bytes=0,response_bytes=0 WHERE id=?").run(capture.id);
+    await assert.rejects(createTrafficStore({ db: failMetadataOnce(db), directory, ...vault }), /fixture crash/);
+    assert.equal(store.get(capture.id).state, 'running');
+    const before = readFileSync(file, 'utf8'), terminal = JSON.parse(vault.decrypt(before.trim().split('\n').at(-1))).event;
+    assert.equal(terminal.type, 'interrupted');
+    for (let i = 0; i < 3; i++) {
+      const reopened = await createTrafficStore({ db, directory, ...vault });
+      const row = reopened.get(capture.id);
+      assert.equal(row.state, 'interrupted'); assert.equal(row.finished, terminal.at); assert.equal(row.status, 202);
+      assert.equal(row.request_bytes, 3); assert.equal(row.response_bytes, 2);
+      assert.equal((await reopened.page(capture.id)).events.filter(event => ['end', 'interrupted'].includes(event.type)).length, 1);
+      assert.equal(readFileSync(file, 'utf8'), before);
+    }
+  } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+for (const trailingType of ['late_event', 'end', 'interrupted']) test(`authenticated ${trailingType} after a terminal is rejected on read and recovery`, async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'aigate-traffic-terminal-trail-'));
+  const db = new DatabaseSync(':memory:'), vault = makeVault(randomBytes(32));
+  try {
+    const store = await createTrafficStore({ db, directory, ...vault });
+    const capture = await store.start({ method: 'GET', target: '/terminal-trail' }); await capture.finish('complete', 200);
+    const row = db.prepare('SELECT file_id FROM proxy_traffic WHERE id=?').get(capture.id), file = join(directory, row.file_id + '.events');
+    const before = readFileSync(file, 'utf8');
+    const extra = vault.encrypt(JSON.stringify({ capture_id: row.file_id, sequence: 2,
+      event: { type: trailingType, at: new Date().toISOString(), state: 'interrupted', status: 500, request_bytes: 0, response_bytes: 0 } }));
+    writeFileSync(file, before + extra + '\n');
+    await assert.rejects(store.page(capture.id), /after its terminal/);
+    await assert.rejects(store.page(capture.id, -1, 1), /after its terminal/, 'pagination must not bless a corrupt suffix');
+    db.prepare("UPDATE proxy_traffic SET state='running',finished=NULL WHERE id=?").run(capture.id);
+    const reopened = await createTrafficStore({ db, directory, ...vault });
+    assert.equal(reopened.get(capture.id).state, 'logging_error');
+    assert.equal(readFileSync(file, 'utf8'), before + extra + '\n', 'recovery must not append another terminal to corrupt data');
+    await assert.rejects(reopened.page(capture.id), /after its terminal/);
+  } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('recovery rejects failed authentication, terminal byte-count corruption and an empty truncated capture', async () => {
+  for (const corruption of ['authentication', 'counts', 'empty']) {
+    const directory = mkdtempSync(join(tmpdir(), 'aigate-traffic-corrupt-recovery-'));
+    const db = new DatabaseSync(':memory:'), vault = makeVault(randomBytes(32));
+    try {
+      const store = await createTrafficStore({ db, directory, ...vault });
+      const capture = await store.start({ method: 'GET', target: '/bad-record' }); await capture.chunk('request', Buffer.from('abc')); await capture.finish('complete', 200);
+      const row = db.prepare('SELECT file_id FROM proxy_traffic WHERE id=?').get(capture.id), file = join(directory, row.file_id + '.events');
+      const lines = readFileSync(file, 'utf8').trim().split('\n');
+      if (corruption === 'authentication') lines[1] = 'not an authenticated event';
+      else if (corruption === 'counts') { const end = JSON.parse(vault.decrypt(lines.at(-1))); end.event.request_bytes = 999; lines[lines.length - 1] = vault.encrypt(JSON.stringify(end)); }
+      const corrupt = corruption === 'empty' ? '' : lines.join('\n') + '\n'; writeFileSync(file, corrupt);
+      db.prepare("UPDATE proxy_traffic SET state='running',finished=NULL WHERE id=?").run(capture.id);
+      const reopened = await createTrafficStore({ db, directory, ...vault });
+      assert.equal(reopened.get(capture.id).state, 'logging_error'); assert.equal(readFileSync(file, 'utf8'), corrupt);
+      await assert.rejects(reopened.page(capture.id));
+    } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+  }
 });
 
 test('finish drains admitted writes and prevents events after its terminal record', async () => {

@@ -18,7 +18,8 @@ export function createClaudeUsageProbe({ getTrafficStore, clock = Date.now,
     if (!['http:', 'https:'].includes(destination.protocol) || destination.username || destination.password || destination.search || destination.hash)
       throw Object.assign(new Error('invalid usage probe upstream'), { code: 'INVALID_UPSTREAM' });
     const target = destination.pathname.replace(/\/+$/, '') + '/v1/messages';
-    const body = Buffer.from(JSON.stringify({ model: typeof model === 'function' ? model() : model,
+    const requestedModel = typeof model === 'function' ? model() : model;
+    const body = Buffer.from(JSON.stringify({ model: requestedModel,
       max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }));
     const headers = ['Host', destination.host, 'Authorization', 'Bearer ' + token,
       'Anthropic-Version', '2023-06-01', 'Anthropic-Beta', 'oauth-2025-04-20',
@@ -79,7 +80,7 @@ export function createClaudeUsageProbe({ getTrafficStore, clock = Date.now,
               } catch { /* capture remains exact even when the response is not JSON */ }
             }
             if (!settled) { settled = true; resolve({ status, rawHeaders: response.rawHeaders,
-              observedAt: clock(), errorType, errorCode, capture_id: capture.id, source: 'probe' }); }
+              observedAt: clock(), model: requestedModel, errorType, errorCode, capture_id: capture.id, source: 'probe' }); }
           })().catch(fail);
         });
         if (signal?.aborted) { fail(aborted()); return; }

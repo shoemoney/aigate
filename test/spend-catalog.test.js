@@ -258,6 +258,19 @@ test('trusted relay usage and collector/import replay share identity and preserv
   });
 });
 
+test('trusted relay accepts vault-compatible identities without broadening public attribution rules',()=>{
+  const db=fixture();try {
+    const args={message_id:'msg-valid-vault-name',model:'test-model',ts:'2026-09-02',usage:{input_tokens:1,output_tokens:1}};
+    for(const account of ['', 'space name', 'with/slash', 'tab\tname']) assert.throws(()=>recordProxyUsage(db,{...args,account}),/trusted account/);
+    for(const [i,account] of ['work!','personal#2','José','x'.repeat(200)].entries()) {
+      const message_id=args.message_id+i;
+      assert.equal(recordProxyUsage(db,{...args,message_id,account}).accepted,1);
+      const row=db.prepare('SELECT account,billing FROM usage_events WHERE source_event_id=?').get(message_id);
+      assert.equal(row.account,account);assert.equal(row.billing,'subscription');
+    }
+  }finally{db.close();}
+});
+
 test('usage and pricing imports see committed live-WAL rows, repeat dedupes and source cost is separate',async()=>{
   const tmp=mkdtempSync(join(tmpdir(),'catalog-wal-')),path=join(tmp,'source.db'),source=new DatabaseSync(path);
   source.exec(`PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;

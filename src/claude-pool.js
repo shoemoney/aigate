@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createClaudeUsageProbe } from './claude-usage-probe.js';
+import { parseClaudeQuotaHeaders, classifyClaudeExhaustion } from './claude-quota.js';
+export { parseClaudeQuotaHeaders } from './claude-quota.js';
 
 const WINDOWS = ['five_hour', 'seven_day'];
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -15,28 +17,6 @@ const family = model => /(?:^|[-/])opus(?:[-/]|$)/i.test(model || '') ? 'opus'
   : /(?:^|[-/])sonnet(?:[-/]|$)/i.test(model || '') ? 'sonnet'
     : /(?:^|[-/])haiku(?:[-/]|$)/i.test(model || '') ? 'haiku' : String(model || '').slice(0, 256);
 const abortError = () => Object.assign(new Error('Claude pool request cancelled'), { name: 'AbortError', code: 'ABORT_ERR' });
-
-function headerMap(raw) {
-  const values = new Map();
-  const add = (name, value) => { name = name.toLowerCase(); values.set(name, values.has(name) ? null : value); };
-  if (Array.isArray(raw)) for (let i = 0; i < raw.length; i += 2) add(String(raw[i]), raw[i + 1]);
-  else if (raw?.entries) for (const [name, value] of raw.entries()) add(name, value);
-  else if (raw && typeof raw === 'object') for (const [name, value] of Object.entries(raw)) add(name, Array.isArray(value) ? (value.length === 1 ? value[0] : null) : value);
-  return values;
-}
-
-export function parseClaudeQuotaHeaders(raw) {
-  const headers = headerMap(raw), result = {};
-  for (const [window, short] of [['five_hour', '5h'], ['seven_day', '7d']]) {
-    const value = headers.get(`anthropic-ratelimit-unified-${short}-utilization`);
-    const text = value == null ? '' : String(value).trim();
-    const number = text === '' ? NaN : Number(text);
-    const used = Number.isFinite(number) && number >= 0 ? Math.min(number, 1) * 100 : null;
-    result[window] = { used_pct: used, remaining_pct: used == null ? null : 100 - used,
-      reset_ms: epoch(headers.get(`anthropic-ratelimit-unified-${short}-reset`)), present: value != null };
-  }
-  return result;
-}
 
 // The returned status is admin-safe; acquire alone returns an internal credential.
 // Polling never creates accounts. Each window needs its own real observation.
@@ -230,9 +210,12 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
         if (positive) db.prepare('DELETE FROM claude_pool_blocks WHERE scope_key=? AND model_family=? AND window=?').run(block.scope_key, block.model_family, block.window);
       }
     }
-    return { applied: valid.length > 0 || authFailure, status: httpStatus, alive, account,
+    const exhaustion = options.source === 'probe' ? classifyClaudeExhaustion(httpStatus, rawHeaders, { now: clock(), model: options.model ?? null }) : null;
+    const blocked = exhaustion ? markExhausted(account, { ...exhaustion, fingerprint: current.fingerprint,
+      tokenEnvelope: current.token_enc, generation: current.usage.generation, observedAt: at, model: options.model }) : false;
+    return { applied: valid.length > 0 || authFailure || blocked, status: httpStatus, alive, account, exhaustion: blocked ? exhaustion : null,
       five: parsed.five_hour.used_pct, seven: parsed.seven_day.used_pct,
-      note: valid.length ? null : 'no valid quota headers' };
+      note: valid.length || blocked ? null : 'no valid quota headers' };
   }
   function observeHeaders(account, rawHeaders, options = {}) { return applyObservation(account, rawHeaders, { ...options, source: options.source || 'response' }); }
   function markExhausted(account, options = {}) {

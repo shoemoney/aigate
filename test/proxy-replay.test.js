@@ -59,6 +59,12 @@ test('quota classifier requires authoritative rejection and isolates known model
   assert.equal(classifyClaudeExhaustion(429, raw('rejected', 'five_hour', future)).window, 'five_hour');
   const family = classifyClaudeExhaustion(429, raw('rejected', 'seven_day_opus', future));
   assert.equal(family.window, 'model'); assert.equal(family.modelFamily, 'opus');
+  assert.equal(classifyClaudeExhaustion(429, raw('rejected', 'seven_day_opus', future), { model: 'claude-haiku-4-5' }), null);
+  assert.equal(classifyClaudeExhaustion(429, raw('rejected', 'seven_day_opus', future), { model: null }), null);
+  assert.equal(classifyClaudeExhaustion(429, raw('rejected', 'seven_day_opus', future), { model: 'claude-opus-4-6' }).modelFamily, 'opus');
+  const controlled = Date.UTC(2020, 0, 1), reset = controlled / 1000 + 100;
+  assert.equal(classifyClaudeExhaustion(429, raw('rejected', 'five_hour', reset), { now: controlled }).window, 'five_hour');
+  assert.equal(classifyClaudeExhaustion(429, raw('rejected', 'five_hour', reset), { now: controlled + 100001 }), null);
 });
 
 test('offline key rotation refuses orphaned encrypted replay even when traffic metadata is absent', async () => {

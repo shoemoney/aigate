@@ -173,7 +173,7 @@ flowchart TD
 |---|---|
 | 🧊 A reset in the past counts as *no* window | An idle account keeps its last-known reset after the week rolls over. Treating that stale timestamp as "soonest" would start a fresh week on it while another account's quota expired unused. |
 | 🔁 Retries skip what already failed | `?exclude=a,b` drops accounts the client just saw fail; the ranking is otherwise identical. |
-| ⭐ One answer everywhere | `ai usage`, the dashboard's **Next pick** badge, and `/api/select` all show the same account. `ai usage` asks the server (`dry=1`); the dashboard mirrors the same ordering in the browser. |
+| Distinct selection paths | `ai usage` and `/api/select` use the legacy selector cutoff. Claude dashboard badges follow `/api/proxy/claude-code/status`, which requires fresh positive allowance in both windows and can choose a different account. |
 
 <details>
 <summary><b>📊 Peek at the queue — <code>GET /api/usage</code></b></summary>
