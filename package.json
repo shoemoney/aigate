@@ -1,7 +1,7 @@
 {
   "name": "aigate",
   "version": "0.1.0",
-  "description": "Encrypted credential vault, subscription account selector, and transparent API-key proxy with complete encrypted traffic capture. Subscription requests run through the official client binaries; manually registered API credentials use the proxy.",
+  "description": "Encrypted credential vault, transparent credential proxy, and quota-aware Claude Code subscription pool with complete encrypted traffic capture and model pricing history.",
   "type": "module",
   "bin": { "aigate": "src/server.js" },
   "scripts": {

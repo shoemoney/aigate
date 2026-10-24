@@ -15,14 +15,17 @@ existing `AIGATE_TOKEN` or an authenticated dashboard session.
 The transparent path preserves the HTTP method, original path and query encoding,
 body bytes, model names, application headers, upstream status and error bodies.
 Binary uploads, multipart bodies, compressed content, and SSE responses are
-streamed without JSON parsing, decompression, model aliases, automatic key
-failover, or redirect following. A provider's 401 or 429 is returned to the client
-from that one attempt.
+streamed without decompression, model aliases, or redirect following. Provider
+API-key routes use one attempt and return a provider's 401 or 429 unchanged.
+The explicit [Claude Code subscription pool](#claude-code-subscription-pool)
+observes bounded request metadata and usage without changing body bytes, and may
+retry a confirmed quota admission refusal before any upstream output is exposed.
 
 The necessary exceptions are explicit:
 
 - The client authentication header is replaced with the configured provider key.
-  Anthropic uses `x-api-key`; supported bearer providers use `Authorization: Bearer`.
+  Anthropic API keys use `x-api-key`; the Claude Code subscription pool and
+  supported bearer providers use `Authorization: Bearer`.
 - AIGate's own `aigate_sess` administrator-session cookie is removed from outgoing
   `Cookie` headers. Upstream `Set-Cookie` fields targeting that same gateway-owned
   name are excluded from the downstream response. Other application cookies are
@@ -82,13 +85,99 @@ editing these settings. Removing or replacing one slot revokes that key after
 restart while the other slot remains available.
 
 Both keys grant proxy access to manually registered provider credentials through
-`/proxy/<provider>/...`. They do not grant vault, administration, or traffic-log
+`/proxy/<provider>/...` and manually registered Claude accounts through
+`/proxy/claude-code/...`. They do not grant vault, administration, or traffic-log
 access. Use separate client bindings below when a client must be isolated to one
-specific provider credential.
+specific API credential.
 
 Preset keys are explicit gateway configuration, not provider credentials. AIGate
 does not scan other environment variables, AWS profiles, login files, or instance
 metadata for credentials to import.
+
+## Claude Code subscription pool
+
+Manually add long-lived Claude Code setup tokens through the dashboard's
+**Connect account** form or administrator `POST /api/accounts` with
+`{account, setup_token, label?}`. These are `sk-ant-oat…` tokens from the official
+`claude setup-token` flow. They are stored as Claude **accounts**, never as
+provider API keys. No credential is added by a proxy request or history import.
+
+Configure the native client once, using either preset gateway key:
+
+```bash
+export ANTHROPIC_BASE_URL="$AIGATE_URL/proxy/claude-code"
+export ANTHROPIC_AUTH_TOKEN="<your proxy-only key>"
+export ANTHROPIC_BETAS="oauth-2025-04-20"
+claude
+```
+
+The client appends `/v1/messages`, so this base URL must end in
+`/proxy/claude-code`, without a second `/v1`. `ANTHROPIC_AUTH_TOKEN` is the stable
+gateway credential; provider tokens stay on AIGate. Configure the client's other
+authentication settings consistently so an existing API key or cloud-provider
+mode does not select a different connection. The native client adds the OAuth
+capability to its existing beta list; AIGate forwards that list, the version
+header, system attribution, model and body unchanged. This protocol was checked
+with Claude Code 2.1.306 against a local mock; it does not establish live-token
+acceptance. [Anthropic's gateway guide](https://code.claude.com/docs/en/llm-gateway-protocol)
+describes the fields a gateway must preserve.
+
+Every five minutes by default (`AIGATE_POLL_MS=300000`), AIGate makes a minimal
+Messages request for each enabled, valid subscription scope using
+`claude-haiku-4-5-20251001` and `max_tokens=1`. This is a real inference request
+that consumes allowance. It is labeled `claude_code_usage_probe` in the complete
+encrypted traffic capture. Long-lived setup tokens are inference credentials;
+the poller does not assume access to profile or usage-management APIs. The probe
+model can be configured with `AIGATE_CLAUDE_USAGE_MODEL`.
+
+Selection requires known, fresh observations with **remaining allowance greater
+than zero in both the five-hour and weekly windows**. Zero percent used is full
+remaining allowance; 99.5% used is still eligible when both windows have capacity.
+Unknown or stale windows are ineligible, with a default maximum observation age
+of ten minutes (`AIGATE_CLAUDE_QUOTA_MAX_AGE_MS=600000`). Real response headers also
+update the observations between polls. Among eligible accounts, the soonest
+future weekly reset goes first. Credential expiry is separate from that reset:
+expiry can be supplied manually, and an expired or revoked setup token requires
+manual replacement. The pool does not create or automatically renew setup tokens.
+
+If several tokens share a subscription, give them the same manual `quota_scope`
+in the dashboard. Identical token fingerprints are also treated as shared usage.
+The manual metadata endpoint accepts an optional ISO `credential_expires_at`, or
+`null` to clear it. Account names are URL-encoded in endpoint paths:
+
+```json
+{ "quota_scope": "personal-subscription", "credential_expires_at": null }
+```
+
+On `POST /v1/messages`, a conclusive subscription quota rejection can select
+another eligible account internally. The original model, provider, headers and
+request bytes remain the same. Global session/weekly exhaustion excludes that
+shared subscription; an observed model-family limit applies only to that family.
+A bare 429, 529 overload, generic server error, transport failure, or interrupted
+stream does not justify hidden quota replay. Failover stops once upstream
+application information or output has been exposed to the client. A local
+100 Continue handshake is independent of provider output.
+
+The first upload is forwarded live and copied into an authenticated encrypted
+spool. A retry requires the full body and trailers to be replayable, bounded
+request metadata, a compatible account scope, an available account, and room
+within the attempt/deadline limits. Account-bound file, container, context or
+organization IDs can prevent cross-account replay; ordinary stateless context
+editing directives do not themselves bind an account. If compatible replay cannot
+be established, the upstream refusal is returned unchanged. Requests are never spliced across two
+streams or replayed after partial output.
+
+`AIGATE_CLAUDE_MAX_ATTEMPTS` defaults to 8, capped at 32. Replay files live in
+`proxy-replay/` beside `AIGATE_DB`, with private directory/file permissions and
+authenticated encryption. Per-request capacity defaults to 64 MiB
+(`AIGATE_CLAUDE_REPLAY_MAX_BYTES`, capped at 1 GiB); active spools also share a
+256 MiB cap. Capture or spool failure stops forwarding. Spools are removed after
+use, and interrupted spools are discarded at startup rather than replayed.
+
+The operator can set `AIGATE_TRANSPARENT_UPSTREAM_CLAUDE_CODE` to a trusted
+Anthropic-compatible origin/path prefix; it controls both this relay and its
+usage probes. The default is `https://api.anthropic.com`. The API-key-only
+`/proxy/anthropic` route retains its separate credential source and behavior.
 
 ## Manually add a provider credential
 
@@ -282,8 +371,9 @@ database, and encryption key together when backing up or restoring this feature.
 
 The offline `scripts/rotate-key.js` helper re-encrypts structured credentials, but
 refuses rotation if traffic metadata or any encrypted `.events` file exists. It
-also refuses if it cannot inspect the event directory. Rotating complete capture
-files is not implemented; do not delete traffic records or event files merely to
+also refuses while encrypted replay spools exist, or if it cannot inspect those
+directories. Rotating complete capture files is not implemented; do not delete
+traffic records, event files or replay files merely to
 bypass this refusal. Keep the current encryption key with those records until a
 capture-aware rotation procedure is available.
 
@@ -322,6 +412,16 @@ bytes separate from `response_body`, which contains the gateway's client-facing
 501 rejection in that case. Event segmentation reflects capture reads, not the
 provider's original network packet boundaries.
 
+Claude pool captures additionally record `attempt_start`, `attempt_request_body`,
+`attempt_response`, `attempt_response_body`, `attempt_response_end`,
+`attempt_decision`, `attempt_outcome` and measured `usage` events. Attempt IDs
+associate the selected account/scope, quota snapshot, effective forwarded
+headers, upstream bytes and retry decision. A failed attempt's response body is
+kept under `attempt_response_body`; only bytes actually returned to the client
+appear under `response_body`. The outer exchange has one terminal outcome even
+when several accounts were attempted. Captured probe records carry
+`activity: "claude_code_usage_probe"` and `consumes_allowance: true`.
+
 Preset-key exchanges have `client_id: null` in metadata because they are not
 database client bindings; their provider and the original request are still
 captured.
@@ -337,7 +437,17 @@ captured.
 | `GET` | `/api/proxy/traffic?limit=&before=` | Paginated exchange metadata |
 | `GET` | `/api/proxy/traffic/:id?after=&limit=` | Exchange metadata and an event page |
 | `GET` | `/api/proxy/traffic/:id/events` | Stream all decrypted events as NDJSON |
+| `GET` | `/api/proxy/claude-code/status?model=` | Safe pool status, quota freshness, exclusion reasons, cooldowns and next eligible account |
+| `POST` | `/api/proxy/claude-code/refresh` | Run the same captured quota probes used by automatic polling and return current status |
+| `POST` | `/api/proxy/claude-code/accounts/:name/metadata` | Set manual `quota_scope` and/or `credential_expires_at`; returns no token |
 
-`AIGATE_TRANSPARENT_TIMEOUT_MS` controls upstream inactivity timeout. It defaults
-to 300000 milliseconds and has a minimum of 1000 milliseconds. This setting
-applies to the transparent relay; it does not configure the legacy proxy.
+These administration routes require the administrator bearer or dashboard
+session. Preset proxy keys cannot call them. The dashboard's Accounts section
+shows the authoritative Claude pool state and supports usage refresh and manual
+quota metadata; the Pricing section reads the separate spend catalog APIs.
+
+`AIGATE_TRANSPARENT_TIMEOUT_MS` defaults to 300000 milliseconds. API-key relay
+requests use it as an upstream inactivity timeout, with a minimum of 1000
+milliseconds. The Claude pool uses it as the overall request deadline across
+attempts, capped at one hour. It does not configure the legacy model-routing
+proxy.

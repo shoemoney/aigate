@@ -18,9 +18,11 @@ Node.js 24+ · SQLite · One runtime dependency · MIT
 
 **One vault. A clear view of what is using it.** AIGate stores your credentials, picks Claude **and Codex (ChatGPT)** accounts use-it-or-lose-it style (the soonest weekly reset among accounts with headroom goes first), proxies requests for supported API-key providers, and brings usage and activity into one live workspace.
 
-Claude and Codex subscription requests run through the official `claude` and `codex` binaries directly; AIGate only picks the account and hands over its credential. API-key proxy requests use manually registered provider credentials. These are separate paths; see [credential boundaries](#credential-boundaries).
+The official `claude` client can use the explicit `/proxy/claude-code` subscription pool with a stable gateway token. AIGate checks usage every five minutes, selects the eligible account whose weekly allowance resets soonest, and can fail over after a confirmed quota rejection. The original Claude and Codex account-selection paths remain available. See [credential boundaries](#credential-boundaries).
 
 **Transparent proxy:** configure one or two proxy-only keys in `.env`, manually add provider credentials, then use a base URL such as `$AIGATE_URL/proxy/openai/v1`. AIGate substitutes the provider credential while retaining application headers and body bytes, with explicit authentication and HTTP transport exceptions. Complete traffic records are encrypted at rest and available to administrators. See the [transparent proxy guide](docs/TRANSPARENT-PROXY.md) for setup, isolated client bindings, full logging, and multi-field credential storage.
+
+For Claude Code, use `ANTHROPIC_BASE_URL=$AIGATE_URL/proxy/claude-code`, `ANTHROPIC_AUTH_TOKEN=<proxy-only key>`, and `ANTHROPIC_BETAS=oauth-2025-04-20`. The native client appends `/v1/messages`; do not append `/v1` to this base URL. Both five-hour and weekly remaining allowance must be greater than zero. Full setup and retry limits are in the [Claude Code pool guide](docs/TRANSPARENT-PROXY.md#claude-code-subscription-pool).
 
 | Vault | Observe | Operate |
 |---|---|---|
@@ -109,7 +111,8 @@ The folder also includes an [interactive gallery](docs/screenshots/live-2026-09-
 |---|---|
 | **Encrypted vault** | AES-256-GCM storage for Claude account tokens and provider API keys. List endpoints return metadata; authenticated selection and key-fetch routes return the requested credential and record access. |
 | **Account selection** | Use it or lose it: of the accounts under the cutoff, the one whose **weekly window resets soonest** is picked first, so quota that is about to expire is spent before quota that carries over. Accounts with nothing spent this week (no weekly reset yet) come after; ties go to the lowest worst-window usage. Skips disabled, parked, and over-cutoff accounts, and recovers eligibility as limits reset. The default cutoff is 95%. |
-| **Usage polling** | Reads real five-hour and seven-day rate-limit utilization every ten minutes. Unchecked usage is shown as unknown rather than a fabricated zero. |
+| **Usage polling** | Checks real five-hour and seven-day rate-limit utilization every five minutes by default. Claude setup-token checks use captured minimal inference requests and consume allowance. Unchecked or stale pool usage stays ineligible. |
+| **Claude Code pool** | `/proxy/claude-code` selects manually added subscription tokens with fresh positive remaining allowance in both windows, soonest weekly reset first. Confirmed quota refusals can fail over internally while the client's gateway token and model stay unchanged. |
 | **Codex (ChatGPT) accounts** | Accounts carry a `kind` (`claude` or `codex`); the two pools never mix in selection. A Codex row stores the whole `auth.json` encrypted, polls `wham/usage` for real 5h and weekly utilization, and refreshes its own OAuth tokens late and server-side. See [Codex accounts](#codex-chatgpt-accounts). |
 | **Provider registry** | A 67-provider catalog, add-key controls, bulk import, normalized key intake, liveness probes where supported, and masked key hints. |
 | **API-key proxy** | Anthropic Messages, OpenAI Chat Completions, and Responses endpoints with provider routing, server-side key injection, streaming, and audited key failover. |
@@ -117,7 +120,7 @@ The folder also includes an [interactive gallery](docs/screenshots/live-2026-09-
 | **Live interface** | WebSocket updates, interactive usage charts, account and key management, a filtered activity feed, responsive navigation, and the shared token background. |
 | **Task board** | Atomic task claims, worker heartbeats, drag reordering, results, follow-ups, and retries. Its API is internal and may change. |
 | **Spend ledger** | Per-host collectors turn Claude Code and Codex usage into content-free events, priced at list price from a dated table. The dashboard **Spend** section shows API-equivalent value, API-key spend and unattributed value as three separate dollar figures, never summed. See [Spend](#spend). |
-| **Audit and recovery** | Credential access and mutations are logged; prompts are scrubbed before storage. DB-backed health checks, a watchdog, a boot encryption canary, and daily snapshots support operations. |
+| **Audit and recovery** | Credential access and mutations are logged; legacy prompt hooks scrub their summaries. Transparent exchanges retain complete encrypted application traffic, including bodies and credentials. DB-backed health checks, a watchdog, a boot encryption canary, and daily snapshots support operations. |
 | **Verification** | **200 automated tests passed** for the September 15 release, including HTTP and client behavior checks. Desktop/mobile rendering and WebGPU were also checked in a browser. See [testing](docs/TESTING.md) and [UI implementation notes](docs/UI-REDESIGN.md). |
 | **Small runtime** | Node.js 24+, built-in `node:sqlite`, and `ws` as the single runtime dependency. No frontend build step. |
 
@@ -128,6 +131,9 @@ flowchart LR
   Client["Your machines"] -->|"select account"| Vault["AIGate<br/>Encrypted vault + usage poller"]
   Vault -->|"selected credential"| Claude["Official claude binary"]
   Claude -->|"direct request"| Anthropic["Anthropic"]
+  Claude -->|"stable proxy key, optional"| Pool["AIGate Claude Code pool"]
+  Vault --- Pool
+  Pool -->|"selected setup token"| Anthropic
   Vault -->|"auth.json"| Codex["Official codex binary"]
   Codex -->|"direct request"| OpenAI["ChatGPT / OpenAI"]
   Client -->|"API-key request"| Proxy["AIGate API-key proxy"]
@@ -139,7 +145,7 @@ flowchart LR
   style UI fill:#071825,color:#e9fff9,stroke:#67efd6
 ```
 
-The daemon polls usage and records activity independently of Claude's request stream. The client requests an eligible account, then launches the official `claude` binary with that credential (or, for Codex, writes the picked account's `auth.json` and launches the official `codex` binary). Prompt hooks re-check headroom and record activity; a genuine account-limit response can park the account temporarily and continue on the next eligible account.
+The original launcher path requests an eligible account, then launches the official `claude` binary with that credential (or, for Codex, writes the picked account's `auth.json` and launches the official `codex` binary). Prompt hooks re-check headroom and record activity. Alternatively, the Claude client can connect to the explicit subscription pool using a stable proxy key; AIGate then owns account selection, usage observation, bounded quota failover and full encrypted attempt capture.
 
 For API-key requests, AIGate is in the request path: it selects a working provider key, injects it server-side, and streams the upstream response. The supported routes and model mappings are documented in the [API reference](#api-reference).
 
@@ -189,9 +195,9 @@ work       ok         7d 52%    resets in 9h 42m
 
 ### Credential boundaries
 
-Claude OAuth setup tokens belong in **accounts**. Provider API keys belong in **provider_keys** or the transparent proxy's encrypted **proxy_credentials** bundles. Proxy handlers never select subscription credentials from `accounts`, and reject Claude setup tokens at intake and retrieval. The selector returns credentials to authenticated callers, so clients using selection or explicit key retrieval do receive those credentials.
+Claude OAuth setup tokens belong in **accounts**. The explicit `/proxy/claude-code` route selects manually added Claude accounts and substitutes their token server-side. Provider API-key routes use **provider_keys** or the encrypted **proxy_credentials** bundles and continue to reject Claude setup tokens at intake and retrieval. The original selector returns credentials to authenticated callers, so clients using selection or explicit key retrieval do receive those credentials.
 
-Transparent proxy clients use either optional `.env` keys `AIGATE_PROXY_TOKEN` / `AIGATE_PROXY_TOKEN_2` with `/proxy/<provider>/...`, or a manually registered key hashed in **proxy_clients** and bound to a specific credential. None grants administrative access. Preset keys use the newest manually registered API-key credential for the selected provider; explicit bindings isolate a particular credential. The older model-routing proxy retains the AIGate administrator bearer for compatibility; its behavior differs from the [transparent relay](docs/TRANSPARENT-PROXY.md). Provider credentials and client bindings are created only through explicit authenticated administrative actions, never learned from proxy traffic.
+Transparent proxy clients use either optional `.env` keys `AIGATE_PROXY_TOKEN` / `AIGATE_PROXY_TOKEN_2` with `/proxy/<provider>/...`, or a manually registered key hashed in **proxy_clients** and bound to a specific API credential. None grants administrative access. Preset API-key routes use the newest manually registered credential for their provider; `/proxy/claude-code` uses the quota-aware account pool. Explicit bindings isolate one API credential. The older model-routing proxy retains the AIGate administrator bearer for compatibility; its behavior differs from the [transparent relay](docs/TRANSPARENT-PROXY.md). Credentials and client bindings require explicit authenticated administrative actions and are never learned from proxy traffic.
 
 For the project's policy analysis and source references, read [COMPLIANCE.md](COMPLIANCE.md). The software's routing architecture does not guarantee an account's policy status.
 
@@ -481,6 +487,7 @@ Tokens are four separate buckets (input, output, cache read, cache write) with n
 
 - **Collector.** `clients/aigate-spend.js` tails Claude Code transcripts (`~/.claude/projects`) and Codex rollouts (`~/.codex`) with a per-file byte-offset cursor (`~/.claude/aigate/spend-cursor.json`) and posts batches of events. The first run reads the last 7 days; `--backfill` reads everything still on disk. `--help` lists every flag and `AIGATE_SPEND_*` env var.
 - **Dedupe.** The server keeps `UNIQUE(source, source_event_id)`. Ids are the Claude `message.id` and `<rollout-uuid>:tc:<n>` for Codex token counts, so re-posting or overlapping backfills are safe.
+- **Proxy usage.** Completed Claude pool responses contribute measured usage to the same ledger, using the same `claude_code` message ID as the transcript collector. The selected account supplies trusted subscription attribution. Incomplete or unsupported usage observations remain unknown; capture still retains the raw exchange.
 - **Install.** `clients/install.sh` installs the collector and schedules it every 15 minutes: launchd agent `ai.shoemoney.aigate-spend` on macOS, systemd user timer `aigate-spend.timer` on Linux, with a crontab line if there is no systemd. It needs Node 24 or newer and says so when none is found. Rolled out with `clients/fleet-push.sh` to the laptop and the four Macs (hueb, reek, wick, amber), each reporting under its own host in `GET /api/spend/collectors`; the Pi swarm has no transcripts and no Node 24, so it runs none.
 - **Attribution.** The prompt hook records which account a Claude session belongs to, and `aigate-codex.sh` leases a `CODEX_HOME` to an account. Events with no mapping stay `unknown`; a mapping that arrives later re-resolves earlier events.
 - **Old history.** Claude Code deletes transcripts after `cleanupPeriodDays` (14 on this setup) and Codex rollouts age out too, so older history was imported once from otari's database with `node scripts/spend-import-otari.js` (`--dry-run`, `--before`, `--since`, `--source`). It reuses the same event ids, so overlap with the collector dedupes.
@@ -492,10 +499,24 @@ Tokens are four separate buckets (input, output, cache read, cache write) with n
 Rates live in `src/spend-prices.json` (dated, sourced) and are seeded into the `spend_prices` table on first boot. Each event is priced once at ingest, in integer micro-dollars, rounded half-up once per event, using the newest row whose `effective_from` is not after the event time. Exact model names beat prefix matches; an unknown model is left unpriced and listed under `unpriced_models`, never guessed.
 
 - Cache conventions differ per provider: Anthropic counts cache tokens beside input, OpenAI counts them inside input. A meter with no rate bills as fresh input, never as a discount.
-- Long-context tiers exist only on the `gpt-6` / `gpt-5.6` families (the tier flips above 272,000 input tokens).
+- Effective-dated rates can include long-context and cache tiers. Imported catalog tiers retain each meter's rate across later thresholds.
 - **Kimi** (coding-plan subscription, provider `moonshot`) is deliberately unpriced.
 - `stealth/space-bunny-alpha` has no published rate; it is an operator-set price at 1/5 of `claude-opus-5-5`.
 - Add or correct a rate with `PUT /api/spend/prices` (a newer `effective_from`), then `POST /api/spend/reprice` to fill events that were unpriced.
+
+The **Pricing** dashboard adds searchable catalog models, current input/output rates, effective-date charts, cache tiers, source snapshots and original model keys. Missing rates and unsupported units stay unpriced. Baseline rows are labeled `seed`; manual and imported rows retain their own provenance. Existing seed dates remain in effect, so an early event priced from a seed is not evidence of an Otari historical rate.
+
+Import Otari pricing before its usage history. Both scripts open the source database read-only and include committed WAL rows; neither imports credentials or request content. With the administrator environment sourced:
+
+```bash
+node scripts/spend-import-otari-prices.js --db /path/to/otari.db --dry-run
+node scripts/spend-import-otari-prices.js --db /path/to/otari.db --preview
+node scripts/spend-import-otari-prices.js --db /path/to/otari.db
+node scripts/spend-import-otari.js --db /path/to/otari.db --dry-run
+node scripts/spend-import-otari.js --db /path/to/otari.db
+```
+
+Pricing `--dry-run` normalizes locally without HTTP writes; `--preview` asks the server to report conflicts without accepting rows. Omitting both accepts the import. Repeat imports dedupe, and conflicting rates are reported rather than overwriting manual prices. Catalog snapshots begin at their recorded acceptance time; explicit historical versions keep their original effective dates. No current rate is backdated to fill a gap. Existing settled event costs are retained. Otari's reported source cost and pricing reference are stored separately from AIGate's computed value; subscription API-equivalent value is never reported as actual cash paid.
 
 ### Reconciliation
 
@@ -516,6 +537,9 @@ All `/api/spend*` routes require the bearer token.
 | `GET` / `POST` | `/api/spend/sessions` | list session-to-account mappings (`?limit=`, default 100, max 1000) / upsert them; late mappings re-resolve earlier events |
 | `GET` | `/api/spend/collectors` | per host and source: last post, counts, `collector_version`, `age_s` |
 | `GET` / `PUT` | `/api/spend/prices` | list the price table / add a dated row (`409` if that provider, model and `effective_from` already exist) |
+| `GET` | `/api/spend/catalog?provider=&q=&as_of=&limit=&cursor=` | searchable model metadata and rates as of an ISO timestamp; returns `items`, `total` and `next_cursor` |
+| `GET` | `/api/spend/catalog/history?provider=&model=` | effective-dated versions and snapshot provenance for a model |
+| `POST` | `/api/spend/catalog/import` | accept normalized Otari metadata and dated prices, or report a `dry_run`; preserves conflicting rates |
 | `POST` | `/api/spend/reprice` | re-price stored events; body `{only_unpriced?, from?, to?, provider?, model?}`, `only_unpriced` defaults to true |
 
 ### Dashboard
@@ -593,13 +617,17 @@ Same posture on the OpenAI wire: point the client at `http://<aigate>/v1` with t
 | `AIGATE_TOKEN` | — *(required)* | administrator bearer; transparent relay clients use preset or separately registered proxy-only keys |
 | `AIGATE_PROXY_TOKEN` / `AIGATE_PROXY_TOKEN_2` | *(empty = disabled)* | optional independent proxy-only keys for `/proxy/<provider>/...`; never grant administration or traffic-log access |
 | `AIGATE_TRANSPARENT_UPSTREAM_<PROVIDER>` | provider catalog | optional trusted upstream origin/path prefix for a preset provider route |
-| `AIGATE_TRANSPARENT_TIMEOUT_MS` | `300000` | transparent relay upstream inactivity timeout in milliseconds; minimum `1000` |
+| `AIGATE_TRANSPARENT_TIMEOUT_MS` | `300000` | API-key relay inactivity timeout (minimum `1000` ms); Claude pool overall request deadline across attempts (maximum one hour) |
 | `AIGATE_DASHBOARD_PASSWORD` | *(empty = disabled)* | master password for browser access; empty leaves bearer authentication only |
 | `AIGATE_ENCRYPTION_KEY` | — *(required)* | 32-byte hex (AES-256-GCM). `openssl rand -hex 32` |
 | `PORT` / `HOST` | `20200` / `0.0.0.0` | bind |
 | `AIGATE_DB` | `./data/aigate.db` | SQLite path |
-| `AIGATE_HEADROOM_CUTOFF` | `95` | skip accounts whose worst-window % ≥ this |
-| `AIGATE_POLL_MS` | `600000` | usage-poll interval (ms); `0` disables the poller |
+| `AIGATE_HEADROOM_CUTOFF` | `95` | legacy selector cutoff; the Claude proxy pool instead requires positive remaining allowance in both windows |
+| `AIGATE_POLL_MS` | `300000` | usage-poll interval (ms); `0` disables automatic polling. Claude checks use a captured minimal inference request and consume allowance |
+| `AIGATE_CLAUDE_QUOTA_MAX_AGE_MS` | `600000` | maximum age of each Claude pool usage observation; unknown or stale windows are ineligible |
+| `AIGATE_CLAUDE_USAGE_MODEL` | `claude-haiku-4-5-20251001` | minimal Claude usage-probe model (`max_tokens=1`) |
+| `AIGATE_CLAUDE_MAX_ATTEMPTS` | `8` | Claude pool attempts per request, capped at 32; only confirmed quota admission refusals permit failover |
+| `AIGATE_CLAUDE_REPLAY_MAX_BYTES` | `67108864` | per-request encrypted Claude replay capacity, capped at 1 GiB; active spools also share a 256 MiB cap |
 | `AIGATE_WATCHDOG_MS` | `30000` | self-heal watchdog — pings the DB; exits→restart if wedged. `0` disables |
 | `AIGATE_ALLOW_CIDR` | *(empty = all)* | network gate — CIDRs + single IPs. Loopback always OK. |
 | `AIGATE_TRUST_PROXY` | `0` | trust `X-Forwarded-For` for client IP — set `1` **only** behind a proxy you control (else the gate/audit see the proxy IP) |
@@ -703,7 +731,7 @@ node --watch src/server.js    # development reload
 npm test                      # automated suite
 ```
 
-Read [VISION.md](VISION.md) before proposing changes, preserve the separation between Claude account selection and API-key proxying, and include verification relevant to the change. [docs/TESTING.md](docs/TESTING.md) covers the test workflows.
+Read [VISION.md](VISION.md) before proposing changes, preserve the separate credential sources for the Claude account pool and provider API-key routes, and include verification relevant to the change. [docs/TESTING.md](docs/TESTING.md) covers the test workflows.
 
 ## Thanks, Theo
 
