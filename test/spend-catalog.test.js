@@ -61,6 +61,23 @@ test('manual rates win refreshes and same-date conflicts are reported without ov
   }finally{db.close();}
 });
 
+test('date-only manual rate conflicts with the same imported midnight instant and keeps settled usage',()=>{
+  const db=fixture();try {
+    db.prepare(`INSERT INTO spend_prices(provider,model,effective_from,input_micros,output_micros) VALUES(?,?,?,?,?)`)
+      .run('anthropic','test-model','2026-09-01',2000000,10000000);
+    recordProxyUsage(db,{message_id:'msg-date-conflict',model:'test-model',account:'acct',ts:'2026-09-02',usage:{input_tokens:1000000,output_tokens:0}});
+    const settled=db.prepare('SELECT cost_micros,price_id FROM usage_events').get();
+    const out=importCatalog(db,clone());
+    assert.equal(out.inserted,0);assert.equal(out.conflicts,1);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM spend_prices').get().n,1);
+    const manual=db.prepare('SELECT effective_from,input_micros,catalog_source FROM spend_prices').get();
+    assert.equal(manual.effective_from,'2026-09-01');assert.equal(manual.input_micros,2000000);assert.equal(manual.catalog_source,'manual');
+    assert.deepEqual(db.prepare('SELECT cost_micros,price_id FROM usage_events').get(),settled);
+    assert.equal(readCatalog(db).items[0].input_usd,2);
+    assert.equal(importCatalog(db,clone()).conflicts,1);
+  }finally{db.close();}
+});
+
 test('unsupported/non-token modalities remain null; token cache and threshold variants survive snapshot normalization',()=>{
   const p=normalizeSnapshot({source:'genai-prices',updated_at:'2026-10-01 00:00:00',snapshot:JSON.stringify([{id:'anthropic',name:'Anthropic',models:[
     {id:'tiered',prices:[{prices:{input_mtok:{base:3,tiers:[{start:200000,price:6}]},output_mtok:15,cache_write_1h_mtok:6}},{constraint:{start_date:'2027-01-01'},prices:{input_mtok:99,output_mtok:99}}]},

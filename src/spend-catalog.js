@@ -82,7 +82,11 @@ export function importCatalog(db, body) {
   check(!existing || (existing.source === body.source && existing.source_as_of === asof), 'snapshot hash metadata conflict');
   const out = { dry_run:!!body.dry_run, snapshot_hash:hash, models:0, inserted:0, duplicate:0, conflicts:0,
     unsupported:models.filter(m=>m.unsupported).length, conflict_details:[] };
-  const lookup = db.prepare('SELECT * FROM spend_prices WHERE provider=? AND model=? AND effective_from=?');
+  // Manual API prices may retain YYYY-MM-DD. Compare instants so a midnight
+  // ISO import cannot bypass that row's conflict protection with different text.
+  const lookup = db.prepare(`SELECT * FROM spend_prices WHERE provider=? AND model=?
+    AND julianday(effective_from)=julianday(?)
+    ORDER BY CASE WHEN catalog_source='manual' THEN 0 ELSE 1 END,id LIMIT 1`);
   const fields = [...RATE_FIELDS.map(f=>f+'_micros'), 'tiers_json'];
   db.exec('SAVEPOINT catalog_import');
   try {
