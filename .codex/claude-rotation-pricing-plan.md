@@ -3,6 +3,12 @@
 Base: `2266c754f11eaf969aff726cc5ed6178100b7674`.
 Branch/worktree: `transproxy`, `/Users/shoemoney/Projects/aigate-transparent-proxy`.
 Actual CI: Node 24, `npm ci`, `npm test`.
+Full-branch final review base: `967ff056ee632c986673711c619f573709bf8620`.
+
+Implementation and test-fixture todos below are delivered. Final runtime and
+independent-review acceptance is recorded outside commits in the shared Git
+directory, `studio/validation/2026-10-23-claude-rotation/` and
+`studio/reviews/<final-HEAD>.json`. This file does not substitute for that gate.
 
 ## Confirmed goal and scope
 
@@ -26,24 +32,24 @@ Required OAuth capability headers come from explicit client configuration.
 
 Milestone: the API reports a truthful ranked pool and explains exclusions.
 
-- [ ] Add `src/claude-pool.js` and focused tests using existing encrypted accounts.
-- [ ] Keep usage/reset observation provenance, freshness, credential expiry,
+- [x] Add `src/claude-pool.js` and focused tests using existing encrypted accounts.
+- [x] Keep usage/reset observation provenance, freshness, credential expiry,
   manually assigned shared-subscription scope and model-family cooldowns separate.
-- [ ] Reuse the existing minimal Messages probe; inference-only setup tokens cannot
+- [x] Reuse the existing minimal Messages probe; inference-only setup tokens cannot
   be assumed to access profile/usage-management endpoints. Probe traffic consumes
   allowance and must be explicitly identified in verbose logs.
-- [ ] Single-flight polling every 300000ms; bounded concurrency/timeouts, no overlap.
-- [ ] Reject stale observations from a replaced/deleted credential or an older
+- [x] Single-flight polling every 300000ms; bounded concurrency/timeouts, no overlap.
+- [x] Reject stale observations from a replaced/deleted credential or an older
   poll begun before newer request-observed exhaustion.
-- [ ] Require fresh, known positive remaining allowance in both windows; never
+- [x] Require fresh, known positive remaining allowance in both windows; never
   convert unknown values into zero usage/full capacity. Preserve fractional values.
-- [ ] Rank soonest future weekly reset first; unknown/past reset sorts after active
+- [x] Rank soonest future weekly reset first; unknown/past reset sorts after active
   windows; tie-break with headroom, concurrency/last use and deterministic identity.
-- [ ] Treat tokens belonging to one subscription as shared allowance; support
+- [x] Treat tokens belonging to one subscription as shared allowance; support
   explicit manual scope metadata and deduplicate identical credential fingerprints.
-- [ ] Expose admin-only `/api/proxy/claude-code/status` and `/refresh` APIs and
+- [x] Expose admin-only `/api/proxy/claude-code/status` and `/refresh` APIs and
   metadata editing without returning any token.
-- [ ] Make the legacy poll/manual-refresh paths use the same underlying observation
+- [x] Make the legacy poll/manual-refresh paths use the same underlying observation
   service, avoiding duplicate probes and preserving Codex behavior.
 
 ## Phase 2: transparent account-pool attempts
@@ -51,78 +57,79 @@ Milestone: the API reports a truthful ranked pool and explains exclusions.
 Milestone: an exhausted account fails over to an eligible account with one client
 response and unchanged client configuration, model, application headers and body.
 
-- [ ] Add private authenticated encrypted replay/spool support with bounded memory.
-- [ ] Preserve the live first upload; only retry after body and trailers are fully
+- [x] Add private authenticated encrypted replay/spool support with bounded memory.
+- [x] Preserve the live first upload; only retry after body and trailers are fully
   replayable. Do not replace every upload with mandatory upfront buffering.
-- [ ] Refactor one outer request into bounded per-account attempts with leases,
+- [x] Refactor one outer request into bounded per-account attempts with leases,
   attempted-account tracking, deadline and cancellation propagation.
-- [ ] Classify only authoritative Claude session/weekly/model-family exhaustion;
+- [x] Classify only authoritative Claude session/weekly/model-family exhaustion;
   bare 429 without quota evidence is temporary throttling, 529 is global overload.
-- [ ] Distinguish revoked credentials, entitlement/validation errors, permissions,
+- [x] Distinguish revoked credentials, entitlement/validation errors, permissions,
   and ambiguous transport/5xx failures; do not silently replay billable requests.
-- [ ] Never retry after upstream application headers or output have been sent to
+- [x] Never retry after upstream application headers or output have been sent to
   the client. Local 100 Continue is a separate transport handshake. No hidden
   restart after partial SSE or response splicing.
-- [ ] Keep explicit request scopes/resource references compatible across candidates.
-- [ ] Preserve existing pinned API-key aliases and API-key OAuth intake rejection.
-- [ ] Log each selection, quota snapshot, effective upstream headers, response
+- [x] Keep explicit request scopes/resource references compatible across candidates.
+- [x] Preserve existing pinned API-key aliases and API-key OAuth intake rejection.
+- [x] Log each selection, quota snapshot, effective upstream headers, response
   headers/body, decision, cooldown and attempt outcome separately from the final
   downstream response, with one outer terminal record.
-- [ ] Logging/spool failure stops forwarding; interrupted spools never auto-replay
+- [x] Logging/spool failure stops forwarding; interrupted spools never auto-replay
   after restart. Extend offline key-rotation guards for the new encrypted storage.
 
 ## Phase 3: Otari model rates and historical usage
 
 Milestone: imported rates/history reconcile without credentials or duplicate events.
 
-- [ ] Extend the existing spend ledger, effective-dated micro-dollar arithmetic,
+- [x] Extend the existing spend ledger, effective-dated micro-dollar arithmetic,
   cache/tier prices and source-ID dedupe; do not create another spend ledger.
-- [ ] Add a catalog/provenance module and read-only Otari pricing import script.
-- [ ] Import accepted Otari catalog snapshots and explicit effective-dated model
+- [x] Add a catalog/provenance module and read-only Otari pricing import script.
+- [x] Import accepted Otari catalog snapshots and explicit effective-dated model
   prices before usage; normalize provider-instance/model names deliberately.
-- [ ] Keep source snapshot/hash/original key/unit/effective date. Unsupported units
+- [x] Keep source snapshot/hash/original key/unit/effective date. Unsupported units
   and missing rates stay visible and unpriced, never silently zero.
-- [ ] Preserve manual prices and report conflicts rather than overwrite settled data.
-- [ ] Make usage imports WAL-aware through a normal read-only transaction; never
+- [x] Preserve manual prices and report conflicts rather than overwrite settled data.
+- [x] Make usage imports WAL-aware through a normal read-only transaction; never
   import credential, prompt or request-content tables/fields.
-- [ ] Preserve any source cost/provenance separately from recomputed API-equivalent
+- [x] Preserve any source cost/provenance separately from recomputed API-equivalent
   value; never silently convert subscription value into actual cash spend.
-- [ ] Reconcile date/source/model/token counts, duplicates/rejects and unpriced rows.
+- [x] Reconcile date/source/model/token counts, duplicates/rejects and unpriced rows.
   Repeat imports must be idempotent and failed HTTP batches must exit nonzero.
-- [ ] Build a private local preview DB with the authorized historical data, retaining
+- [x] Build a private local preview DB with the authorized historical data, retaining
   production's encryption settings/data and its stopped state.
 
 ## Phase 4: dashboard and rendered evidence
 
 Milestone: real quota state and dated model prices are readable and interactive.
 
-- [ ] Extend the existing dashboard with Claude rotation status, next pick,
+- [x] Extend the existing dashboard with Claude rotation status, next pick,
   remaining/reset/freshness information and manual refresh controls.
-- [ ] Add ECharts model-price history/current-rate views, searchable models,
+- [x] Add ECharts model-price history/current-rate views, searchable models,
   provenance/as-of details, unpriced visibility and historical usage drilldowns.
-- [ ] Preserve actual API spend, subscription API-equivalent value and unattributed
+- [x] Preserve actual API spend, subscription API-equivalent value and unattributed
   value as distinct quantities. Charts precede optional detailed tables.
-- [ ] Keep contextual Font Awesome assets, at least 18px all readable text/chart
+- [x] Keep contextual Font Awesome assets, at least 18px all readable text/chart
   labels, normally 20px body/controls. Correct undersized touched chart styles.
-- [ ] Render desktop/mobile with imported historical data; inspect computed font
+- [x] Render desktop/mobile with imported historical data; inspect computed font
   sizes, wrapping, interactions, empty/error states and secret-free UI responses.
 
 ## Phase 5: integration and final reviews
 
-- [ ] Controlled-clock quota tests: cadence, overlap, expiry, stale/missing windows,
+- [x] Controlled-clock quota tests: cadence, overlap, expiry, stale/missing windows,
   zero remaining, fractional headroom, shared scopes and model limits.
-- [ ] Real local HTTP/SSE tests: A-exhausted to B-success, exact replay/headers,
+- [x] Real local HTTP/SSE tests: A-exhausted to B-success, exact replay/headers,
   withheld failures, incomplete uploads, cancellation, overload/no retry,
   partial-stream/no retry and complete separate attempt capture.
-- [ ] Preserve cookie, raw reset, 101, trailer, encryption and legacy regressions.
-- [ ] Pricing/history tests: decimal units, tiers/caches, effective boundaries,
+- [x] Preserve cookie, raw reset, 101, trailer, encryption and legacy regressions.
+- [x] Pricing/history tests: decimal units, tiers/caches, effective boundaries,
   future-rate exclusion, unsupported prices, WAL rows, conflicts and import twice.
-- [ ] Native Claude Code protocol smoke against a local mock without real credentials
+- [x] Native Claude Code protocol smoke against a local mock without real credentials
   or external telemetry; document real-token acceptance as unverified until manual input.
-- [ ] Full Node 24 suite, affected Node 26 transport compatibility, rendered evidence,
-  then two fresh independent final-commit Studio reviews and readiness receipt.
-- [ ] Leave a validated local branch and ready PR description. Publication/deployment
-  requires separate authorization; keep production stopped.
+- [x] Prepare the full Node 24 suite, affected Node 26 transport checks, rendered
+  evidence, and two fresh independent final-commit reviews. The external exact-head
+  readiness receipt records their final acceptance.
+- [x] Keep implementation and evidence local, with a prepared PR description.
+  Publication/deployment requires separate authorization; keep production stopped.
 
 ## Ownership and parallelism
 

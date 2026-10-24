@@ -1,5 +1,9 @@
 # Transproxy validation evidence
 
+This is the API-key proxy checkpoint through `2266c754`. The subsequent Claude
+Code pool, pricing and dashboard work is covered by
+[its acceptance record](claude-rotation-pricing-validation.md).
+
 Implementation branch: `transproxy`.
 Base: `967ff056ee632c986673711c619f573709bf8620`.
 
