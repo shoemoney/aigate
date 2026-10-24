@@ -1027,7 +1027,9 @@ const server = http.createServer(async (req, res) => {
       const label = b.label === undefined ? row.label : String(b.label);
       // .changes guard like the sibling mutation routes: deleted between our read and the
       // UPDATE (TOCTOU) must 404, not return {ok:true} over a silent no-op.
-      if (q.updateAccount.run(newName, label, name).changes === 0) return json(res, 404, { error: 'unknown account ' + name });
+      const updated = newName === name ? q.updateAccount.run(newName, label, name)
+        : claudePool.renameAccount(name, newName, { label });
+      if (updated.changes === 0) return json(res, 404, { error: 'unknown account ' + name });
       logAccess(newName, '', reqIp(req), 'account-rename', name === newName ? 'label update' : name + ' → ' + newName);
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true, account: newName, label });

@@ -207,6 +207,61 @@ test('transitive fingerprint membership is invalidated together and expiry-only 
   await f.pool.refreshAccount('c'); assert.equal(f.pool.status().accounts.every(a => a.eligible), true);
 });
 
+test('atomic rename preserves manual expiry, scope, observations and model cooldowns', async t => {
+  const f = await fixture(t); f.add('old');
+  f.pool.setMetadata('old', { quota_scope: 'subscription', credential_expires_at: new Date(BASE - 1).toISOString() });
+  f.pool.observeHeaders('old', quota(.25, .5)); f.pool.markExhausted('old', { window: 'model', model: 'claude-opus-4-6', resetAt: BASE + 100000 });
+  const tokenBefore = f.db.prepare('SELECT token_enc FROM accounts WHERE account=?').get('old').token_enc;
+  assert.equal(f.pool.renameAccount('old', 'renamed', { label: 'Renamed label' }).changes, 1);
+  const state = f.pool.status({ model: 'claude-opus-4-6' }).accounts[0];
+  assert.equal(state.account, 'renamed'); assert.equal(state.label, 'Renamed label'); assert.equal(state.reason, 'credential_expired');
+  assert.equal(state.credential_expires_at, new Date(BASE - 1).toISOString()); assert.equal(state.quota_scope, 'subscription');
+  assert.equal(state.five_hour.used_pct, 25); assert.equal(state.seven_day.used_pct, 50); assert.equal(state.cooldowns[0].model, 'opus');
+  assert.equal(f.pool.acquire(), null); assert.equal(f.pool.observeHeaders('old', quota()).applied, false);
+  assert.equal(f.db.prepare('SELECT token_enc FROM accounts WHERE account=?').get('renamed').token_enc, tokenBefore);
+  assert.equal(f.db.prepare('SELECT * FROM claude_pool_metadata WHERE account=?').get('old'), undefined);
+});
+
+test('default scope blocks and active lease accounting survive rename while old contexts cannot update it', async t => {
+  const f = await fixture(t); f.add('old'); f.pool.observeHeaders('old', quota()); const lease = f.pool.acquire();
+  f.pool.markExhausted('old', { window: 'seven_day', resetAt: BASE + 100000 });
+  f.pool.renameAccount('old', 'renamed');
+  assert.equal(f.pool.status().accounts[0].quota_scope, 'renamed'); assert.equal(f.pool.status().accounts[0].reason, 'exhausted');
+  assert.equal(f.pool.status().accounts[0].in_flight, 1); assert.equal(lease.account, 'old');
+  assert.ok(f.db.prepare('SELECT 1 FROM claude_pool_blocks WHERE scope_key=?').get('account:renamed'));
+  assert.equal(f.db.prepare('SELECT 1 FROM claude_pool_blocks WHERE scope_key=?').get('account:old'), undefined);
+  assert.equal(f.pool.observeHeaders('old', quota(), lease).applied, false);
+  assert.equal(f.pool.observeHeaders('renamed', quota(), lease).applied, false);
+  assert.equal(f.pool.markExhausted('renamed', { ...lease, window: 'model', model: 'claude-opus-4-6' }), false);
+  assert.equal(f.pool.release(lease), true); assert.equal(f.pool.status().accounts[0].in_flight, 0);
+});
+
+test('metadata rename failure rolls account, pool generations and in-memory leases back together', async t => {
+  const f = await fixture(t); f.add('old'); f.pool.observeHeaders('old', quota(.2, .3)); const lease = f.pool.acquire();
+  const before = f.db.prepare('SELECT * FROM claude_pool_usage WHERE account=?').get('old');
+  f.db.exec(`CREATE TRIGGER reject_pool_rename BEFORE UPDATE OF account ON claude_pool_metadata
+    WHEN NEW.account='blocked' BEGIN SELECT RAISE(ABORT,'metadata rename rejected'); END`);
+  assert.throws(() => f.pool.renameAccount('old', 'blocked', { label: 'wrong' }), /metadata rename rejected/);
+  assert.equal(f.db.prepare('SELECT account,label FROM accounts WHERE account=?').get('old').label, 'old');
+  assert.equal(f.db.prepare('SELECT 1 FROM accounts WHERE account=?').get('blocked'), undefined);
+  assert.deepEqual(f.db.prepare('SELECT * FROM claude_pool_usage WHERE account=?').get('old'), before);
+  assert.equal(f.pool.status().accounts[0].in_flight, 1); assert.equal(lease.account, 'old');
+  assert.equal(f.pool.observeHeaders('old', quota(.4, .5), lease).applied, true); assert.equal(f.pool.release(lease), true);
+});
+
+test('Codex rename and label-only edits preserve credentials and existing pool observations', async t => {
+  const f = await fixture(t); f.add('codex', 'JSON_CODEX_AUTH', { kind: 'codex' });
+  const encrypted = f.db.prepare('SELECT token_enc FROM accounts WHERE account=?').get('codex').token_enc;
+  assert.equal(f.pool.renameAccount('codex', 'renamed-codex', { label: 'Codex label' }).changes, 1);
+  assert.equal(f.db.prepare('SELECT token_enc FROM accounts WHERE account=?').get('renamed-codex').token_enc, encrypted);
+  assert.equal(f.pool.status().accounts.length, 0);
+  f.add('claude'); f.pool.observeHeaders('claude', quota(.3, .4));
+  const before = f.db.prepare('SELECT * FROM claude_pool_usage WHERE account=?').get('claude');
+  f.pool.renameAccount('claude', 'claude', { label: 'Updated label' });
+  assert.deepEqual(f.db.prepare('SELECT * FROM claude_pool_usage WHERE account=?').get('claude'), before);
+  assert.equal(f.pool.status().accounts[0].label, 'Updated label');
+});
+
 test('single flight clears failures and scheduled refresh runs every five minutes without overlap', async t => {
   let calls = 0, callback, delay; const gate = deferred();
   const timers = { setTimeout(fn, ms) { callback = fn; delay = ms; return 1; }, clearTimeout() { callback = null; } };

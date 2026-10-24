@@ -373,11 +373,45 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
     for (const controller of controllers) controller.abort();
     await Promise.allSettled([...refreshing.values()]); leases.clear();
   }
+  function renameAccount(account, newAccount, { label } = {}) {
+    if (typeof newAccount !== 'string' || !newAccount || /[/\s]/.test(newAccount)) throw new TypeError('invalid account name');
+    const original = db.prepare('SELECT account,label,kind FROM accounts WHERE account=?').get(account);
+    if (!original) return { changes: 0 };
+    if (newAccount === account) return db.prepare('UPDATE accounts SET label=? WHERE account=?').run(label === undefined ? original.label : label, account);
+    if (db.prepare('SELECT 1 FROM accounts WHERE account=?').get(newAccount))
+      throw Object.assign(new Error('account already exists'), { statusCode: 409 });
+    const savepoint = 'claude_rename_' + randomUUID().replaceAll('-', '');
+    db.exec(`SAVEPOINT ${savepoint}`);
+    let updated;
+    try {
+      // Initialize legacy Claude rows inside the same rollback boundary. Codex
+      // renames preserve their existing behavior without interpreting their auth.
+      const claude = original.kind === 'claude' ? load(getAccount.get(account)) : null;
+      const members = claude && !claude.invalid ? scopeMembers(claude) : [];
+      updated = db.prepare('UPDATE accounts SET account=?,label=? WHERE account=?')
+        .run(newAccount, label === undefined ? original.label : label, account);
+      db.prepare('UPDATE claude_pool_metadata SET account=? WHERE account=?').run(newAccount, account);
+      db.prepare('UPDATE claude_pool_usage SET account=?,revision=revision+1,generation=generation+1 WHERE account=?').run(newAccount, account);
+      db.prepare('UPDATE claude_pool_blocks SET scope_key=? WHERE scope_key=?').run('account:' + newAccount, 'account:' + account);
+      // Peer requests admitted against the former identity must not clear newer
+      // shared-subscription state when their responses arrive after the rename.
+      for (const member of members) if (member.account !== account)
+        db.prepare('UPDATE claude_pool_usage SET revision=revision+1,generation=generation+1 WHERE account=?').run(member.account);
+      db.exec(`RELEASE ${savepoint}`);
+    } catch (error) {
+      try { db.exec(`ROLLBACK TO ${savepoint}`); } finally { db.exec(`RELEASE ${savepoint}`); }
+      throw error;
+    }
+    // Keep concurrency accounting on the new identity while callers retain their
+    // old lease context, so late observations cannot apply to a renamed account.
+    for (const [id, lease] of leases) if (lease.account === account) leases.set(id, { ...lease, account: newAccount });
+    return updated;
+  }
   function forgetAccount(account) {
     db.prepare('DELETE FROM claude_pool_usage WHERE account=?').run(account);
     db.prepare('DELETE FROM claude_pool_metadata WHERE account=?').run(account);
     for (const [id, lease] of leases) if (lease.account === account) leases.delete(id);
   }
   return { status, acquire, release, observeHeaders, markExhausted, refreshAccount, refreshAll,
-    start, stop, setMetadata, forgetAccount };
+    start, stop, setMetadata, renameAccount, forgetAccount };
 }
