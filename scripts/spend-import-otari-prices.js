@@ -50,7 +50,14 @@ export function normalizeSnapshot(row) {
     models.push({...identity,name:model.name || model.id,description:model.description || '',unsupported,
       metadata:{provider_name:provider.name || provider.id,upstream_source:row.source || 'genai-prices',pricing_urls:provider.pricing_urls || [],context_window:model.context_window ?? null,
         raw_prices:model.prices ?? null,source_unit:'USD per million tokens for *_mtok; other meters unsupported'}});
-    if(supported) prices.push({...identity,effective_from:asof,...base,tiers:[...tiers.values()].sort((a,b)=>a.min_input_tokens-b.min_input_tokens),note:`Otari accepted ${row.source || 'genai-prices'} snapshot; first observed ${asof}`});
+    // The ledger selects one complete tier row. Feed meters have independent
+    // threshold schedules, so retain each earlier meter change at later steps.
+    const carried={...base};
+    const cumulativeTiers=[...tiers.values()].sort((a,b)=>a.min_input_tokens-b.min_input_tokens).map(t=>{
+      Object.assign(carried,t);
+      return {...carried};
+    });
+    if(supported) prices.push({...identity,effective_from:asof,...base,tiers:cumulativeTiers,note:`Otari accepted ${row.source || 'genai-prices'} snapshot; first observed ${asof}`});
   }
   return {source:'otari',snapshot:{hash:digest(raw),source_as_of:asof},models,prices};
 }
@@ -100,7 +107,10 @@ export async function run(opts,cfg,out=process.stdout) {
       const part={...payload,models:payload.models.slice(offset,offset+100),prices:payload.prices.slice(offset,offset+100),dry_run:!!opts.preview};
       if(opts.dryRun) continue;
       const res=await fetch(`${cfg.url}/api/spend/catalog/import`,{method:'POST',headers:{authorization:`Bearer ${cfg.token}`,'content-type':'application/json'},body:JSON.stringify(part),signal:AbortSignal.timeout(60000)});
-      if(!res.ok) throw new Error(`catalog import HTTP ${res.status}`);
+      if(!res.ok) {
+        const detail=(await res.text()).replace(/[\u0000-\u001f]/g,' ').slice(0,300);
+        throw new Error(`catalog import HTTP ${res.status}: ${detail}`);
+      }
       let data;try{data=await res.json();}catch{throw new Error('malformed catalog success response');}
       if(!data || data.snapshot_hash!==part.snapshot.hash || !['models','inserted','duplicate','conflicts','unsupported'].every(k=>Number.isSafeInteger(data[k])&&data[k]>=0)
         || data.inserted+data.duplicate+data.conflicts!==part.prices.length) throw new Error('invalid catalog success response');

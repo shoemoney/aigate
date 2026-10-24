@@ -41,7 +41,7 @@ export function ensureCatalogSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_catalog_model ON spend_catalog_models(provider,model);`);
 }
 
-function ident(v) { check(typeof v === 'string' && /^[A-Za-z0-9._:@/+*-]{1,256}$/.test(v), 'invalid provider/model identifier'); return v; }
+function ident(v) { check(typeof v === 'string' && /^[A-Za-z0-9._:@/~+*-]{1,256}$/.test(v), 'invalid provider/model identifier'); return v; }
 function text(v, max) { check(typeof (v ?? '') === 'string' && String(v ?? '').length <= max, 'invalid catalog text'); return v ?? ''; }
 function keys(v, allowed) { check(object(v), 'expected JSON object'); for (const k of Object.keys(v)) check(allowed.includes(k), `unknown catalog field: ${k}`); }
 function normalizePrice(r) {

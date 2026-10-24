@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { ensureSchema, handleSpend, recordProxyUsage } from '../src/spend.js';
 import { importCatalog, readCatalog, readCatalogHistory, decimalMicros, digest } from '../src/spend-catalog.js';
-import { pickRate } from '../src/spend-pricing.js';
+import { pickRate, priceEvent } from '../src/spend-pricing.js';
 import { normalizeSnapshot, normalizeHistorical, readOtariPrices, run as importPrices } from '../scripts/spend-import-otari-prices.js';
 import { mapRow, run as importUsage, newStats } from '../scripts/spend-import-otari.js';
 
@@ -78,6 +78,32 @@ test('catalog pagination and search keep opaque cursor bound to filters',()=>{
     const second=readCatalog(db,params({limit:1,cursor:first.next_cursor}));assert.equal(second.items[0].provider,'meta');
     assert.equal(readCatalog(db,params({q:'TEST MODEL'})).total,1);
     assert.throws(()=>readCatalog(db,params({provider:'meta',cursor:first.next_cursor})),/cursor/);
+  }finally{db.close();}
+});
+
+test('router tilde aliases import unchanged and independent meter tiers carry forward',()=>{
+  const payload=normalizeSnapshot({source:'genai-prices',updated_at:'2026-10-01',snapshot:JSON.stringify([{id:'openrouter',models:[{
+    id:'~anthropic/claude-sonnet-latest',prices:{
+      input_mtok:{base:3,tiers:[{start:100,price:6}]},
+      output_mtok:{base:15,tiers:[{start:200,price:30}]},
+      cache_read_mtok:{base:0.3,tiers:[{start:300,price:0.6}]}
+    }
+  }]}])});
+  assert.equal(payload.prices[0].tiers[1].input_usd,'6.00');
+  assert.equal(payload.prices[0].tiers[2].input_usd,'6.00');
+  assert.equal(payload.prices[0].tiers[2].output_usd,'30.00');
+  assert.equal(payload.prices[0].tiers[2].cache_write_usd,null);
+  const db=fixture();try {
+    importCatalog(db,payload);
+    const rate=db.prepare('SELECT * FROM spend_prices').get();
+    assert.equal(rate.model,'~anthropic/claude-sonnet-latest');
+    const event=n=>({input_tokens:n,output_tokens:1000,cache_read_tokens:0,cache_write_tokens:0,cache_write_1h_tokens:0,cache_tokens_in_prompt:true});
+    assert.equal(priceEvent(event(199),rate).cost_micros,16194);
+    assert.equal(priceEvent(event(200),rate).cost_micros,31200);
+    assert.equal(priceEvent(event(300),rate).cost_micros,31800);
+    assert.equal(priceEvent({...event(299),cache_read_tokens:100},rate).cost_micros,31224);
+    assert.equal(priceEvent({...event(300),cache_read_tokens:100},rate).cost_micros,31260);
+    const tier=JSON.parse(rate.tiers_json)[2];assert.equal(tier.cache_read_micros,600000);assert.equal(tier.output_micros,30000000);assert.equal(tier.input_micros,6000000);
   }finally{db.close();}
 });
 

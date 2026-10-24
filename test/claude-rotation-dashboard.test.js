@@ -69,3 +69,25 @@ test('rotation and rate charts use readable labels and null values instead of fa
 });
 
 test('legacy account badges use the authoritative Claude pool selection',()=>{const app=loadOptions();app.accounts=[{account:'ready',kind:'claude',has_token:true,five_hour_pct:0,seven_day_pct:0},{account:'unknown',kind:'claude',has_token:true,five_hour_pct:0,seven_day_pct:0}];app.rotation=status;assert.equal(app.eligible(app.accounts[0]),true);assert.equal(app.eligible(app.accounts[1]),false);assert.equal(app.nextPicks.claude,'ready');app.rotation=null;assert.equal(app.eligible(app.accounts[0]),false);assert.equal(app.nextPicks.claude,undefined);});
+
+test('Claude card status honors fractional remaining allowance instead of the legacy cutoff',()=>{
+ const app=loadOptions();const account={account:'fractional',kind:'claude',has_token:true,five_hour_pct:99.5,seven_day_pct:99.5};
+ app.accounts=[account];app.rotation={...status,next_account:'fractional',accounts:[{account:'fractional',eligible:true,reason:null,five_hour:{remaining_pct:0.5,fresh:true},seven_day:{remaining_pct:0.5,fresh:true}}]};
+ assert.equal(app.accountStatus(account).text,'Ready');assert.equal(app.accountStatus(account).cls,'ok');assert.equal(app.eligible(account),true);assert.equal(app.isNextPick(account),true);
+});
+test('Claude card status displays each authoritative exclusion even below the legacy cutoff',()=>{
+ const app=loadOptions();const account={account:'excluded',kind:'claude',has_token:true,five_hour_pct:1,seven_day_pct:1};
+ for(const [reason,label,cls] of [['usage_unknown','Usage unknown','warn'],['usage_stale','Usage stale','warn'],['disabled','Paused','dim'],['model_cooldown','Model cooldown','warn'],['exhausted','Allowance exhausted','warn'],['reauth_needed','New token required','crit']]){
+  app.rotation={...status,next_account:null,accounts:[{account:'excluded',eligible:false,reason}]};
+  const badge=app.accountStatus(account);assert.equal(badge.text,label,reason);assert.equal(badge.cls,cls,reason);assert.equal(app.eligible(account),false,reason);assert.equal(app.isNextPick(account),false,reason);
+ }
+});
+test('Claude status unavailable or missing candidate never renders Ready',()=>{
+ const app=loadOptions();const account={account:'unknown',kind:'claude',has_token:true,five_hour_pct:0,seven_day_pct:0};
+ assert.equal(app.accountStatus(account).text,'Usage unknown');app.rotationLoading=true;assert.equal(app.accountStatus(account).text,'Checking status');app.rotationError='offline';assert.equal(app.accountStatus(account).text,'Status unavailable');
+ app.rotation={...status,accounts:[]};assert.equal(app.accountStatus(account).text,'Usage unknown');
+});
+test('Codex card status retains its existing cutoff and refresh branches',()=>{
+ const app=loadOptions();const codex={account:'codex',kind:'codex',has_token:true,five_hour_pct:99.5,seven_day_pct:99.5};assert.equal(app.accountStatus(codex).text,'At limit');codex.five_hour_pct=0;codex.seven_day_pct=0;assert.equal(app.accountStatus(codex).text,'Ready');codex.refresh_unknown=true;assert.equal(app.accountStatus(codex).text,'Refresh halted');codex.disabled=true;assert.equal(app.accountStatus(codex).text,'Paused');
+});
+test('rate display accepts legacy numeric strings while keeping missing rates unpriced',()=>{const app=loadOptions();assert.equal(app.rateLabel('0.30'),'$0.3');assert.equal(app.rateLabel('15'),'$15');assert.equal(app.rateLabel(null),'Unpriced');assert.equal(app.rateLabel(undefined),'Unpriced');assert.equal(app.rateLabel('invalid'),'Unpriced');});
