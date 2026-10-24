@@ -115,18 +115,27 @@ export function ensureSchema(db) {
   const columns = new Set(db.prepare('PRAGMA table_info(usage_events)').all().map(r => r.name));
   for (const [name, type] of [['source_cost_micros','INTEGER'], ['source_cost_kind','TEXT'], ['source_pricing_reference','TEXT']])
     if (!columns.has(name)) db.exec(`ALTER TABLE usage_events ADD COLUMN ${name} ${type}`);
-  const legacyPriceProvenance = !db.prepare('PRAGMA table_info(spend_prices)').all().some(r => r.name === 'catalog_source');
-  ensureCatalogSchema(db);
-  // Only the legacy schema lacks provenance. Recognize a bundled row only if
-  // every pricing field is unchanged; later explicit manual provenance wins.
-  if (legacyPriceProvenance) {
-    const seedTag = db.prepare(`UPDATE spend_prices SET catalog_source='seed'
-      WHERE provider=? AND model=? AND effective_from=? AND note=? AND match=?
-      AND input_micros=? AND output_micros=? AND cache_read_micros IS ?
-      AND cache_write_micros IS ? AND cache_write_1h_micros IS ? AND tiers_json=?
-      AND catalog_source='manual'`);
-    for (const r of seedPrices()) seedTag.run(r.provider,r.model,r.effective_from,r.note,r.match,
-      r.input_micros,r.output_micros,r.cache_read_micros,r.cache_write_micros,r.cache_write_1h_micros,r.tiers_json);
+  // Schema and legacy classification commit together. A savepoint also works
+  // inside a caller's transaction; interruption cannot strand seeds as manual.
+  db.exec('SAVEPOINT spend_catalog_migration');
+  try {
+    const legacyPriceProvenance = !db.prepare('PRAGMA table_info(spend_prices)').all().some(r => r.name === 'catalog_source');
+    ensureCatalogSchema(db);
+    // Only the legacy schema lacks provenance. Recognize a bundled row only if
+    // every pricing field is unchanged; later explicit manual provenance wins.
+    if (legacyPriceProvenance) {
+      const seedTag = db.prepare(`UPDATE spend_prices SET catalog_source='seed'
+        WHERE provider=? AND model=? AND effective_from=? AND note=? AND match=?
+        AND input_micros=? AND output_micros=? AND cache_read_micros IS ?
+        AND cache_write_micros IS ? AND cache_write_1h_micros IS ? AND tiers_json=?
+        AND catalog_source='manual'`);
+      for (const r of seedPrices()) seedTag.run(r.provider,r.model,r.effective_from,r.note,r.match,
+        r.input_micros,r.output_micros,r.cache_read_micros,r.cache_write_micros,r.cache_write_1h_micros,r.tiers_json);
+    }
+    db.exec('RELEASE spend_catalog_migration');
+  } catch (e) {
+    db.exec('ROLLBACK TO spend_catalog_migration; RELEASE spend_catalog_migration');
+    throw e;
   }
 }
 

@@ -59,6 +59,55 @@ test('legacy provenance migration recognizes only complete unchanged seeds and n
   }finally{db.close();}
 });
 
+test('provenance migration rolls back schema and partial classification on faults and retries safely inside or outside a transaction',()=>{
+  for(const fault of ['after-alter','during-classification']) for(const nested of [false,true]) {
+    const db=fixture();
+    // Recreate the pre-provenance state while preserving existing usage tables.
+    db.exec(`ALTER TABLE spend_prices DROP COLUMN catalog_source;
+      DROP TABLE spend_catalog_provenance; DROP TABLE spend_catalog_models; DROP TABLE spend_catalog_snapshots;`);
+    const rows=seedPrices().slice(0,3).map(r=>({...r}));
+    rows[2].cache_write_1h_micros=(rows[2].cache_write_1h_micros ?? 0)+123;
+    const insert=db.prepare(`INSERT INTO spend_prices(provider,model,match,effective_from,input_micros,output_micros,cache_read_micros,cache_write_micros,cache_write_1h_micros,tiers_json,note) VALUES(?,?,?,?,?,?,?,?,?,?,?)`);
+    for(const r of rows) insert.run(r.provider,r.model,r.match,r.effective_from,r.input_micros,r.output_micros,r.cache_read_micros,r.cache_write_micros,r.cache_write_1h_micros,r.tiers_json,r.note);
+    const before=db.prepare('SELECT * FROM spend_prices ORDER BY id').all();
+    db.prepare(`INSERT INTO usage_events(source,source_event_id,ts,provider,model,cost_micros,price_id) VALUES(?,?,?,?,?,?,?)`)
+      .run('claude_code','msg-settled-migration','2026-10-20','anthropic',rows[2].model,123456,3);
+    const usageBefore=db.prepare('SELECT * FROM usage_events').all();
+    let updates=0;
+    const failingDb={
+      exec(sql) {
+        const out=db.exec(sql);
+        if(fault==='after-alter' && sql.startsWith('ALTER TABLE spend_prices ADD COLUMN')) throw new Error('injected migration fault');
+        return out;
+      },
+      prepare(sql) {
+        const statement=db.prepare(sql);
+        if(fault==='during-classification' && sql.includes("UPDATE spend_prices SET catalog_source='seed'")) return {
+          run(...args) {const result=statement.run(...args);if(++updates===2)throw new Error('injected migration fault');return result;}
+        };
+        return statement;
+      }
+    };
+    try {
+      if(nested)db.exec('BEGIN');
+      assert.throws(()=>ensureSchema(failingDb),/injected migration fault/);
+      assert.ok(!db.prepare('PRAGMA table_info(spend_prices)').all().some(r=>r.name==='catalog_source'));
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name LIKE 'spend_catalog_%'").get().n,0);
+      assert.deepEqual(db.prepare('SELECT * FROM spend_prices ORDER BY id').all(),before);
+      assert.deepEqual(db.prepare('SELECT * FROM usage_events').all(),usageBefore);
+      ensureSchema(db); // the same legacy rows remain eligible after rollback
+      const migrated=db.prepare('SELECT * FROM spend_prices ORDER BY id').all();
+      assert.deepEqual(migrated.map(r=>r.catalog_source),['seed','seed','manual']);
+      assert.equal(migrated[2].cache_write_1h_micros,rows[2].cache_write_1h_micros);
+      assert.deepEqual(db.prepare('SELECT * FROM usage_events').all(),usageBefore);
+      if(nested) {
+        db.exec('ROLLBACK'); // successful migration must not commit the caller's transaction
+        assert.ok(!db.prepare('PRAGMA table_info(spend_prices)').all().some(r=>r.name==='catalog_source'));
+      }
+    }finally {try{db.exec('ROLLBACK');}catch{}db.close();}
+  }
+});
+
 test('decimal rates use exact exponent conversion and half-up microdollars',()=>{
   assert.equal(decimalMicros('1.2345675'),1234568);
   assert.equal(decimalMicros('1e-6'),1);
