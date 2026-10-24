@@ -204,6 +204,7 @@ export async function ownedArtifacts(root) {
       current = path.join(current, parts[i]);
       const info = await lstat(current);
       if (info.isSymbolicLink() || ((i < parts.length - 1 || directory) && !info.isDirectory())) throw fail('Native login artifact symlinks and non-directories are forbidden.');
+      if (i === parts.length - 1 && !directory && !info.isFile()) throw fail('Native login artifact is not a bounded owned regular file.');
     }
     if (await realpath(root) !== actualRoot) throw fail('Native login root changed during collection.');
     return current;
@@ -211,7 +212,8 @@ export async function ownedArtifacts(root) {
   return {
     async readOwnedFile(relative) {
       const target = await check(relative);
-      const file = await open(target, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+      // A FIFO swapped in after check() must not block before the fstat guard.
+      const file = await open(target, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | (fsConstants.O_NOFOLLOW || 0));
       try {
         const info = await file.stat();
         if (!info.isFile() || info.size > MAX_FIELD || info.nlink !== 1 || (process.getuid && info.uid !== process.getuid())) throw fail('Native login artifact is not a bounded owned regular file.');

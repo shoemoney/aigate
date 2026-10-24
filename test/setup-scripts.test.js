@@ -375,6 +375,31 @@ test('malformed, symlinked and oversized native artifacts are rejected without t
   assert.ok(api.requests.every(row => row.method === 'GET'));
 });
 
+test('a FIFO artifact left by an exited native login is rejected before the parent deadline', { skip: process.platform === 'win32' }, async t => {
+  const box = await sandbox(t); const api = await loopback(t);
+  const log = path.join(box.root, 'fifo-native-exit.json');
+  const unrelated = path.join(box.root, 'unrelated.txt');
+  await writeFile(unrelated, 'unrelated synthetic file remains unchanged\n');
+  const fake = await fakeCLI(box, `const fs=require('node:fs');const p=require('node:path');fs.mkdirSync(process.env.CODEX_HOME,{recursive:true});const target=p.join(process.env.CODEX_HOME,'auth.json');require('node:child_process').execFileSync('mkfifo',[target]);fs.writeFileSync(${JSON.stringify(log)},JSON.stringify({pid:process.pid,root:process.cwd(),fifo:fs.lstatSync(target).isFIFO()}));`);
+  const run = launch(['codex', '--once', '--url', api.origin, '--account', 'fifo-account', '--label', 'label'], { ...box.env, AIGATE_SETUP_CODEX_BIN: fake }, 'yes\n');
+  let forced = false;
+  // A blocking open cannot be cancelled by the runner's signal handler. Keep
+  // the deadline in this parent and force-kill so the regression cannot hang.
+  const deadline = setTimeout(() => { forced = true; run.child.kill('SIGKILL'); }, 5_000);
+  t.after(() => { clearTimeout(deadline); run.child.kill('SIGKILL'); });
+  const result = await run.result.finally(() => clearTimeout(deadline));
+  assert.equal(forced, false, 'FIFO collection must finish without the parent SIGKILL fallback');
+  const details = JSON.parse(await readFile(log, 'utf8'));
+  assert.equal(details.fifo, true, 'the fake native login must create a real FIFO with no writer');
+  assert.throws(() => process.kill(details.pid, 0), { code: 'ESRCH' });
+  assert.notEqual(result.code, 0); assert.match(result.output, /supported, bounded credential artifacts/);
+  assert.ok(!result.output.includes('Saved to AIGate'));
+  assert.ok(api.requests.every(row => row.method === 'GET'));
+  await assert.rejects(lstat(details.root), { code: 'ENOENT' });
+  assert.equal(await readFile(unrelated, 'utf8'), 'unrelated synthetic file remains unchanged\n');
+  await rootsRemoved(box);
+});
+
 test('SIGINT, SIGTERM and SIGHUP terminate and wait for the owned native process before cleanup', async t => {
   const box = await sandbox(t); const api = await loopback(t);
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
