@@ -173,3 +173,12 @@ test('Spend leads with an all-usage list-price total so the headline is never ju
   assert.match(html, /spendTotals\.value_usd\)\|\|0\)\+\(Number\(spendTotals\.unknown_usd\)\|\|0\)\+\(Number\(spendTotals\.spend_usd\)/, 'total must include value + unknown + spend');
   assert.ok(html.indexOf('All usage at list price') < html.indexOf('>API-equivalent value<'), 'the total must come first');
 });
+
+
+test('Spend hover includes the unknown-plan value actually drawn in imported history',()=>{
+ let options;const app=loadOptions(undefined,{echarts:{init:()=>({setOption:value=>{options=value;},resize(){},dispose(){}})}});
+ app.spend={groups:[{key:'unknown',label:'unknown'}],series:[{bucket:'2026-10-03',key:'unknown',value_usd:0,unknown_usd:2100,spend_usd:5,events:2}],totals:{},collectors:[]};
+ app.$refs.spendChart={clientWidth:800,style:{}};app.drawSpendChart();
+ assert.equal(options.series.find(s=>s.name==='unknown · unknown plan').data[0],2100);
+ const hover=options.tooltip.formatter([{axisValue:'2026-10-03'}]);assert.ok(hover.includes('subscription value $0.00'));assert.ok(hover.includes('unknown-plan value $2,100.00'));assert.ok(hover.includes('API spend $5.00'));
+});
