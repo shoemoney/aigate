@@ -158,14 +158,20 @@ stream does not justify hidden quota replay. Failover stops once upstream
 application information or output has been exposed to the client. A local
 100 Continue handshake is independent of provider output.
 
-The first upload is forwarded live and copied into an authenticated encrypted
-spool. A retry requires the full body and trailers to be replayable, bounded
+Ordinary first uploads stream live and are copied into an authenticated encrypted
+spool. If a fragmented or later-positioned model prevents safe selection under
+family cooldowns, first admission waits for durable upload completion, then sends
+the sealed bytes once. This deferred admission requires valid root JSON with a
+model within the 1 MiB metadata bound; otherwise it returns 503 before contacting
+a provider. The same metadata bound applies to quota retries.
+
+A retry requires the full body and trailers to be replayable, bounded
 request metadata, a compatible account scope, an available account, and room
 within the attempt/deadline limits. Account-bound file, container, context or
 organization IDs can prevent cross-account replay; ordinary stateless context
 editing directives do not themselves bind an account. If compatible replay cannot
-be established, the upstream refusal is returned unchanged. Requests are never spliced across two
-streams or replayed after partial output.
+be established, the upstream refusal is returned unchanged. Requests are never
+spliced across two streams or replayed after partial output.
 
 `AIGATE_CLAUDE_MAX_ATTEMPTS` defaults to 8, capped at 32. Replay files live in
 `proxy-replay/` beside `AIGATE_DB`, with private directory/file permissions and

@@ -18,6 +18,7 @@ const waitDrain = stream => new Promise((resolve, reject) => {
 // entire upload. Nested model keys and quoted JSON inside a message never match.
 function prefixModel(buffer) {
   const text = buffer.toString('utf8'); let depth = 0, key = null, expectingKey = false, expectingValue = false;
+  if (text.trimStart()[0] !== '{') return null;
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
     if (char === '"') {
@@ -94,7 +95,7 @@ export function createClaudeRelay({ pool, traffic, replayStore, relayHeaders, in
     const uploadComplete = new Promise(resolve => { uploadResolve = resolve; });
     const responseComplete = new Promise(resolve => { responseResolve = resolve; });
     const attempted = new Set(); let attemptCount = 0, activeId, requestModel = null, metadata = null;
-    let metadataBytes = 0, metadataChunks = [], metadataOversized = false, uploadResponseSeen = false, admissionRejected = false;
+    let metadataBytes = 0, metadataChunks = [], metadataOversized = false, uploadResponseSeen = false, deferredAdmission = false;
     const target = binding.relay_target;
     const generation = req.method === 'POST' && /^\/v1\/messages(?:\?|$)/.test(target)
       && /^application\/json(?:;|$)/i.test(req.headers['content-type'] || '') && !req.headers['content-encoding'];
@@ -142,7 +143,7 @@ export function createClaudeRelay({ pool, traffic, replayStore, relayHeaders, in
         attempt_id: attemptId, encoding: 'base64', data: chunk.subarray(i, i + 65536).toString('base64'),
       });
     };
-    const startAttempt = async (model, replay = false, affinity) => {
+    const startAttempt = async (model, replay = false, affinity, bodyFromSpool = replay) => {
       if (unavailable()) return false;
       lease = pool.acquire({ ...snapshotOptions(model), ...(affinity ? { affinity } : {}) });
       if (!lease) return false;
@@ -151,7 +152,7 @@ export function createClaudeRelay({ pool, traffic, replayStore, relayHeaders, in
       const headers = relayHeaders(req.rawHeaders, { upstream: destination, authHeader: 'authorization', key: selected.token, sessionCookie });
       if (req.headers['transfer-encoding'] && !headers.some((value, index) => index % 2 === 0 && value.toLowerCase() === 'content-length')) headers.push('Transfer-Encoding', 'chunked');
       await capture.append('attempt_start', { attempt_id: attemptId, number: attemptCount, account: selected.account,
-        quota_scope: selected.scopeId, quota: selected.snapshot, model: model || null, replay });
+        quota_scope: selected.scopeId, quota: selected.snapshot, model: model || null, replay, body_from_spool: bodyFromSpool });
       await capture.append('forward', { attempt_id: attemptId, method: req.method, target: path, upstream: destination.origin, headers });
       if (unavailable()) return false;
       const startedAt = Date.now(); let attemptIncoming;
@@ -177,7 +178,7 @@ export function createClaudeRelay({ pool, traffic, replayStore, relayHeaders, in
         })().catch(failLog);
       });
       request.on('response', response => {
-        incoming = response; attemptIncoming = response; if (!replay) uploadResponseSeen = true;
+        incoming = response; attemptIncoming = response; if (!bodyFromSpool) uploadResponseSeen = true;
         if (unavailable()) { response.destroy(); return; }
         void (async () => {
           let refusal = classifyClaudeExhaustion(response.statusCode, response.rawHeaders);
@@ -267,13 +268,19 @@ export function createClaudeRelay({ pool, traffic, replayStore, relayHeaders, in
           } finally { await held?.dispose(); }
         })().catch(error => { if (!terminal && !faulting) void fault(502, 'upstream stream or traffic capture failed', error); });
       });
-      if (replay) {
+      if (bodyFromSpool) {
         for await (const record of spool.read()) {
           if (unavailable()) return false;
+          // The entire client upload is already durable. An early upstream
+          // response owns this attempt now; do not keep feeding its closed leg.
+          if (attemptIncoming) break;
           if (record.chunk) {
             await attemptBody(attemptId, 'attempt_request', record.chunk);
             if (unavailable()) return false;
-            if (!request.destroyed && !request.writableEnded && !request.write(record.chunk)) await waitDrain(request);
+            if (attemptIncoming) break;
+            if (!request.destroyed && !request.writableEnded && !request.write(record.chunk)) {
+              try { await waitDrain(request); } catch (error) { if (!attemptIncoming) throw error; }
+            }
           } else if (!request.destroyed) {
             const trailers = relayHeaders(record.trailers, { sessionCookie, requestCookies: true });
             await capture.append('attempt_request_end', { attempt_id: attemptId, trailers });
@@ -295,13 +302,19 @@ export function createClaudeRelay({ pool, traffic, replayStore, relayHeaders, in
         await capture.chunk('request', chunk); await spool.append(chunk);
         if (metadataBytes + chunk.length <= 1048576 && !metadataOversized) { metadataChunks.push(chunk); metadataBytes += chunk.length; }
         else { metadataOversized = true; metadataChunks = []; }
-        if (!outgoing && !admissionRejected) {
-          requestModel = prefixModel(chunk.subarray(0, 65536));
+        // Keep the root-model prefix across arbitrary transport fragmentation.
+        // This is the same bounded metadata retained for safe quota replay; no
+        // separate unbounded body or per-chunk-only model guess is introduced.
+        if (!requestModel && !metadataOversized) requestModel = prefixModel(Buffer.concat(metadataChunks, metadataBytes));
+        if (!outgoing && !deferredAdmission) {
           if (!await startAttempt(requestModel)) {
-            admissionRejected = true;
+            // An unknown model conservatively excludes family-blocked accounts.
+            // Its later valid root model may make one of them usable. Wait for
+            // durable EOF, then reconsider a FIRST attempt from the sealed spool.
+            deferredAdmission = true;
           }
         }
-        if (admissionRejected) continue;
+        if (deferredAdmission) continue;
         if (unavailable()) break;
         if (!uploadResponseSeen && !outgoing.destroyed && !outgoing.writableEnded) {
           await attemptBody(activeId, 'attempt_request', chunk);
@@ -315,10 +328,23 @@ export function createClaudeRelay({ pool, traffic, replayStore, relayHeaders, in
         if (!req.complete) throw new Error('incomplete client upload');
         await capture.append('request_end', { trailers: req.rawTrailers }); await spool.seal(req.rawTrailers);
         if (!metadataOversized) { try { metadata = JSON.parse(Buffer.concat(metadataChunks).toString('utf8')); if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) metadata = null; } catch { metadata = null; } }
-        metadataChunks = []; requestModel = metadata?.model || requestModel;
+        metadataChunks = [];
+        const completeModel = typeof metadata?.model === 'string' && metadata.model.length > 0 && metadata.model.length <= 256 ? metadata.model : null;
+        requestModel = completeModel || requestModel;
         uploadDone = true;
-        if (admissionRejected || !outgoing && !await startAttempt(requestModel)) await fault(503, 'no eligible Claude Code account with known positive five-hour and weekly allowance');
-        if (!unavailable() && !outgoing.destroyed) {
+        if (!outgoing) {
+          // Resolve before sending a deferred first attempt: a prompt quota
+          // response can itself fail over, and must not wait on this call to end.
+          uploadResolve();
+          let admitted = false;
+          if (!generation || completeModel) {
+            for await (const _ of spool.read()) { if (unavailable()) break; }
+            if (!unavailable()) admitted = await startAttempt(completeModel, false, undefined, true);
+          }
+          if (!admitted && !unavailable()) await fault(503, completeModel || !generation
+            ? 'no eligible Claude Code account with known positive five-hour and weekly allowance'
+            : 'Claude Code model metadata is incomplete, invalid, or exceeds the safe admission limit');
+        } else if (!unavailable() && !outgoing.destroyed) {
           const trailers = relayHeaders(req.rawTrailers, { sessionCookie, requestCookies: true }); if (trailers.length) outgoing.addTrailers(pairs(trailers)); outgoing.end();
           await capture.append('attempt_request_end', { attempt_id: activeId, trailers });
         }
