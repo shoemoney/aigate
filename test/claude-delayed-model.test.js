@@ -32,8 +32,16 @@ const upstream = http.createServer((req, res) => {
   const chunks = []; req.on('error', () => {});
   req.on('data', chunk => { chunks.push(chunk); onData?.(account, chunk); });
   req.on('end', () => {
-    const bytes = Buffer.concat(chunks), body = JSON.parse(bytes.toString());
-    requests.push({ account, bytes, body, rawHeaders: req.rawHeaders, headers: req.headers, trailers: req.rawTrailers, target: req.url });
+    const bytes = Buffer.concat(chunks);
+    const request = { account, bytes, body: null, rawHeaders: req.rawHeaders, headers: req.headers, trailers: req.rawTrailers, target: req.url };
+    requests.push(request);
+    let body;
+    try { body = JSON.parse(bytes.toString()); request.body = body; }
+    catch {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end('{"error":"fixture upstream unexpectedly received invalid JSON"}');
+      return;
+    }
     if (body.max_tokens === 1) {
       res.writeHead(200, { ...quota(account === 'a' ? 100000 : 200000), 'content-type': 'application/json' });
       res.end('{"type":"message","usage":{"input_tokens":1,"output_tokens":1}}');
@@ -61,7 +69,7 @@ const reset = () => {
   assert.equal(claudePool.status({ model: SONNET }).accounts.every(row => row.eligible), true);
   assert.equal(claudePool.status({ model: OPUS }).accounts.every(row => row.reason === 'model_cooldown'), true);
 };
-const upload = ({ timeoutMs = 5000 } = {}) => {
+const upload = () => {
   const target = `/proxy/claude-code/v1/messages?delayed_model_case=${++sequence}`;
   let req;
   const response = new Promise((resolve, reject) => {
@@ -74,7 +82,7 @@ const upload = ({ timeoutMs = 5000 } = {}) => {
       const chunks = []; res.on('data', chunk => chunks.push(chunk)); res.on('error', reject);
       res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString() }));
     });
-    req.on('error', reject); req.setTimeout(timeoutMs, () => req.destroy(new Error('local upload timed out')));
+    req.on('error', reject); req.setTimeout(5000, () => req.destroy(new Error('local upload timed out')));
     req.flushHeaders();
   });
   return { req, response, target };
@@ -90,6 +98,26 @@ const capture = async target => {
     await pause(5);
   }
   assert.fail('request capture did not reach a terminal state');
+};
+const capturedPrefix = async (target, prefix) => {
+  for (let i = 0; i < 400; i++) {
+    const rows = await (await admin('/api/proxy/traffic')).json();
+    const row = rows.find(item => item.provider === 'claude-code');
+    if (row) {
+      const detail = await (await admin(`/api/proxy/traffic/${row.id}?limit=1000`)).json();
+      if (detail.events.find(event => event.type === 'request')?.target === target) {
+        const bytes = Buffer.concat(detail.events.filter(event => event.type === 'request_body').map(event => Buffer.from(event.data, 'base64')));
+        if (bytes.length >= Buffer.byteLength(prefix)) {
+          assert.deepEqual(bytes, Buffer.from(prefix), 'gateway captured the isolated unknown-model prefix');
+          assert.equal(detail.state, 'running');
+          assert.equal(detail.events.some(event => event.type === 'request_end'), false);
+          return;
+        }
+      }
+    }
+    await pause(5);
+  }
+  assert.fail('gateway did not capture the isolated unknown-model prefix');
 };
 const assertForwarded = (bytes, target, accounts = ['a']) => {
   assert.deepEqual(admissions, accounts);
@@ -209,7 +237,7 @@ test('ordinary known Sonnet model still streams to upstream before client EOF', 
 });
 
 
-test('deferred admission rejects oversized, invalid, or missing root model metadata without spending an account', { timeout: 45000 }, async () => {
+test('deferred admission rejects oversized, invalid, or missing root model metadata without spending an account', { timeout: 15000 }, async () => {
   const oversized = JSON.stringify({ messages: [{ role: 'user', content: 'x'.repeat(1048576) }], model: SONNET, max_tokens: 10 });
   assert.ok(oversized.indexOf('"model"') > 1048576, 'root model is beyond the bounded metadata inspection limit');
   for (const [name, body] of [
@@ -218,10 +246,10 @@ test('deferred admission rejects oversized, invalid, or missing root model metad
     ['missing root model', JSON.stringify({ messages: [{ role: 'user', content: '{"model":"claude-sonnet-4-6"}', metadata: { model: SONNET } }], max_tokens: 10 })],
     ['non-string root model', JSON.stringify({ messages: [], model: 42, max_tokens: 10 })],
   ]) {
-    // Durable full capture of 1MiB can contend with parallel suite fsyncs;
-    // this bounded negative-case fixture is not a latency benchmark.
-    reset(); const { req, response, target } = upload(name === 'oversized metadata' ? { timeoutMs: 20000 } : undefined);
-    req.write(body.slice(0, 8)); await pause(40);
+    reset(); const { req, response, target } = upload();
+    // Under suite contention a fixed delay can let both writes coalesce into
+    // the first gateway read. Observe its captured prefix before sending more.
+    req.write(body.slice(0, 8)); await capturedPrefix(target, body.slice(0, 8));
     assert.deepEqual(admissions, [], name + ': unknown prefix must defer admission');
     finish(req, body.slice(8));
     const reply = await response; assert.equal(reply.status, 503, name);
