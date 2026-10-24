@@ -306,11 +306,42 @@ function safeAuthorizationURL(raw) {
 // narrowly recognized public verification URLs and short user-code hints can
 // reach the operator. Lines are buffered, so split chunks cannot bypass this.
 export function nativeHints(output) {
-  let buffered = ''; const shown = new Set();
+  let buffered = ''; let codeLines = 0; const shown = new Set();
+  const shortCode = /^(?:[A-Z0-9]{4,12}|[A-Z0-9]{3,6}-[A-Z0-9]{3,6})$/;
+  // These are the providers' actual public device-login prompts. A standalone
+  // code is safe to display only immediately after one of these exact labels.
+  const codeLabels = [
+    '2. Enter this one-time code (expires in 15 minutes)',
+    'Confirm this code in your browser:',
+    'Then enter this code:',
+    'If the browser did not open, paste the URL above and enter code:',
+    'confirm this code matches:',
+    'Confirm this code matches:',
+    'and enter this code:',
+    'Enter this code:',
+  ];
+  function emitCode(code) {
+    const hint = `Verification code: ${code}`;
+    if (!shown.has(hint)) { shown.add(hint); output.write(hint + '\n'); }
+  }
   function emit(line) {
     line = line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
-    if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|[{}]/.test(line)) return;
-    if (/^\s*(?:(?:access_token|refresh_token|id_token|client_secret|api_key|setup_token|secret|password|authorization)\s*[:=]|bearer\b)/i.test(line)) return;
+    const waitingForCode = codeLines > 0;
+    codeLines = Math.max(0, codeLines - 1);
+    if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|[{}]/.test(line) || /^\s*(?:(?:access_token|refresh_token|id_token|client_secret|api_key|setup_token|secret|password|authorization)\s*[:=]|bearer\b)/i.test(line)) { codeLines = 0; return; }
+    const trimmed = line.trim();
+    for (const label of codeLabels) {
+      if (trimmed === label) { codeLines = 3; return; } // at most two blank lines before the code
+      if (trimmed.startsWith(label) && /^\s+/.test(trimmed.slice(label.length))) {
+        codeLines = 0;
+        const inline = trimmed.slice(label.length).trim();
+        if (shortCode.test(inline)) emitCode(inline);
+        return;
+      }
+    }
+    if (waitingForCode && shortCode.test(trimmed)) { codeLines = 0; emitCode(trimmed); return; }
+    // Any other nonblank line ends the context, including unknown token formats.
+    if (trimmed) codeLines = 0;
     const urls = line.match(/https:\/\/[^\s<>"'`]+/g) || [];
     for (const raw of urls) {
       try {
@@ -321,16 +352,16 @@ export function nativeHints(output) {
       } catch { /* unknown output stays private */ }
     }
     const code = /^(?:your\s+)?(?:user|device|verification|one[- ]time)\s+code\s*(?:is\s*)?[:=]?\s*([A-Z0-9]{3,5}-[A-Z0-9]{3,5})\s*$/i.exec(line.trim());
-    if (code) { const hint = `Verification code: ${code[1]}`; if (!shown.has(hint)) { shown.add(hint); output.write(hint + '\n'); } }
+    if (code) emitCode(code[1]);
   }
   return {
     write(chunk) {
       buffered += chunk;
       let index;
       while ((index = buffered.indexOf('\n')) !== -1) { emit(buffered.slice(0, index).replace(/\r$/, '')); buffered = buffered.slice(index + 1); }
-      if (buffered.length > 16_384) buffered = ''; // an oversized line is never displayed
+      if (buffered.length > 16_384) { buffered = ''; codeLines = 0; } // an oversized line is never displayed
     },
-    end() { if (buffered) emit(buffered); buffered = ''; },
+    end() { if (buffered) emit(buffered); buffered = ''; codeLines = 0; },
   };
 }
 

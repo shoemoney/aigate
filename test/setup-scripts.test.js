@@ -140,6 +140,79 @@ test('native output exposes only safe auth hints and blocks unknown secrets acro
   for (const secret of [UNKNOWN, CLAUDE, 'arbitrary text never copied', 'access_token']) assert.ok(!result.includes(secret));
 });
 
+const nativeDeviceFixtures = [
+  {
+    provider: 'Codex',
+    text: '\n2. Enter this one-time code (expires in 15 minutes)\n   ABCD-EFGH\n',
+    codes: ['ABCD-EFGH'],
+  },
+  {
+    provider: 'Grok',
+    text: 'Confirm this code in your browser:\n\n  IJKL-MNOP\nThen enter this code:\n\n  QRST-UVWX\n',
+    codes: ['IJKL-MNOP', 'QRST-UVWX'],
+  },
+  {
+    provider: 'Kimi',
+    text: 'Opening browser for Kimi device login: https://auth.kimi.com/device\nIf the browser did not open, paste the URL above and enter code: ABCD1234\n',
+    codes: ['ABCD1234'],
+    page: 'https://auth.kimi.com/device',
+  },
+  {
+    provider: 'Muse',
+    text: 'Open this page to sign in:\n  https://auth.meta.com/device\nConfirm this code matches:\n  YZ12-AB34\nEnter this code:\n  CD56-EF78\n\x1b[1mconfirm this code matches:\x1b[0m\n\n  \x1b[36mGH90-IJ12\x1b[0m\nand enter this code: KL34-MN56\n',
+    codes: ['YZ12-AB34', 'CD56-EF78', 'GH90-IJ12', 'KL34-MN56'],
+    page: 'https://auth.meta.com/device',
+  },
+];
+
+for (const fixture of nativeDeviceFixtures) {
+  test(`native hints preserve actual ${fixture.provider} device-code instructions across chunk boundaries`, () => {
+    let output = ''; const hints = nativeHints({ write(value) { output += value; } });
+    // Three-byte chunks split labels, codes, URL schemes, and ANSI sequences.
+    for (let i = 0; i < fixture.text.length; i += 3) hints.write(fixture.text.slice(i, i + 3));
+    hints.end();
+    for (const code of fixture.codes) assert.ok(output.includes(`Verification code: ${code}\n`));
+    if (fixture.page) assert.ok(output.includes(fixture.page));
+    assert.equal((output.match(/Verification code:/g) || []).length, fixture.codes.length);
+    assert.ok(!output.includes('expires in 15 minutes')); assert.ok(!output.includes('\x1b'));
+  });
+}
+
+test('standalone device codes require fresh exact vendor context and reject secrets, JWTs, and expired windows', () => {
+  const label = 'Then enter this code:';
+  const jwt = 'eyJhbGciOiJub25lIn0.eyJzdWIiOiJzeW50aGV0aWMifQ.signature';
+  const rejected = [
+    'ABCD-EFGH\n', // no preceding label
+    'ABCD1234\n',
+    'A label mentioning a code:\nABCD-EFGH\n',
+    label + '\n\n\n\nABCD-EFGH\n', // three blank lines expire the window
+    label + '\nUnrecognized native output\nABCD-EFGH\n',
+    label + '\naccess_token=' + UNKNOWN + '\nABCD-EFGH\n',
+    label + '\n{"access_token":"' + UNKNOWN + '"}\nABCD-EFGH\n',
+    label + '\n' + CLAUDE + '\nABCD-EFGH\n',
+    label + '\n' + jwt + '\nABCD-EFGH\n',
+    label + '\n' + 'A'.repeat(64) + '\nABCD-EFGH\n',
+    label + '\nABCD_EFGH\n',
+    label + '\nabcd-efgh\n',
+    label + '\nABCD-EFGH private-extra-output\n',
+    label + ' ' + UNKNOWN + '\nABCD-EFGH\n',
+  ];
+  for (const text of rejected) {
+    let output = ''; const hints = nativeHints({ write(value) { output += value; } });
+    for (let i = 0; i < text.length; i += 5) hints.write(text.slice(i, i + 5));
+    hints.end(); assert.equal(output, '', 'unknown or expired code context must stay private');
+  }
+  let output = ''; const hints = nativeHints({ write(value) { output += value; } });
+  hints.write(label + '\n' + 'X'.repeat(16_385)); hints.write('\nABCD-EFGH\n'); hints.end();
+  assert.equal(output, '', 'a discarded oversized line must also clear code context');
+});
+
+test('contextual device codes allow two blank lines and flush a final code without a newline', () => {
+  let output = ''; const hints = nativeHints({ write(value) { output += value; } });
+  hints.write('Then enter this code:\n\n\n  ABCD-EFGH'); hints.end();
+  assert.equal(output, 'Verification code: ABCD-EFGH\n');
+});
+
 test('normal Codex and Claude OAuth authorization URLs remain usable for private-window account selection', () => {
   const urls = [
     'https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_synthetic&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&scope=openid+profile+email+offline_access&code_challenge=' + 's'.repeat(43) + '&code_challenge_method=S256&codex_cli_simplified_flow=true&state=synthetic_state_value_123&originator=codex_cli_rs',
