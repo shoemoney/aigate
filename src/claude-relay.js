@@ -261,7 +261,8 @@ export function createClaudeRelay({ pool, traffic, replayStore, relayHeaders, in
               await uploadComplete;
               if (unavailable()) return;
               const safe = uploadDone && metadata && typeof metadata.model === 'string' && metadata.model.length <= 256 && attemptCount < maxAttempts;
-              const affinity = resourceBound(metadata) || req.headers['anthropic-organization-id'] || req.headers['x-anthropic-organization-id'] ? selected.scopeId : undefined;
+              const affinity = resourceBound(metadata) || req.headers['anthropic-organization-id'] || req.headers['x-anthropic-organization-id']
+                || req.headers['anthropic-workspace-id'] ? selected.scopeId : undefined;
               pool.release(selected);
               if (safe) {
                 // Validate every encrypted record before a billable second

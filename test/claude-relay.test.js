@@ -125,6 +125,21 @@ test('resource references cannot fail over to a different account scope', async 
   assert.equal(response.status, 429); assert.equal(requests.length, 1); await latestCapture();
 });
 
+test('an explicit Anthropic workspace header pins quota failover to the selected account scope', async () => {
+  reset(); handler = (_req, res, { account }) => account === 'a' ? refusal(res) : success(res);
+  const bytes = Buffer.from('{"model":"claude-sonnet-4-6","max_tokens":10,"messages":[]}');
+  const response = await request(bytes, ['Anthropic-Workspace-Id', 'workspace-owned-by-a']);
+  assert.equal(response.status, 429); assert.ok(response.body.toString().includes('session exhausted'));
+  assert.deepEqual(admissions, ['a']); assert.equal(requests[0].headers['anthropic-workspace-id'], 'workspace-owned-by-a');
+  assert.notEqual(claudePool.status().accounts.find(row => row.account === 'a').quota_scope,
+    claudePool.status().accounts.find(row => row.account === 'b').quota_scope);
+  assert.equal(claudePool.status().accounts.find(row => row.account === 'b').eligible, true, 'B has allowance but belongs to an incompatible workspace scope');
+  const capture = await latestCapture();
+  assert.equal(capture.events.filter(event => event.type === 'attempt_start').length, 1);
+  assert.ok(capture.events.some(event => event.type === 'attempt_decision' && event.decision === 'try_eligible_account' && event.affinity === 'a'));
+  assert.ok(capture.events.some(event => event.type === 'attempt_decision' && event.decision === 'return_quota_response' && event.reason === 'no_compatible_eligible_account'));
+});
+
 test('unknown or exhausted allowance returns503 without an upstream admission', async () => {
   reset(); claudePool.observeHeaders('a', raw(quotas(1))); claudePool.observeHeaders('b', raw(quotas(1)));
   const response = await request(); assert.equal(response.status, 503); assert.equal(requests.length, 0); await latestCapture();
