@@ -9,7 +9,7 @@ separate acceptance steps.
 
 - Full repository command: `npm test` on Node24.
 - Affected Node26 checks: setup-catalog, setup-native, setup-scripts,
-  setup-create-only, http and codex-server tests.
+  setup-create-only, http, codex-server, claude-delayed-model and claude-pool tests.
 - macOS Bash3.2 launcher syntax and dispatch/help coverage for every catalog ID.
 - Independent real-PTY acceptance: immediate no-echo secret prompts, repeated
   roots, exact native/API/AWS payloads, authenticated save/read-back gates,

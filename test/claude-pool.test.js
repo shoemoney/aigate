@@ -374,7 +374,7 @@ test('native probe makes one tiny inference and captures exact encrypted request
   await assert.rejects(createClaudeUsageProbe({ upstream })({ account: 'a', token: 'never' }), { code: 'CAPTURE_UNAVAILABLE' }); assert.equal(hits, 1);
 });
 
-test('probe cancellation and capture failure stop egress; HTTP deadline is bounded', async t => {
+test('probe cancellation and capture failure stop egress; HTTP deadline is bounded', { timeout: 5000 }, async t => {
   let hits = 0; const server = http.createServer(() => { hits++; }); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => { server.closeAllConnections(); server.close(); });
   const upstream = `http://127.0.0.1:${server.address().port}`; const records = [];
@@ -383,5 +383,33 @@ test('probe cancellation and capture failure stop egress; HTTP deadline is bound
   await assert.rejects(createClaudeUsageProbe({ upstream, getTrafficStore: () => ({ start: async () => capture }) })({ token: 'secret', signal: controller.signal }), { name: 'AbortError' });
   await assert.rejects(createClaudeUsageProbe({ upstream, getTrafficStore: () => ({ start: async () => ({ ...capture, chunk: async () => { throw new Error('disk full'); } }) }) })({ token: 'secret' }), /disk full/);
   assert.equal(hits, 0);
-  await assert.rejects(createClaudeUsageProbe({ upstream, timeoutMs: 40, getTrafficStore: () => ({ start: async () => capture }) })({ token: 'secret' }), { code: 'PROBE_TIMEOUT' }); assert.equal(hits, 1);
+  // Control the configured 40ms deadlines so parallel startup cannot expire the
+  // probe before its request reaches the real hanging HTTP stub.
+  const realSetTimeout = globalThis.setTimeout, realRequest = http.request;
+  let deadline, deadlineMs, socketDeadline, socketDeadlineMs, outgoing;
+  t.mock.method(globalThis, 'setTimeout', (callback, ms, ...args) => {
+    if (ms !== 40) return realSetTimeout(callback, ms, ...args);
+    deadline = callback; deadlineMs = ms;
+    return { unref() {} };
+  });
+  t.mock.method(http, 'request', function (...args) {
+    outgoing = Reflect.apply(realRequest, this, args);
+    const realSocketTimeout = outgoing.setTimeout;
+    t.mock.method(outgoing, 'setTimeout', function (ms, callback) {
+      if (ms !== 40) return Reflect.apply(realSocketTimeout, this, [ms, callback]);
+      socketDeadline = callback; socketDeadlineMs = ms;
+      return this;
+    });
+    return outgoing;
+  });
+  const admission = once(server, 'request');
+  const pending = createClaudeUsageProbe({ upstream, timeoutMs: 40, getTrafficStore: () => ({ start: async () => capture }) })({ token: 'secret' });
+  const rejection = assert.rejects(pending, { code: 'PROBE_TIMEOUT' });
+  await admission;
+  assert.equal(hits, 1);
+  assert.equal(deadlineMs, 40); assert.equal(typeof deadline, 'function');
+  assert.equal(socketDeadlineMs, 40); assert.equal(typeof socketDeadline, 'function');
+  const closed = new Promise(resolve => outgoing.once('close', resolve));
+  deadline(); await rejection; await closed;
+  assert.equal(outgoing.destroyed, true); assert.equal(hits, 1);
 });
