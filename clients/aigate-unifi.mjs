@@ -77,6 +77,23 @@ function config() {
 
 async function request({ base, token }, opts) {
   await new Promise((resolve, reject) => {
+    let response;
+    let settled = false;
+    const onInputError = () => finish(new ClientError('Could not read request body from stdin.'));
+    function finish(error) {
+      if (settled) return;
+      settled = true;
+      if (opts.data) {
+        process.stdin.unpipe(req);
+        process.stdin.removeListener('error', onInputError);
+        process.stdin.destroy();
+      }
+      req.setTimeout(0);
+      response?.destroy();
+      req.destroy();
+      if (error) reject(error);
+      else resolve();
+    }
     const headers = { Authorization: `Bearer ${token}` };
     if (opts.contentType) headers['Content-Type'] = opts.contentType;
     const transport = base.protocol === 'https:' ? https : http;
@@ -84,19 +101,19 @@ async function request({ base, token }, opts) {
       protocol: base.protocol, hostname: base.hostname.replace(/^\[|\]$/g, ''), port: base.port,
       method: opts.method, path: `/proxy/unifi${opts.target}`, headers,
     }, (res) => {
+      response = res;
       if (res.statusCode < 200 || res.statusCode >= 300) {
         // Never display server-controlled status text, headers, or error bodies:
         // even a malicious error response cannot echo a credential into logs.
-        res.resume();
-        reject(new ClientError(`Aigate request failed with HTTP ${res.statusCode}. Response body suppressed.`));
+        finish(new ClientError(`Aigate request failed with HTTP ${res.statusCode}. Response body suppressed.`));
         return;
       }
-      pipeline(res, process.stdout, { end: false }).then(resolve, () => reject(new ClientError('Response stream failed.')));
+      pipeline(res, process.stdout, { end: false }).then(() => finish(), () => finish(new ClientError('Response stream failed.')));
     });
-    req.setTimeout(30_000, () => req.destroy(new ClientError('Aigate request timed out.')));
-    req.on('error', (error) => reject(error instanceof ClientError ? error : new ClientError('Cannot reach Aigate or verify its TLS connection.')));
+    req.setTimeout(30_000, () => finish(new ClientError('Aigate request timed out.')));
+    req.on('error', (error) => finish(error instanceof ClientError ? error : new ClientError('Cannot reach Aigate or verify its TLS connection.')));
     if (opts.data) {
-      process.stdin.on('error', () => req.destroy(new ClientError('Could not read request body from stdin.')));
+      process.stdin.on('error', onInputError);
       process.stdin.pipe(req);
     } else req.end();
   });

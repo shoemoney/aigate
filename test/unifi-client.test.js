@@ -33,6 +33,33 @@ async function fakeAigate(t, handler) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
+function unfinishedUpload(t, url) {
+  const child = spawn(process.execPath, [client, '--method', 'POST', '--data-stdin'], {
+    env: { PATH: process.env.PATH, AIGATE_URL: url, AIGATE_PROXY_TOKEN: token },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
+  let stdout = ''; let stderr = '';
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  child.stdin.on('error', () => {});
+  // Keep producing input without ever ending stdin. The client owns cancellation.
+  const producer = setInterval(() => { if (!child.stdin.destroyed) child.stdin.write('still-uploading\n'); }, 10);
+  t.after(() => clearInterval(producer));
+  return new Promise((resolve, reject) => {
+    const deadline = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('Client retained an active upload or response after failure.'));
+    }, 2000);
+    child.on('error', reject);
+    child.on('close', (code) => {
+      clearTimeout(deadline);
+      clearInterval(producer);
+      resolve({ code, stdout, stderr });
+    });
+  });
+}
+
 test('help is offline and does not require any credentials', async () => {
   const result = await run(['--help']);
   assert.equal(result.code, 0);
@@ -125,6 +152,44 @@ test('HTTP failures suppress malicious bodies/status text and do not follow redi
     assert.ok(!result.stderr.includes(token) && !result.stderr.includes(upstreamKey));
   }
   assert.equal(count, 2);
+});
+
+test('early HTTP rejection cancels unfinished stdin and a nonterminating response', async (t) => {
+  for (const status of [401, 413]) {
+    let uploadClosed = false;
+    let responseClosed = false;
+    let requestComplete;
+    const url = await fakeAigate(t, (req, res) => {
+      req.on('error', () => {});
+      req.resume();
+      req.on('close', () => { uploadClosed = true; requestComplete = req.complete; });
+      res.writeHead(status, `${token} ${upstreamKey}`);
+      res.write(`${token} ${upstreamKey}`);
+      // This response would keep an error-body drainer alive indefinitely.
+      const endlessResponse = setInterval(() => res.write(`${token} ${upstreamKey}`), 10);
+      res.on('close', () => { clearInterval(endlessResponse); responseClosed = true; });
+    });
+    const result = await unfinishedUpload(t, url);
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, `aigate-unifi: Aigate request failed with HTTP ${status}. Response body suppressed.\n`);
+    assert.ok(uploadClosed, 'upload connection must close before the helper exits');
+    assert.ok(responseClosed, 'unfinished error response must be closed');
+    assert.equal(requestComplete, false, 'the unfinished upload must be cancelled');
+  }
+});
+
+test('connection failure cancels an unfinished stdin producer', async (t) => {
+  let socketClosed = false;
+  const url = await fakeAigate(t, (req) => {
+    req.socket.on('close', () => { socketClosed = true; });
+    req.socket.destroy();
+  });
+  const result = await unfinishedUpload(t, url);
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, '');
+  assert.equal(result.stderr, 'aigate-unifi: Cannot reach Aigate or verify its TLS connection.\n');
+  assert.ok(socketClosed);
 });
 
 test('network failures are clear and reveal no supplied credentials', async () => {
