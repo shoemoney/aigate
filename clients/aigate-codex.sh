@@ -80,7 +80,7 @@ aigate_codex_bin(){
   fi
   [ "${#cs[@]}" -eq 1 ] && { printf '%s' "${cs[0]}"; return 0; }
   for c in ${cs[@]+"${cs[@]}"}; do
-    t="$(stat -Lf %m "$c" 2>/dev/null || stat -L -c %Y "$c" 2>/dev/null)"
+    t="$(stat -Lf %m "$c" 2>/dev/null)" || t="$(stat -L -c %Y "$c" 2>/dev/null)"
     key="$key$c:$t|"
   done
   cache="${AIGATE_DIR:-$HOME/.claude/aigate}/codex-bin.cache"
