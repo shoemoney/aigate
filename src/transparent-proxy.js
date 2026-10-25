@@ -1,5 +1,6 @@
 import http from 'node:http';
 import https from 'node:https';
+import { isIP } from 'node:net';
 import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { createTrafficStore } from './proxy-traffic.js';
@@ -100,12 +101,30 @@ function defaultUpstream(provider) {
   return base.replace(/\/v1\/?$/, '');
 }
 function supportedAdapter(provider, explicitUpstream = false) {
-  if (provider === 'claude-code') return true;
+  if (provider === 'claude-code' || provider === 'unifi') return true;
   const metadata = PROVIDER_BY_ID.get(provider);
   if (provider === 'aws') return false;
   if (['anthropic', 'kimi', 'muse'].includes(provider)) return true;
   if (metadata) return metadata.oaiCompat === true;
   return explicitUpstream;
+}
+
+// Self-signed LAN gateways need an explicit, narrowly scoped exception. Never
+// apply this option to other providers, DNS names, public IPs or another port.
+export function unifiTLSOptions(provider, destination, configured = process.env.AIGATE_UNIFI_TLS_INSECURE_ORIGIN) {
+  if (provider !== 'unifi' || configured === undefined || configured === '') return {};
+  if (typeof configured !== 'string' || !/^https:\/\/(?:\[[0-9a-f:]+\]|[0-9.]+)(?::[0-9]+)?\/?$/i.test(configured)) throw new Error('invalid UniFi TLS exception origin');
+  const origin = new URL(configured);
+  const host = origin.hostname.replace(/^\[|\]$/g, '');
+  const version = isIP(host);
+  const parts = host.split('.').map(Number);
+  const privateIP = version === 4
+    ? parts[0] === 10 || parts[0] === 127 || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || (parts[0] === 192 && parts[1] === 168)
+    : version === 6 && (host === '::1' || /^f[cd][0-9a-f]{2}:/i.test(host));
+  // Reject alternate numeric spellings that URL parsing silently normalizes.
+  const literal = /^https:\/\/(\[[^\]]+\]|[^:/]+)(?::[0-9]+)?\/?$/i.exec(configured)?.[1];
+  if (!privateIP || literal?.toLowerCase() !== origin.hostname) throw new Error('UniFi TLS exception requires a private or loopback literal IP');
+  return destination.protocol === 'https:' && destination.origin === origin.origin ? { rejectUnauthorized: false } : {};
 }
 
 export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, masterToken, sessionCookie = 'aigate_sess', reqIp, authFail, authLocked, authOk, claudePool, recordUsage }) {
@@ -252,8 +271,11 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
     if (!target.startsWith('/') || target.startsWith('//')) return reject(400, 'origin-form request target required');
     if (req.method === 'CONNECT' || req.headers.upgrade) return reject(501, 'CONNECT and upgraded protocols are not supported');
     const destination = new URL(binding.upstream);
+    let tlsOptions;
+    try { tlsOptions = unifiTLSOptions(binding.provider, destination); }
+    catch { return reject(503, 'UniFi TLS exception is not configured correctly'); }
     const path = destination.pathname.replace(/\/$/, '') + target;
-    const headers = relayHeaders(req.rawHeaders, { upstream: destination, authHeader: binding.provider === 'anthropic' ? 'x-api-key' : 'authorization', key, sessionCookie });
+    const headers = relayHeaders(req.rawHeaders, { upstream: destination, authHeader: ['anthropic', 'unifi'].includes(binding.provider) ? 'x-api-key' : 'authorization', key, sessionCookie });
     // Without explicit framing Node omits chunked bodies on GET/DELETE. The
     // transfer-coding belongs to each leg; regenerate it for these uploads.
     if (req.headers['transfer-encoding'] && !headers.some((v, i) => i % 2 === 0 && v.toLowerCase() === 'content-length')) headers.push('Transfer-Encoding', 'chunked');
@@ -263,7 +285,7 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
     const timeout = Math.max(1000, Number(process.env.AIGATE_TRANSPARENT_TIMEOUT_MS) || 300000);
     try {
       outgoing = (destination.protocol === 'https:' ? https : http).request(destination, {
-        method: req.method, path, headers, setHost: false, agent: false,
+        method: req.method, path, headers, setHost: false, agent: false, ...tlsOptions,
       });
       outgoing.setTimeout(timeout, () => { void fault(504, 'upstream timed out'); });
       outgoing.on('error', e => { if (!incoming?.complete) void fault(502, 'upstream connection failed', e); });

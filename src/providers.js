@@ -62,6 +62,7 @@ export const PROVIDERS = [
   { id: 'workos',       name: 'WorkOS',               cat: 'auth',    prefix: 'sk_',       base: 'https://api.workos.com',               docs: 'https://workos.com/docs' },
 
   // --- dev / infra ---
+  { id: 'unifi',        name: 'UniFi Network',        cat: 'dev',     prefix: '',          base: 'https://192.168.1.1',                  docs: 'https://developer.ui.com' },
   { id: 'github',       name: 'GitHub',               cat: 'dev',     prefix: 'ghp_',      base: 'https://api.github.com',               docs: 'https://docs.github.com/rest' },
 
   // --- embeddings / rerank / search ---

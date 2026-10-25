@@ -25,7 +25,8 @@ The necessary exceptions are explicit:
 
 - The client authentication header is replaced with the configured provider key.
   Anthropic API keys use `x-api-key`; the Claude Code subscription pool and
-  supported bearer providers use `Authorization: Bearer`.
+  supported bearer providers use `Authorization: Bearer`. UniFi uses
+  `X-API-KEY`; the client's proxy bearer is removed before forwarding.
 - AIGate's own `aigate_sess` administrator-session cookie is removed from outgoing
   `Cookie` headers. Upstream `Set-Cookie` fields targeting that same gateway-owned
   name are excluded from the downstream response. Other application cookies are
@@ -54,7 +55,7 @@ header. Duplicate or conflicting authentication is rejected. A key in a query
 parameter is not accepted as proxy authentication.
 
 Initial authentication adapters support catalog providers marked
-`oaiCompat: true`, plus Anthropic, Kimi, and Muse. Other catalog providers return
+`oaiCompat: true`, plus Anthropic, Kimi, Muse, and UniFi. Other catalog providers return
 422 before any upstream request; a catalog entry alone is not proof its
 authentication scheme is implemented. AWS also returns 422. A custom provider
 outside the catalog is available only through an explicit client binding with an
@@ -263,6 +264,87 @@ The operator may override a preset route's upstream with
 with nonalphanumeric characters replaced by underscores. The value must be an
 HTTP(S) origin with an optional path prefix, without embedded credentials,
 query, or fragment; the caller cannot supply its own upstream.
+
+## UniFi Network gateway
+
+Manually enter the UniFi key through the shared setup launcher:
+
+```bash
+./setupscripts/unifi_aigate_setup_script --once
+```
+
+The launcher collects the key at a hidden prompt and verifies saved metadata
+through the administrator API. It does not retrieve the stored key or prove that
+the gateway accepts it. Existing UniFi credentials, browser logins, environment
+files, and device configuration are not searched for import.
+
+On the **Aigate server**, set the gateway upstream explicitly. For a gateway with
+a self-signed certificate at a private literal IP, an optional second setting
+allows that exact HTTPS origin only:
+
+```dotenv
+AIGATE_TRANSPARENT_UPSTREAM_UNIFI=https://192.168.1.1
+# Optional; omit when the gateway certificate is trusted:
+AIGATE_UNIFI_TLS_INSECURE_ORIGIN=https://192.168.1.1
+```
+
+Replace the illustrative address with the actual gateway. The optional TLS
+exception is UniFi-only, HTTPS-only, and limited to private or loopback literal
+IP addresses. Scheme, IP, and port must match the configured upstream origin;
+include a nondefault port in both settings when needed. It cannot authorize a
+hostname, a public IP, or another provider's request. Redirects are not followed.
+TLS verification stays enabled for other upstreams and for the client's
+connection to Aigate. Do not set `NODE_TLS_REJECT_UNAUTHORIZED=0` or disable TLS
+verification in setup/client tools. Aigate must have network access to the gateway.
+
+On the **client**, explicitly supply `AIGATE_URL` and a stable, dedicated
+`AIGATE_PROXY_TOKEN` through your application's environment or a hidden prompt.
+Use a proxy-only key configured on the server, separate from `AIGATE_TOKEN` and
+the UniFi API key. For an interactive Bash or Zsh session, this keeps the token
+out of shell history and process arguments:
+
+```bash
+export AIGATE_URL='https://aigate.example.com'
+printf 'Aigate proxy-only token: ' >&2
+IFS= read -rs AIGATE_PROXY_TOKEN
+printf '\n' >&2
+export AIGATE_PROXY_TOKEN
+node clients/aigate-unifi.mjs
+```
+
+The helper defaults to the read-only request
+`GET /proxy/network/api/s/default/rest/user`. It sends the proxy bearer only to
+`$AIGATE_URL/proxy/unifi/proxy/network/api/s/default/rest/user`; Aigate substitutes
+the vaulted UniFi key in `X-API-KEY` and forwards
+`/proxy/network/api/s/default/rest/user` to the configured gateway. The helper
+reads only the explicitly supplied Aigate URL and proxy token, never sources an
+environment/login file, fetches or exports the real UniFi key, or retries directly
+against the gateway when Aigate fails. It does not use `AIGATE_TOKEN` as a fallback.
+
+An optional origin-form target preserves the original path/query encoding:
+
+```bash
+node clients/aigate-unifi.mjs '/proxy/network/api/s/default/rest/user?limit=20'
+```
+
+For a deliberate mutation, choose the method explicitly and stream the body from
+stdin. The following illustrates the syntax; select a valid endpoint and payload
+for your gateway before running a mutation:
+
+```bash
+node clients/aigate-unifi.mjs --method POST --data-stdin \
+  --content-type application/json '/proxy/network/api/s/default/cmd/stamgr' < request.json
+```
+
+`--help` works offline. The helper accepts only an HTTP(S) Aigate origin and an
+origin-form target; absolute URLs, protocol-relative targets, fragments, malformed
+percent encodings, and whitespace are rejected. It sends only the proxy bearer
+and optional Content-Type header, plus HTTP transport headers. Successful response
+bytes go to stdout. HTTP failures return a nonzero exit status with the numeric
+status; server-controlled error bodies, status text, and headers are suppressed
+to prevent credential echo. Connection/TLS failures also fail without falling
+back. No redirect is followed. Synthetic tests establish these local contracts;
+live gateway acceptance requires a separate explicit request through Aigate.
 
 ## Optional isolated client bindings
 

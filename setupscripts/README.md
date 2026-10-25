@@ -13,6 +13,7 @@ one account at a time. Filenames follow `<provider>_aigate_setup_script`.
 ./setupscripts/fal_aigate_setup_script
 ./setupscripts/replicate_aigate_setup_script
 ./setupscripts/openrouter_aigate_setup_script
+./setupscripts/unifi_aigate_setup_script
 ```
 
 Use `--help` on any launcher for options, or `--once` to finish after one account.
@@ -57,6 +58,12 @@ after handing it to Aigate.
 - Provider API-key scripts, including fal, Replicate and OpenRouter, collect the
   raw value manually. Native subscriptions and ordinary provider API keys remain
   distinct. Where offered, `--auth api-key` selects the provider-key alternative.
+- UniFi uses `unifi_aigate_setup_script` for hidden manual API-key intake. It
+  stores the key under provider `unifi`; it does not discover gateway credentials
+  or test the live gateway. The [UniFi proxy instructions](../docs/TRANSPARENT-PROXY.md#unifi-network-gateway)
+  describe server routing, scoped gateway TLS configuration, and the proxy-only
+  helper. Keep the administrator token used for setup separate from the stable
+  proxy token used by that helper.
 - AWS asks for access key ID, secret access key, region and an optional session
   token. AWS Bedrock has its own launcher using the same structured fields.
   These are stored as `aws_sigv4`; request signing is separate implementation

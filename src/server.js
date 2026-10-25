@@ -1002,7 +1002,7 @@ const server = http.createServer(async (req, res) => {
       if (r.error) return json(res, 400, { error: r.error });
       logAccess(r.provider, '', reqIp(req), 'key-add', r.hint);
       broadcast('keys', q.listKeys.all());
-      return json(res, 200, r.warning ? { ok: true, warning: r.warning } : { ok: true });
+      return json(res, 200, r);
     }
     if (p.startsWith('/api/keys/') && req.method === 'DELETE') {
       // RETURNING: a typo'd id used to no-op with {ok:true} — surface it as a 404
