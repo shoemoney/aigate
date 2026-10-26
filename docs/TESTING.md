@@ -33,6 +33,15 @@ framework — Node 24's built-in test runner + a couple of shell scripts.
 npm test          # node --test → test/*.test.js
 ```
 
+The October 26, 2026 local integration at
+`d0f8e521b23e876d1484624f679493d449278c3c` passed 734 tests with 0
+failures and 0 skips on macOS with Node 26.12.0. Focused regressions cover
+out-of-range Claude expiry and reset dates, unchanged metadata after an invalid
+combined edit, legacy stored dates in status, and an early 2xx UniFi response
+while an upload remains unfinished. The UniFi test checks the local request
+flush, not upstream application consumption. This is local synthetic evidence;
+Node 24 CI and live provider or gateway acceptance are separate checks.
+
 `test/http.test.js` boots the **real server** on a throwaway temp DB (env is set
 before the import, so it never touches real data) and drives every route over
 actual HTTP — including the WebSocket upgrade.
