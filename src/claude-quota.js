@@ -1,7 +1,9 @@
 const epoch = value => {
   if (value == null || value === '') return null;
   if (typeof value === 'number' || /^\d+(?:\.\d+)?$/.test(String(value))) {
-    const number = Number(value); return Number.isFinite(number) && number >= 0 ? (number < 1e12 ? number * 1000 : number) : null;
+    const number = Number(value);
+    const time = number < 1e12 ? number * 1000 : number;
+    return number >= 0 && Number.isFinite(new Date(time).getTime()) ? time : null;
   }
   const time = Date.parse(value); return Number.isFinite(time) ? time : null;
 };
