@@ -114,7 +114,7 @@ The folder also includes an [interactive gallery](docs/screenshots/live-2026-09-
 | **Usage polling** | Checks real five-hour and seven-day rate-limit utilization every five minutes by default. Claude setup-token checks use captured minimal inference requests and consume allowance. Unchecked or stale pool usage stays ineligible. |
 | **Claude Code pool** | `/proxy/claude-code` selects manually added subscription tokens with fresh positive remaining allowance in both windows, soonest weekly reset first. Confirmed quota refusals can fail over internally while the client's gateway token and model stay unchanged. |
 | **Codex (ChatGPT) accounts** | Accounts carry a `kind` (`claude` or `codex`); the two pools never mix in selection. A Codex row stores the whole `auth.json` encrypted, polls `wham/usage` for real 5h and weekly utilization, and refreshes its own OAuth tokens late and server-side. See [Codex accounts](#codex-chatgpt-accounts). |
-| **Provider registry** | A 67-provider catalog, add-key controls, bulk import, normalized key intake, liveness probes where supported, and masked key hints. |
+| **Provider registry** | A 68-provider catalog, add-key controls, bulk import, normalized key intake, liveness probes where supported, and masked key hints. |
 | **API-key proxy** | Anthropic Messages, OpenAI Chat Completions, and Responses endpoints with provider routing, server-side key injection, streaming, and audited key failover. |
 | **Client integration** | The `ai` front door runs the official `claude` or `codex` binary on the account aigate picks (soonest weekly reset with headroom left), parks exhausted accounts, and retries with the next eligible one. Global overload responses retry the same account. `ai usage` prints every account's live meters. |
 | **Live interface** | WebSocket updates, interactive usage charts, account and key management, a filtered activity feed, responsive navigation, and the shared token background. |
@@ -416,7 +416,7 @@ The repo includes a Claude Code **skill** at [`.claude/skills/add-key/`](.claude
                   or pull a key at runtime (GET /api/keys/:provider)
 ```
 
-It knows the auth flow (source `~/.claude/aigate/env`), the 67-provider catalog, and the add / list / fetch / rotate routes. Distribute it fleet-wide by dropping it in `~/.claude/skills/` on each box — every Claude then knows how to reach the vault.
+It knows the auth flow (source `~/.claude/aigate/env`), the 68-provider catalog, and the add / list / fetch / rotate routes. Distribute it fleet-wide by dropping it in `~/.claude/skills/` on each box — every Claude then knows how to reach the vault.
 
 > [!TIP]
 > **"Unable to connect to API"?** A stale `ANTHROPIC_BASE_URL` silently hijacks
@@ -596,7 +596,7 @@ The transparent relay uses a preset proxy-only key or a separately registered cl
 | `POST` | `/api/events/usage` | set an account's 5h/7d % — the **client statusline-feed** path (the server-side poller writes usage straight to the DB); an omitted or non-numeric window keeps its stored value, a number outside 0–100 is `400`; **404 on unknown account** |
 | `POST` | `/api/events/limit` | `{account, minutes?}` — **TTL-park** an over-limit account (default **15m**, `minutes` clamped 1–360; real usage untouched, auto-unparks when the TTL passes); **404 on unknown account** |
 | `POST` | `/api/events/prompt` | log a prompt `{account, host, cwd, model, prompt}` |
-| `GET` | `/api/providers` | the 67-provider catalog (id, name, key prefix, base URL) |
+| `GET` | `/api/providers` | the 68-provider catalog (id, name, key prefix, base URL) |
 | `GET` / `POST` | `/api/keys` | list (**no secrets**, `first8…last4#hash8` hints (`hash8` = first 8 hex of the full key's SHA-256; upsert and `?exclude=` match the whole hint string), `stale` flag) / add `{provider, key, label}` — **sanitized**: trims + un-quotes, **400** on `export`/`NAME=` pastes, provider lowercased, non-fatal `warning` for uncataloged providers **or a key that doesn't match the catalog prefix** |
 | `POST` | `/api/keys/import` | **bulk import** `[{provider,key,label}]` (or `{keys:[…]}`) — one result row per key so a bad entry doesn't sink the batch (max 200) |
 | `GET` | `/api/keys/:provider?exclude=` | newest working key for a provider (audited; name normalized — `BRAVE ` finds `brave`); `exclude=<hint>` skips a just-failed key and serves the next |
