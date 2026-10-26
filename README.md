@@ -568,6 +568,8 @@ All `/api/spend*` routes require the bearer token.
 
 The **Spend** section loads on boot and every 5 minutes. It shows 24h / 7d / 30d ranges, a group selector, the figures above, the four token buckets, a value-and-spend chart and table, and a data-quality strip: collector freshness, unpriced models and unattributed events are always surfaced. It shows an explicit "unavailable" state instead of zeros when the endpoint errors.
 
+The **Firewall** tab manages application access without a restart. Add individual IPv4/IPv6 addresses or CIDR ranges, label the rules, and save. The editor shows the client address Aigate actually observes, keeps drafts when a save fails, and rejects a change that would block the administrator making it. See [application firewall](#application-firewall) for persistence, proxy handling and local recovery.
+
 ---
 
 ## API reference
@@ -578,6 +580,8 @@ The transparent relay uses a preset proxy-only key or a separately registered cl
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/api/firewall` | Administrator/session-only saved policy, revision and observed client/peer addresses. |
+| `PUT` | `/api/firewall` | Administrator/session-only atomic policy replacement: `{revision, enabled, rules:[{cidr,label}]}`. Returns the normalized policy. Invalid input is 400; stale revision or self-lockout is 409. |
 | `GET` | `/health` · `/healthz` | **unauthenticated** DB-backed liveness — `{ok, uptime_s, accounts, selectable}` (Claude pool only) plus observability numbers `poll_age_s, backup_age_s, poll_ok, poll_failed` + a `parked` / `reauth` / `disabled` / `over_cutoff` tally and the Codex counters `codex_accounts, codex_selectable, codex_reauth, codex_poll_age_s, codex_refresh_unknown`. The pre-codex fields (`accounts`, `selectable`, `poll_age_s`, `parked`, `reauth`, `disabled`, `over_cutoff`) describe **Claude only** (all numbers, no secrets; autoheal reads only the status) (generic 503 if the DB is wedged) |
 | `GET` | `/api/session` | Public session state: `{authenticated, passwordEnabled}`; no vault contents |
 | `GET` | `/api/select?host=&exclude=a,b&kind=&dry=` | best account + credential (logs access w/ IP); `exclude` skips accounts on retry. `kind=claude` (default) returns `{account, setup_token, five_hour_pct, seven_day_pct, five_hour_reset, seven_day_reset}`; `kind=codex` returns `{account, kind, auth_json, plan, token_exp, …usage}` after a late refresh if due. `dry=1` returns `{account, kind, dry, plan, …usage}` with **no credential**, audited as `select-dry`. `503` with a tally when nothing has headroom; `400` on an unknown `kind` |
@@ -651,7 +655,7 @@ Same posture on the OpenAI wire: point the client at `http://<aigate>/v1` with t
 | `AIGATE_CLAUDE_MAX_ATTEMPTS` | `8` | Claude pool attempts per request, capped at 32; only confirmed quota admission refusals permit failover |
 | `AIGATE_CLAUDE_REPLAY_MAX_BYTES` | `67108864` | per-request encrypted Claude replay capacity, capped at 1 GiB; active spools also share a 256 MiB cap |
 | `AIGATE_WATCHDOG_MS` | `30000` | self-heal watchdog — pings the DB; exits→restart if wedged. `0` disables |
-| `AIGATE_ALLOW_CIDR` | *(empty = all)* | network gate — CIDRs + single IPs. Loopback always OK. |
+| `AIGATE_ALLOW_CIDR` | *(empty = initially disabled)* | Bootstrap-only Firewall rules for a database with no policy. IPv4/IPv6 addresses and CIDRs; saved application policy takes precedence. Loopback recovery remains allowed. |
 | `AIGATE_TRUST_PROXY` | `0` | trust `X-Forwarded-For` for client IP — set `1` **only** behind a proxy you control (else the gate/audit see the proxy IP) |
 | `AIGATE_PROXY_MAIN` | *(empty = passthrough to `anthropic`)* | `/v1/messages` alias for bare `claude-*` models, as `provider:model` (e.g. `kimi:kimi-k3`); a malformed or unknown-provider value is ignored |
 | `AIGATE_PROXY_SMALL` | *(empty = passthrough to `anthropic`)* | same, for haiku-shaped `claude-*` names (the binary's background title-gen/compaction calls) |
@@ -729,6 +733,18 @@ See [VISION.md](VISION.md) for the longer design direction. Budget-breaker behav
 - Daily `VACUUM INTO` snapshots go to `data/backups/` with 14-day retention. These contain ciphertext; `.env` is not included. Keep the encryption key backed up separately.
 - The boot canary detects an incorrect encryption key before serving vault requests. Health probes test the database, and selectable-account counts use the same query as selection.
 - Keep real keys, tokens, and `.env` out of Git. Configure network restrictions and trusted proxies for your deployment.
+
+### Application firewall
+
+Open **Firewall** in the dashboard to edit allowed IP addresses and ranges. Rules accept a single address such as `192.168.1.33` or a subnet such as `192.168.1.0/24`, `100.64.0.0/10` or `fd7a:115c:a1e0::/48`. Hostnames, URLs, address/port pairs and malformed ranges are rejected. The policy supports up to 256 rules with optional labels of up to 120 characters.
+
+The policy is stored in SQLite metadata and applies immediately to HTTP routes, transparent proxy requests, WebSocket upgrades and CONNECT. An enabled policy rejects addresses that do not match an allow rule; it cannot have an empty rule list. Saving closes dashboard WebSockets whose observed address is no longer permitted. HTTP requests already in progress may finish. Password/bearer authentication remains required, and proxy-only keys cannot read or change firewall settings.
+
+`AIGATE_ALLOW_CIDR` initializes the first policy once. Subsequent restarts use the saved database policy, including an explicitly disabled policy, regardless of stale environment values. Invalid startup or stored policy fails closed. Disabling IP restrictions is an explicit dashboard action with confirmation; it permits network access while preserving endpoint authentication.
+
+Each save includes the last loaded revision, so concurrent edits cannot silently overwrite one another. A save that excludes the requesting administrator's observed client IP is rejected. Local loopback is always permitted for health checks and recovery: an administrator with access to the host can manage `/api/firewall` through a local connection using the existing administrator credential. This does not bypass authentication.
+
+Behind a reverse proxy, keep `AIGATE_TRUST_PROXY` and `AIGATE_TRUSTED_PROXIES` scoped to the actual ingress peer. Aigate uses the rightmost forwarded address supplied by that trusted proxy. Docker or Tailscale NAT can make an internal gateway appear as the client address; the editor exposes that observed address. Preserve only the exact transport peers your deployment needs. If the application's Firewall tab is intended to control access, an independent reverse-proxy allowlist must not prevent newly allowed clients from reaching Aigate.
 
 ### Content Security Policy
 
