@@ -179,6 +179,25 @@ test('early HTTP rejection cancels unfinished stdin and a nonterminating respons
   }
 });
 
+test('early successful responses fail promptly when the request upload is unfinished', async (t) => {
+  for (const status of [200, 204]) {
+    let incoming;
+    const url = await fakeAigate(t, (req, res) => {
+      incoming = req;
+      req.on('error', () => {});
+      req.resume();
+      res.writeHead(status, `${token} ${upstreamKey}`, { 'X-Secret': upstreamKey });
+      res.end();
+    });
+    const result = await unfinishedUpload(t, url);
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, 'aigate-unifi: Aigate responded before the request body finished uploading.\n');
+    assert.equal(incoming.complete, false, 'success must not conceal a cancelled request body');
+    assert.ok(!result.stderr.includes(token) && !result.stderr.includes(upstreamKey));
+  }
+});
+
 test('connection failure cancels an unfinished stdin producer', async (t) => {
   let socketClosed = false;
   const url = await fakeAigate(t, (req) => {

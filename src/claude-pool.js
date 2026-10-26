@@ -5,11 +5,13 @@ export { parseClaudeQuotaHeaders } from './claude-quota.js';
 
 const WINDOWS = ['five_hour', 'seven_day'];
 const hash = value => createHash('sha256').update(value).digest('hex');
-const iso = value => value == null ? null : new Date(value).toISOString();
+const iso = value => value == null || !Number.isFinite(new Date(value).getTime()) ? null : new Date(value).toISOString();
 const epoch = value => {
   if (value == null || value === '') return null;
   if (typeof value === 'number' || /^\d+(?:\.\d+)?$/.test(String(value))) {
-    const number = Number(value); return Number.isFinite(number) && number >= 0 ? (number < 1e12 ? number * 1000 : number) : null;
+    const number = Number(value);
+    const time = number < 1e12 ? number * 1000 : number;
+    return number >= 0 && Number.isFinite(new Date(time).getTime()) ? time : null;
   }
   const time = Date.parse(value); return Number.isFinite(time) ? time : null;
 };
@@ -238,15 +240,15 @@ export async function createClaudePool({ db, decrypt, clock = Date.now, pollMs =
     return true;
   }
   function setMetadata(account, data) {
-    const row = load(getAccount.get(account));
-    if (!row || row.invalid) throw Object.assign(new Error('unknown Claude account'), { statusCode: 404 });
-    const previousMembers = scopeMembers(row);
     const allowed = new Set(['quota_scope', 'credential_expires_at']);
     if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).some(key => !allowed.has(key))) throw new TypeError('invalid Claude account metadata');
     const expiry = data.credential_expires_at === null ? null : epoch(data.credential_expires_at);
     if (data.credential_expires_at !== undefined && data.credential_expires_at !== null && expiry == null) throw new TypeError('invalid credential_expires_at');
+    if (data.quota_scope !== undefined && data.quota_scope !== null && (typeof data.quota_scope !== 'string' || !/^[A-Za-z0-9._:@-]{1,200}$/.test(data.quota_scope))) throw new TypeError('invalid quota_scope');
+    const row = load(getAccount.get(account));
+    if (!row || row.invalid) throw Object.assign(new Error('unknown Claude account'), { statusCode: 404 });
+    const previousMembers = scopeMembers(row);
     if (data.quota_scope !== undefined) {
-      if (data.quota_scope !== null && (typeof data.quota_scope !== 'string' || !/^[A-Za-z0-9._:@-]{1,200}$/.test(data.quota_scope))) throw new TypeError('invalid quota_scope');
       db.prepare('UPDATE claude_pool_metadata SET quota_scope=? WHERE account=?').run(data.quota_scope, account);
     }
     if (data.credential_expires_at !== undefined) {

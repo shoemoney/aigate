@@ -150,6 +150,12 @@ The manual metadata endpoint accepts an optional ISO `credential_expires_at`, or
 { "quota_scope": "personal-subscription", "credential_expires_at": null }
 ```
 
+The endpoint also accepts nonnegative, representable numeric timestamps. Values
+below `1e12` are Unix seconds and values at or above it are milliseconds. An
+out-of-range expiry raises a validation error before metadata changes, including
+when the same request changes `quota_scope`. An out-of-range upstream reset is
+unknown (`null`), and old stored out-of-range dates appear as `null` in status.
+
 On `POST /v1/messages`, a conclusive subscription quota rejection can select
 another eligible account internally. The original model, provider, headers and
 request bytes remain the same. Global session/weekly exhaustion excludes that
@@ -343,7 +349,12 @@ and optional Content-Type header, plus HTTP transport headers. Successful respon
 bytes go to stdout. HTTP failures return a nonzero exit status with the numeric
 status; server-controlled error bodies, status text, and headers are suppressed
 to prevent credential echo. Connection/TLS failures also fail without falling
-back. No redirect is followed. Synthetic tests establish these local contracts;
+back. For `--data-stdin`, a 2xx response that finishes before the request body
+has finished uploading also returns a sanitized nonzero error and stops the
+unfinished producer. The upload check observes the local request flush; it does
+not prove that the upstream application consumed the body. Response bytes from
+a successful status may already have reached stdout before this error. No
+redirect is followed. Synthetic tests establish these local contracts;
 live gateway acceptance requires a separate explicit request through Aigate.
 
 ## Optional isolated client bindings

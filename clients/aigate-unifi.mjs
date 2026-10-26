@@ -79,6 +79,7 @@ async function request({ base, token }, opts) {
   await new Promise((resolve, reject) => {
     let response;
     let settled = false;
+    let uploadFinished = false;
     const onInputError = () => finish(new ClientError('Could not read request body from stdin.'));
     function finish(error) {
       if (settled) return;
@@ -108,8 +109,16 @@ async function request({ base, token }, opts) {
         finish(new ClientError(`Aigate request failed with HTTP ${res.statusCode}. Response body suppressed.`));
         return;
       }
-      pipeline(res, process.stdout, { end: false }).then(() => finish(), () => finish(new ClientError('Response stream failed.')));
+      pipeline(res, process.stdout, { end: false }).then(() => {
+        // A completed response does not prove that stdin reached EOF or that
+        // the request flushed all its bytes. Never report a truncated upload
+        // as success, and cancel an unfinished producer promptly.
+        if (opts.data && !uploadFinished) {
+          finish(new ClientError('Aigate responded before the request body finished uploading.'));
+        } else finish();
+      }, () => finish(new ClientError('Response stream failed.')));
     });
+    req.on('finish', () => { uploadFinished = true; });
     req.setTimeout(30_000, () => finish(new ClientError('Aigate request timed out.')));
     req.on('error', (error) => finish(error instanceof ClientError ? error : new ClientError('Cannot reach Aigate or verify its TLS connection.')));
     if (opts.data) {

@@ -49,6 +49,51 @@ test('quota parser preserves zero and fractional headroom and rejects unknown or
   assert.equal(parseClaudeQuotaHeaders([...quota(), 'ANTHROPIC-RATELIMIT-UNIFIED-5H-UTILIZATION', '0']).five_hour.used_pct, null);
 });
 
+test('timestamp formats preserve valid dates and reject values outside the Date range', async t => {
+  const f = await fixture(t); f.add('a');
+  const maximum = 8640000000000000;
+  for (const value of [BASE / 1000, String(BASE / 1000), BASE, String(BASE), new Date(BASE).toISOString(), maximum]) {
+    const expected = value === maximum ? maximum : BASE;
+    assert.equal(f.pool.setMetadata('a', { credential_expires_at: value }).credential_expires_at, new Date(expected).toISOString());
+    for (const window of ['5h', '7d']) {
+      assert.equal(parseClaudeQuotaHeaders({ [`anthropic-ratelimit-unified-${window}-reset`]: value })[window === '5h' ? 'five_hour' : 'seven_day'].reset_ms, expected);
+    }
+  }
+  assert.equal(f.pool.setMetadata('a', { credential_expires_at: null }).credential_expires_at, null);
+  for (const value of [maximum + 1, String(maximum + 1), Number.MAX_VALUE, '999999999999999999999', Infinity, NaN]) {
+    assert.throws(() => f.pool.setMetadata('a', { credential_expires_at: value }), TypeError);
+    assert.equal(parseClaudeQuotaHeaders({ 'anthropic-ratelimit-unified-5h-reset': value }).five_hour.reset_ms, null);
+  }
+  assert.equal(parseClaudeQuotaHeaders({ 'anthropic-ratelimit-unified-5h-reset': null }).five_hour.reset_ms, null);
+});
+
+test('invalid combined metadata edit leaves all database state untouched, even before initialization', async t => {
+  const f = await fixture(t); f.add('a'); f.add('b');
+  const snapshot = () => ['accounts', 'claude_pool_metadata', 'claude_pool_usage', 'claude_pool_blocks']
+    .map(table => f.db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all());
+  let before = snapshot();
+  assert.throws(() => f.pool.setMetadata('a', { quota_scope: 'shared', credential_expires_at: 8640000000000001 }), TypeError);
+  assert.deepEqual(snapshot(), before);
+  f.pool.observeHeaders('a', quota(.25, .5));
+  f.pool.setMetadata('a', { quota_scope: 'original', credential_expires_at: BASE + 100000 });
+  f.pool.observeHeaders('a', quota(.25, .5));
+  before = snapshot();
+  assert.throws(() => f.pool.setMetadata('a', { quota_scope: 'changed', credential_expires_at: Number.MAX_VALUE }), TypeError);
+  assert.deepEqual(snapshot(), before);
+});
+
+test('status tolerates legacy out-of-range stored expiry and reset values', async t => {
+  const f = await fixture(t); f.add('a');
+  f.pool.setMetadata('a', { credential_expires_at: BASE + 100000 });
+  f.pool.observeHeaders('a', quota());
+  f.db.prepare('UPDATE claude_pool_metadata SET credential_expires_at=? WHERE account=?').run(1e20, 'a');
+  f.db.prepare('UPDATE claude_pool_usage SET five_reset=?,seven_reset=? WHERE account=?').run(1e20, 1e20, 'a');
+  const account = f.pool.status().accounts[0];
+  assert.equal(account.credential_expires_at, null);
+  assert.equal(account.five_hour.resets_at, null);
+  assert.equal(account.seven_day.resets_at, null);
+});
+
 test('fresh positive allowance in BOTH windows is required; earliest future weekly reset wins', async t => {
   const f = await fixture(t); for (const name of ['late', 'soon', 'spent', 'unknown', 'past', 'api']) f.add(name, undefined, name === 'api' ? { kind: 'codex' } : {});
   f.pool.observeHeaders('late', quota(0, 0, BASE + 200000));
