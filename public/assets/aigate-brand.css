@@ -16,6 +16,7 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}.btn:hover{transform:none}.hero-lock{transform:none}}
 
 /* Firewall: readable address rules and an explicit saved/draft boundary. */
+.site-footer span{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .firewall-editor,.firewall-form,.firewall-settings,.firewall-rules{display:grid;gap:24px;min-width:0}
 .firewall-summary{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap}
 .firewall-addresses{display:flex;gap:20px 40px;flex-wrap:wrap;margin:0;min-width:0}
