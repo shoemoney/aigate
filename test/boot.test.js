@@ -43,6 +43,14 @@ test('boot: out-of-range AIGATE_HEADROOM_CUTOFF is FATAL', () => {
   assert.equal(boot({ AIGATE_HEADROOM_CUTOFF: '250' }).status, 1);
 });
 
+test('boot: malformed nonempty firewall bootstrap is FATAL instead of allowing all callers', () => {
+  for (const AIGATE_ALLOW_CIDR of [',,,', '192.0.2.1/33', 'fe80::1%en0']) {
+    const result = boot({ AIGATE_ALLOW_CIDR });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Firewall|firewall|CIDR/);
+  }
+});
+
 test('boot: AIGATE_VERSION env overrides the served version (/api/capabilities)', async () => {
   const DB = join(tmpdir(), `aigate-ver-${process.pid}-${Math.random().toString(36).slice(2)}.db`);
   const TOKEN = 'boot-token-' + crypto.randomBytes(8).toString('hex');

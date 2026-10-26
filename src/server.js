@@ -21,11 +21,12 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { WebSocketServer } from 'ws';
-import { makeVault, rtHash, ledgerVerdict, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot, resetsIn } from './lib.js';
+import { makeVault, rtHash, ledgerVerdict, tokenMatches, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot, resetsIn } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
 import { ensureSchema, seedIfNeeded, pruneOld, handleSpend, recordProxyUsage } from './spend.js';
 import { createTransparentProxy } from './transparent-proxy.js';
 import { createClaudePool } from './claude-pool.js';
+import { createFirewall, FirewallError } from './firewall.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -69,11 +70,8 @@ const AUTH_LOCK_MS = envNum('AIGATE_AUTH_LOCK_MS', 300000);
 const POLL_MS = envNum('AIGATE_POLL_MS', 300000); // five-minute allowance observations
 const KEY_POLL_MS = envNum('AIGATE_KEY_POLL_MS', 3600000); // 1h
 const WATCHDOG_MS = envNum('AIGATE_WATCHDOG_MS', 30000);
-// Optional network gate (defense-in-depth under the bearer token). Comma-sep
-// IPv4 CIDRs, e.g. "192.168.1.0/24". Empty = allow all. Loopback always allowed.
-// Lazy getters so tests can set env without a process restart; removing the gate
-// must make a test fail.
-const allowCidr = () => (process.env.AIGATE_ALLOW_CIDR || '').split(',').map(s => s.trim()).filter(Boolean);
+// Bootstrap only: after first initialization the database policy, edited through
+// the authenticated Firewall tab, is authoritative across process restarts.
 const trustProxy = () => process.env.AIGATE_TRUST_PROXY === '1';
 const trustedProxies = () => (process.env.AIGATE_TRUSTED_PROXIES || '').split(',').map((s) => s.trim()).filter(Boolean);
 const ENC_KEY = (process.env.AIGATE_ENCRYPTION_KEY || '').trim();
@@ -248,6 +246,7 @@ else try { decrypt(canary.v); } catch {
   console.error('FATAL: AIGATE_ENCRYPTION_KEY does not match this vault — restore the original key/.env; a regenerated key CANNOT recover it');
   process.exit(1);
 }
+const firewall = createFirewall({ db, bootstrap: process.env.AIGATE_ALLOW_CIDR || '' });
 
 // ponytail: the presence-check below is idempotent + crash-safe for ADD COLUMN ONLY.
 // A future migration that also BACKFILLS data must gate the backfill on its OWN sentinel
@@ -612,7 +611,7 @@ function vaultOneKey(raw) {
 // ---- /v1/messages proxy (API-key providers only) -------------------------
 // Claude subscription OAuth NEVER flows through this path — it reads only from
 // provider_keys (q.rankedKeys), never accounts. See COMPLIANCE.md.
-// base() is a lazy getter (same pattern as allowCidr() above) so a test can override
+// base() is a lazy getter so a test can override
 // the upstream via env without a process restart, and removing the override must make
 // a test fail — the getter reads process.env on every call, never caches it.
 const PROXY_UPSTREAMS = {
@@ -724,7 +723,7 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
 
   // network gate (defense-in-depth, before anything else)
-  if (!ipAllowed(reqIp(req), allowCidr())) {
+  if (!firewall.allows(reqIp(req))) {
     console.warn('[net] denied', reqIp(req), req.method, p);   // stderr only — unauth clients must not write DB rows
     return json(res, 403, { error: 'forbidden (network)' });
   }
@@ -846,6 +845,34 @@ const server = http.createServer(async (req, res) => {
   authOk(clientAddr);
 
   try {
+    if (p === '/api/firewall') {
+      if (req.method === 'GET') return json(res, 200, firewall.snapshot(clientAddr, req.socket.remoteAddress || ''));
+      if (req.method !== 'PUT') { res.setHeader('Allow', 'GET, PUT'); return json(res, 405, { error: 'method not allowed' }); }
+      if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) return json(res, 400, { error: 'Send firewall settings as application/json.', code: 'invalid_policy' });
+      const input = await body(req);
+      if (input?.__oversized) {
+        res.setHeader('Connection', 'close');
+        return json(res, 413, { error: 'body too large', code: 'invalid_policy' });
+      }
+      // Another administrator may have revoked this caller while its body was
+      // arriving. An already-started management request cannot restore access.
+      if (!firewall.allows(clientAddr)) return json(res, 403, { error: 'forbidden (network)' });
+      let event;
+      try {
+        firewall.update(input, { clientIp: clientAddr, audit: (policy) => {
+          event = { account: null, host: '', ip: clientAddr, action: 'firewall', result: `updated revision=${policy.revision} enabled=${policy.enabled} rules=${policy.rules.length}` };
+          q.insAccess.run(event.account, event.host, event.ip, event.action, event.result);
+        } });
+      } catch (error) {
+        if (error instanceof FirewallError) return json(res, error.status, { error: error.message, code: error.code });
+        throw error;
+      }
+      // Existing dashboard sockets must not continue receiving vault state once
+      // their address is removed. In-flight ordinary HTTP streams may finish.
+      for (const ws of wss.clients) if (!firewall.allows(ws.firewallClientIp)) ws.terminate();
+      broadcast('access', event);
+      return json(res, 200, firewall.snapshot(clientAddr, req.socket.remoteAddress || ''));
+    }
     if (await transparentProxy.admin(req, res, url, { json, body })) return;
     // --- accounts / vault ---
     if (p === '/api/accounts' && req.method === 'GET')
@@ -1583,7 +1610,9 @@ server.on('upgrade', (req, socket, head) => {
   // same '//' trap as the request handler, but this listener is SYNC — an unguarded
   // throw here is uncaughtException → shutdown(1) → autoheal crash-loop, pre-auth
   let path; try { path = new URL(req.url, 'http://x').pathname; } catch { socket.destroy(); return; }
-  if (path !== '/ws' && ipAllowed(reqIp(req), allowCidr())) { void transparentProxy.unsupported(req, socket, head); return; }
+  const wsAddr = reqIp(req);
+  if (!firewall.allows(wsAddr)) { console.warn('[net] denied', wsAddr, 'UPGRADE', path); socket.destroy(); return; }
+  if (path !== '/ws') { void transparentProxy.unsupported(req, socket, head); return; }
   // bearer rides the subprotocol (machine clients); a browser on the master password
   // has no token in-page, so also accept its signed session cookie (same as authed()).
   const wsAuthed = String(req.headers['sec-websocket-protocol'] || '').split(',')
@@ -1591,15 +1620,15 @@ server.on('upgrade', (req, socket, head) => {
     || (!!DASH_PW && verifySession(SESS_SECRET, parseCookie(req.headers.cookie, SESS_COOKIE)));
   // same per-IP brute-force throttle as the HTTP path: a locked IP is refused even with a
   // valid token, a bad bearer/cookie on /ws counts as a fail, a good one clears the count.
-  const wsAddr = reqIp(req);
   if (authLocked(wsAddr)) { console.warn('[ws] locked', wsAddr); socket.destroy(); return; }
   if (path === '/ws' && !wsAuthed) authFail(wsAddr);
-  if (path !== '/ws' || !wsAuthed || !ipAllowed(wsAddr, allowCidr())) { console.warn('[ws] denied', wsAddr); socket.destroy(); return; }
+  if (!wsAuthed) { console.warn('[ws] denied', wsAddr); socket.destroy(); return; }
   authOk(wsAddr);
   wss.handleUpgrade(req, socket, head, (ws) => {
     // a mid-send ECONNRESET (sleeping laptop tab) otherwise emits an unlistened
     // 'error' → uncaughtException → the whole vault daemon restarts
     ws.isAlive = true;
+    ws.firewallClientIp = wsAddr;
     ws.on('error', () => ws.terminate());
     ws.on('pong', () => { ws.isAlive = true; });
     ws.send(JSON.stringify({ type: 'accounts', data: q.listAccounts.all(), ts: new Date().toISOString() }));
@@ -1611,7 +1640,7 @@ server.on('checkContinue', (req, res) => {
   server.emit('request', req, res);
 });
 server.on('connect', (req, socket, head) => {
-  if (!ipAllowed(reqIp(req), allowCidr())) { socket.destroy(); return; }
+  if (!firewall.allows(reqIp(req))) { console.warn('[net] denied', reqIp(req), 'CONNECT'); socket.destroy(); return; }
   void transparentProxy.unsupported(req, socket, head);
 });
 

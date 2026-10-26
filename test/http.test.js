@@ -32,6 +32,13 @@ const { server, db, backupNow, openDb, isWeakToken, pollProviderKeys, authFail, 
 const BACKUPS = join(TMP, 'backups');   // dirname(DB)/backups
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
+async function firewallPolicy(next) {
+  const current = await (await fetch(base + '/api/firewall', { headers: H })).json();
+  if (!next) return current;
+  const response = await fetch(base + '/api/firewall', { method: 'PUT', headers: H, body: JSON.stringify({ revision: current.revision, enabled: next.enabled, rules: next.rules }) });
+  assert.equal(response.status, 200);
+  return response.json();
+}
 let claudeProbeResult;
 const claudeProbe = http.createServer((req, res) => {
   req.resume(); req.on('end', () => {
@@ -662,11 +669,11 @@ test('WS ?token= query auth is dead — socket destroyed', async () => {
   });
 });
 test('network gate: disallowed XFF IP → 403 forbidden (network), allowed IP passes (HTTP)', async () => {
-  const prevCidr = process.env.AIGATE_ALLOW_CIDR;
+  const previousPolicy = await firewallPolicy();
   const prevTrust = process.env.AIGATE_TRUST_PROXY;
-  process.env.AIGATE_ALLOW_CIDR = '10.0.0.0/24';
   process.env.AIGATE_TRUST_PROXY = '1';
   try {
+    await firewallPolicy({ enabled: true, rules: [{ cidr: '10.0.0.0/24', label: 'fixture' }] });
     // disallowed external IP via trusted XFF → 403 with exact JSON shape (gate fires before auth)
     let r = await fetch(base + '/health', { headers: { 'x-forwarded-for': '203.0.113.5' } });
     assert.equal(r.status, 403);
@@ -682,17 +689,17 @@ test('network gate: disallowed XFF IP → 403 forbidden (network), allowed IP pa
     r = await fetch(base + '/health');
     assert.equal(r.status, 200);
   } finally {
-    if (prevCidr === undefined) delete process.env.AIGATE_ALLOW_CIDR; else process.env.AIGATE_ALLOW_CIDR = prevCidr;
+    await firewallPolicy(previousPolicy);
     if (prevTrust === undefined) delete process.env.AIGATE_TRUST_PROXY; else process.env.AIGATE_TRUST_PROXY = prevTrust;
   }
 });
 
 test('network gate: WS with disallowed XFF IP is destroyed before any message (403 gate)', async () => {
-  const prevCidr = process.env.AIGATE_ALLOW_CIDR;
+  const previousPolicy = await firewallPolicy();
   const prevTrust = process.env.AIGATE_TRUST_PROXY;
-  process.env.AIGATE_ALLOW_CIDR = '10.0.0.0/24';
   process.env.AIGATE_TRUST_PROXY = '1';
   try {
+    await firewallPolicy({ enabled: true, rules: [{ cidr: '10.0.0.0/24', label: 'fixture' }] });
     await new Promise((resolve, reject) => {
       const ws = new WebSocket(base.replace('http', 'ws') + '/ws', ['aigate', 'bearer.' + TOKEN], { headers: { 'x-forwarded-for': '203.0.113.5' } });
       ws.on('message', () => reject(new Error('disallowed WS got data (gate did not fire)')));
@@ -705,7 +712,7 @@ test('network gate: WS with disallowed XFF IP is destroyed before any message (4
     // need XFF allowed header for this connection too — but remote loopback without XFF is already allowed, so default works
     assert.equal(m.type, 'accounts');
   } finally {
-    if (prevCidr === undefined) delete process.env.AIGATE_ALLOW_CIDR; else process.env.AIGATE_ALLOW_CIDR = prevCidr;
+    await firewallPolicy(previousPolicy);
     if (prevTrust === undefined) delete process.env.AIGATE_TRUST_PROXY; else process.env.AIGATE_TRUST_PROXY = prevTrust;
   }
 });
