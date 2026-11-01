@@ -125,14 +125,32 @@ fallback_to_kimi(){
 # clear can never stick (delete → launch → rewritten, forever). aigate needs no
 # stored login: delete it before each run so every session starts on exactly the
 # account aigate picked. Warn only if the delete itself fails.
+# The same store also holds MCP OAuth logins (Notion, Mapbox…) under "mcpOAuth": strip only the
+# Claude login and keep everything else, or every launch silently logs out every MCP server.
+_strip_claude_login(){ # stdin: credentials JSON -> stdout: same minus claudeAiOauth ("" if nothing left)
+  python3 -c 'import json,sys
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+d.pop("claudeAiOauth",None)
+print(json.dumps(d,separators=(",",":")) if d else "")'
+}
 clear_shadow_login(){
+  local svc="Claude Code-credentials" blob kept
   if [ "$(uname -s)" = "Darwin" ]; then
-    while security delete-generic-password -s "Claude Code-credentials" >/dev/null 2>&1; do :; done
-    security find-generic-password -s "Claude Code-credentials" >/dev/null 2>&1 \
-      && echo "⚠️  aigate: could NOT clear the Keychain login ('Claude Code-credentials') — session may run the WRONG account" >&2
+    blob="$(security find-generic-password -s "$svc" -w 2>/dev/null)" || return 0
+    kept="$(printf '%s' "$blob" | _strip_claude_login)"
+    [ "$kept" = "$blob" ] && return 0
+    while security delete-generic-password -s "$svc" >/dev/null 2>&1; do :; done
+    [ -n "$kept" ] && security add-generic-password -U -a "$USER" -s "$svc" -w "$kept" >/dev/null 2>&1
+    security find-generic-password -s "$svc" -w 2>/dev/null | grep -q '"claudeAiOauth"' \
+      && echo "⚠️  aigate: could NOT clear the Keychain login ('$svc') — session may run the WRONG account" >&2
   else
-    rm -f "$HOME/.claude/.credentials.json"
+    local f="$HOME/.claude/.credentials.json"
+    [ -f "$f" ] || return 0
+    kept="$(_strip_claude_login < "$f")"
+    if [ -n "$kept" ]; then printf '%s\n' "$kept" > "$f"; chmod 600 "$f"; else rm -f "$f"; fi
   fi
+  return 0
 }
 
 # Preflight alert (warn, don't edit): a stale ANTHROPIC_BASE_URL in settings*.json
