@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtempSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { BASH } from './helpers/bash32.js';
@@ -13,7 +13,7 @@ for (const mode of [undefined, '0', '1']) for (const print of [false, true]) tes
   const home = mkdtempSync(join(tmpdir(), 'aigate-claude-full-client-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   mkdirSync(join(home, '.claude'));
-  // Prove production shadow-login cleanup still removes the local credential file.
+  // Prove the existing MCP-preserving strip still works against a scratch home.
   writeFileSync(join(home, '.claude', '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'shadow' }, mcpOAuth: { keep: true } }));
   const binary = join(home, 'claude');
   writeFileSync(binary, '#!/bin/bash\nprintf "%s\\n" "$CLAUDE_CODE_OAUTH_TOKEN"\n', { mode: 0o700 });
@@ -38,7 +38,7 @@ for (const mode of [undefined, '0', '1']) for (const print of [false, true]) tes
   assert.ok(!result.stderr.includes('Code Mode will not start'));
   assert.equal(result.stderr.includes('relaunch this session with --continue'), mode === '1');
   if (mode === '1') assert.ok(result.stderr.includes(new Date(1900000000000).toISOString().replace('.000Z', '+00:00')));
-  assert.equal(existsSync(join(home, '.claude', '.credentials.json')), false);
+  assert.deepEqual(JSON.parse(readFileSync(join(home, '.claude', '.credentials.json'))), { mcpOAuth: { keep: true } });
 });
 
 test('client missing full login falls back, warns once across retries, and preserves excludes/parking', async (t) => {
