@@ -12,7 +12,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { decimalMicros } from '../src/spend-catalog.js';
 
 const VERSION = 'otari-import';
-const DEFAULT_DB = '/Users/shoemoney/Projects/otari/otari.db';
+const DEFAULT_DB = join(homedir(), 'Projects/otari/otari.db');
 // claude_code + codex are also collected live from transcripts; the rest exist only in otari
 const SOURCES = ['claude_code', 'codex', 'opencode', 'muse', 'hermes', 'qwen', 'kimi', 'gemini'];
 const MAX_INT = 2 ** 31 - 1;
