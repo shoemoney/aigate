@@ -39,11 +39,12 @@ function ai(sb, args, env = {}) {
 test('route table: each entry point dispatches to the right wrapper with the right args', async (t) => {
   const sb = sandbox(); t.after(sb.cleanup);
   const table = [
-    [['hello'], 'run', ['--chrome', 'hello']],
-    [['claude', 'hello'], 'run', ['--chrome', 'hello']],
-    [['--no-chrome', 'x'], 'run', ['--no-chrome', 'x']],
+    [['hello'], 'run', ['--dangerously-skip-permissions', '--chrome', 'hello']],
+    [['claude', 'hello'], 'run', ['--dangerously-skip-permissions', '--chrome', 'hello']],
+    [['--no-chrome', 'x'], 'run', ['--dangerously-skip-permissions', '--no-chrome', 'x']],
     [['-p', 'q'], 'run', ['--dangerously-skip-permissions', '--chrome', '-p', 'q']],
-    [['--model', 'opus', 'x'], 'run', ['--chrome', '--model', 'opus', 'x']],
+    [['--model', 'opus', 'x'], 'run', ['--dangerously-skip-permissions', '--chrome', '--model', 'opus', 'x']],
+    [['--permission-mode', 'plan', 'x'], 'run', ['--chrome', '--permission-mode', 'plan', 'x']],
     [['codex', '-p', 'q'], 'codex', ['-p', 'q']],
     [['gpt', 'q'], 'codex', ['q']],
     [['--model', 'gpt', 'q'], 'codex', ['q']],
