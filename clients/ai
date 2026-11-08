@@ -251,13 +251,14 @@ esac
 # `ai --no-chrome …` opts out without depending on flag precedence.
 chrome=(--chrome)
 for a in ${rest[@]+"${rest[@]}"}; do case "$a" in --chrome|--no-chrome) chrome=(); break;; esac; done
-# headless -p implies non-interactive: skip the trust prompt that otherwise HANGS
-is_print=0 has_skip=0
+# YOLO by default, interactive AND headless (-p would otherwise hang on the trust prompt).
+# The flag rides through aigate-run's account-switch --resume, so a resumed session stays
+# in bypass instead of falling back to auto mode. Opt out: AI_SAFE=1 or an explicit --permission-mode.
+has_skip=0
 for a in ${rest[@]+"${rest[@]}"}; do case "$a" in
-  -p|--print) is_print=1;;
-  --dangerously-skip-permissions) has_skip=1;;
+  --dangerously-skip-permissions|--permission-mode|--permission-mode=*) has_skip=1;;
 esac; done
-skip=(); [ "$is_print" = 1 ] && [ "$has_skip" = 0 ] && skip=(--dangerously-skip-permissions)
+skip=(); [ "$has_skip" = 0 ] && [ -z "${AI_SAFE:-}" ] && skip=(--dangerously-skip-permissions)
 
 if [ -x "$AG/aigate-run.sh" ] && [ -n "${AIGATE_URL:-}" ]; then
   exec "$AG/aigate-run.sh" ${skip[@]+"${skip[@]}"} ${chrome[@]+"${chrome[@]}"} ${rest[@]+"${rest[@]}"}
