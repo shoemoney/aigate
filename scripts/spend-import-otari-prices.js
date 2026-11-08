@@ -6,7 +6,7 @@ import { decimalMicros, digest, iso, RATE_FIELDS } from '../src/spend-catalog.js
 import { fromMicros } from '../src/spend-pricing.js';
 import { loadConfig } from './spend-import-otari.js';
 
-const DEFAULT_DB='/Users/shoemoney/Projects/otari/otari.db';
+const DEFAULT_DB=`${process.env.HOME}/Projects/otari/otari.db`;
 const MTOK={input:'input_mtok',output:'output_mtok',cache_read:'cache_read_mtok',cache_write:'cache_write_mtok',cache_write_1h:'cache_write_1h_mtok'};
 const usd=v=>v == null?null:fromMicros(decimalMicros(v));
 export function normalizeModelKey(key) {
