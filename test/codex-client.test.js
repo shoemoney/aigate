@@ -718,8 +718,20 @@ test('--keep: 401 / 404 / 503 are answers, never retried', async (t) => {
     const t0 = Date.now();
     const r = await run(sb, CODEX_SH, ['--keep'], { AIGATE_URL: m.url, AIGATE_KEEP_BACKOFF: '2 2 2' });
     assert.equal(r.code, 0, `${status}: ${r.stderr}`);
-    assert.equal(m.calls.length, 1, `${status} asked exactly once`);
     assert.ok(Date.now() - t0 < 1800, `${status} did not sleep through the backoff`);
+    // A 404 ("someone logged in by hand") makes the keeper close this CODEX_HOME's lease with a
+    // BACKGROUNDED POST that outlives the script. Wait for it instead of racing it, so the full
+    // request list below is exact rather than dependent on who wins the exit-vs-POST race.
+    const lease = (c) => c.method === 'POST' && c.path === '/api/spend/sessions';
+    if (status === 404) assert.ok(await waitFor(() => m.calls.some(lease)), '404 closes the lease');
+    const seen = m.calls.map((c) => `${c.method} ${c.path}`);
+    assert.equal(m.calls.filter((c) => c.path === '/api/codex/auth').length, 1, `${status} asked exactly once (${seen})`);
+    assert.deepEqual(seen, status === 404 ? ['GET /api/codex/auth', 'POST /api/spend/sessions'] : ['GET /api/codex/auth'],
+      `${status} made no other request`);
+    if (status === 404) {
+      const { account, via } = m.calls.find(lease).body;
+      assert.deepEqual({ account, via }, { account: '', via: 'keeper' }, '404 lease-close is account:"" from the keeper');
+    }
   }
 });
 
