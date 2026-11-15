@@ -707,6 +707,78 @@ function rawJsonBody(req, maxBytes = PROXY_BODY_MAX) {
   });
 }
 
+// ---- account selection (shared by GET /api/select and POST /api/prompt) ----------
+// Walk the ranked candidates, not just the top one: a poison account (corrupt
+// ciphertext or a since-rotated key) used to throw on decrypt and 500 — and
+// pickRanked kept re-electing it, so EVERY select 500'd forever. Park a poison
+// account (so pickRanked skips it), audit the fault, and fall through to next.
+async function pickAccount(kind, { excl = new Set(), dry = false, host = '', ip = '', act = 'select' } = {}) {
+  let picked = null, tok = null, auth = null;
+  for (const r of q.pickRanked.all(kind, CUTOFF)) {
+    if (excl.has(r.account)) continue;
+    if (dry) { picked = r; break; }   // no credential leaves, so nothing to decrypt or refresh
+    const row = q.getToken.get(r.account);
+    if (!row || !row.token_enc) continue;   // TOCTOU: deleted between rank and read
+    if (kind === 'codex') {
+      const f = await codexFresh(r.account);
+      if (f.decryptFail) { q.parkAccount.run('+60 minutes', r.account); logAccess(r.account, host, ip, act, 'decrypt-fail — parked 60m'); continue; }
+      if (f.error) { logAccess(r.account, host, ip, act, 'codex-refresh-fail'); continue; }
+      auth = f.auth; picked = r; break;
+    }
+    try { tok = decrypt(row.token_enc); picked = r; break; }
+    catch {
+      q.parkAccount.run('+60 minutes', r.account);
+      logAccess(r.account, host, ip, act, 'decrypt-fail — parked 60m');
+    }
+  }
+  return { picked, tok, auth };
+}
+// reasoned 503 body: WHY is nothing servable — one account may tick several counters.
+// Tally BEFORE the audit so the feed AND /api/access record the reason, not a bare 'none-available'.
+function noneAvailable(kind, { dry, host, ip, act }) {
+  const all = q.listAccounts.all().filter((a) => a.kind === kind);
+  const { parked, reauth, disabled, over_cutoff, refresh_unknown } = tally(all, CUTOFF, kind);
+  logAccess(null, host, ip, act, `none-available${kind === 'codex' ? ' (codex)' : ''} · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off, ${over_cutoff} over cutoff${kind === 'codex' ? `, ${refresh_unknown} refresh_unknown` : ''})`);
+  if (kind === 'claude' && !dry) noteSelectable(0, { via: 'select', accounts: all.length, parked, reauth, disabled, over_cutoff });   // edge-alert on first outage
+  return { error: kind === 'codex' ? 'no codex account with headroom' : 'no account with headroom', accounts: all.length, parked, reauth, disabled, over_cutoff, ...(kind === 'codex' ? { refresh_unknown } : {}) };
+}
+
+// Store a Codex auth.json that a client (or a prompt-API run) ended up with back in the vault.
+// Applied only if its refresh_token differs AND last_refresh is newer than the stored copy.
+// Returns { error, code } or { applied, reason, account }.
+function applyCodexSync(raw, ip) {
+  const n = normalizeCodexAuth(raw);
+  if (n.error) return { code: 400, error: n.error };
+  if (!Number.isFinite(Date.parse(raw.last_refresh))) return { code: 400, error: 'auth_json needs last_refresh' };
+  const row = q.codexByExt.get(n.account_id);
+  if (!row) return { code: 404, error: 'no codex account for that account_id' };
+  const reply = (applied, reason) => { logAccess(row.account, '', ip, 'codex-sync', applied ? 'applied' : reason); return { applied, reason, account: row.account }; };
+  let cur; try { cur = JSON.parse(decrypt(row.token_enc)); } catch { cur = null; }   // unreadable stored copy: anything valid replaces it
+  if (cur && cur.tokens) {
+    if (cur.tokens.refresh_token === n.auth.tokens.refresh_token) return reply(false, 'same refresh_token');
+    if (!(Date.parse(n.auth.last_refresh) > Date.parse(cur.last_refresh))) return reply(false, 'not newer than stored last_refresh');
+  }
+  // a refresh in flight will persist its own rotation — applying under it would be clobbered or clobber it
+  if (codexInflight.has(row.account)) return reply(false, 'refresh in flight');
+  durably(() => q.syncCodexAuth.run(encrypt(JSON.stringify(n.auth)), n.exp, n.plan, row.account));
+  ledgerNote(n.auth);
+  broadcast('accounts', q.listAccounts.all());
+  return reply(true, 'applied');
+}
+// Park an over-limit account for `mins` so the next select skips it; returns parked_until, or null for an unknown account.
+function parkForLimit(account, mins, host, ip) {
+  if (q.parkAccount.run(`+${mins} minutes`, account).changes === 0) return null;
+  logAccess(account, host, ip, 'limit', `parked ${mins}m`);
+  broadcast('accounts', q.listAccounts.all());
+  return q.getParked.get(account).parked_until;
+}
+// Audit row + live-feed event for a prompt: scrubbed and cut to 400 chars, never retain full prompts.
+function recordPrompt({ account, host, ip, cwd, model, prompt, tokens }) {
+  const text = scrub(prompt).slice(0, 400);
+  q.insReq.run(account || '', shortHost(host), ip, cwd || '', model || '', text, tokens ?? null);
+  broadcast('prompt', { account, host: shortHost(host), ip, cwd, model, prompt: text, ts: new Date().toISOString() });
+}
+
 // ---- routes -------------------------------------------------------------
 let transparentProxy;
 const claudePool = await createClaudePool({ db, decrypt, pollMs: POLL_MS,
@@ -1127,37 +1199,8 @@ const server = http.createServer(async (req, res) => {
       const act = dry ? 'select-dry' : 'select';
       const excl = new Set((url.searchParams.get('exclude') || '').split(',').map((s) => s.trim()).filter(Boolean));
       const usageOf = (r) => ({ five_hour_pct: r.five_hour_pct, seven_day_pct: r.seven_day_pct, five_hour_reset: r.five_hour_reset, seven_day_reset: r.seven_day_reset });
-      // Walk the ranked candidates, not just the top one: a poison account (corrupt
-      // ciphertext or a since-rotated key) used to throw on decrypt and 500 — and
-      // pickRanked kept re-electing it, so EVERY select 500'd forever. Park a poison
-      // account (so pickRanked skips it), audit the fault, and fall through to next.
-      let picked = null, tok = null, auth = null;
-      for (const r of q.pickRanked.all(kind, CUTOFF)) {
-        if (excl.has(r.account)) continue;
-        if (dry) { picked = r; break; }   // no credential leaves, so nothing to decrypt or refresh
-        const row = q.getToken.get(r.account);
-        if (!row || !row.token_enc) continue;   // TOCTOU: deleted between rank and read
-        if (kind === 'codex') {
-          const f = await codexFresh(r.account);
-          if (f.decryptFail) { q.parkAccount.run('+60 minutes', r.account); logAccess(r.account, host, ip, act, 'decrypt-fail — parked 60m'); continue; }
-          if (f.error) { logAccess(r.account, host, ip, act, 'codex-refresh-fail'); continue; }
-          auth = f.auth; picked = r; break;
-        }
-        try { tok = decrypt(row.token_enc); picked = r; break; }
-        catch {
-          q.parkAccount.run('+60 minutes', r.account);
-          logAccess(r.account, host, ip, act, 'decrypt-fail — parked 60m');
-        }
-      }
-      if (!picked) {
-        // reasoned 503: WHY is nothing servable — one account may tick several counters.
-        // Tally BEFORE the audit so the feed AND /api/access record the reason, not a bare 'none-available'.
-        const all = q.listAccounts.all().filter((a) => a.kind === kind);
-        const { parked, reauth, disabled, over_cutoff, refresh_unknown } = tally(all, CUTOFF, kind);
-        logAccess(null, host, ip, act, `none-available${kind === 'codex' ? ' (codex)' : ''} · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off, ${over_cutoff} over cutoff${kind === 'codex' ? `, ${refresh_unknown} refresh_unknown` : ''})`);
-        if (kind === 'claude' && !dry) noteSelectable(0, { via: 'select', accounts: all.length, parked, reauth, disabled, over_cutoff });   // edge-alert on first outage
-        return json(res, 503, { error: kind === 'codex' ? 'no codex account with headroom' : 'no account with headroom', accounts: all.length, parked, reauth, disabled, over_cutoff, ...(kind === 'codex' ? { refresh_unknown } : {}) });
-      }
+      const { picked, tok, auth } = await pickAccount(kind, { excl, dry, host, ip, act });
+      if (!picked) return json(res, 503, noneAvailable(kind, { dry, host, ip, act }));
       if (kind === 'claude' && !dry) noteSelectable(1, { via: 'select' });   // a real handout means selection is up → clears the outage latch
       logAccess(picked.account, host, ip, act, 'ok');
       if (dry) return json(res, 200, { account: picked.account, kind, dry: true, plan: picked.plan, ...usageOf(picked) });
@@ -1187,23 +1230,8 @@ const server = http.createServer(async (req, res) => {
       if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       let raw = b.auth_json;
       if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { return json(res, 400, { error: 'auth_json is not valid JSON' }); } }
-      const n = normalizeCodexAuth(raw);
-      if (n.error) return json(res, 400, { error: n.error });
-      if (!Number.isFinite(Date.parse(raw.last_refresh))) return json(res, 400, { error: 'auth_json needs last_refresh' });
-      const row = q.codexByExt.get(n.account_id);
-      if (!row) return json(res, 404, { error: 'no codex account for that account_id' });
-      const reply = (applied, reason) => { logAccess(row.account, '', reqIp(req), 'codex-sync', applied ? 'applied' : reason); return json(res, 200, { ok: true, applied, reason }); };
-      let cur; try { cur = JSON.parse(decrypt(row.token_enc)); } catch { cur = null; }   // unreadable stored copy: anything valid replaces it
-      if (cur && cur.tokens) {
-        if (cur.tokens.refresh_token === n.auth.tokens.refresh_token) return reply(false, 'same refresh_token');
-        if (!(Date.parse(n.auth.last_refresh) > Date.parse(cur.last_refresh))) return reply(false, 'not newer than stored last_refresh');
-      }
-      // a refresh in flight will persist its own rotation — applying under it would be clobbered or clobber it
-      if (codexInflight.has(row.account)) return reply(false, 'refresh in flight');
-      durably(() => q.syncCodexAuth.run(encrypt(JSON.stringify(n.auth)), n.exp, n.plan, row.account));
-      ledgerNote(n.auth);
-      broadcast('accounts', q.listAccounts.all());
-      return reply(true, 'applied');
+      const r = applyCodexSync(raw, reqIp(req));
+      return r.error ? json(res, r.code, { error: r.error }) : json(res, 200, { ok: true, applied: r.applied, reason: r.reason });
     }
     // client hit an over-limit/unavailable account → PARK it for a TTL (default 15m) so
     // the next select skips it, WITHOUT clobbering its real usage; the poller keeps the %
@@ -1215,12 +1243,10 @@ const server = http.createServer(async (req, res) => {
       const mins = Math.min(Math.max(Number(b.minutes) || 15, 1), 360);
       // a mistyped/stale account matches zero rows — {ok:true} there means selection
       // keeps running on stale data while the client thinks it reported fine.
-      if (q.parkAccount.run(`+${mins} minutes`, b.account).changes === 0)
-        return json(res, 404, { error: 'unknown account ' + b.account });
-      logAccess(b.account, b.host || '', reqIp(req), 'limit', `parked ${mins}m`);
-      broadcast('accounts', q.listAccounts.all());
+      const until = parkForLimit(b.account, mins, b.host || '', reqIp(req));
+      if (until === null) return json(res, 404, { error: 'unknown account ' + b.account });
       // read back so the caller can display/log the actual expiry
-      return json(res, 200, { ok: true, parked_minutes: mins, parked_until: q.getParked.get(b.account).parked_until });
+      return json(res, 200, { ok: true, parked_minutes: mins, parked_until: until });
     }
 
     // --- event ingest (from the fleet's hooks) ---
@@ -1234,10 +1260,7 @@ const server = http.createServer(async (req, res) => {
       for (const f of ['account', 'host', 'cwd', 'model'])
         if (b[f] != null && typeof b[f] !== 'string') return json(res, 400, { error: f + ' must be a string' });
       // store scrubbed + truncated: every read already substr's to 400 — never retain full prompts
-      const prompt = scrub(b.prompt).slice(0, 400);
-      q.insReq.run(b.account || '', shortHost(b.host), reqIp(req), b.cwd || '', b.model || '', prompt, b.tokens ?? null);
-      broadcast('prompt', { account: b.account, host: shortHost(b.host), ip: reqIp(req), cwd: b.cwd, model: b.model,
-        prompt, ts: new Date().toISOString() });
+      recordPrompt({ account: b.account, host: b.host, ip: reqIp(req), cwd: b.cwd, model: b.model, prompt: b.prompt, tokens: b.tokens });
       return json(res, 200, { ok: true });
     }
     if (p === '/api/events/usage' && req.method === 'POST') {
