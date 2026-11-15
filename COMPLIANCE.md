@@ -12,6 +12,7 @@ describes which component sends each request and where credentials are used.
 | Codex account selection through `/api/select?kind=codex` | Manually added Codex `auth.json` | The launcher writes the selected authentication file; the official `codex` client connects directly to ChatGPT. |
 | Transparent `/proxy/<provider>/...` API-key routes | Manually added provider API key | The application connects to AIGate; AIGate substitutes the provider credential and forwards the request. |
 | Explicit `/proxy/claude-code/...` | Manually added Claude Code setup tokens in `accounts` | The official Claude Code client connects to AIGate with a stable gateway key; AIGate selects an account and forwards the request to Anthropic. |
+| Prompt API `POST /api/prompt` (only with `AIGATE_PROMPT_API=1`) | Manually added Claude or Codex account | AIGate starts the official `claude` or `codex` client with the selected account; that client connects directly to the provider and AIGate returns its text output. |
 | Legacy administrator-token model-routing proxy | Manually added provider API keys | AIGate routes the request using the older model/provider mapping behavior documented in the README. |
 
 The Claude Code pool is in the inference request path. The original selector
@@ -91,6 +92,38 @@ persisted before being returned. An uncertain refresh outcome halts automatic
 refresh; the external refresh ledger protects against reuse after restoring an
 older database. The client keeper can adopt the vault's current authentication
 file. These usage and authentication calls do not relay Codex model inference.
+
+## Prompt API
+
+`POST /api/prompt` and `GET /api/models` exist only when the operator sets
+`AIGATE_PROMPT_API=1`; otherwise they answer like any unknown path. A request
+names a role (`plan`, `orchestrate`, `review`, `code`, `docs`, `gpt`), never a
+model identifier. AIGate selects a registered account the way the selector
+does, starts the official `claude` or `codex` client in a private temporary
+home containing that account's credential, and returns the text the client
+prints. The official client makes the inference request itself; AIGate does not
+construct, forward or rewrite it, and there is no direct-request fallback when
+a client binary is missing.
+
+The routes accept the administrator bearer only. Dashboard sessions, `x-api-key`
+and the proxy-only gateway keys are refused. The prompt is passed on standard
+input, the child receives an allowlisted environment without the vault
+encryption key or administrator token, and every registered secret value is
+removed from the returned text. Claude runs with tools disabled. Codex runs in a
+read-only sandbox with web search and every switchable feature disabled, and a
+response in which Codex used any tool is refused; `GET /api/models` reports any
+feature the installed client would not disable. One Codex run is admitted per
+account, concurrent runs are capped, and a rate-limited account is parked.
+
+A Codex run can rotate the account's refresh token. The rotated `auth.json` is
+stored through the existing Codex sync path before the run directory is
+removed. If it cannot be stored the file is kept, the account is marked
+`refresh_unknown`, and the next start offers it again.
+
+This is unattended, programmatic use of subscription accounts. Enabling it is
+the operator's decision about their own accounts and plan terms. High-volume
+work, work spread across accounts to avoid a limit, and work for another person
+belong on provider API keys.
 
 ## Technical references
 
