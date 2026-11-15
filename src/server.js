@@ -775,6 +775,13 @@ function parkForLimit(account, mins, host, ip) {
   broadcast('accounts', q.listAccounts.all());
   return q.getParked.get(account).parked_until;
 }
+// A claude run's limit text cannot say whether it was one model's weekly cap or the whole account, so cool only
+// the requested model in the relay pool (other models keep serving); a wrong guess self-heals as the next run
+// on another model reports its own limit. An account the pool cannot block falls back to the old whole-account park.
+function coolClaudeModel(account, model, mins, ip) {
+  if (!claudePool.markExhausted(account, { window: 'model', model, resetAt: Date.now() + mins * 60000, reason: 'prompt_limit' })) return parkForLimit(account, mins, '', ip);
+  logAccess(account, '', ip, 'limit', `${model} cooled ${mins}m`);
+}
 // Audit row + live-feed event for a prompt: scrubbed and cut to 400 chars, never retain full prompts.
 function recordPrompt({ account, host, ip, cwd, model, prompt, tokens }) {
   const text = scrub(prompt).slice(0, 400);
@@ -875,7 +882,8 @@ async function handlePrompt(req, res, p) {
   const t0 = Date.now();
   let account = '', owned = false;
   try {
-    const { picked, tok, auth: picked_auth } = await pickAccount(spec.engine, { excl: spec.engine === 'codex' ? new Set(codexBusy) : new Set(), ip, act: 'prompt-select' });
+    const excl = spec.engine === 'codex' ? new Set(codexBusy) : new Set(claudePool.status({ model: spec.model }).accounts.filter((a) => a.cooldown_until).map((a) => a.account));   // pool-known exhaustion for this model
+    const { picked, tok, auth: picked_auth } = await pickAccount(spec.engine, { excl, ip, act: 'prompt-select' });
     if (!picked) {
       if (spec.engine === 'codex' && codexBusy.size) return promptReply(res, 429, { ok: false, error: 'codex account busy' }, { 'retry-after': '10' });
       return promptReply(res, 503, { ok: false, ...noneAvailable(spec.engine, { dry: false, host: '', ip, act: 'prompt-select', via: 'prompt' }) });
@@ -907,7 +915,7 @@ async function handlePrompt(req, res, p) {
     const status = e instanceof PromptError ? e.status : 500;
     if (!(e instanceof PromptError)) console.error('[prompt] unexpected', String((e && e.message) || e));
     try {
-      if (e && e.limited && account) parkForLimit(account, 15, '', ip);
+      if (e && e.limited && account) { if (spec.engine === 'claude') coolClaudeModel(account, spec.model, 15, ip); else parkForLimit(account, 15, '', ip); }
       if (account) logAccess(account, '', ip, 'prompt', `fail ${b.role} ${status}`);
     } catch (e2) { console.error('[prompt] audit failed', String((e2 && e2.message) || e2)); }
     if (res.writableEnded || res.destroyed) return;

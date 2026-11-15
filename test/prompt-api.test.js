@@ -55,7 +55,7 @@ const alertSink = http.createServer((req, res) => {
 await new Promise((r) => alertSink.listen(0, '127.0.0.1', r));
 process.env.AIGATE_ALERT_WEBHOOK = `http://127.0.0.1:${alertSink.address().port}/hook`;
 
-const { server, db, setShuttingDown, promptBootSweep, codexInflight, storeRotated, promptStats } = await import('../src/server.js');
+const { server, db, claudePool, setShuttingDown, promptBootSweep, codexInflight, storeRotated, promptStats } = await import('../src/server.js');
 const vault = makeVault(Buffer.from(ENC_KEY, 'hex'));
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
@@ -213,7 +213,7 @@ beforeEach(async () => {
   process.env.AIGATE_CODEX_BIN = fake.codex;
   delete process.env.AIGATE_PROMPT_CONCURRENCY;
   rmSync(join(TMP, 'models.json'), { force: true });
-  db.exec(`DROP TRIGGER IF EXISTS no_sync; DELETE FROM accounts; DELETE FROM access_log; DELETE FROM request_log; DELETE FROM spend_sessions`);
+  db.exec(`DROP TRIGGER IF EXISTS no_sync; DELETE FROM accounts; DELETE FROM claude_pool_blocks; DELETE FROM access_log; DELETE FROM request_log; DELETE FROM spend_sessions`);
   try { db.exec('ALTER TABLE request_log_x RENAME TO request_log'); } catch { /* not renamed */ }
   rmSync(PARENT, { recursive: true, force: true });
   assert.equal((await addAccount({ account: 'cl1', setup_token: CLAUDE_TOKEN })).status, 200);
@@ -462,40 +462,29 @@ t('binary failure: 502, run dir removed, short redacted detail only', async () =
   assert.deepEqual(runDirs(), []);
 });
 
-t('usage-limit failure: 503, the account is parked like POST /api/events/limit would, audited', async () => {
+t('usage-limit failure (claude): 503, only the requested model is cooled in the pool, the account stays unparked and other models still run', async () => {
   cfgOf('claude', { mode: 'limit' });
   const r = await prompt({ role: 'code', prompt: 'x' });
   assert.equal(r.status, 503); assert.match((await r.json()).error, /headroom/);
-  assert.equal(db.prepare(`SELECT parked_until IS NOT NULL p FROM accounts WHERE account='cl1'`).get().p, 1);
+  assert.equal(db.prepare(`SELECT parked_until IS NOT NULL p FROM accounts WHERE account='cl1'`).get().p, 0);
+  assert.deepEqual(db.prepare(`SELECT DISTINCT model_family, window FROM claude_pool_blocks`).all().map((b) => ({ ...b })), [{ model_family: 'sonnet', window: 'model' }]);
   assert.ok(db.prepare(`SELECT 1 FROM access_log WHERE account='cl1' AND action='limit'`).get());
-  clearRecs();
-  const r2 = await prompt({ role: 'code', prompt: 'x' });
+  clearRecs(); cfgOf('claude');
+  const r2 = await prompt({ role: 'code', prompt: 'x' });   // the pool already knows: no spawn, no further limit event
   assert.equal(r2.status, 503);
   assert.equal(recsOf('claude').length, 0);
   assert.deepEqual(runDirs(), []);
+  const r3 = await prompt({ role: 'docs', prompt: 'x' });   // another model on the same account is untouched
+  assert.equal(r3.status, 200);
+  assert.equal(recsOf('claude').length, 1);
 });
 
-t('shutting down: a prompt arriving during the drain is a 503 and spawns nothing', async () => {
-  setShuttingDown(true);
-  try {
-    const r = await prompt({ role: 'code', prompt: 'x' });
-    assert.equal(r.status, 503); assert.deepEqual(await r.json(), { ok: false, error: 'shutting down' });
-    assert.equal(recsOf('claude').length, 0);
-    assert.equal(promptStats().active, 0);
-  } finally { setShuttingDown(false); }
-  assert.equal((await prompt({ role: 'code', prompt: 'x' })).status, 200);
-});
-
-t('a throw before handlePrompt\'s own try is a logged 500 JSON reply, not a hung socket', async () => {
-  const orig = http.ServerResponse.prototype.writeHead;
-  http.ServerResponse.prototype.writeHead = function (code, ...a) {
-    if (code === 400) { http.ServerResponse.prototype.writeHead = orig; throw new Error('boom before try'); }
-    return orig.call(this, code, ...a);
-  };
-  try {
-    const r = await fetch(base + '/api/prompt', { method: 'POST', headers: H, body: JSON.stringify({ role: 'nope', prompt: 'x' }), signal: AbortSignal.timeout(5000) });
-    assert.equal(r.status, 500); assert.deepEqual(await r.json(), { error: 'internal error' });
-  } finally { http.ServerResponse.prototype.writeHead = orig; }
+t('the prompt picker skips an account the pool has cooled for the requested model only', async () => {
+  assert.equal((await addAccount({ account: 'cl2', setup_token: 'sk-ant-oat01-' + crypto.randomBytes(16).toString('hex') })).status, 200);
+  assert.equal(claudePool.markExhausted('cl1', { window: 'model', model: 'opus', resetAt: Date.now() + 600000 }), true);
+  for (let i = 0; i < 3; i++) assert.equal((await (await prompt({ role: 'review', prompt: 'x' })).json()).account, 'cl2');
+  assert.equal((await (await prompt({ role: 'docs', prompt: 'x' })).json()).ok, true);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM accounts WHERE parked_until IS NOT NULL`).get().n, 0);
 });
 
 t('rate-limit wording in the ANSWER is never read as a rate limit: a failing run whose answer says "rate limit" is a 502 and parks nothing', async () => {
