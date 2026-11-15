@@ -24,7 +24,7 @@ import { pipeline } from 'node:stream/promises';
 import { WebSocketServer } from 'ws';
 import { makeVault, rtHash, ledgerVerdict, tokenMatches, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot, resetsIn } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
-import { ensureSchema, seedIfNeeded, pruneOld, handleSpend, recordProxyUsage } from './spend.js';
+import { ensureSchema, seedIfNeeded, pruneOld, handleSpend, recordProxyUsage, validateSessions, upsertSessions } from './spend.js';
 import { createTransparentProxy } from './transparent-proxy.js';
 import { createClaudePool } from './claude-pool.js';
 import { createFirewall, FirewallError } from './firewall.js';
