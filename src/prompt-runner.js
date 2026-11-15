@@ -179,6 +179,7 @@ export async function codexSurface(env = process.env, { force = false } = {}) {
   if (!force && surfaceCache && surfaceCache.bin === bin) return surfaceCache.value;
   const dir = mkdtempSync(join(promptParent(env), 's-'));
   try {
+    mkdirSync(join(dir, 'codex'), { mode: 0o700 });   // the real codex refuses a CODEX_HOME that does not exist
     const run = (args) => spawnCapture(bin, args, { cwd: dir, env: childEnv(env, dir, { CODEX_HOME: join(dir, 'codex') }), timeoutMs: 20000, graceMs: 1000 });
     const base = await run(['features', 'list']);
     const known = parseFeatures(base.stdout);

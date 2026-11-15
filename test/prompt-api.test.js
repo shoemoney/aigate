@@ -69,6 +69,8 @@ function fakeMain() {
   const cfg = JSON.parse(fs.readFileSync(self + '.cfg.json', 'utf8'));
   const isCodex = path.basename(self) === 'codex';
   const argv = process.argv.slice(2);
+  // like the real codex: a CODEX_HOME that does not exist is a hard error, for every subcommand
+  if (isCodex && !fs.existsSync(process.env.CODEX_HOME || '')) { console.error('Error: failed to resolve CODEX_HOME'); process.exit(1); }
   if (isCodex && argv.includes('features')) {
     const known = cfg.features || ['shell_tool', 'unified_exec', 'plugins', 'apps', 'daemon_auto_start', 'goals', 'agent_message_board'];
     const off = argv.flatMap((a, i) => (a === '--disable' ? [argv[i + 1]] : []));
