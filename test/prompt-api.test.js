@@ -628,9 +628,21 @@ t('codex: rotated login the vault REJECTS (vault is ahead) -> account flagged re
   assert.equal(kept.tokens.refresh_token, 'rt-rotated-by-fake');
   assert.equal(JSON.parse(readFileSync(join(PARENT, leftoverDirs()[0], 'account'), 'utf8')).account, 'cx1');
   const sweep = await promptBootSweep();
-  assert.deepEqual(sweep, { offered: 1, flagged: 1, removed: 1 });
+  assert.deepEqual(sweep, { offered: 1, flagged: 0, removed: 1 });   // the vault already supersedes the leftover: discarded, not re-flagged
+  assert.equal(stored('cx1').tokens.refresh_token, 'rt-vault-future');
   assert.deepEqual(runDirs(), []);
-  assert.deepEqual(flags(), { refresh_unknown: 1, reauth_needed: 0 });
+  assert.deepEqual(flags(), { refresh_unknown: 1, reauth_needed: 0 });   // still the flag the run itself raised
+});
+
+t('codex: boot sweep discards a leftover that is older than or identical to the vault copy WITHOUT flagging the healthy account', async () => {
+  const before = row('cx1').token_enc;
+  const leftover = (name, auth) => { const dir = join(PARENT, name); mkdirSync(join(dir, 'codex'), { recursive: true }); writeFileSync(join(dir, 'codex', 'auth.json'), JSON.stringify(auth)); writeFileSync(join(dir, 'account'), JSON.stringify({ account: 'cx1' })); };
+  leftover('r-older', { ...CODEX_AUTH, tokens: { ...CODEX_AUTH.tokens, refresh_token: 'rt-older-leftover' }, last_refresh: new Date(Date.now() - 86400e3).toISOString() });
+  leftover('r-same', CODEX_AUTH);
+  assert.deepEqual(await promptBootSweep(), { offered: 2, flagged: 0, removed: 2 });
+  assert.deepEqual(flags(), { refresh_unknown: 0, reauth_needed: 0 });
+  assert.equal(row('cx1').token_enc, before);
+  assert.deepEqual(runDirs(), []);
 });
 
 t('codex: a truncated auth.json (killed mid-write) flags the account and keeps the file; an unreadable leftover found at boot flags it too', async () => {
@@ -730,6 +742,34 @@ t('codex: aigate\'s own refresh (poll/refresh route) skips an account while a pr
   assert.equal((await run).status, 200);
   await fetch(base + '/api/accounts/cx1/refresh', { method: 'POST', headers: H });
   assert.equal(tokenHits.length, 1, 'refresh never resumed once the run ended');
+});
+
+t('codex: a refresh that begins after selection is awaited and the child gets the login stored NOW, not the pre-refresh copy', async () => {
+  const landed = { ...CODEX_AUTH, tokens: { ...CODEX_AUTH.tokens, refresh_token: 'rt-landed-late' }, last_refresh: new Date(Date.now() + 5000).toISOString() };
+  // invisible to account selection (its lookup is the first get), present when the run claims the account
+  const realGet = codexInflight.get; let gets = 0;
+  codexInflight.get = function (k) {
+    if (++gets === 1) return undefined;
+    const p = sleep(60).then(() => db.prepare(`UPDATE accounts SET token_enc=? WHERE account='cx1'`).run(vault.encrypt(JSON.stringify(landed))));
+    return p;
+  };
+  try { assert.equal((await prompt({ role: 'gpt', prompt: 'x' })).status, 200); } finally { codexInflight.get = realGet; }
+  assert.equal(recsOf('codex')[0].authSha, sha(landed), 'the child was handed the spent pre-refresh login');
+});
+
+t('codex: delete, rename and overwrite of an account are refused (409) while a prompt run holds it; relabel is fine; all work afterwards', async () => {
+  cfgOf('codex', { mode: 'sleep', ms: 1500 });
+  const run = prompt({ role: 'gpt', prompt: 'x' });
+  assert.ok(await until(() => recsOf('codex').length === 1));
+  const call = (method, path, body) => fetch(base + path, { method, headers: H, body: body && JSON.stringify(body) });
+  assert.equal((await call('DELETE', '/api/accounts/cx1')).status, 409);
+  assert.equal((await call('PATCH', '/api/accounts/cx1', { account: 'cx-renamed' })).status, 409);
+  assert.equal((await addAccount({ account: 'cx1', kind: 'codex', auth_json: CODEX_AUTH })).status, 409);
+  assert.ok(row('cx1') && !row('cx-renamed'));
+  assert.equal((await call('PATCH', '/api/accounts/cx1', { label: 'just a label' })).status, 200);
+  assert.equal((await run).status, 200);
+  assert.equal((await call('PATCH', '/api/accounts/cx1', { account: 'cx-renamed' })).status, 200);
+  assert.equal((await call('DELETE', '/api/accounts/cx-renamed')).status, 200);
 });
 
 // ---- codex tool surface -----------------------------------------------------------------------
