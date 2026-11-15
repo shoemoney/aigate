@@ -6,6 +6,9 @@ RUN npm ci --omit=dev
 # PINNED versions; bump deliberately. Nothing under /app or the installed packages is written at runtime:
 # every run uses a private dir under AIGATE_PROMPT_TMPDIR (/tmp) and the CLI auto-updaters are disabled.
 # docker-compose.yml does not set read_only; if you add it, mount a tmpfs on /tmp (owned by uid 1000).
+# codex is a native binary that trusts the SYSTEM certificate store; node:slim ships none, so without this
+# every codex request fails with "error sending request" (node and claude bundle their own roots).
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN npm install -g --no-audit --no-fund @anthropic-ai/claude-code@2.1.325 @openai/codex@0.169.0 && npm cache clean --force
 COPY src ./src
 COPY public ./public
