@@ -2,10 +2,10 @@ FROM node:24-slim
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-# The official CLIs the prompt API spawns (off unless AIGATE_PROMPT_API=1), installed globally as root
-# at PINNED versions; bump deliberately. Global install means nothing is written under /app or the
-# image at runtime: every run uses a throwaway home under AIGATE_PROMPT_TMPDIR and the CLI auto-updaters
-# are disabled (DISABLE_AUTOUPDATER=1 is also set per run), so a read-only root only needs /tmp as tmpfs.
+# The official CLIs the prompt API spawns (off unless AIGATE_PROMPT_API=1), installed globally as root at
+# PINNED versions; bump deliberately. Nothing under /app or the installed packages is written at runtime:
+# every run uses a private dir under AIGATE_PROMPT_TMPDIR (/tmp) and the CLI auto-updaters are disabled.
+# docker-compose.yml does not set read_only; if you add it, mount a tmpfs on /tmp (owned by uid 1000).
 RUN npm install -g --no-audit --no-fund @anthropic-ai/claude-code@2.1.325 @openai/codex@0.169.0 && npm cache clean --force
 COPY src ./src
 COPY public ./public
