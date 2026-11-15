@@ -56,16 +56,26 @@ except Exception: pass' 2>/dev/null)" || true
   # select observability — always write last-select.log (+ append jsonl)
   TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   SELECT_OK=0; [ -n "${tok:-}" ] && SELECT_OK=1
+  # Last good pick, cached 0600 beside $ENVF. A select miss (aigate or its proxy
+  # restarting) used to launch a token-less claude, and a box with no stored login
+  # then answers "Not logged in" for the life of that T3 thread's process.
+  TOKF="$AIGATE_DIR/last-token"; VIA=t3code
+  if [ "$SELECT_OK" -eq 1 ]; then
+    ( umask 077; printf '%s\n%s\n' "$tok" "$acct" > "$TOKF.$$" && mv -f "$TOKF.$$" "$TOKF" ) 2>/dev/null || true
+  elif [ -r "$TOKF" ]; then
+    { IFS= read -r tok; IFS= read -r acct; } < "$TOKF" 2>/dev/null || true
+    [ -n "${tok:-}" ] && VIA=t3code-cache
+  fi
   {
-    printf 'ts=%s host=%s account=%s tok_len=%s ok=%s bin=%s via=t3code\n' \
-      "$TS" "$HOST" "${acct:-?}" "${#tok}" "$SELECT_OK" "$REAL"
+    printf 'ts=%s host=%s account=%s tok_len=%s ok=%s bin=%s via=%s\n' \
+      "$TS" "$HOST" "${acct:-?}" "${#tok}" "$SELECT_OK" "$REAL" "$VIA"
     if [ "$SELECT_OK" -eq 0 ]; then
       printf 'raw=%s\n' "$(printf '%s' "$resp" | tr '\n' ' ' | cut -c1-300)"
     fi
   } > "$AIGATE_DIR/last-select.log" 2>/dev/null || true
   chmod 600 "$AIGATE_DIR/last-select.log" 2>/dev/null || true
-  printf '{"ts":"%s","host":"%s","account":"%s","tok_len":%s,"ok":%s,"bin":"%s","via":"t3code"}\n' \
-    "$TS" "$HOST" "${acct:-}" "${#tok}" "$SELECT_OK" "$REAL" \
+  printf '{"ts":"%s","host":"%s","account":"%s","tok_len":%s,"ok":%s,"bin":"%s","via":"%s"}\n' \
+    "$TS" "$HOST" "${acct:-}" "${#tok}" "$SELECT_OK" "$REAL" "$VIA" \
     >> "$AIGATE_DIR/last-selects.jsonl" 2>/dev/null || true
   chmod 600 "$AIGATE_DIR/last-selects.jsonl" 2>/dev/null || true
 
