@@ -816,7 +816,7 @@ function promptLease(scope, account) {
 // A login the codex binary rotated during a run exists nowhere else, so it must reach the vault. Offer it to
 // the /api/codex/sync path (waiting out a refresh in flight once); anything but applied / same refresh_token
 // means the vault cannot trust its own copy any more: mark the account refresh-unknown (which alerts).
-async function storeRotated(a, ip, accountHint) {
+async function storeRotated(a, ip, accountHint, { dropStale = false } = {}) {
   let r;
   try {
     r = applyCodexSync(a, ip);
@@ -827,6 +827,8 @@ async function storeRotated(a, ip, accountHint) {
     }
   } catch (e) { r = { error: 'sync threw: ' + String((e && e.message) || e) }; }
   if (r.applied || r.reason === 'same refresh_token') return { ok: true };
+  // boot only: a leftover the vault already supersedes is no lost rotation, so it must not halt a healthy account
+  if (dropStale && r.reason === 'not newer than stored last_refresh') { console.log(`[prompt] boot sweep: leftover login for ${r.account} is not newer than the vault copy — discarded`); return { ok: true }; }
   const why = r.error || r.reason;
   promptRotationFailed(r.account || accountHint, `a prompt run rotated the login but it could not be stored (${why})`);
   return { ok: false, reason: why };
@@ -837,7 +839,7 @@ function promptRotationFailed(account, why) {
 }
 // leftovers from a crash or an unstorable rotation: offered to the vault, then deleted (boot only)
 const promptStats = () => ({ active: promptActive, busy: [...codexBusy] });
-const promptBootSweep = () => sweepLeftovers({ offer: (a, hint) => storeRotated(a, 'boot', hint), rotationFailed: promptRotationFailed });
+const promptBootSweep = () => sweepLeftovers({ offer: (a, hint) => storeRotated(a, 'boot', hint, { dropStale: true }), rotationFailed: promptRotationFailed });
 // log which requested-off codex features are still effectively on (the parser fail-closed + read-only sandbox are the control)
 async function promptSelfCheck() {
   try {
@@ -902,6 +904,11 @@ async function handlePrompt(req, res, p) {
       }
       if (codexBusy.has(account)) return promptReply(res, 429, { ok: false, error: 'codex account busy' }, { 'retry-after': '10' });
       codexBusy.add(account); owned = true;   // synchronous with the check above: no await in between
+      // a refresh that began after selection may still be persisting its rotation: let it land, then hand the child what is stored NOW
+      const late = codexInflight.get(account); if (late) await late.catch(() => {});
+      const now_ = q.getAcct.get(account);
+      auth = now_ && !now_.reauth_needed && !now_.refresh_unknown ? readCodexAuth(now_) : null;
+      if (!auth) return promptReply(res, 503, { ok: false, error: 'codex login became unavailable before the run' });
     } else noteSelectable(1, { via: 'prompt' });
     logAccess(account, '', ip, 'prompt-select', 'ok');
     recordPrompt({ account, host: '', ip, cwd: 'prompt-api', model: spec.model, prompt: b.prompt });
@@ -1153,6 +1160,7 @@ const server = http.createServer(async (req, res) => {
         const dup = q.codexByExt.get(n.account_id);
         if (dup && dup.account !== b.account) return json(res, 409, { error: 'that ChatGPT account is already vaulted as ' + dup.account });
         if (prior && codexInflight.has(b.account)) return json(res, 409, { error: 'a refresh is in flight for ' + b.account + ' — retry in a moment' });
+        if (prior && codexBusy.has(b.account)) return json(res, 409, { error: 'a prompt run holds ' + b.account + ' — retry in a moment' });
         const written = durably(() => writeAccount(b.account, encrypt(JSON.stringify(n.auth)), b.label || n.email || '', 'codex', n.plan, n.exp, n.account_id));
         if (written === null) return json(res, 409, { error: 'account ' + b.account + ' already exists' });
         ledgerNote(n.auth);
@@ -1264,6 +1272,7 @@ const server = http.createServer(async (req, res) => {
     if (p.startsWith('/api/accounts/') && req.method === 'DELETE') {
       const name = decodeURIComponent(p.split('/').pop());
       if (codexInflight.has(name)) return json(res, 409, { error: 'a refresh is in flight for ' + name + ' — retry in a moment' });
+      if (codexBusy.has(name)) return json(res, 409, { error: 'a prompt run holds ' + name + ' — retry in a moment' });
       const dead = q.delAccount.get(name);
       if (!dead) return json(res, 404, { error: 'unknown account' });
       claudePool.forgetAccount(name);
@@ -1286,6 +1295,7 @@ const server = http.createServer(async (req, res) => {
       if (newName !== name && q.getAccount.get(newName)) return json(res, 409, { error: 'account ' + newName + ' already exists' });
       // the in-flight refresh persists its rotation by NAME — renaming under it would lose the token
       if (newName !== name && codexInflight.has(name)) return json(res, 409, { error: 'a refresh is in flight for ' + name + ' — retry in a moment' });
+      if (newName !== name && codexBusy.has(name)) return json(res, 409, { error: 'a prompt run holds ' + name + ' — retry in a moment' });
       if (b.account === undefined && b.label === undefined) return json(res, 400, { error: 'nothing to update' });
       const label = b.label === undefined ? row.label : String(b.label);
       // .changes guard like the sibling mutation routes: deleted between our read and the
@@ -2243,7 +2253,12 @@ if (isMain) {
   process.on('uncaughtException', (e) => { console.error('[uncaughtException]', e); shutdown(1); });
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { console.log(`[${sig}] shutting down`); shutdown(0); });
 
-  if (promptApiOn()) promptBootSweep().then((r) => { if (r.removed) console.log('[prompt] boot sweep:', JSON.stringify(r)); }, (e) => console.error('[prompt] boot sweep failed', String((e && e.message) || e))).then(promptSelfCheck);
+  // finished BEFORE the pollers start: a codex refresh must not spend a token a crashed run already rotated
+  if (promptApiOn()) {
+    try { const r = await promptBootSweep(); if (r.removed) console.log('[prompt] boot sweep:', JSON.stringify(r)); }
+    catch (e) { console.error('[prompt] boot sweep failed', String((e && e.message) || e)); }
+    promptSelfCheck();
+  }
 
   // internal watchdog: WRITE-ping, not SELECT — in WAL mode readers never block
   // on a wedged writer (disk full, ro-remount, stuck write lock), so a read
