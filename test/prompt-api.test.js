@@ -487,6 +487,29 @@ t('the prompt picker skips an account the pool has cooled for the requested mode
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM accounts WHERE parked_until IS NOT NULL`).get().n, 0);
 });
 
+t('shutting down: a prompt arriving during the drain is a 503 and spawns nothing', async () => {
+  setShuttingDown(true);
+  try {
+    const r = await prompt({ role: 'code', prompt: 'x' });
+    assert.equal(r.status, 503); assert.deepEqual(await r.json(), { ok: false, error: 'shutting down' });
+    assert.equal(recsOf('claude').length, 0);
+    assert.equal(promptStats().active, 0);
+  } finally { setShuttingDown(false); }
+  assert.equal((await prompt({ role: 'code', prompt: 'x' })).status, 200);
+});
+
+t('a throw before handlePrompt\'s own try is a logged 500 JSON reply, not a hung socket', async () => {
+  const orig = http.ServerResponse.prototype.writeHead;
+  http.ServerResponse.prototype.writeHead = function (code, ...a) {
+    if (code === 400) { http.ServerResponse.prototype.writeHead = orig; throw new Error('boom before try'); }
+    return orig.call(this, code, ...a);
+  };
+  try {
+    const r = await fetch(base + '/api/prompt', { method: 'POST', headers: H, body: JSON.stringify({ role: 'nope', prompt: 'x' }), signal: AbortSignal.timeout(5000) });
+    assert.equal(r.status, 500); assert.deepEqual(await r.json(), { error: 'internal error' });
+  } finally { http.ServerResponse.prototype.writeHead = orig; }
+});
+
 t('rate-limit wording in the ANSWER is never read as a rate limit: a failing run whose answer says "rate limit" is a 502 and parks nothing', async () => {
   cfgOf('claude', { exit: 2, text: 'my usage limit joke: 429 quota exceeded, rate limit reached' });
   const r = await prompt({ role: 'code', prompt: 'x' });
