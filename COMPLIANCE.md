@@ -180,6 +180,20 @@ Earlier Codex routing went through CLIProxyAPI, a local OAuth-pooling proxy. Tha
 
 ---
 
+## 🧪 The prompt API
+
+`POST /api/prompt` (plus `GET /api/models`) lets the owner run **one text-in/text-out prompt** from a script or another service without sitting at a terminal. It is the same selector pattern as everything else here, applied to a headless run:
+
+- **What it does.** aigate picks one of **your own** vaulted accounts exactly as `/api/select` would, then **spawns the official `claude` or `codex` binary** in a throwaway home directory with that account's credential, waits for it to print its answer, and returns the text. The caller chooses a *role* (`plan`, `review`, `code`, `docs`, `gpt`), never a model id; the role-to-model map lives in `src/models.json`.
+- **Only the official binaries.** aigate never calls `api.anthropic.com` or ChatGPT with a subscription credential itself, never crafts or forwards those requests, and never sits in their path. If the binary is missing the call fails with `503`; there is no fallback to a direct request.
+- **Off by default.** The routes do not exist unless the operator sets `AIGATE_PROMPT_API=1`; otherwise they answer like any unknown path (`404`).
+- **Single-tenant, admin token only.** It requires the administrator bearer token (`Authorization: Bearer $AIGATE_TOKEN`); dashboard sessions and `x-api-key` are refused. It is for the owner's own automation, not for other people, teams or customers, and it must not be exposed to anyone who is not the owner.
+- **A deliberate risk decision.** This is **programmatic use of subscription accounts**. Using the official binary on your own accounts is the architecture this document defends, but unattended, scripted use is exactly the kind of use a subscription's terms may treat differently from a person at a keyboard, and aigate cannot tell you where a provider will draw that line. Turning the flag on is the **owner's own decision and risk**.
+- **Guardrails that stay on.** Claude runs with every tool disabled and no permission prompts; Codex runs in a read-only sandbox with its shell tools disabled; stdin is closed; the child gets an allowlisted environment (never the vault key or admin token); one Codex run per account at a time; a rate-limited account is parked like `/api/events/limit` does; prompts are audited as the first 400 characters only, never the answer or any credential.
+- **Heavy or multi-user work belongs on API keys.** Anything high-volume, parallel across accounts to get around a weekly cap, or done for another person must use an [API key](https://platform.claude.com/) (aigate's `/v1` proxy exists for exactly that), not this endpoint.
+
+---
+
 ## 🔀 The non-Claude half (API keys are different)
 
 The prohibition above is about **Claude subscription OAuth**; the same no-relay rule is kept for ChatGPT subscription logins. Ordinary **API keys** (OpenAI, OpenRouter, Gemini, Groq, fal, …) are *meant* for programmatic use — so aigate's **secure proxy** (`POST /v1/messages`, `GET /v1/models`) injects those server-side freely. That's a normal API gateway and carries none of the subscription-OAuth restrictions.
