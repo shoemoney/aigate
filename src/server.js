@@ -16,6 +16,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
 import { chmodSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs';
 import { basename, dirname, join, extname } from 'node:path';
+import { hostname } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -27,6 +28,8 @@ import { ensureSchema, seedIfNeeded, pruneOld, handleSpend, recordProxyUsage } f
 import { createTransparentProxy } from './transparent-proxy.js';
 import { createClaudePool } from './claude-pool.js';
 import { createFirewall, FirewallError } from './firewall.js';
+import { createModelMap } from './models.js';
+import { runPrompt, PromptError } from './prompt-runner.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -779,6 +782,84 @@ function recordPrompt({ account, host, ip, cwd, model, prompt, tokens }) {
   broadcast('prompt', { account, host: shortHost(host), ip, cwd, model, prompt: text, ts: new Date().toISOString() });
 }
 
+// ---- POST /api/prompt (feature-flagged: AIGATE_PROMPT_API=1) --------------------------------------
+// One text-in/text-out prompt through the OFFICIAL claude/codex binary on a vaulted account. aigate
+// spawns the binary (src/prompt-runner.js); it never calls Anthropic/ChatGPT with the credential itself.
+const promptApiOn = () => process.env.AIGATE_PROMPT_API === '1';
+let promptModelMap = null;
+const promptModels = () => (promptModelMap ||= createModelMap(DB_PATH));
+// administrator bearer only: no dashboard cookie (a browser must not be able to spend subscriptions
+// cross-site) and no x-api-key (that is the header the /v1 proxy path accepts)
+const adminBearer = (req) => { const h = req.headers.authorization || ''; return h.startsWith('Bearer ') && tokenMatches(h.slice(7), TOKEN); };
+const PROMPT_KEYS = new Set(['role', 'prompt', 'system', 'timeout_s']);
+const PROMPT_MAX_BYTES = 120000;   // one argv string is capped at 128KiB on Linux; the prompt travels as an argument
+let promptActive = 0;
+const codexBusy = new Set();       // codex accounts with a run in flight: one run per refresh-token family
+function promptReply(res, code, obj, headers = {}) {
+  res.writeHead(code, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers });
+  res.end(JSON.stringify(obj));
+}
+// spend-attribution lease on the run's throwaway CODEX_HOME (same record aigate-codex.sh posts); '' closes it
+function promptLease(scope, account) {
+  const v = validateSessions({ source: 'codex', host: shortHost(hostname()) || 'aigate', session_id: null, scope, account, kind: 'codex', via: 'prompt-api', ts: new Date().toISOString() }, Date.now());
+  if (v.ok) upsertSessions(db, v.sessions);
+}
+async function handlePrompt(req, res, p) {
+  const ip = reqIp(req);
+  if (!adminBearer(req)) return promptReply(res, 401, { ok: false, error: 'administrator bearer token required' });
+  if (p === '/api/models') {
+    const m = promptModels()();
+    return promptReply(res, 200, { ok: true, source: m.source, path: m.path, ...(m.override_invalid ? { override_invalid: true } : {}), roles: m.roles });
+  }
+  const b = await body(req);
+  if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', 'Cache-Control': 'no-store', connection: 'close' }); return res.end(JSON.stringify({ ok: false, error: 'body too large' })); }
+  const bad = (error, extra = {}) => promptReply(res, 400, { ok: false, error, ...extra });
+  for (const k of Object.keys(b)) if (!PROMPT_KEYS.has(k)) return bad(`unknown field "${k}" — callers pick a role, never a model`);
+  const models = promptModels()();
+  if (typeof b.role !== 'string' || !Object.hasOwn(models.roles, b.role)) return bad('unknown or missing role', { valid_roles: Object.keys(models.roles) });
+  if (typeof b.prompt !== 'string' || b.prompt.length < 1 || b.prompt.length > 100000) return bad('prompt must be a string of 1..100000 characters');
+  if (b.system != null && (typeof b.system !== 'string' || b.system.length > 20000)) return bad('system must be a string of at most 20000 characters');
+  if (Buffer.byteLength(b.prompt) > PROMPT_MAX_BYTES || (b.system && Buffer.byteLength(b.system) > PROMPT_MAX_BYTES)) return bad(`prompt/system exceed ${PROMPT_MAX_BYTES} bytes`);
+  if (b.timeout_s != null && !(typeof b.timeout_s === 'number' && Number.isFinite(b.timeout_s) && b.timeout_s >= 5 && b.timeout_s <= 600)) return bad('timeout_s must be a number from 5 to 600');
+  const spec = models.roles[b.role];
+  const limit = envNum('AIGATE_PROMPT_CONCURRENCY', 2);
+  if (promptActive >= limit) return promptReply(res, 429, { ok: false, error: 'too many prompt runs in flight' }, { 'retry-after': '10' });
+  promptActive++;
+  const ac = new AbortController();
+  const onClose = () => { if (!res.writableFinished) ac.abort(); };   // client went away: kill the child
+  res.on('close', onClose);
+  const t0 = Date.now();
+  let account = '';
+  try {
+    const { picked, tok, auth } = await pickAccount(spec.engine, { excl: spec.engine === 'codex' ? new Set(codexBusy) : new Set(), ip, act: 'prompt-select' });
+    if (!picked || (spec.engine === 'codex' && codexBusy.has(picked.account))) {
+      if (picked || (spec.engine === 'codex' && codexBusy.size)) return promptReply(res, 429, { ok: false, error: 'codex account busy' }, { 'retry-after': '10' });
+      return promptReply(res, 503, { ok: false, ...noneAvailable(spec.engine, { dry: false, host: '', ip, act: 'prompt-select' }) });
+    }
+    account = picked.account;
+    if (spec.engine === 'codex') codexBusy.add(account);
+    logAccess(account, '', ip, 'prompt-select', 'ok');
+    recordPrompt({ account, host: '', ip, cwd: 'prompt-api', model: spec.model, prompt: b.prompt });
+    try {
+      const r = await runPrompt({ engine: spec.engine, model: spec.model, serviceTier: spec.service_tier, prompt: b.prompt, system: b.system, timeoutS: b.timeout_s ?? 120, signal: ac.signal, token: tok, auth },
+        { leaseOpen: (scope) => promptLease(scope, account), leaseClose: (scope) => promptLease(scope, ''), syncBack: (a) => applyCodexSync(a, ip) });
+      const ms = Date.now() - t0;
+      logAccess(account, '', ip, 'prompt', `ok ${b.role} ${spec.engine}:${spec.model} ${ms}ms`);
+      return promptReply(res, 200, { ok: true, role: b.role, engine: spec.engine, model: spec.model, served_model: r.served_model, account, text: r.text, usage: r.usage, duration_ms: ms });
+    } finally { codexBusy.delete(account); }
+  } catch (e) {
+    const status = e instanceof PromptError ? e.status : 500;
+    if (!(e instanceof PromptError)) console.error('[prompt] unexpected', String((e && e.message) || e));
+    if (e && e.limited && account) parkForLimit(account, 15, '', ip);
+    if (account) logAccess(account, '', ip, 'prompt', `fail ${b.role} ${status}`);
+    if (res.writableEnded || res.destroyed) return;
+    return promptReply(res, status, { ok: false, error: e instanceof PromptError ? e.message : 'internal error' });
+  } finally {
+    promptActive--;
+    res.off('close', onClose);
+  }
+}
+
 // ---- routes -------------------------------------------------------------
 let transparentProxy;
 const claudePool = await createClaudePool({ db, decrypt, pollMs: POLL_MS,
@@ -1233,6 +1314,9 @@ const server = http.createServer(async (req, res) => {
       const r = applyCodexSync(raw, reqIp(req));
       return r.error ? json(res, r.code, { error: r.error }) : json(res, 200, { ok: true, applied: r.applied, reason: r.reason });
     }
+    // --- prompt API: only exists when AIGATE_PROMPT_API=1, else it falls through to the 404 like any unknown path ---
+    if (promptApiOn() && ((p === '/api/prompt' && req.method === 'POST') || (p === '/api/models' && req.method === 'GET')))
+      return handlePrompt(req, res, p);
     // client hit an over-limit/unavailable account → PARK it for a TTL (default 15m) so
     // the next select skips it, WITHOUT clobbering its real usage; the poller keeps the %
     // honest and it auto-recovers when parked_until passes. ?minutes overrides the TTL.

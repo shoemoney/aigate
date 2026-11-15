@@ -395,7 +395,7 @@ export function recordProxyUsage(db, {message_id, model, ts, usage, account, hos
 
 // ---- sessions (DESIGN 4.2) ----------------------------------------------
 
-function validateSessions(b, now) {
+export function validateSessions(b, now) {
   const list = Array.isArray(b) ? b : (isPlain(b) && Array.isArray(b.sessions) ? b.sessions : (isPlain(b) ? [b] : null));
   if (!list || list.length === 0) return { error: 'expected a session object or {sessions:[...]}' };
   if (list.length > MAX_EVENTS) return { error: `sessions exceeds ${MAX_EVENTS}` };
@@ -431,7 +431,7 @@ function validateSessions(b, now) {
   return { ok: true, sessions: out };
 }
 
-function upsertSessions(db, list) {
+export function upsertSessions(db, list) {
   const s = stmts(db);
   const touched = new Map();
   let resolved = 0;
