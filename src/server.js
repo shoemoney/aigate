@@ -848,6 +848,7 @@ async function handlePrompt(req, res, p) {
     try { codex_surface = await codexSurface(); } catch (e) { codex_surface = { error: String((e && e.message) || e) }; }
     return promptReply(res, 200, { ok: true, source: m.source, path: m.path, ...(m.override_invalid ? { override_invalid: true } : {}), roles: m.roles, codex_surface });
   }
+  if (shuttingDown) return promptReply(res, 503, { ok: false, error: 'shutting down' }, { 'retry-after': '10' });   // shutdown() only waits for runs it already knows about
   const b = await body(req);
   if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', 'Cache-Control': 'no-store', connection: 'close' }); return res.end(JSON.stringify({ ok: false, error: 'body too large' })); }
   const bad = (error, extra = {}) => promptReply(res, 400, { ok: false, error, ...extra });
@@ -1375,7 +1376,7 @@ const server = http.createServer(async (req, res) => {
     }
     // --- prompt API: only exists when AIGATE_PROMPT_API=1, else it falls through to the 404 like any unknown path ---
     if (promptApiOn() && ((p === '/api/prompt' && req.method === 'POST') || (p === '/api/models' && req.method === 'GET')))
-      return handlePrompt(req, res, p);
+      return await handlePrompt(req, res, p);   // awaited so a throw before its own try reaches the 500 catch below
     // client hit an over-limit/unavailable account → PARK it for a TTL (default 15m) so
     // the next select skips it, WITHOUT clobbering its real usage; the poller keeps the %
     // honest and it auto-recovers when parked_until passes. ?minutes overrides the TTL.
@@ -2277,4 +2278,6 @@ if (isMain) {
     console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
 }
 
+const setShuttingDown = (v) => { shuttingDown = v; };   // test hook: shutdown() itself exits the process
+export { setShuttingDown };
 export { promptBootSweep, codexInflight, storeRotated, promptStats, server, db, pollUsage, pollProviderKeys, backupNow, openDb, isWeakToken, authFail, authLocked, authOk, shortHost, claudePool, transparentProxy };

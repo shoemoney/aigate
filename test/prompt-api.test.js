@@ -55,7 +55,7 @@ const alertSink = http.createServer((req, res) => {
 await new Promise((r) => alertSink.listen(0, '127.0.0.1', r));
 process.env.AIGATE_ALERT_WEBHOOK = `http://127.0.0.1:${alertSink.address().port}/hook`;
 
-const { server, db, promptBootSweep, codexInflight, storeRotated, promptStats } = await import('../src/server.js');
+const { server, db, setShuttingDown, promptBootSweep, codexInflight, storeRotated, promptStats } = await import('../src/server.js');
 const vault = makeVault(Buffer.from(ENC_KEY, 'hex'));
 const H = { authorization: 'Bearer ' + TOKEN, 'content-type': 'application/json' };
 let base;
@@ -473,6 +473,29 @@ t('usage-limit failure: 503, the account is parked like POST /api/events/limit w
   assert.equal(r2.status, 503);
   assert.equal(recsOf('claude').length, 0);
   assert.deepEqual(runDirs(), []);
+});
+
+t('shutting down: a prompt arriving during the drain is a 503 and spawns nothing', async () => {
+  setShuttingDown(true);
+  try {
+    const r = await prompt({ role: 'code', prompt: 'x' });
+    assert.equal(r.status, 503); assert.deepEqual(await r.json(), { ok: false, error: 'shutting down' });
+    assert.equal(recsOf('claude').length, 0);
+    assert.equal(promptStats().active, 0);
+  } finally { setShuttingDown(false); }
+  assert.equal((await prompt({ role: 'code', prompt: 'x' })).status, 200);
+});
+
+t('a throw before handlePrompt\'s own try is a logged 500 JSON reply, not a hung socket', async () => {
+  const orig = http.ServerResponse.prototype.writeHead;
+  http.ServerResponse.prototype.writeHead = function (code, ...a) {
+    if (code === 400) { http.ServerResponse.prototype.writeHead = orig; throw new Error('boom before try'); }
+    return orig.call(this, code, ...a);
+  };
+  try {
+    const r = await fetch(base + '/api/prompt', { method: 'POST', headers: H, body: JSON.stringify({ role: 'nope', prompt: 'x' }), signal: AbortSignal.timeout(5000) });
+    assert.equal(r.status, 500); assert.deepEqual(await r.json(), { error: 'internal error' });
+  } finally { http.ServerResponse.prototype.writeHead = orig; }
 });
 
 t('rate-limit wording in the ANSWER is never read as a rate limit: a failing run whose answer says "rate limit" is a 502 and parks nothing', async () => {
