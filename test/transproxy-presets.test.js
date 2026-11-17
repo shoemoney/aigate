@@ -4,6 +4,7 @@
 import test, { before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import https from 'node:https';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,11 +15,41 @@ const ADMIN = randomBytes(24).toString('hex');
 const PRIMARY = 'primary-preset-test-only';
 const SECONDARY = 'secondary-preset-test-only';
 const hits = [];
+const queueModel = '/fal-ai/flux/schnell';
+const queueRequest = '/fal-ai/flux/requests/test-id';
+const queueSubmission = JSON.stringify({
+  request_id: 'test-id',
+  status_url: 'https://queue.fal.run' + queueRequest + '/status',
+  response_url: 'https://queue.fal.run' + queueRequest,
+});
+const mediaBytes = Buffer.from([0, 255, 1, 128]);
+let finishVideo;
 const upstream = http.createServer((req, res) => {
   const chunks = [];
   req.on('data', chunk => chunks.push(chunk));
   req.on('end', () => {
     hits.push({ target: req.url, method: req.method, headers: req.headers, body: Buffer.concat(chunks) });
+    if (req.url === queueModel && req.headers.host === 'queue.fal.run') {
+      res.writeHead(202, { 'content-type': 'application/json' });
+      return res.end(queueSubmission);
+    }
+    if (req.url === queueRequest + '/cancel') {
+      res.writeHead(204);
+      return res.end();
+    }
+    if (req.url === '/v1/predictions/redirect') {
+      res.writeHead(307, { location: upstreamBase + '/redirect-target' });
+      return res.end('redirect from Replicate');
+    }
+    if (req.url === '/v1/predictions/invalid' || req.url === '/v1/predictions/failed') {
+      res.writeHead(req.url.endsWith('/invalid') ? 422 : 502);
+      return res.end(mediaBytes);
+    }
+    if (req.url === '/api/v1/videos/test-id/content') {
+      res.writeHead(200, { 'content-type': 'application/octet-stream' });
+      finishVideo = () => res.end(mediaBytes);
+      return res.write(mediaBytes);
+    }
     res.writeHead(200, { 'content-type': 'application/octet-stream' });
     res.end('local upstream response');
   });
@@ -257,4 +288,145 @@ test('unsupported multi-field credentials stop before any upstream call instead 
   assert.equal(binding.status, 422);
   assert.equal(hits.length, 0);
   assert.equal(credentialCounts().proxy_clients, 0);
+});
+
+
+// Check the actual default HTTPS destinations without making any network calls.
+function mockMediaUpstream(t) {
+  return t.mock.method(https, 'request', (destination, options) => http.request(upstreamBase, options));
+}
+
+test('Replicate uses bearer auth, preserves wait and cancellation headers, and relays errors and redirects once', async t => {
+  const upstreamRequests = mockMediaUpstream(t);
+  const key = 'r8_manual-replicate-test-key';
+  await typed('replicate', key);
+  const body = '{"input":{"prompt":"test"}}';
+  const path = '/v1/predictions?name=a%2Fb&name=c';
+  const result = await request('/proxy/replicate' + path, {
+    method: 'POST', body,
+    headers: { 'content-type': 'application/json', prefer: 'wait', 'cancel-after': '90s' },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(upstreamRequests.mock.calls[0].arguments[0].origin, 'https://api.replicate.com');
+  assert.equal(hits[0].target, path);
+  assert.equal(hits[0].method, 'POST');
+  assert.equal(hits[0].headers.host, 'api.replicate.com');
+  assert.equal(hits[0].headers.authorization, 'Bearer ' + key);
+  assert.ok(!JSON.stringify(hits[0].headers).includes(PRIMARY));
+  assert.equal(hits[0].headers.prefer, 'wait');
+  assert.equal(hits[0].headers['cancel-after'], '90s');
+  assert.equal(hits[0].body.toString(), body);
+
+  for (const [id, status] of [['invalid', 422], ['failed', 502], ['redirect', 307]]) {
+    const response = await fetch(base + '/proxy/replicate/v1/predictions/' + id, {
+      headers: { 'x-api-key': PRIMARY }, redirect: 'manual',
+    });
+    assert.equal(response.status, status);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), status === 307 ? Buffer.from('redirect from Replicate') : mediaBytes);
+    assert.equal(hits.at(-1).headers.authorization, 'Bearer ' + key);
+    assert.equal(hits.at(-1).headers['x-api-key'], undefined);
+    if (status === 307) assert.equal(response.headers.get('location'), upstreamBase + '/redirect-target');
+  }
+  assert.equal(hits.length, 4);
+});
+
+test('fal queue and synchronous routes share a key and relay submit, status, result, and cancel', async t => {
+  const upstreamRequests = mockMediaUpstream(t);
+  const key = 'manual-fal:test-key';
+  await typed('fal', key);
+  const body = '{"prompt":"test"}';
+  const routes = [
+    ['/proxy/fal', queueModel, 'POST', 'https://fal.run', 200],
+    ['/proxy/fal-queue', queueModel, 'POST', 'https://queue.fal.run', 202],
+    ['/proxy/fal-queue', queueRequest + '/status?logs=1', 'GET', 'https://queue.fal.run', 200],
+    ['/proxy/fal-queue', queueRequest, 'GET', 'https://queue.fal.run', 200],
+    ['/proxy/fal-queue', queueRequest + '/cancel', 'PUT', 'https://queue.fal.run', 204],
+  ];
+  for (const [prefix, target, method, origin, status] of routes) {
+    const result = await request(prefix + target, { method, body: method === 'POST' ? body : undefined });
+    assert.equal(result.status, status);
+    if (status === 202) assert.equal(result.text, queueSubmission);
+    const hit = hits.at(-1);
+    assert.equal(upstreamRequests.mock.calls.at(-1).arguments[0].origin, origin);
+    assert.equal(hit.method, method);
+    assert.equal(hit.target, target);
+    assert.equal(hit.headers.host, new URL(origin).host);
+    assert.equal(hit.headers.authorization, 'Key ' + key);
+    assert.equal(hit.body.toString(), method === 'POST' ? body : '');
+  }
+  await settledCaptures();
+  const queueCapture = db.prepare("SELECT * FROM proxy_traffic WHERE provider='fal' ORDER BY id DESC LIMIT 1").get();
+  assert.equal(queueCapture.status, 204);
+  assert.equal(queueCapture.state, 'complete');
+  assert.equal(credentialCounts().proxy_credentials, 1);
+  const response = await fetch(base + '/api/proxy/traffic/' + queueCapture.id + '/events', {
+    headers: { authorization: 'Bearer ' + ADMIN },
+  });
+  assert.equal(response.status, 200);
+  const capture = await response.text();
+  assert.ok(capture.includes('[redacted]'));
+  assert.ok(!capture.includes(key));
+  assert.ok(!capture.includes(PRIMARY));
+});
+
+test('fal queue has an independent upstream override and requires a fal credential', async t => {
+  t.mock.method(https, 'request', () => assert.fail('unexpected default upstream'));
+  process.env.AIGATE_TRANSPARENT_UPSTREAM_FAL = upstreamBase + '/sync';
+  process.env.AIGATE_TRANSPARENT_UPSTREAM_FAL_QUEUE = upstreamBase + '/queue';
+  t.after(() => {
+    delete process.env.AIGATE_TRANSPARENT_UPSTREAM_FAL;
+    delete process.env.AIGATE_TRANSPARENT_UPSTREAM_FAL_QUEUE;
+  });
+  await typed('fal-queue', 'unused-credential-for-alias-test');
+  assert.equal((await request('/proxy/fal-queue' + queueModel)).status, 503);
+  assert.equal((await request('/proxy/replicate/v1/account')).status, 503);
+  assert.equal((await request('/proxy/huggingface/v1/models')).status, 422);
+  assert.equal((await request('/proxy/no-such-provider/v1/models')).status, 422);
+  assert.equal(hits.length, 0);
+
+  const key = 'manual-fal:override-test-key';
+  await legacy('fal', key);
+  assert.equal((await request('/proxy/fal' + queueModel)).status, 200);
+  assert.equal((await request('/proxy/fal-queue' + queueModel)).status, 200);
+  assert.deepEqual(hits.map(hit => hit.target), ['/sync' + queueModel, '/queue' + queueModel]);
+  assert.ok(hits.every(hit => hit.headers.authorization === 'Key ' + key));
+});
+
+test('OpenRouter preserves non-chat URLs, JSON and binary bodies, and streams video output', async t => {
+  const upstreamRequests = mockMediaUpstream(t);
+  const key = 'sk-or-manual-media-test-key';
+  await typed('openrouter', key);
+  assert.equal((await rawRequest('/proxy/openrouter/v1/images', PRIMARY, mediaBytes)).status, 200);
+  const body = '{"model":"provider/video-model","prompt":"test"}';
+  assert.equal((await request('/proxy/openrouter/v1/videos', {
+    method: 'POST', body, headers: { 'content-type': 'application/json' },
+  })).status, 200);
+  assert.equal((await request('/proxy/openrouter/v1/videos/test-id')).status, 200);
+  assert.equal((await request('/proxy/openrouter/v1/videos/models')).status, 200);
+  const response = await fetch(base + '/proxy/openrouter/v1/videos/test-id/content', {
+    headers: { authorization: 'Bearer ' + PRIMARY }, signal: AbortSignal.timeout(5000),
+  });
+  assert.equal(response.status, 200);
+  const reader = response.body.getReader();
+  try {
+    const first = await reader.read();
+    assert.equal(first.done, false);
+    assert.deepEqual(Buffer.from(first.value), mediaBytes);
+  } finally {
+    finishVideo?.();
+  }
+  const second = await reader.read();
+  assert.deepEqual(Buffer.from(second.value), mediaBytes);
+  assert.equal((await reader.read()).done, true);
+  assert.deepEqual(hits.map(hit => [hit.method, hit.target]), [
+    ['POST', '/api/v1/images'],
+    ['POST', '/api/v1/videos'],
+    ['GET', '/api/v1/videos/test-id'],
+    ['GET', '/api/v1/videos/models'],
+    ['GET', '/api/v1/videos/test-id/content'],
+  ]);
+  assert.deepEqual(hits[0].body, mediaBytes);
+  assert.equal(hits[1].body.toString(), body);
+  assert.ok(hits.every(hit => hit.headers.authorization === 'Bearer ' + key));
+  assert.ok(upstreamRequests.mock.calls.every(call => call.arguments[0].origin === 'https://openrouter.ai'));
 });

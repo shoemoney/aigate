@@ -9,6 +9,9 @@ import { tokenMatches } from './lib.js';
 import { createReplayStore } from './proxy-replay.js';
 import { createClaudeRelay } from './claude-relay.js';
 
+const FAL_QUEUE = 'fal-queue';
+const MEDIA_PROVIDERS = new Set(['fal', 'replicate', 'openrouter']);
+const presetRoute = /^\/proxy\/([a-z0-9._-]+)(\/.*)$/;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'transfer-encoding', 'upgrade']);
 const reserved = (p) => p.startsWith('/api') || p === '/health' || p === '/healthz' || p === '/ws';
@@ -51,12 +54,18 @@ function authentication(req) {
   if (!value || /[\s,]/.test(value)) return { error: 'invalid x-api-key' };
   return { token: value, header };
 }
-function relayHeaders(raw, { upstream, authHeader, key, sessionCookie, requestCookies = !!upstream } = {}) {
+function captureHeaders(raw, redactAuth) {
+  if (!redactAuth) return raw;
+  return raw.map((value, index) => index % 2 === 1 &&
+    ['authorization', 'x-api-key', 'proxy-authorization'].includes(raw[index - 1].toLowerCase()) ? '[redacted]' : value);
+}
+function relayHeaders(raw, { upstream, authHeader, authScheme = 'Bearer', key, sessionCookie, requestCookies = !!upstream } = {}) {
   const connection = new Set();
   for (let i = 0; i < raw.length; i += 2) if (raw[i].toLowerCase() === 'connection') {
     for (const name of raw[i + 1].split(',')) connection.add(name.trim().toLowerCase());
   }
   const out = [];
+  const authValue = authHeader === 'x-api-key' ? key : authScheme + ' ' + key;
   let inserted = false, hasHost = false;
   for (let i = 0; i < raw.length; i += 2) {
     const name = raw[i].toLowerCase();
@@ -77,13 +86,13 @@ function relayHeaders(raw, { upstream, authHeader, key, sessionCookie, requestCo
     if (upstream && name === 'host') { out.push(raw[i], upstream.host); hasHost = true; continue; }
     if (upstream && (name === 'authorization' || name === 'x-api-key')) {
       const canonical = authHeader === 'x-api-key' ? 'x-api-key' : 'Authorization';
-      out.push(name === authHeader ? raw[i] : canonical, authHeader === 'x-api-key' ? key : 'Bearer ' + key);
+      out.push(name === authHeader ? raw[i] : canonical, authValue);
       inserted = true; continue;
     }
     out.push(raw[i], raw[i + 1]);
   }
   if (upstream && !hasHost) out.push('Host', upstream.host);
-  if (upstream && !inserted) out.push(authHeader, authHeader === 'x-api-key' ? key : 'Bearer ' + key);
+  if (upstream && !inserted) out.push(authHeader, authValue);
   return out;
 }
 function upstreamUrl(value) {
@@ -93,6 +102,7 @@ function upstreamUrl(value) {
 }
 function defaultUpstream(provider) {
   if (provider === 'claude-code') return 'https://api.anthropic.com';
+  if (provider === FAL_QUEUE) return 'https://queue.fal.run';
   if (provider === 'kimi') return 'https://api.kimi.com/coding';
   const base = PROVIDER_BY_ID.get(provider)?.base;
   if (!base) return null;
@@ -103,8 +113,8 @@ function defaultUpstream(provider) {
 function supportedAdapter(provider, explicitUpstream = false) {
   if (provider === 'claude-code' || provider === 'unifi') return true;
   const metadata = PROVIDER_BY_ID.get(provider);
-  if (provider === 'aws') return false;
-  if (['anthropic', 'kimi', 'muse'].includes(provider)) return true;
+  if (provider === 'aws' || provider === FAL_QUEUE) return false;
+  if (['anthropic', 'kimi', 'muse', 'fal', 'replicate'].includes(provider)) return true;
   if (metadata) return metadata.oaiCompat === true;
   return explicitUpstream;
 }
@@ -155,12 +165,13 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
   };
   presetTokens();
   const presetBinding = (req) => {
-    const match = /^\/proxy\/([a-z0-9._-]+)(\/.*)$/.exec(req.url);
+    const match = presetRoute.exec(req.url);
     if (!match) return { invalid: { status: 400, reason: 'provider path required: /proxy/<provider>/<original path>' } };
-    const provider = match[1];
+    const route = match[1];
+    const provider = route === FAL_QUEUE ? 'fal' : route;
     if (!supportedAdapter(provider)) return { invalid: { status: 422, reason: 'provider requires an unsupported authentication adapter' } };
     let upstream;
-    try { upstream = upstreamUrl(process.env['AIGATE_TRANSPARENT_UPSTREAM_' + provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')] || defaultUpstream(provider)); }
+    try { upstream = upstreamUrl(process.env['AIGATE_TRANSPARENT_UPSTREAM_' + route.toUpperCase().replace(/[^A-Z0-9]/g, '_')] || defaultUpstream(route)); }
     catch { return { invalid: { status: 503, reason: 'provider upstream is not configured correctly' } }; }
     if (provider === 'claude-code') return claudeRelay
       ? { binding: { provider, upstream, relay_target: match[2], account_pool: true } }
@@ -173,7 +184,14 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
     return { binding: { provider, key_id: key.id, upstream, relay_target: match[2] } };
   };
 
+  const headersForCapture = (req, binding) => {
+    const route = presetRoute.exec(req.url)?.[1];
+    const redactAuth = route === FAL_QUEUE || MEDIA_PROVIDERS.has(route) || MEDIA_PROVIDERS.has(binding?.provider);
+    return raw => captureHeaders(raw, redactAuth);
+  };
+
   async function relay(req, res, binding, invalid) {
+    const capturedHeaders = headersForCapture(req, binding);
     // Generated errors are captured with their explicit application headers;
     // do not add an unrecorded Date header behind that capture.
     res.sendDate = false;
@@ -206,7 +224,7 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
       return true;
     };
     try {
-      capture = await traffic.start({ clientId: binding?.id, provider: binding?.provider, method: req.method, target: req.url, http_version: req.httpVersion, headers: req.rawHeaders, peer: reqIp(req) });
+      capture = await traffic.start({ clientId: binding?.id, provider: binding?.provider, method: req.method, target: req.url, http_version: req.httpVersion, headers: capturedHeaders(req.rawHeaders), peer: reqIp(req) });
     } catch { if (!clientGone && !res.destroyed) { res.writeHead(503, { 'content-type': 'application/json', connection: 'close' }); res.end('{"error":{"message":"traffic capture unavailable","type":"api_error"}}'); } return; }
     if (await stopIfCancelled()) return;
     if (req.aigateExpectContinue) {
@@ -248,7 +266,7 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
       // Drain and record rejected bodies too; no unbounded buffering or key intake.
       try {
         for await (const chunk of req) await capture.chunk('request', chunk);
-        await capture.append('request_end', { trailers: req.rawTrailers });
+        await capture.append('request_end', { trailers: capturedHeaders(req.rawTrailers) });
       } catch (e) { if (!req.complete) { await complete('client_abort'); return; } return fault(503, 'traffic capture unavailable', e); }
       await fault(code, reason);
     };
@@ -275,11 +293,16 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
     try { tlsOptions = unifiTLSOptions(binding.provider, destination); }
     catch { return reject(503, 'UniFi TLS exception is not configured correctly'); }
     const path = destination.pathname.replace(/\/$/, '') + target;
-    const headers = relayHeaders(req.rawHeaders, { upstream: destination, authHeader: ['anthropic', 'unifi'].includes(binding.provider) ? 'x-api-key' : 'authorization', key, sessionCookie });
+    const headers = relayHeaders(req.rawHeaders, {
+      upstream: destination,
+      authHeader: ['anthropic', 'unifi'].includes(binding.provider) ? 'x-api-key' : 'authorization',
+      authScheme: binding.provider === 'fal' ? 'Key' : 'Bearer',
+      key, sessionCookie,
+    });
     // Without explicit framing Node omits chunked bodies on GET/DELETE. The
     // transfer-coding belongs to each leg; regenerate it for these uploads.
     if (req.headers['transfer-encoding'] && !headers.some((v, i) => i % 2 === 0 && v.toLowerCase() === 'content-length')) headers.push('Transfer-Encoding', 'chunked');
-    try { await capture.append('forward', { method: req.method, target: path, upstream: destination.origin, headers }); }
+    try { await capture.append('forward', { method: req.method, target: path, upstream: destination.origin, headers: capturedHeaders(headers) }); }
     catch { return fault(503, 'traffic capture unavailable'); }
     if (await stopIfCancelled()) return;
     const timeout = Math.max(1000, Number(process.env.AIGATE_TRANSPARENT_TIMEOUT_MS) || 300000);
@@ -295,7 +318,7 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
         socket.on('error', () => {}); socket.destroy();
         const writes = [capture.append('upstream_upgrade', {
           status: response.statusCode, status_message: response.statusMessage,
-          headers: response.rawHeaders, http_version: response.httpVersion,
+          headers: capturedHeaders(response.rawHeaders), http_version: response.httpVersion,
           head_bytes: bodyHead.length,
         })];
         // Admit already-observed evidence before the terminal-fault lock can
@@ -310,7 +333,7 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
       outgoing.on('information', (information) => {
         void (async () => {
           try {
-            await capture.append('information', { status: information.statusCode, status_message: information.statusMessage, headers: information.rawHeaders });
+            await capture.append('information', { status: information.statusCode, status_message: information.statusMessage, headers: capturedHeaders(information.rawHeaders) });
             // The downstream 100 was already sent and captured for its own
             // Expect handshake. Do not send that transport handshake twice.
             if (!finished && !faulting && !clientGone && information.statusCode !== 100) informational(res, information, sessionCookie);
@@ -324,7 +347,7 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
           try {
             status = response.statusCode;
             const responseHeaders = relayHeaders(response.rawHeaders, { sessionCookie });
-            await capture.append('response', { status, status_message: response.statusMessage, headers: response.rawHeaders, forwarded_headers: responseHeaders, http_version: response.httpVersion });
+            await capture.append('response', { status, status_message: response.statusMessage, headers: capturedHeaders(response.rawHeaders), forwarded_headers: capturedHeaders(responseHeaders), http_version: response.httpVersion });
             if (finished || faulting || await stopIfCancelled()) { response.destroy(); return; }
             res.sendDate = false;
             res.writeHead(status, response.statusMessage, responseHeaders);
@@ -334,7 +357,7 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
               if (finished || faulting || await stopIfCancelled()) { response.destroy(); return; }
               if (!res.write(chunk)) await drain(res);
             }
-            await capture.append('response_end', { trailers: response.rawTrailers });
+            await capture.append('response_end', { trailers: capturedHeaders(response.rawTrailers) });
             const trailers = relayHeaders(response.rawTrailers, { sessionCookie });
             if (trailers.length) res.addTrailers(pairs(trailers));
             res.end();
@@ -348,7 +371,7 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
         if (!outgoing.destroyed && !outgoing.writableEnded && !outgoing.write(chunk)) await drain(outgoing);
       }
       if (!finished) {
-        await capture.append('request_end', { trailers: req.rawTrailers });
+        await capture.append('request_end', { trailers: capturedHeaders(req.rawTrailers) });
         requestFinished = true;
         const trailers = relayHeaders(req.rawTrailers, { sessionCookie, requestCookies: true });
         if (!outgoing.destroyed) { if (trailers.length) outgoing.addTrailers(pairs(trailers)); outgoing.end(); }
@@ -394,7 +417,7 @@ export async function createTransparentProxy({ db, encrypt, decrypt, dbPath, mas
         try { preset = presetTokens().some(token => tokenMatches(auth.token, token)); } catch { /* reject invalid configuration */ }
         const binding = auth.token ? bindingFor.get(hash(auth.token)) : null;
         const rejectionStatus = binding || preset ? 501 : 401;
-        capture = await traffic.start({ clientId: binding?.id, provider: binding?.provider, method: req.method, target: req.url, http_version: req.httpVersion, headers: req.rawHeaders, peer: reqIp(req) });
+        capture = await traffic.start({ clientId: binding?.id, provider: binding?.provider, method: req.method, target: req.url, http_version: req.httpVersion, headers: headersForCapture(req, binding)(req.rawHeaders), peer: reqIp(req) });
         if (head.length) await capture.chunk('request', head);
         setupDone = true;
         if (unavailable()) { await finish('client_abort'); return; }

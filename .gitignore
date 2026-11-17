@@ -5,6 +5,9 @@ data/
 *.db
 *.db-*
 .env
+.env.local
+/data-local/
+/local.log
 .DS_Store
 npm-debug.log*
 CLAUDE.md

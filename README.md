@@ -199,6 +199,10 @@ Claude OAuth setup tokens belong in **accounts**. The explicit `/proxy/claude-co
 
 Transparent proxy clients use either optional `.env` keys `AIGATE_PROXY_TOKEN` / `AIGATE_PROXY_TOKEN_2` with `/proxy/<provider>/...`, or a manually registered key hashed in **proxy_clients** and bound to a specific API credential. None grants administrative access. Preset API-key routes use the newest manually registered credential for their provider; `/proxy/claude-code` uses the quota-aware account pool. Explicit bindings isolate one API credential. The older model-routing proxy retains the AIGate administrator bearer for compatibility; its behavior differs from the [transparent relay](docs/TRANSPARENT-PROXY.md). Credentials and client bindings require explicit authenticated administrative actions and are never learned from proxy traffic.
 
+For media generation, use `/proxy/openrouter/v1/…`, `/proxy/replicate/v1/…`,
+`/proxy/fal/…`, or `/proxy/fal-queue/…`. Both fal routes share the same stored
+`fal` credential. See the [media provider routes](docs/TRANSPARENT-PROXY.md#media-provider-routes).
+
 For request paths, credential boundaries and technical references, read [COMPLIANCE.md](COMPLIANCE.md).
 
 ### Interactive provider setup

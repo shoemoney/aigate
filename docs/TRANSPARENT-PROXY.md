@@ -26,7 +26,7 @@ The necessary exceptions are explicit:
 - The client authentication header is replaced with the configured provider key.
   Anthropic API keys use `x-api-key`; the Claude Code subscription pool and
   supported bearer providers use `Authorization: Bearer`. UniFi uses
-  `X-API-KEY`; the client's proxy bearer is removed before forwarding.
+  `X-API-KEY`. fal uses `Authorization: Key`.
 - AIGate's own `aigate_sess` administrator-session cookie is removed from outgoing
   `Cookie` headers. Upstream `Set-Cookie` fields targeting that same gateway-owned
   name are excluded from the downstream response. Other application cookies are
@@ -54,8 +54,8 @@ Send exactly one `Authorization: Bearer <client-key>` or `x-api-key: <client-key
 header. Duplicate or conflicting authentication is rejected. A key in a query
 parameter is not accepted as proxy authentication.
 
-Initial authentication adapters support catalog providers marked
-`oaiCompat: true`, plus Anthropic, Kimi, Muse, and UniFi. Other catalog providers return
+Authentication adapters support catalog providers marked
+`oaiCompat: true`, plus Anthropic, Kimi, Muse, UniFi, Replicate, and fal. Other catalog providers return
 422 before any upstream request; a catalog entry alone is not proof its
 authentication scheme is implemented. AWS also returns 422. A custom provider
 outside the catalog is available only through an explicit client binding with an
@@ -271,6 +271,32 @@ with nonalphanumeric characters replaced by underscores. The value must be an
 HTTP(S) origin with an optional path prefix, without embedded credentials,
 query, or fragment; the caller cannot supply its own upstream.
 
+## Media provider routes
+
+| Client path | Default upstream | Vault provider | Upstream authorization |
+| --- | --- | --- | --- |
+| `/proxy/openrouter/v1/…` | `https://openrouter.ai/api/v1/…` | `openrouter` | `Bearer` |
+| `/proxy/replicate/v1/…` | `https://api.replicate.com/v1/…` | `replicate` | `Bearer` |
+| `/proxy/fal/…` | `https://fal.run/…` | `fal` | `Key` |
+| `/proxy/fal-queue/…` | `https://queue.fal.run/…` | `fal` | `Key` |
+
+OpenRouter image and video requests use the same relay as chat requests,
+including `POST /v1/images`, `POST /v1/videos`, video status requests, and
+`GET /v1/videos/models`. Replicate's `Prefer` and `Cancel-After` headers are
+forwarded as supplied.
+
+For the fal queue, use `POST /<model>` to submit, then use the returned absolute
+`status_url` and `response_url` by replacing their `https://queue.fal.run`
+origin with `$AIGATE_URL/proxy/fal-queue`. Use `GET` to poll status and retrieve
+the result, or `PUT /<model>/requests/<id>/cancel` to cancel. AIGate preserves
+the response bytes and does not rewrite URLs.
+
+The fal origins can be overridden independently with
+`AIGATE_TRANSPARENT_UPSTREAM_FAL` and `AIGATE_TRANSPARENT_UPSTREAM_FAL_QUEUE`.
+Both routes use the same `fal` credential and record `fal` as the provider.
+Replicate and OpenRouter use `AIGATE_TRANSPARENT_UPSTREAM_REPLICATE` and
+`AIGATE_TRANSPARENT_UPSTREAM_OPENROUTER`.
+
 ## UniFi Network gateway
 
 Manually enter the UniFi key through the shared setup launcher:
@@ -448,11 +474,14 @@ Stream body events contain base64 bytes. Rejected requests handled by this relay
 are captured too; unrelated administrative, static, health, and legacy-proxy
 requests are outside this capture path.
 
-Capture includes the raw client and upstream credential values. Those values,
-headers, targets, and body events are encrypted at rest using the existing vault
-key. An administrative download decrypts them in full. Metadata lists contain
-IDs, timestamps, provider, status/state, and byte counts, with no headers or body
-content.
+For fal, Replicate, and OpenRouter, capture replaces the values of
+`Authorization`, `X-API-Key`, and `Proxy-Authorization` with `[redacted]`.
+For other routes, capture includes raw client and upstream credential headers.
+Targets, other headers, and body events contain the original application data,
+including anything sent by the client or echoed by an upstream in a payload.
+Capture events are encrypted at rest with the vault key. An administrative
+download decrypts the recorded events. Metadata lists contain IDs, timestamps,
+provider, status/state, and byte counts.
 
 The original incoming and upstream response headers are still captured when
 gateway-session cookie isolation removes a field from the relay. Recorded
