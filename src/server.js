@@ -16,6 +16,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
 import { chmodSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs';
 import { basename, dirname, join, extname } from 'node:path';
+import { hostname } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -23,7 +24,9 @@ import { pipeline } from 'node:stream/promises';
 import { WebSocketServer } from 'ws';
 import { makeVault, rtHash, ledgerVerdict, tokenMatches, ipAllowed, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot, resetsIn } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
-import { ensureSchema, seedIfNeeded, pruneOld, handleSpend } from './spend.js';
+import { ensureSchema, seedIfNeeded, pruneOld, handleSpend, validateSessions, upsertSessions } from './spend.js';
+import { createModelMap } from './models.js';
+import { runPrompt, PromptError, codexSurface, sweepLeftovers } from './prompt-runner.js';
 
 // ---- config -------------------------------------------------------------
 try { process.loadEnvFile(); } catch { /* no .env, use real env */ }
@@ -501,7 +504,7 @@ function alert(text, extra = {}) {
 // selection-outage edge trigger: alert only on the 0↔>0 transition, not every probe
 let zeroAlerted = false;
 function noteSelectable(n, ctx) {
-  if (n === 0 && !zeroAlerted) { zeroAlerted = true; alert('aigate: 0 selectable accounts — selection is down', ctx); }
+  if (n === 0 && !zeroAlerted) { zeroAlerted = true; alert('aigate: 0 selectable accounts — selection is down' + (ctx && ctx.via === 'prompt' ? ' (seen by POST /api/prompt)' : ''), ctx); }
   else if (n > 0 && zeroAlerted) { zeroAlerted = false; alert('aigate: recovered — accounts selectable again'); }
 }
 // last poller cycle health, surfaced on /health so fleet autoheal/dashboard see degradation
@@ -703,6 +706,223 @@ function rawJsonBody(req, maxBytes = PROXY_BODY_MAX) {
   });
 }
 
+// ---- account selection (shared by GET /api/select and POST /api/prompt) ----------
+// Walk the ranked candidates, not just the top one: a poison account (corrupt
+// ciphertext or a since-rotated key) used to throw on decrypt and 500 — and
+// pickRanked kept re-electing it, so EVERY select 500'd forever. Park a poison
+// account (so pickRanked skips it), audit the fault, and fall through to next.
+async function pickAccount(kind, { excl = new Set(), dry = false, host = '', ip = '', act = 'select' } = {}) {
+  let picked = null, tok = null, auth = null;
+  for (const r of q.pickRanked.all(kind, CUTOFF)) {
+    if (excl.has(r.account)) continue;
+    if (dry) { picked = r; break; }   // no credential leaves, so nothing to decrypt or refresh
+    const row = q.getToken.get(r.account);
+    if (!row || !row.token_enc) continue;   // TOCTOU: deleted between rank and read
+    if (kind === 'codex') {
+      const f = await codexFresh(r.account);
+      if (f.decryptFail) { q.parkAccount.run('+60 minutes', r.account); logAccess(r.account, host, ip, act, 'decrypt-fail — parked 60m'); continue; }
+      if (f.error) { logAccess(r.account, host, ip, act, 'codex-refresh-fail'); continue; }
+      auth = f.auth; picked = r; break;
+    }
+    try { tok = decrypt(row.token_enc); picked = r; break; }
+    catch {
+      q.parkAccount.run('+60 minutes', r.account);
+      logAccess(r.account, host, ip, act, 'decrypt-fail — parked 60m');
+    }
+  }
+  return { picked, tok, auth };
+}
+// reasoned 503 body: WHY is nothing servable — one account may tick several counters.
+// Tally BEFORE the audit so the feed AND /api/access record the reason, not a bare 'none-available'.
+function noneAvailable(kind, { dry, host, ip, act, via = 'select' }) {
+  const all = q.listAccounts.all().filter((a) => a.kind === kind);
+  const { parked, reauth, disabled, over_cutoff, refresh_unknown } = tally(all, CUTOFF, kind);
+  logAccess(null, host, ip, act, `none-available${kind === 'codex' ? ' (codex)' : ''} · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off, ${over_cutoff} over cutoff${kind === 'codex' ? `, ${refresh_unknown} refresh_unknown` : ''})`);
+  if (kind === 'claude' && !dry) noteSelectable(0, { via, accounts: all.length, parked, reauth, disabled, over_cutoff });   // edge-alert on first outage
+  return { error: kind === 'codex' ? 'no codex account with headroom' : 'no account with headroom', accounts: all.length, parked, reauth, disabled, over_cutoff, ...(kind === 'codex' ? { refresh_unknown } : {}) };
+}
+
+// Store a Codex auth.json that a client (or a prompt-API run) ended up with back in the vault.
+// Applied only if its refresh_token differs AND last_refresh is newer than the stored copy.
+// Returns { error, code } or { applied, reason, account }.
+function applyCodexSync(raw, ip) {
+  const n = normalizeCodexAuth(raw);
+  if (n.error) return { code: 400, error: n.error };
+  if (!Number.isFinite(Date.parse(raw.last_refresh))) return { code: 400, error: 'auth_json needs last_refresh' };
+  const row = q.codexByExt.get(n.account_id);
+  if (!row) return { code: 404, error: 'no codex account for that account_id' };
+  const reply = (applied, reason) => { logAccess(row.account, '', ip, 'codex-sync', applied ? 'applied' : reason); return { applied, reason, account: row.account }; };
+  let cur; try { cur = JSON.parse(decrypt(row.token_enc)); } catch { cur = null; }   // unreadable stored copy: anything valid replaces it
+  if (cur && cur.tokens) {
+    if (cur.tokens.refresh_token === n.auth.tokens.refresh_token) return reply(false, 'same refresh_token');
+    if (!(Date.parse(n.auth.last_refresh) > Date.parse(cur.last_refresh))) return reply(false, 'not newer than stored last_refresh');
+  }
+  // a refresh in flight will persist its own rotation — applying under it would be clobbered or clobber it
+  if (codexInflight.has(row.account)) return reply(false, 'refresh in flight');
+  durably(() => q.syncCodexAuth.run(encrypt(JSON.stringify(n.auth)), n.exp, n.plan, row.account));
+  ledgerNote(n.auth);
+  broadcast('accounts', q.listAccounts.all());
+  return reply(true, 'applied');
+}
+// Park an over-limit account for `mins` so the next select skips it; returns parked_until, or null for an unknown account.
+function parkForLimit(account, mins, host, ip) {
+  if (q.parkAccount.run(`+${mins} minutes`, account).changes === 0) return null;
+  logAccess(account, host, ip, 'limit', `parked ${mins}m`);
+  broadcast('accounts', q.listAccounts.all());
+  return q.getParked.get(account).parked_until;
+}
+// Audit row + live-feed event for a prompt: scrubbed and cut to 400 chars, never retain full prompts.
+function recordPrompt({ account, host, ip, cwd, model, prompt, tokens }) {
+  const text = scrub(prompt).slice(0, 400);
+  q.insReq.run(account || '', shortHost(host), ip, cwd || '', model || '', text, tokens ?? null);
+  broadcast('prompt', { account, host: shortHost(host), ip, cwd, model, prompt: text, ts: new Date().toISOString() });
+}
+
+// ---- POST /api/prompt (feature-flagged: AIGATE_PROMPT_API=1) --------------------------------------
+// One text-in/text-out prompt through the OFFICIAL claude/codex binary on a vaulted account. aigate
+// spawns the binary (src/prompt-runner.js); it never calls Anthropic/ChatGPT with the credential itself.
+const promptApiOn = () => process.env.AIGATE_PROMPT_API === '1';
+let promptModelMap = null;
+const promptModels = () => (promptModelMap ||= createModelMap(DB_PATH));
+// administrator bearer only: no dashboard cookie (a browser must not be able to spend subscriptions
+// cross-site) and no x-api-key (that is the header the /v1 proxy path accepts)
+const adminBearer = (req) => { const h = req.headers.authorization || ''; return h.startsWith('Bearer ') && tokenMatches(h.slice(7), TOKEN); };
+const PROMPT_KEYS = new Set(['role', 'prompt', 'system', 'timeout_s']);
+const PROMPT_MAX_BYTES = 400000;   // 100000 characters at 4 bytes each; the prompt travels on stdin, so no argv limit applies
+const KILL_GRACE_S = 10;           // slack on top of the run's timeout when checking a codex token will outlive it
+let promptActive = 0;
+const promptRuns = new Set();      // in-flight runs: { abort(), done } — shutdown() aborts them and waits
+const codexBusy = new Set();       // codex accounts with a run in flight: one run per refresh-token family
+function promptReply(res, code, obj, headers = {}) {
+  res.writeHead(code, { 'content-type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers });
+  res.end(JSON.stringify(obj));
+}
+// spend-attribution lease on the run's throwaway CODEX_HOME (same record aigate-codex.sh posts); '' closes it
+function promptLease(scope, account) {
+  const v = validateSessions({ source: 'codex', host: shortHost(hostname()) || 'aigate', session_id: null, scope, account, kind: 'codex', via: 'prompt-api', ts: new Date().toISOString() }, Date.now());
+  if (v.ok) upsertSessions(db, v.sessions);
+}
+// A login the codex binary rotated during a run exists nowhere else, so it must reach the vault. Offer it to
+// the /api/codex/sync path (waiting out a refresh in flight once); anything but applied / same refresh_token
+// means the vault cannot trust its own copy any more: mark the account refresh-unknown (which alerts).
+async function storeRotated(a, ip, accountHint, { dropStale = false } = {}) {
+  let r;
+  try {
+    r = applyCodexSync(a, ip);
+    if (!r.error && r.reason === 'refresh in flight') {
+      const inflight = codexInflight.get(r.account);
+      if (inflight) await inflight.catch(() => {});
+      r = applyCodexSync(a, ip);
+    }
+  } catch (e) { r = { error: 'sync threw: ' + String((e && e.message) || e) }; }
+  if (r.applied || r.reason === 'same refresh_token') return { ok: true };
+  // boot only: a leftover the vault already supersedes is no lost rotation, so it must not halt a healthy account
+  if (dropStale && r.reason === 'not newer than stored last_refresh') { console.log(`[prompt] boot sweep: leftover login for ${r.account} is not newer than the vault copy — discarded`); return { ok: true }; }
+  const why = r.error || r.reason;
+  promptRotationFailed(r.account || accountHint, `a prompt run rotated the login but it could not be stored (${why})`);
+  return { ok: false, reason: why };
+}
+function promptRotationFailed(account, why) {
+  if (account) markRefreshUnknown(account, why);
+  else console.error('[prompt] rotated login could not be stored and its account is unknown —', why);
+}
+// leftovers from a crash or an unstorable rotation: offered to the vault, then deleted (boot only)
+const promptStats = () => ({ active: promptActive, busy: [...codexBusy] });
+const promptBootSweep = () => sweepLeftovers({ offer: (a, hint) => storeRotated(a, 'boot', hint, { dropStale: true }), rotationFailed: promptRotationFailed });
+// log which requested-off codex features are still effectively on (the parser fail-closed + read-only sandbox are the control)
+async function promptSelfCheck() {
+  try {
+    const s = await codexSurface();
+    console.log(`[prompt] codex features disabled: ${s.disable.length}; still effectively ON: ${s.still_on.length ? s.still_on.join(', ') : 'none'}`);
+    if (s.still_on.length) console.warn('[prompt] WARNING: --disable did not turn these codex features off:', s.still_on.join(', '), '— runs that use any tool are refused by the output parser');
+  } catch (e) { console.error('[prompt] codex feature self-check failed:', String((e && e.message) || e)); }
+}
+async function handlePrompt(req, res, p) {
+  const ip = reqIp(req);
+  if (!adminBearer(req)) return promptReply(res, 401, { ok: false, error: 'administrator bearer token required' });
+  if (p === '/api/models') {
+    const m = promptModels()();
+    let codex_surface;
+    try { codex_surface = await codexSurface(); } catch (e) { codex_surface = { error: String((e && e.message) || e) }; }
+    return promptReply(res, 200, { ok: true, source: m.source, path: m.path, ...(m.override_invalid ? { override_invalid: true } : {}), roles: m.roles, codex_surface });
+  }
+  if (shuttingDown) return promptReply(res, 503, { ok: false, error: 'shutting down' }, { 'retry-after': '10' });   // shutdown() only waits for runs it already knows about
+  const b = await body(req);
+  if (b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', 'Cache-Control': 'no-store', connection: 'close' }); return res.end(JSON.stringify({ ok: false, error: 'body too large' })); }
+  const bad = (error, extra = {}) => promptReply(res, 400, { ok: false, error, ...extra });
+  for (const k of Object.keys(b)) if (!PROMPT_KEYS.has(k)) return bad(`unknown field "${k}" — callers pick a role, never a model`);
+  const models = promptModels()();
+  if (typeof b.role !== 'string' || !Object.hasOwn(models.roles, b.role)) return bad('unknown or missing role', { valid_roles: Object.keys(models.roles) });
+  if (typeof b.prompt !== 'string' || b.prompt.length < 1 || b.prompt.length > 100000) return bad('prompt must be a string of 1..100000 characters');
+  if (b.system != null && (typeof b.system !== 'string' || b.system.length > 20000)) return bad('system must be a string of at most 20000 characters');
+  if (Buffer.byteLength(b.prompt) > PROMPT_MAX_BYTES || (b.system && Buffer.byteLength(b.system) > PROMPT_MAX_BYTES)) return bad(`prompt/system exceed ${PROMPT_MAX_BYTES} bytes`);
+  if (b.timeout_s != null && !(typeof b.timeout_s === 'number' && Number.isFinite(b.timeout_s) && b.timeout_s >= 5 && b.timeout_s <= 600)) return bad('timeout_s must be a number from 5 to 600');
+  const spec = models.roles[b.role];
+  const timeoutS = b.timeout_s ?? 120;
+  const limit = envNum('AIGATE_PROMPT_CONCURRENCY', 2);
+  if (promptActive >= limit) return promptReply(res, 429, { ok: false, error: 'too many prompt runs in flight' }, { 'retry-after': '10' });
+  promptActive++;
+  const ac = new AbortController();
+  let finished; const done = new Promise((r) => { finished = r; });
+  const run = { abort: () => ac.abort(), done };
+  promptRuns.add(run);
+  // client went away: kill a claude child. A codex run is NEVER cut short by a disconnect (it must finish and
+  // sync its rotated login back); its answer is simply discarded.
+  const onClose = () => { if (!res.writableFinished && spec.engine === 'claude') ac.abort(); };
+  res.on('close', onClose);
+  const t0 = Date.now();
+  let account = '', owned = false;
+  try {
+    const { picked, tok, auth: picked_auth } = await pickAccount(spec.engine, { excl: spec.engine === 'codex' ? new Set(codexBusy) : new Set(), ip, act: 'prompt-select' });
+    if (!picked) {
+      if (spec.engine === 'codex' && codexBusy.size) return promptReply(res, 429, { ok: false, error: 'codex account busy' }, { 'retry-after': '10' });
+      return promptReply(res, 503, { ok: false, ...noneAvailable(spec.engine, { dry: false, host: '', ip, act: 'prompt-select', via: 'prompt' }) });
+    }
+    account = picked.account;
+    let auth = picked_auth;
+    if (spec.engine === 'codex') {
+      // the token must outlive the run plus aigate's own refresh window: neither the codex binary nor aigate may
+      // rotate the refresh-token family while the child holds a copy. Refresh BEFORE spawning when it would not.
+      const need = CODEX.refreshAheadS() + timeoutS + KILL_GRACE_S;
+      const cur = q.getAcct.get(account);
+      if (cur && cur.token_exp != null && cur.token_exp - nowS() < need) {
+        const rr = await refreshCodex(account, { staleAccess: auth.tokens.access_token });
+        if (!rr.ok) return promptReply(res, 503, { ok: false, error: 'codex login too close to expiry for this run and the refresh failed' });
+        auth = rr.auth;
+      }
+      if (codexBusy.has(account)) return promptReply(res, 429, { ok: false, error: 'codex account busy' }, { 'retry-after': '10' });
+      codexBusy.add(account); owned = true;   // synchronous with the check above: no await in between
+      // a refresh that began after selection may still be persisting its rotation: let it land, then hand the child what is stored NOW
+      const late = codexInflight.get(account); if (late) await late.catch(() => {});
+      const now_ = q.getAcct.get(account);
+      auth = now_ && !now_.reauth_needed && !now_.refresh_unknown ? readCodexAuth(now_) : null;
+      if (!auth) return promptReply(res, 503, { ok: false, error: 'codex login became unavailable before the run' });
+    } else noteSelectable(1, { via: 'prompt' });
+    logAccess(account, '', ip, 'prompt-select', 'ok');
+    recordPrompt({ account, host: '', ip, cwd: 'prompt-api', model: spec.model, prompt: b.prompt });
+    const r = await runPrompt({ engine: spec.engine, model: spec.model, serviceTier: spec.service_tier, prompt: b.prompt, system: b.system, timeoutS, signal: ac.signal, account, token: tok, auth },
+      { leaseOpen: (scope) => promptLease(scope, account), leaseClose: (scope) => promptLease(scope, ''), syncBack: (a) => storeRotated(a, ip, account), rotationFailed: promptRotationFailed });
+    const ms = Date.now() - t0;
+    logAccess(account, '', ip, 'prompt', `ok ${b.role} ${spec.engine}:${spec.model} ${ms}ms`);
+    if (res.writableEnded || res.destroyed) return;
+    return promptReply(res, 200, { ok: true, role: b.role, engine: spec.engine, model: spec.model, served_model: r.served_model, account, text: r.text, usage: r.usage, duration_ms: ms });
+  } catch (e) {
+    const status = e instanceof PromptError ? e.status : 500;
+    if (!(e instanceof PromptError)) console.error('[prompt] unexpected', String((e && e.message) || e));
+    try {
+      if (e && e.limited && account) parkForLimit(account, 15, '', ip);
+      if (account) logAccess(account, '', ip, 'prompt', `fail ${b.role} ${status}`);
+    } catch (e2) { console.error('[prompt] audit failed', String((e2 && e2.message) || e2)); }
+    if (res.writableEnded || res.destroyed) return;
+    return promptReply(res, status, { ok: false, error: e instanceof PromptError ? e.message : 'internal error' });
+  } finally {
+    if (owned) codexBusy.delete(account);   // every path, including a failed audit write, releases the account
+    promptActive--;
+    promptRuns.delete(run); finished();
+    res.off('close', onClose);
+  }
+}
+
 // ---- routes -------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   // a malformed target ('//', protocol-relative) makes new URL throw; in an async
@@ -877,6 +1097,7 @@ const server = http.createServer(async (req, res) => {
         const dup = q.codexByExt.get(n.account_id);
         if (dup && dup.account !== b.account) return json(res, 409, { error: 'that ChatGPT account is already vaulted as ' + dup.account });
         if (prior && codexInflight.has(b.account)) return json(res, 409, { error: 'a refresh is in flight for ' + b.account + ' — retry in a moment' });
+        if (prior && codexBusy.has(b.account)) return json(res, 409, { error: 'a prompt run holds ' + b.account + ' — retry in a moment' });
         durably(() => q.upsertAccount.run(b.account, encrypt(JSON.stringify(n.auth)), b.label || n.email || '', 'codex', n.plan, n.exp, n.account_id));
         ledgerNote(n.auth);
         logAccess(b.account, '', reqIp(req), prior ? 'account-overwrite' : 'account-add', b.label || n.email || '');
@@ -985,6 +1206,7 @@ const server = http.createServer(async (req, res) => {
     if (p.startsWith('/api/accounts/') && req.method === 'DELETE') {
       const name = decodeURIComponent(p.split('/').pop());
       if (codexInflight.has(name)) return json(res, 409, { error: 'a refresh is in flight for ' + name + ' — retry in a moment' });
+      if (codexBusy.has(name)) return json(res, 409, { error: 'a prompt run holds ' + name + ' — retry in a moment' });
       const dead = q.delAccount.get(name);
       if (!dead) return json(res, 404, { error: 'unknown account' });
       logAccess(name, '', reqIp(req), 'account-delete', dead.label);
@@ -1006,6 +1228,7 @@ const server = http.createServer(async (req, res) => {
       if (newName !== name && q.getAccount.get(newName)) return json(res, 409, { error: 'account ' + newName + ' already exists' });
       // the in-flight refresh persists its rotation by NAME — renaming under it would lose the token
       if (newName !== name && codexInflight.has(name)) return json(res, 409, { error: 'a refresh is in flight for ' + name + ' — retry in a moment' });
+      if (newName !== name && codexBusy.has(name)) return json(res, 409, { error: 'a prompt run holds ' + name + ' — retry in a moment' });
       if (b.account === undefined && b.label === undefined) return json(res, 400, { error: 'nothing to update' });
       const label = b.label === undefined ? row.label : String(b.label);
       // .changes guard like the sibling mutation routes: deleted between our read and the
@@ -1066,37 +1289,8 @@ const server = http.createServer(async (req, res) => {
       const act = dry ? 'select-dry' : 'select';
       const excl = new Set((url.searchParams.get('exclude') || '').split(',').map((s) => s.trim()).filter(Boolean));
       const usageOf = (r) => ({ five_hour_pct: r.five_hour_pct, seven_day_pct: r.seven_day_pct, five_hour_reset: r.five_hour_reset, seven_day_reset: r.seven_day_reset });
-      // Walk the ranked candidates, not just the top one: a poison account (corrupt
-      // ciphertext or a since-rotated key) used to throw on decrypt and 500 — and
-      // pickRanked kept re-electing it, so EVERY select 500'd forever. Park a poison
-      // account (so pickRanked skips it), audit the fault, and fall through to next.
-      let picked = null, tok = null, auth = null;
-      for (const r of q.pickRanked.all(kind, CUTOFF)) {
-        if (excl.has(r.account)) continue;
-        if (dry) { picked = r; break; }   // no credential leaves, so nothing to decrypt or refresh
-        const row = q.getToken.get(r.account);
-        if (!row || !row.token_enc) continue;   // TOCTOU: deleted between rank and read
-        if (kind === 'codex') {
-          const f = await codexFresh(r.account);
-          if (f.decryptFail) { q.parkAccount.run('+60 minutes', r.account); logAccess(r.account, host, ip, act, 'decrypt-fail — parked 60m'); continue; }
-          if (f.error) { logAccess(r.account, host, ip, act, 'codex-refresh-fail'); continue; }
-          auth = f.auth; picked = r; break;
-        }
-        try { tok = decrypt(row.token_enc); picked = r; break; }
-        catch {
-          q.parkAccount.run('+60 minutes', r.account);
-          logAccess(r.account, host, ip, act, 'decrypt-fail — parked 60m');
-        }
-      }
-      if (!picked) {
-        // reasoned 503: WHY is nothing servable — one account may tick several counters.
-        // Tally BEFORE the audit so the feed AND /api/access record the reason, not a bare 'none-available'.
-        const all = q.listAccounts.all().filter((a) => a.kind === kind);
-        const { parked, reauth, disabled, over_cutoff, refresh_unknown } = tally(all, CUTOFF, kind);
-        logAccess(null, host, ip, act, `none-available${kind === 'codex' ? ' (codex)' : ''} · ${all.length} accts (${parked} parked, ${reauth} re-auth, ${disabled} off, ${over_cutoff} over cutoff${kind === 'codex' ? `, ${refresh_unknown} refresh_unknown` : ''})`);
-        if (kind === 'claude' && !dry) noteSelectable(0, { via: 'select', accounts: all.length, parked, reauth, disabled, over_cutoff });   // edge-alert on first outage
-        return json(res, 503, { error: kind === 'codex' ? 'no codex account with headroom' : 'no account with headroom', accounts: all.length, parked, reauth, disabled, over_cutoff, ...(kind === 'codex' ? { refresh_unknown } : {}) });
-      }
+      const { picked, tok, auth } = await pickAccount(kind, { excl, dry, host, ip, act });
+      if (!picked) return json(res, 503, noneAvailable(kind, { dry, host, ip, act }));
       if (kind === 'claude' && !dry) noteSelectable(1, { via: 'select' });   // a real handout means selection is up → clears the outage latch
       logAccess(picked.account, host, ip, act, 'ok');
       if (dry) return json(res, 200, { account: picked.account, kind, dry: true, plan: picked.plan, ...usageOf(picked) });
@@ -1126,24 +1320,12 @@ const server = http.createServer(async (req, res) => {
       if (b && b.__oversized) { res.writeHead(413, { 'content-type': 'application/json', connection: 'close' }); return res.end(JSON.stringify({ error: 'body too large' })); }
       let raw = b.auth_json;
       if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { return json(res, 400, { error: 'auth_json is not valid JSON' }); } }
-      const n = normalizeCodexAuth(raw);
-      if (n.error) return json(res, 400, { error: n.error });
-      if (!Number.isFinite(Date.parse(raw.last_refresh))) return json(res, 400, { error: 'auth_json needs last_refresh' });
-      const row = q.codexByExt.get(n.account_id);
-      if (!row) return json(res, 404, { error: 'no codex account for that account_id' });
-      const reply = (applied, reason) => { logAccess(row.account, '', reqIp(req), 'codex-sync', applied ? 'applied' : reason); return json(res, 200, { ok: true, applied, reason }); };
-      let cur; try { cur = JSON.parse(decrypt(row.token_enc)); } catch { cur = null; }   // unreadable stored copy: anything valid replaces it
-      if (cur && cur.tokens) {
-        if (cur.tokens.refresh_token === n.auth.tokens.refresh_token) return reply(false, 'same refresh_token');
-        if (!(Date.parse(n.auth.last_refresh) > Date.parse(cur.last_refresh))) return reply(false, 'not newer than stored last_refresh');
-      }
-      // a refresh in flight will persist its own rotation — applying under it would be clobbered or clobber it
-      if (codexInflight.has(row.account)) return reply(false, 'refresh in flight');
-      durably(() => q.syncCodexAuth.run(encrypt(JSON.stringify(n.auth)), n.exp, n.plan, row.account));
-      ledgerNote(n.auth);
-      broadcast('accounts', q.listAccounts.all());
-      return reply(true, 'applied');
+      const r = applyCodexSync(raw, reqIp(req));
+      return r.error ? json(res, r.code, { error: r.error }) : json(res, 200, { ok: true, applied: r.applied, reason: r.reason });
     }
+    // --- prompt API: only exists when AIGATE_PROMPT_API=1, else it falls through to the 404 like any unknown path ---
+    if (promptApiOn() && ((p === '/api/prompt' && req.method === 'POST') || (p === '/api/models' && req.method === 'GET')))
+      return await handlePrompt(req, res, p);   // awaited so a throw before its own try reaches the 500 catch below
     // client hit an over-limit/unavailable account → PARK it for a TTL (default 15m) so
     // the next select skips it, WITHOUT clobbering its real usage; the poller keeps the %
     // honest and it auto-recovers when parked_until passes. ?minutes overrides the TTL.
@@ -1154,12 +1336,10 @@ const server = http.createServer(async (req, res) => {
       const mins = Math.min(Math.max(Number(b.minutes) || 15, 1), 360);
       // a mistyped/stale account matches zero rows — {ok:true} there means selection
       // keeps running on stale data while the client thinks it reported fine.
-      if (q.parkAccount.run(`+${mins} minutes`, b.account).changes === 0)
-        return json(res, 404, { error: 'unknown account ' + b.account });
-      logAccess(b.account, b.host || '', reqIp(req), 'limit', `parked ${mins}m`);
-      broadcast('accounts', q.listAccounts.all());
+      const until = parkForLimit(b.account, mins, b.host || '', reqIp(req));
+      if (until === null) return json(res, 404, { error: 'unknown account ' + b.account });
       // read back so the caller can display/log the actual expiry
-      return json(res, 200, { ok: true, parked_minutes: mins, parked_until: q.getParked.get(b.account).parked_until });
+      return json(res, 200, { ok: true, parked_minutes: mins, parked_until: until });
     }
 
     // --- event ingest (from the fleet's hooks) ---
@@ -1173,10 +1353,7 @@ const server = http.createServer(async (req, res) => {
       for (const f of ['account', 'host', 'cwd', 'model'])
         if (b[f] != null && typeof b[f] !== 'string') return json(res, 400, { error: f + ' must be a string' });
       // store scrubbed + truncated: every read already substr's to 400 — never retain full prompts
-      const prompt = scrub(b.prompt).slice(0, 400);
-      q.insReq.run(b.account || '', shortHost(b.host), reqIp(req), b.cwd || '', b.model || '', prompt, b.tokens ?? null);
-      broadcast('prompt', { account: b.account, host: shortHost(b.host), ip: reqIp(req), cwd: b.cwd, model: b.model,
-        prompt, ts: new Date().toISOString() });
+      recordPrompt({ account: b.account, host: b.host, ip: reqIp(req), cwd: b.cwd, model: b.model, prompt: b.prompt, tokens: b.tokens });
       return json(res, 200, { ok: true });
     }
     if (p === '/api/events/usage' && req.method === 'POST') {
@@ -1748,6 +1925,8 @@ function markRefreshUnknown(account, why) {
 // differs, someone else refreshed in the meantime and re-spending the family would be waste.
 function refreshCodex(account, { staleAccess } = {}) {
   let p = codexInflight.get(account);
+  // a prompt run holds a copy of this login: rotating the family under it would orphan the child's copy
+  if (!p && codexBusy.has(account)) return Promise.resolve({ error: 'in use by a prompt run', busy: true });
   if (!p) {
     p = doRefreshCodex(account, staleAccess).finally(() => codexInflight.delete(account));
     codexInflight.set(account, p);
@@ -2015,10 +2194,18 @@ function backupNow() {
 // Close server + db and exit. On a fatal fault we exit non-zero so the
 // supervisor (docker restart:unless-stopped / launchd KeepAlive) revives us —
 // that's the self-heal. On a signal we exit 0 for a clean stop.
+// In-flight prompt runs are aborted and given up to 10s to finish their cleanup: a codex child may hold a rotated
+// login that only their `finally` stores back, and the DB must stay open until then.
+let shuttingDown = false;
 function shutdown(code) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   try { server.close(); } catch { /* not listening */ }
-  try { db.close(); } catch { /* already closed */ }
-  process.exit(code);
+  const exit = () => { try { db.close(); } catch { /* already closed */ } process.exit(code); };
+  if (promptRuns.size === 0) return exit();
+  const runs = [...promptRuns];
+  for (const r of runs) r.abort();
+  Promise.race([Promise.allSettled(runs.map((r) => r.done)), new Promise((r) => setTimeout(r, 10000))]).then(exit);
 }
 
 // Only auto-start (listen + poll + supervise) when run directly. When imported
@@ -2029,6 +2216,13 @@ if (isMain) {
   process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
   process.on('uncaughtException', (e) => { console.error('[uncaughtException]', e); shutdown(1); });
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { console.log(`[${sig}] shutting down`); shutdown(0); });
+
+  // finished BEFORE the pollers start: a codex refresh must not spend a token a crashed run already rotated
+  if (promptApiOn()) {
+    try { const r = await promptBootSweep(); if (r.removed) console.log('[prompt] boot sweep:', JSON.stringify(r)); }
+    catch (e) { console.error('[prompt] boot sweep failed', String((e && e.message) || e)); }
+    promptSelfCheck();
+  }
 
   // internal watchdog: WRITE-ping, not SELECT — in WAL mode readers never block
   // on a wedged writer (disk full, ro-remount, stuck write lock), so a read
@@ -2071,4 +2265,6 @@ if (isMain) {
     console.log(`aigate on http://${HOST}:${PORT}  (db ${DB_PATH})`));
 }
 
-export { server, db, pollUsage, pollProviderKeys, backupNow, openDb, isWeakToken, authFail, authLocked, authOk, shortHost };
+export { promptBootSweep, codexInflight, storeRotated, promptStats, server, db, pollUsage, pollProviderKeys, backupNow, openDb, isWeakToken, authFail, authLocked, authOk, shortHost };
+const setShuttingDown = (v) => { shuttingDown = v; };   // test hook: shutdown() itself exits the process
+export { setShuttingDown };

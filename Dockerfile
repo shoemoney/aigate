@@ -2,10 +2,18 @@ FROM node:26-slim
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
+# The official CLIs the prompt API spawns (off unless AIGATE_PROMPT_API=1), installed globally as root at
+# PINNED versions; bump deliberately. Nothing under /app or the installed packages is written at runtime:
+# every run uses a private dir under AIGATE_PROMPT_TMPDIR (/tmp) and the CLI auto-updaters are disabled.
+# docker-compose.yml does not set read_only; if you add it, mount a tmpfs on /tmp (owned by uid 1000).
+# codex is a native binary that trusts the SYSTEM certificate store; node:slim ships none, so without this
+# every codex request fails with "error sending request" (node and claude bundle their own roots).
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN npm install -g --no-audit --no-fund @anthropic-ai/claude-code@2.1.325 @openai/codex@0.169.0 && npm cache clean --force
 COPY src ./src
 COPY public ./public
 COPY scripts ./scripts
-ENV HOST=0.0.0.0 PORT=20200 AIGATE_DB=/app/data/aigate.db
+ENV HOST=0.0.0.0 PORT=20200 AIGATE_DB=/app/data/aigate.db AIGATE_PROMPT_TMPDIR=/tmp DISABLE_AUTOUPDATER=1
 # run as the built-in non-root `node` user (uid 1000): an RCE/dep-compromise then
 # can't rewrite the mounted vault as root. NOTE for deploy: the HOST bind-mount dir
 # (prod: /mnt/tank/apps/aigate/data) must be writable by uid 1000 — run once:

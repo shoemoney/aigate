@@ -1,0 +1,10 @@
+{
+  "roles": {
+    "plan":        { "engine": "claude", "model": "fable" },
+    "orchestrate": { "engine": "claude", "model": "fable" },
+    "review":      { "engine": "claude", "model": "opus" },
+    "code":        { "engine": "claude", "model": "sonnet" },
+    "docs":        { "engine": "claude", "model": "haiku" },
+    "gpt":         { "engine": "codex", "model": "gpt-6.1-sol", "service_tier": "priority" }
+  }
+}
