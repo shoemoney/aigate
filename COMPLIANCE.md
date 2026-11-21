@@ -125,6 +125,20 @@ the operator's decision about their own accounts and plan terms. High-volume
 work, work spread across accounts to avoid a limit, and work for another person
 belong on provider API keys.
 
+## Claude full-login refresh ownership
+
+Optional Claude `oauth_json` logins are encrypted alongside setup tokens. Aigate
+alone refreshes each stored login server-side, with one in-flight refresh per
+account and durable storage of rotated credentials before handout. Pending
+refreshes are durably marked before sending; uncertain outcomes halt automatic
+refresh, while `invalid_grant` marks only the full login as needing re-auth.
+Operators must retire the source login from other refreshers after import.
+
+`/api/select?full=1` hands only the current access token to the official `claude`
+binary through `CLAUDE_CODE_OAUTH_TOKEN`, like the setup-token selector. The
+refresh token is never handed to clients. These refresh requests do not relay
+Claude inference, and full-login health does not change setup-token selection.
+
 ## Technical references
 
 - [AIGate setup, selector and spend APIs](README.md)

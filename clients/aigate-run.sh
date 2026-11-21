@@ -32,8 +32,21 @@ jget(){ python3 -c 'import sys,json;print(json.load(sys.stdin).get("'"$1"'",""))
 # body, so a genuine "no headroom" reply became two glued JSON docs and skipped the Kimi fallback.
 select_acct(){
   local u="$AIGATE_URL/api/select?host=$HOST&exclude=$1" o
+  [ "${CLAUDE_CODE_EXPERIMENTAL_CODE_MODE:-}" = 1 ] && u="$u&full=1"
   o="$(curl -s -m15 -H "@$AUTHF" "$u")" || { sleep 2; o="$(curl -s -m15 -H "@$AUTHF" "$u")"; }
   printf '%s' "$o"
+}
+# Called in the parent shell so the fallback warning is emitted once across retries.
+code_mode_warned=0
+code_mode_token(){
+  [ "${CLAUDE_CODE_EXPERIMENTAL_CODE_MODE:-}" = 1 ] || return 0
+  local fulltok; fulltok="$(printf '%s' "$resp" | jget oauth_access_token)"
+  if [ -n "$fulltok" ]; then
+    tok="$fulltok"
+  elif [ "$code_mode_warned" = 0 ]; then
+    echo "aigate: full Claude login unavailable; using setup token. Code Mode will not start." >&2
+    code_mode_warned=1
+  fi
 }
 # "(5h 7% · 7d 16%)" from a select response; empty when it carries no usage
 usage_tag(){ printf '%s' "$1" | python3 -c 'import sys,json
@@ -172,6 +185,7 @@ if [ "$is_print" != 1 ]; then
       is_capacity_exhausted "$resp" && fallback_to_kimi "no Claude account has headroom" ${cont[@]+"${cont[@]}"} "$@"
       no_token_diag "$resp"; exit 1
     fi
+    code_mode_token
     echo "aigate → using account: $acct$(usage_tag "$resp")" >&2
     unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
     export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"
@@ -215,6 +229,7 @@ for attempt in 1 2 3; do
     is_capacity_exhausted "$resp" && fallback_to_kimi "no Claude account has headroom" "$@"
     no_token_diag "$resp"; exit 1
   fi
+  code_mode_token
   echo "aigate → account: $acct$(usage_tag "$resp") (attempt $attempt)" >&2
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
   export CLAUDE_CODE_OAUTH_TOKEN="$tok" AIGATE_ACCOUNT="$acct"

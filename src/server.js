@@ -22,7 +22,7 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { WebSocketServer } from 'ws';
-import { makeVault, rtHash, ledgerVerdict, tokenMatches, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, codexWindowSlot, resetsIn } from './lib.js';
+import { makeVault, rtHash, ledgerVerdict, tokenMatches, clientIp, safeStaticPath, tokenIsAlive, signSession, verifySession, parseCookie, decodeJwtPayload, normalizeCodexAuth, normalizeClaudeOauth, codexWindowSlot, resetsIn } from './lib.js';
 import { PROVIDERS, PROVIDER_BY_ID, isKnownProvider } from './providers.js';
 import { ensureSchema, seedIfNeeded, pruneOld, handleSpend, recordProxyUsage, validateSessions, upsertSessions } from './spend.js';
 import { createTransparentProxy } from './transparent-proxy.js';
@@ -102,6 +102,12 @@ const CODEX = {
   // 4 days: every token aigate hands out then carries >=4 days, which is how long a holder's
   // keeper has to adopt a rotation before the holder would refresh on its own and revoke the family.
   refreshAheadS: () => envNum('AIGATE_CODEX_REFRESH_AHEAD_S', 345600),   // 4 days
+};
+const CLAUDE_OAUTH = {
+  tokenUrl: () => process.env.AIGATE_CLAUDE_OAUTH_TOKEN_URL || 'https://platform.claude.com/v1/oauth/token',
+  clientId: () => process.env.AIGATE_CLAUDE_OAUTH_CLIENT_ID || '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+  refreshAheadMs: () => Math.max(0, envNum('AIGATE_CLAUDE_OAUTH_REFRESH_AHEAD_S', 21600)) * 1000,
+  timeoutMs: () => envNum('AIGATE_CLAUDE_OAUTH_TOKEN_TIMEOUT_MS', 60000),
 };
 const clampLimit = (v) => { if (v == null || v === '') return 100; const n = Number(v); return Number.isFinite(n) ? Math.max(1, Math.min(Math.trunc(n), 1000)) : 100; };
 
@@ -276,6 +282,10 @@ for (const col of ['five_hour_reset', 'seven_day_reset'])
 for (const [col, ddl] of [['kind', `TEXT NOT NULL DEFAULT 'claude'`], ['plan', 'TEXT'], ['token_exp', 'INTEGER'], ['ext_id', 'TEXT'], ['refresh_unknown', 'INTEGER NOT NULL DEFAULT 0']])
   if (!db.prepare(`PRAGMA table_info(accounts)`).all().some((c) => c.name === col))
     db.exec(`ALTER TABLE accounts ADD COLUMN ${col} ${ddl}`);
+// Full Claude login health is independent of the setup token and its selectability.
+for (const [col, ddl] of [['oauth_enc', 'TEXT'], ['oauth_expires_at', 'INTEGER'], ['oauth_refreshed_at', 'INTEGER'], ['oauth_reauth_needed', 'INTEGER NOT NULL DEFAULT 0'], ['oauth_refresh_unknown', 'INTEGER NOT NULL DEFAULT 0']])
+  if (!db.prepare('PRAGMA table_info(accounts)').all().some((c) => c.name === col))
+    db.exec(`ALTER TABLE accounts ADD COLUMN ${col} ${ddl}`);
 // migration: board cards gained an optional target host (route a card to a specific worker box)
 if (!db.prepare(`PRAGMA table_info(board_cards)`).all().some((c) => c.name === 'host'))
   db.exec(`ALTER TABLE board_cards ADD COLUMN host TEXT DEFAULT ''`);
@@ -322,7 +332,7 @@ const q = {
   insertAccount: db.prepare(`INSERT INTO accounts(account,token_enc,label,kind,plan,token_exp,ext_id) VALUES(?,?,?,?,?,?,?)`),
   // parked computed in the SAME clock domain as pickRanked — clients get a plain 0/1
   // instead of parsing a bare sqlite UTC string (no Z) in the right timezone.
-  listAccounts: db.prepare(`SELECT account,label,kind,plan,token_exp,ext_id,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset,usage_updated,disabled,reauth_needed,refresh_unknown,parked_until,
+  listAccounts: db.prepare(`SELECT (oauth_enc IS NOT NULL) AS has_full_login,oauth_expires_at,oauth_reauth_needed,oauth_refresh_unknown,account,label,kind,plan,token_exp,ext_id,five_hour_pct,seven_day_pct,five_hour_reset,seven_day_reset,usage_updated,disabled,reauth_needed,refresh_unknown,parked_until,
     (parked_until IS NOT NULL AND parked_until > datetime('now')) AS parked,
     CAST(strftime('%s','now') - strftime('%s', usage_updated) AS INTEGER) AS usage_age_s,
     (token_enc IS NOT NULL) AS has_token FROM accounts ORDER BY account`),
@@ -347,7 +357,7 @@ const q = {
   // rename/relabel for the dashboard edit pill: getAccount reads the row first (existence
   // + current label) so PATCH can change name, label, or both — the label SURVIVES a
   // rename because updateAccount writes it back in the same statement (token_enc untouched).
-  getAccount: db.prepare(`SELECT account,label FROM accounts WHERE account=?`),
+  getAccount: db.prepare(`SELECT account,label,kind FROM accounts WHERE account=?`),
   updateAccount: db.prepare(`UPDATE accounts SET account=?, label=? WHERE account=?`),
   updUsage: db.prepare(`UPDATE accounts SET five_hour_pct=COALESCE(?,five_hour_pct), seven_day_pct=COALESCE(?,seven_day_pct), usage_updated=datetime('now') WHERE account=?`),
   // window reset epochs — only the poller has these (the fleet's usage hook doesn't), so
@@ -1124,6 +1134,7 @@ const server = http.createServer(async (req, res) => {
           five_hour: win(a.five_hour_pct, a.five_hour_reset, kind === 'codex' && a.five_hour_reset == null),
           seven_day: win(a.seven_day_pct, a.seven_day_reset, false),
           usage_age_s: a.usage_age_s,
+          ...(kind === 'claude' ? { has_full_login: a.has_full_login, oauth_expires_at: a.oauth_expires_at, oauth_reauth_needed: a.oauth_reauth_needed, oauth_refresh_unknown: a.oauth_refresh_unknown } : {}),
         });
       }
       return json(res, 200, want ? out[want] : out);
@@ -1144,6 +1155,7 @@ const server = http.createServer(async (req, res) => {
       const kind = b.kind === undefined ? 'claude' : String(b.kind);
       if (kind !== 'claude' && kind !== 'codex') return json(res, 400, { error: "kind must be 'claude' or 'codex'" });
       if (kind === 'codex') {
+        if (b.oauth_json !== undefined) return json(res, 400, { error: 'oauth_json is for kind=claude accounts' });
         // Codex rows carry the whole auth.json (it holds the refresh token aigate will rotate),
         // never a Claude setup-token — and the reverse for Claude, so a paste into the wrong
         // slot fails NOW instead of surfacing as a mystery reauth_needed.
@@ -1169,7 +1181,22 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, { ok: true, account: b.account, kind: 'codex', email: n.email, plan: n.plan });
       }
       if (b.auth_json !== undefined) return json(res, 400, { error: 'auth_json is for kind=codex accounts — Claude accounts take setup_token' });
-      if (!b.account || !b.setup_token) return json(res, 400, { error: 'account + setup_token required' });
+      let oauth;
+      if (b.oauth_json !== undefined) {
+        oauth = normalizeClaudeOauth(b.oauth_json);
+        if (oauth.error) return json(res, 400, { error: oauth.error });
+      }
+      if (!b.account) return json(res, 400, { error: 'account + setup_token required' });
+      if (claudeOauthInflight.has(b.account)) return json(res, 409, { error: 'a refresh is in flight — retry in a moment' });
+      const existing = q.getToken.get(b.account);
+      if (!b.setup_token && !(oauth && existing?.kind === 'claude')) return json(res, 400, { error: 'account + setup_token required for a new account' });
+      if (oauth && existing?.kind === 'claude' && b.setup_token === undefined) {
+        if (b.create_only) return json(res, 409, { error: 'account already exists' });
+        saveClaudeOauth(b.account, oauth.auth);
+        logAccess(b.account, '', reqIp(req), 'claude-oauth-import', 'ok');
+        broadcast('accounts', q.listAccounts.all());
+        return json(res, 200, { ok: true });
+      }
       // a name with '/' or whitespace breaks the /api/accounts/<name>/<verb> path
       // parsing (split('/')[3]) and can't be targeted for disable/refresh/delete.
       if (/[/\s]/.test(String(b.account))) return json(res, 400, { error: 'account name cannot contain spaces or slashes' });
@@ -1181,7 +1208,15 @@ const server = http.createServer(async (req, res) => {
       const priorRow = q.getToken.get(b.account);   // BEFORE upsert — overwrite vs add
       if (priorRow && priorRow.kind === 'codex') return json(res, 409, { error: 'account ' + b.account + ' already exists as a Codex account' });
       const existed = !!priorRow;
-      const written = writeAccount(b.account, encrypt(tok), b.label || '', 'claude', null, null, null);
+      const written = durably(() => {
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          const result = writeAccount(b.account, encrypt(tok), b.label || '', 'claude', null, null, null);
+          if (result !== null && oauth) saveClaudeOauth(b.account, oauth.auth, false);
+          db.exec('COMMIT');
+          return result;
+        } catch (e) { db.exec('ROLLBACK'); throw e; }
+      });
       if (written === null) return json(res, 409, { error: 'account ' + b.account + ' already exists' });
       logAccess(b.account, '', reqIp(req), existed ? 'account-overwrite' : 'account-add', b.label || '');
       broadcast('accounts', q.listAccounts.all());
@@ -1271,7 +1306,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (p.startsWith('/api/accounts/') && req.method === 'DELETE') {
       const name = decodeURIComponent(p.split('/').pop());
-      if (codexInflight.has(name)) return json(res, 409, { error: 'a refresh is in flight for ' + name + ' — retry in a moment' });
+      if (codexInflight.has(name) || claudeOauthInflight.has(name)) return json(res, 409, { error: 'a refresh is in flight for ' + name + ' — retry in a moment' });
       if (codexBusy.has(name)) return json(res, 409, { error: 'a prompt run holds ' + name + ' — retry in a moment' });
       const dead = q.delAccount.get(name);
       if (!dead) return json(res, 404, { error: 'unknown account' });
@@ -1294,15 +1329,22 @@ const server = http.createServer(async (req, res) => {
       if (!newName || /[/\s]/.test(newName)) return json(res, 400, { error: 'account name cannot contain spaces or slashes' });
       if (newName !== name && q.getAccount.get(newName)) return json(res, 409, { error: 'account ' + newName + ' already exists' });
       // the in-flight refresh persists its rotation by NAME — renaming under it would lose the token
-      if (newName !== name && codexInflight.has(name)) return json(res, 409, { error: 'a refresh is in flight for ' + name + ' — retry in a moment' });
+      if ((newName !== name && codexInflight.has(name)) || claudeOauthInflight.has(name)) return json(res, 409, { error: 'a refresh is in flight for ' + name + ' — retry in a moment' });
       if (newName !== name && codexBusy.has(name)) return json(res, 409, { error: 'a prompt run holds ' + name + ' — retry in a moment' });
-      if (b.account === undefined && b.label === undefined) return json(res, 400, { error: 'nothing to update' });
+      let oauth;
+      if (b.oauth_json !== undefined) {
+        if (row.kind !== 'claude') return json(res, 400, { error: 'oauth_json is for kind=claude accounts' });
+        oauth = normalizeClaudeOauth(b.oauth_json);
+        if (oauth.error) return json(res, 400, { error: oauth.error });
+      }
+      if (b.account === undefined && b.label === undefined && !oauth) return json(res, 400, { error: 'nothing to update' });
       const label = b.label === undefined ? row.label : String(b.label);
       // .changes guard like the sibling mutation routes: deleted between our read and the
       // UPDATE (TOCTOU) must 404, not return {ok:true} over a silent no-op.
       const updated = newName === name ? q.updateAccount.run(newName, label, name)
         : claudePool.renameAccount(name, newName, { label });
       if (updated.changes === 0) return json(res, 404, { error: 'unknown account ' + name });
+      if (oauth) saveClaudeOauth(newName, oauth.auth);
       logAccess(newName, '', reqIp(req), 'account-rename', name === newName ? 'label update' : name + ' → ' + newName);
       broadcast('accounts', q.listAccounts.all());
       return json(res, 200, { ok: true, account: newName, label });
@@ -1354,6 +1396,8 @@ const server = http.createServer(async (req, res) => {
       const host = url.searchParams.get('host') || '', ip = reqIp(req);
       const kind = url.searchParams.get('kind') || 'claude';
       if (kind !== 'claude' && kind !== 'codex') return json(res, 400, { error: "kind must be 'claude' or 'codex'" });
+      const full = url.searchParams.get('full') === '1';
+      if (full && kind !== 'claude') return json(res, 400, { error: 'full=1 is for kind=claude only' });
       const dry = url.searchParams.get('dry') === '1';
       const act = dry ? 'select-dry' : 'select';
       const excl = new Set((url.searchParams.get('exclude') || '').split(',').map((s) => s.trim()).filter(Boolean));
@@ -1367,7 +1411,8 @@ const server = http.createServer(async (req, res) => {
         const cur = q.getAcct.get(picked.account) || picked;   // post-refresh exp/plan, not the pre-refresh rank row
         return json(res, 200, { account: picked.account, kind: 'codex', auth_json: auth, plan: cur.plan, token_exp: cur.token_exp, ...usageOf(cur) });
       }
-      return json(res, 200, { account: picked.account, setup_token: tok, ...usageOf(picked) });
+      const extra = full ? await claudeOauthFresh(picked.account) : {};
+      return json(res, 200, { account: picked.account, setup_token: tok, ...extra, ...usageOf(picked) });
     }
     // keeper read: hand a box the vault's CURRENT auth.json for its account so a long-lived
     // codex reloads the rotated token instead of spending a dead one. Never picks, refreshes or parks.
@@ -1834,6 +1879,118 @@ server.on('connect', (req, socket, head) => {
 // update the vault. No proxy: this is aigate polling on its own tokens so
 // selection/skip stays accurate and auto-recovers after a reset window.
 const allTokensStmt = db.prepare(`SELECT account, token_enc, kind, disabled, reauth_needed FROM accounts WHERE token_enc IS NOT NULL`);
+// ---- Claude full login: aigate is the sole refresh owner -------------------
+const claudeOauthInflight = new Map();
+const getClaudeOauth = db.prepare(`SELECT account,kind,oauth_enc,oauth_expires_at,oauth_refreshed_at,oauth_reauth_needed,oauth_refresh_unknown FROM accounts WHERE account=?`);
+const putClaudeOauth = db.prepare(`UPDATE accounts SET oauth_enc=?,oauth_expires_at=?,oauth_refreshed_at=?,oauth_reauth_needed=0,oauth_refresh_unknown=0 WHERE account=? AND kind='claude'`);
+function saveClaudeOauth(account, auth, durable = true) {
+  const write = () => putClaudeOauth.run(encrypt(JSON.stringify(auth)), auth.expiresAt, Date.now(), account);
+  return durable ? durably(write) : write();
+}
+function claudeOauthReason(row) {
+  if (!row || row.kind !== 'claude' || !row.oauth_enc) return 'not_present';
+  if (row.oauth_reauth_needed) return 'needs_reauth';
+  if (row.oauth_refresh_unknown) return 'refresh_unknown';
+  return null;
+}
+function flagClaudeOauth(account, flag, reason) {
+  // Both identifiers are internal constants, never request input. Reasons are fixed strings;
+  // upstream errors and exception messages may contain credentials and must not be logged.
+  durably(() => db.prepare(`UPDATE accounts SET ${flag}=1${flag === 'oauth_reauth_needed' ? ',oauth_refresh_unknown=0' : ''} WHERE account=?`).run(account));
+  logAccess(account, '', '', 'claude-oauth-refresh', reason);
+  broadcast('accounts', q.listAccounts.all());
+  return { full_unavailable: reason };
+}
+function refreshClaudeOauth(account) {
+  let pending = claudeOauthInflight.get(account);
+  if (!pending) {
+    pending = doRefreshClaudeOauth(account).finally(() => claudeOauthInflight.delete(account));
+    claudeOauthInflight.set(account, pending);
+  }
+  return pending;
+}
+async function doRefreshClaudeOauth(account) {
+  const row = getClaudeOauth.get(account);
+  const reason = claudeOauthReason(row);
+  if (reason) return { full_unavailable: reason };
+  let auth;
+  try { auth = JSON.parse(decrypt(row.oauth_enc)); }
+  catch { return flagClaudeOauth(account, 'oauth_reauth_needed', 'decrypt_failed'); }
+  if (auth.refreshTokenExpiresAt != null && auth.refreshTokenExpiresAt <= Date.now())
+    return flagClaudeOauth(account, 'oauth_reauth_needed', 'needs_reauth');
+  if (auth.expiresAt - Date.now() >= CLAUDE_OAUTH.refreshAheadMs() && Date.now() - row.oauth_refreshed_at < 86400000)
+    return {};
+  // Persist the pending/unknown marker BEFORE sending. A process crash after sending
+  // cannot accidentally spend this single-use token again on restart.
+  durably(() => db.prepare('UPDATE accounts SET oauth_refresh_unknown=1 WHERE account=?').run(account));
+  let response, text;
+  try {
+    response = await fetch(CLAUDE_OAUTH.tokenUrl(), {
+      method: 'POST', redirect: 'error',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      // Claude Code 2.1.330, Xle(): JSON, scope joined by spaces, optional expires_in
+      // only when explicitly requested by its caller. No profile or inference request.
+      body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: auth.refreshToken,
+        client_id: CLAUDE_OAUTH.clientId(), scope: (auth.scopes.length ? auth.scopes : ['user:profile', 'user:inference', 'user:sessions:claude_code', 'user:mcp_servers', 'user:file_upload', 'user:plugins']).join(' ') }),
+      signal: AbortSignal.timeout(CLAUDE_OAUTH.timeoutMs()),
+    });
+    text = await response.text();
+  } catch (error) {
+    if (codexPreSend(error)) {
+      durably(() => db.prepare('UPDATE accounts SET oauth_refresh_unknown=0 WHERE account=?').run(account));
+      return { full_unavailable: 'refresh_unreachable' };
+    }
+    return flagClaudeOauth(account, 'oauth_refresh_unknown', 'refresh_unknown');
+  }
+  let data;
+  try { data = JSON.parse(text); } catch { /* ambiguous response: halt below */ }
+  if ((response.status === 400 || response.status === 401) && data?.error === 'invalid_grant') {
+    return flagClaudeOauth(account, 'oauth_reauth_needed', 'needs_reauth');
+  }
+  if (!response.ok || !data || typeof data.access_token !== 'string' || !data.access_token.trim()
+      || typeof data.expires_in !== 'number' || !Number.isFinite(data.expires_in) || data.expires_in <= 0
+      || (data.refresh_token !== undefined && (typeof data.refresh_token !== 'string' || !data.refresh_token.trim()))
+      || (data.scope !== undefined && typeof data.scope !== 'string')
+      || (data.refresh_token_expires_in !== undefined && (typeof data.refresh_token_expires_in !== 'number' || !Number.isFinite(data.refresh_token_expires_in) || data.refresh_token_expires_in <= 0)))
+    return flagClaudeOauth(account, 'oauth_refresh_unknown', 'refresh_unknown');
+  const next = { ...auth, accessToken: data.access_token, refreshToken: data.refresh_token ?? auth.refreshToken,
+    expiresAt: Date.now() + data.expires_in * 1000,
+    scopes: data.scope === undefined ? auth.scopes : data.scope.split(' ').filter(Boolean) };
+  if (data.refresh_token_expires_in !== undefined) next.refreshTokenExpiresAt = Date.now() + data.refresh_token_expires_in * 1000;
+  try {
+    // FULL-sync the entire rotated login and clear pending together, before handout.
+    if (saveClaudeOauth(account, next).changes !== 1) throw new Error('row vanished');
+  } catch { return flagClaudeOauth(account, 'oauth_refresh_unknown', 'refresh_unknown'); }
+  logAccess(account, '', '', 'claude-oauth-refresh', 'ok');
+  broadcast('accounts', q.listAccounts.all());
+  return {};
+}
+async function claudeOauthFresh(account) {
+  const pending = claudeOauthInflight.get(account);
+  if (pending) await pending;
+  let row = getClaudeOauth.get(account);
+  let reason = claudeOauthReason(row);
+  if (reason) return { full_unavailable: reason };
+  if (row.oauth_expires_at - Date.now() < CLAUDE_OAUTH.refreshAheadMs() || Date.now() - row.oauth_refreshed_at >= 86400000) {
+    const result = await refreshClaudeOauth(account);
+    if (result.full_unavailable) return result;
+    row = getClaudeOauth.get(account);
+  }
+  reason = claudeOauthReason(row);
+  if (reason) return { full_unavailable: reason };
+  if (row.oauth_expires_at <= Date.now()) return { full_unavailable: 'access_expired' };
+  let auth;
+  try { auth = JSON.parse(decrypt(row.oauth_enc)); }
+  catch { return { full_unavailable: 'decrypt_failed' }; }
+  return { oauth_access_token: auth.accessToken, oauth_expires_at: auth.expiresAt, oauth_scopes: auth.scopes };
+}
+async function tickClaudeOauth() {
+  const rows = db.prepare(`SELECT account FROM accounts WHERE kind='claude' AND oauth_enc IS NOT NULL
+    AND oauth_reauth_needed=0 AND oauth_refresh_unknown=0 AND
+    (oauth_expires_at < ? OR oauth_refreshed_at <= ?)`).all(Date.now() + CLAUDE_OAUTH.refreshAheadMs(), Date.now() - 86400000);
+  await Promise.all(rows.map((row) => refreshClaudeOauth(row.account)));
+}
+
 // ---- codex (ChatGPT) accounts: owned refresh + usage poll ----------------
 // aigate owns the OAuth refresh for Codex rows (clients receive a fresh auth.json). Refresh
 // tokens ROTATE with reuse detection, so exactly ONE caller may spend a given refresh token:
@@ -2283,6 +2440,11 @@ if (isMain) {
   const poll = () => pollUsage().catch((e) => console.error('[poll] cycle failed', e));
   if (POLL_MS > 0) claudePool.start({ refresh: poll });
 
+  // Independent of quota polling, disabled/parked accounts and selection traffic.
+  const oauthTick = () => tickClaudeOauth().catch(() => console.error('[claude-oauth] maintenance failed'));
+  void oauthTick();
+  setInterval(oauthTick, 60000).unref();
+
   // provider-key liveness runs on its own (slower) cadence — keys change far less
   // often than account headroom. Offset from the account poll so they don't burst together.
   const keyPoll = () => pollProviderKeys().catch((e) => console.error('[keypoll] cycle failed', e));
@@ -2303,4 +2465,4 @@ if (isMain) {
 
 const setShuttingDown = (v) => { shuttingDown = v; };   // test hook: shutdown() itself exits the process
 export { setShuttingDown };
-export { promptBootSweep, codexInflight, storeRotated, promptStats, server, db, pollUsage, pollProviderKeys, backupNow, openDb, isWeakToken, authFail, authLocked, authOk, shortHost, claudePool, transparentProxy };
+export { tickClaudeOauth, promptBootSweep, codexInflight, storeRotated, promptStats, server, db, pollUsage, pollProviderKeys, backupNow, openDb, isWeakToken, authFail, authLocked, authOk, shortHost, claudePool, transparentProxy };

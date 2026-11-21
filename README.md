@@ -223,6 +223,50 @@ access-key, secret, region and optional session-token bundle. Native Muse, Kimi
 Code and Grok bundles, plus cloud signing bundles, are stored with explicit
 storage-only limits; their registration does not enable a new proxy adapter.
 
+### Claude full login for Code Mode
+
+A setup token has only `user:inference`; experimental Code Mode also needs the
+organization policy/profile scopes from a full Claude login. A Claude account can
+store both its setup token and an encrypted full login. Send `oauth_json` to
+`POST /api/accounts` or `PATCH /api/accounts/:name`: either the `claudeAiOauth`
+object, the whole credentials JSON containing it, or its JSON string.
+`accessToken`, `refreshToken`, and `expiresAt` (epoch milliseconds) are required;
+include the original `scopes` and `refreshTokenExpiresAt` when available. New
+accounts still need a `setup_token`; an existing Claude account can receive
+`oauth_json` alone. Codex accounts reject `oauth_json`.
+
+Aigate must be the **only refresher** of this login. Retire the source login from
+other clients after importing it; clients receive only the access token, never
+the rotating refresh token. The server refreshes with less than six hours left,
+and checks every minute independently of usage polling, refreshing idle logins
+at least daily (including parked/disabled accounts). Rotations are durably saved
+before handout. `invalid_grant` requires a new login; an uncertain request or a
+crash during refresh halts automatic refresh. Reimport a fresh login to recover.
+Neither flag changes setup-token health or normal account selection.
+
+`GET /api/select?full=1` uses the same account ranking and returns the normal
+response plus `oauth_access_token`, `oauth_expires_at` (milliseconds), and
+`oauth_scopes` when healthy. Otherwise it returns the normal setup token plus
+`full_unavailable` (`not_present`, `needs_reauth`, `refresh_unknown`,
+`refresh_unreachable`, `access_expired`, or `decrypt_failed`). Without `full=1`
+the selection response is unchanged; `dry=1` never refreshes or returns tokens.
+`GET /api/accounts` and `/api/usage` expose `has_full_login`, `oauth_expires_at`,
+`oauth_reauth_needed`, and `oauth_refresh_unknown`, without secrets.
+
+Set `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1` when running `clients/aigate-run.sh` to
+request the full access token as `CLAUDE_CODE_OAUTH_TOKEN`. If unavailable, the
+wrapper uses the setup token and warns once that Code Mode will not start.
+
+Server configuration: `AIGATE_CLAUDE_OAUTH_REFRESH_AHEAD_S=21600` (six hours),
+`AIGATE_CLAUDE_OAUTH_TOKEN_TIMEOUT_MS=60000`,
+`AIGATE_CLAUDE_OAUTH_TOKEN_URL=https://platform.claude.com/v1/oauth/token`, and
+`AIGATE_CLAUDE_OAUTH_CLIENT_ID=9d1c250a-e61b-44d9-88ed-5944d1962f5e`.
+Refresh uses JSON `{grant_type:"refresh_token", refresh_token, client_id, scope}`,
+with the stored scopes joined by spaces (the official client's default scopes
+when omitted). Claude Code 2.1.330's embedded `Xle` function confirms this shape;
+its response supplies `access_token`, optional `refresh_token`, `expires_in`,
+`scope`, and optional `refresh_token_expires_in`. Tests use a local mock endpoint.
+
 ### Codex (ChatGPT) accounts
 
 Codex accounts sit in the same `accounts` table as Claude accounts, partitioned by `kind` (`claude` default, or `codex`). Selection, health counts, and the dashboard keep the two pools separate; Claude fields and `/health` counters keep their original meaning.

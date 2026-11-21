@@ -205,6 +205,30 @@ export function normalizeCodexAuth(obj) {
   };
 }
 
+// Accept only the Claude login portion; unrelated MCP credentials never enter the vault.
+export function normalizeClaudeOauth(obj) {
+  if (typeof obj === 'string') {
+    try { obj = JSON.parse(obj); } catch { return { error: 'oauth_json is not valid JSON' }; }
+  }
+  const src = obj?.claudeAiOauth ?? obj;
+  if (!src || typeof src !== 'object' || Array.isArray(src)) return { error: 'oauth_json must be a JSON object' };
+  for (const key of ['accessToken', 'refreshToken']) {
+    if (typeof src[key] !== 'string' || !src[key].trim() || /\s/.test(src[key]))
+      return { error: `oauth_json needs ${key}` };
+  }
+  if (typeof src.expiresAt !== 'number' || !Number.isSafeInteger(src.expiresAt) || src.expiresAt <= 0)
+    return { error: 'oauth_json needs expiresAt (epoch milliseconds)' };
+  if (src.scopes !== undefined && (!Array.isArray(src.scopes) || src.scopes.some((s) => typeof s !== 'string' || !s || /\s/.test(s))))
+    return { error: 'oauth_json scopes must be an array of scope strings' };
+  if (src.refreshTokenExpiresAt != null && (!Number.isSafeInteger(src.refreshTokenExpiresAt) || src.refreshTokenExpiresAt <= 0))
+    return { error: 'oauth_json refreshTokenExpiresAt must be epoch milliseconds' };
+  const auth = { accessToken: src.accessToken, refreshToken: src.refreshToken, expiresAt: src.expiresAt, scopes: src.scopes || [] };
+  for (const key of ['refreshTokenExpiresAt', 'subscriptionType', 'rateLimitTier', 'accountUuid', 'organizationUuid']) {
+    if (src[key] != null) auth[key] = src[key];
+  }
+  return { auth };
+}
+
 // chatgpt.com/backend-api/wham/usage reports each window by its LENGTH, and which
 // of primary/secondary holds which varies by plan (Pro: only a weekly one). Slot by
 // length — ≤6h is the short "five hour" bucket, anything longer is the weekly one.

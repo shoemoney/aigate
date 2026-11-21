@@ -65,6 +65,10 @@ try {
   for (const r of db.prepare(`SELECT account, token_enc FROM accounts WHERE token_enc IS NOT NULL`).all()) {
     db.prepare(`UPDATE accounts SET token_enc=? WHERE account=?`).run(reenc(r.token_enc), r.account); accounts++;
   }
+  if (db.prepare('PRAGMA table_info(accounts)').all().some((c) => c.name === 'oauth_enc')) {
+    for (const r of db.prepare('SELECT account,oauth_enc FROM accounts WHERE oauth_enc IS NOT NULL').all())
+      db.prepare('UPDATE accounts SET oauth_enc=? WHERE account=?').run(reenc(r.oauth_enc), r.account);
+  }
   for (const r of db.prepare(`SELECT id, key_enc FROM provider_keys`).all()) {
     db.prepare(`UPDATE provider_keys SET key_enc=? WHERE id=?`).run(reenc(r.key_enc), r.id); keys++;
   }
