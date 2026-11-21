@@ -213,14 +213,15 @@ export function normalizeClaudeOauth(obj) {
   const src = obj?.claudeAiOauth ?? obj;
   if (!src || typeof src !== 'object' || Array.isArray(src)) return { error: 'oauth_json must be a JSON object' };
   for (const key of ['accessToken', 'refreshToken']) {
-    if (typeof src[key] !== 'string' || !src[key].trim() || /\s/.test(src[key]))
+    if (typeof src[key] !== 'string' || !src[key].startsWith(key === 'accessToken' ? 'sk-ant-oat' : 'sk-ant-ort') || /\s/.test(src[key]))
       return { error: `oauth_json needs ${key}` };
   }
-  if (typeof src.expiresAt !== 'number' || !Number.isSafeInteger(src.expiresAt) || src.expiresAt <= 0)
+  if (src.accessToken === src.refreshToken) return { error: 'oauth_json tokens must differ' };
+  if (typeof src.expiresAt !== 'number' || !Number.isSafeInteger(src.expiresAt) || src.expiresAt < 1e12)
     return { error: 'oauth_json needs expiresAt (epoch milliseconds)' };
   if (src.scopes !== undefined && (!Array.isArray(src.scopes) || src.scopes.some((s) => typeof s !== 'string' || !s || /\s/.test(s))))
     return { error: 'oauth_json scopes must be an array of scope strings' };
-  if (src.refreshTokenExpiresAt != null && (!Number.isSafeInteger(src.refreshTokenExpiresAt) || src.refreshTokenExpiresAt <= 0))
+  if (src.refreshTokenExpiresAt != null && (!Number.isSafeInteger(src.refreshTokenExpiresAt) || src.refreshTokenExpiresAt < 1e12))
     return { error: 'oauth_json refreshTokenExpiresAt must be epoch milliseconds' };
   const auth = { accessToken: src.accessToken, refreshToken: src.refreshToken, expiresAt: src.expiresAt, scopes: src.scopes || [] };
   for (const key of ['refreshTokenExpiresAt', 'subscriptionType', 'rateLimitTier', 'accountUuid', 'organizationUuid']) {

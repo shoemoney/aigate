@@ -283,6 +283,31 @@ t('every claude role runs the official binary with its ALIAS, all tools off; the
   assert.equal(recsOf('codex').length, 0);
 });
 
+t('Claude prompt runs use only the setup token even when a full login needs refresh', async () => {
+  const oauth = { accessToken: 'sk-ant-oat01-full-access-canary', refreshToken: 'sk-ant-ort01-full-refresh-canary',
+    expiresAt: Date.now() - 1000, scopes: ['user:inference'] };
+  const previousUrl = process.env.AIGATE_CLAUDE_OAUTH_TOKEN_URL;
+  process.env.AIGATE_CLAUDE_OAUTH_TOKEN_URL = process.env.AIGATE_CODEX_TOKEN_URL;
+  try {
+    assert.equal((await addAccount({ account: 'cl1', oauth_json: oauth })).status, 200);
+    const before = row('cl1');
+    const r = await prompt({ role: 'docs', prompt: 'hi' });
+    assert.equal(r.status, 200);
+    assert.equal((await r.json()).text, 'pong');
+    const [rec] = recsOf('claude');
+    assert.equal(rec.env.CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_TOKEN);
+    assert.ok(!JSON.stringify(rec).includes(oauth.accessToken));
+    assert.ok(!JSON.stringify(rec).includes(oauth.refreshToken));
+    assert.equal(row('cl1').oauth_enc, before.oauth_enc);
+    assert.equal(row('cl1').oauth_attempted_at, before.oauth_attempted_at);
+    assert.equal(row('cl1').oauth_refresh_unknown, 0);
+    assert.equal(tokenHits.length, 0);
+  } finally {
+    if (previousUrl === undefined) delete process.env.AIGATE_CLAUDE_OAUTH_TOKEN_URL;
+    else process.env.AIGATE_CLAUDE_OAUTH_TOKEN_URL = previousUrl;
+  }
+});
+
 t('role gpt: codex, ALWAYS gpt-6.1-sol with service_tier="priority", read-only sandbox, prompt on stdin, never an approval bypass', async () => {
   const r = await prompt({ role: 'gpt', prompt: '--agent-teams hello', system: 'sys' });
   const j = await r.json();

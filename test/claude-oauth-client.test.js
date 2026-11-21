@@ -3,17 +3,17 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { BASH } from './helpers/bash32.js';
 const exec = promisify(execFile);
 
-for (const mode of ['0', '1']) for (const print of [false, true]) test(`client Code Mode=${mode}, print=${print}: requests full only when enabled and exports the right token`, async (t) => {
+for (const mode of [undefined, '0', '1']) for (const print of [false, true]) test(`client Code Mode=${mode}, print=${print}: requests full only when enabled and exports the right token`, async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'aigate-claude-full-client-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   mkdirSync(join(home, '.claude'));
-  // Prove the existing MCP-preserving strip still works against a scratch home.
+  // Prove production shadow-login cleanup still removes the local credential file.
   writeFileSync(join(home, '.claude', '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'shadow' }, mcpOAuth: { keep: true } }));
   const binary = join(home, 'claude');
   writeFileSync(binary, '#!/bin/bash\nprintf "%s\\n" "$CLAUDE_CODE_OAUTH_TOKEN"\n', { mode: 0o700 });
@@ -21,11 +21,14 @@ for (const mode of ['0', '1']) for (const print of [false, true]) test(`client C
   const server = http.createServer((req, res) => {
     calls.push(req.url);
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify(req.url.startsWith('/api/select') ? { account: 'one', setup_token: 'setup-fixture', oauth_access_token: 'full-fixture' } : []));
+    res.end(JSON.stringify(req.url.startsWith('/api/select') ? { account: 'one', setup_token: 'setup-fixture', oauth_access_token: 'full-fixture', oauth_expires_at: 1900000000000 } : []));
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r)); t.after(() => server.close());
+  const clientEnv = { ...process.env };
+  delete clientEnv.CLAUDE_CODE_EXPERIMENTAL_CODE_MODE;
+  if (mode !== undefined) clientEnv.CLAUDE_CODE_EXPERIMENTAL_CODE_MODE = mode;
   const running = exec(BASH, [resolve('clients/aigate-run.sh'), ...(print ? ['-p', 'hello'] : [])], {
-    env: { ...process.env, HOME: home, AIGATE_URL: `http://127.0.0.1:${server.address().port}`, AIGATE_TOKEN: 'fixture', AIGATE_CLAUDE_BIN: binary, CLAUDE_CODE_EXPERIMENTAL_CODE_MODE: mode }, timeout: 10000,
+    env: { ...clientEnv, HOME: home, AIGATE_URL: `http://127.0.0.1:${server.address().port}`, AIGATE_TOKEN: 'fixture', AIGATE_CLAUDE_BIN: binary }, timeout: 10000,
   });
   running.child.stdin.end();
   const result = await running;
@@ -33,7 +36,9 @@ for (const mode of ['0', '1']) for (const print of [false, true]) test(`client C
   const url = new URL(calls.find((u) => u.startsWith('/api/select')), 'http://local');
   assert.equal(url.searchParams.get('full'), mode === '1' ? '1' : null);
   assert.ok(!result.stderr.includes('Code Mode will not start'));
-  assert.deepEqual(JSON.parse(readFileSync(join(home, '.claude', '.credentials.json'))), { mcpOAuth: { keep: true } });
+  assert.equal(result.stderr.includes('relaunch this session with --continue'), mode === '1');
+  if (mode === '1') assert.ok(result.stderr.includes(new Date(1900000000000).toISOString().replace('.000Z', '+00:00')));
+  assert.equal(existsSync(join(home, '.claude', '.credentials.json')), false);
 });
 
 test('client missing full login falls back, warns once across retries, and preserves excludes/parking', async (t) => {

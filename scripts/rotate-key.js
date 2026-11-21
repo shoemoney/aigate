@@ -41,7 +41,7 @@ const canary = db.prepare(`SELECT v FROM meta WHERE k='canary'`).get();
 if (canary) { try { oldV.decrypt(canary.v); } catch { console.error('FATAL: the current AIGATE_ENCRYPTION_KEY does not decrypt this vault — aborting, nothing changed'); process.exit(1); } }
 
 const reenc = (enc) => newV.encrypt(oldV.decrypt(enc));   // throws on any bad row → whole txn rolls back
-let accounts = 0, keys = 0, credentials = 0;
+let accounts = 0, keys = 0, credentials = 0, oauth = 0;
 db.exec('BEGIN IMMEDIATE');
 try {
   const tables = new Set(db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all().map((r) => r.name));
@@ -66,8 +66,9 @@ try {
     db.prepare(`UPDATE accounts SET token_enc=? WHERE account=?`).run(reenc(r.token_enc), r.account); accounts++;
   }
   if (db.prepare('PRAGMA table_info(accounts)').all().some((c) => c.name === 'oauth_enc')) {
-    for (const r of db.prepare('SELECT account,oauth_enc FROM accounts WHERE oauth_enc IS NOT NULL').all())
-      db.prepare('UPDATE accounts SET oauth_enc=? WHERE account=?').run(reenc(r.oauth_enc), r.account);
+    for (const r of db.prepare('SELECT account,oauth_enc FROM accounts WHERE oauth_enc IS NOT NULL').all()) {
+      db.prepare('UPDATE accounts SET oauth_enc=? WHERE account=?').run(reenc(r.oauth_enc), r.account); oauth++;
+    }
   }
   for (const r of db.prepare(`SELECT id, key_enc FROM provider_keys`).all()) {
     db.prepare(`UPDATE provider_keys SET key_enc=? WHERE id=?`).run(reenc(r.key_enc), r.id); keys++;
@@ -83,5 +84,5 @@ try {
   db.exec('COMMIT');
 } catch (e) { db.exec('ROLLBACK'); console.error('FATAL: rotation failed, rolled back — nothing changed:', String((e && e.message) || e)); process.exit(1); }
 db.close();
-console.log(`rotated ${accounts} account token(s) + ${keys} provider key(s) + ${credentials} proxy credential set(s).`);
+console.log(`rotated ${accounts} account token(s) + ${oauth} full login(s) + ${keys} provider key(s) + ${credentials} proxy credential set(s).`);
 console.log('NEXT: set AIGATE_ENCRYPTION_KEY to the supplied new key in .env and restart aigate.');

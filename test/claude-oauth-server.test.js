@@ -29,15 +29,16 @@ const upstream = http.createServer(async (req, res) => {
   hits.push(hit);
   const reply = await handler(hit);
   if (reply.drop) { req.socket.destroy(); return; }
-  res.writeHead(reply.status ?? 200, { 'content-type': 'application/json' });
+  res.writeHead(reply.status ?? 200, { 'content-type': 'application/json', ...reply.headers });
   res.end(typeof reply.body === 'string' ? reply.body : JSON.stringify(reply.body));
 });
 const scopes = ['user:inference', 'user:profile', 'user:sessions:claude_code', 'user:mcp_servers', 'user:plugins', 'user:file_upload', 'user:privacy_consents:write'];
-const login = (extra = {}) => ({ accessToken: 'test-claude-access-original', refreshToken: 'test-claude-refresh-original', expiresAt: Date.now() + 9 * 3600000, refreshTokenExpiresAt: Date.now() + 27 * 86400000, scopes, subscriptionType: 'max', accountUuid: 'account-id', organizationUuid: 'org-id', ...extra });
+const login = (extra = {}) => ({ accessToken: 'sk-ant-oat-test-original', refreshToken: 'sk-ant-ort-test-original', expiresAt: Date.now() + 9 * 3600000, refreshTokenExpiresAt: Date.now() + 27 * 86400000, scopes, subscriptionType: 'max', accountUuid: 'account-id', organizationUuid: 'org-id', ...extra });
 const row = (name = 'one') => db.prepare('SELECT * FROM accounts WHERE account=?').get(name);
 const stored = (name) => JSON.parse(vault.decrypt(row(name).oauth_enc));
 const request = (path, method = 'GET', data) => fetch(base + path, { method, headers, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
 const add = (data = {}) => request('/api/accounts', 'POST', { account: 'one', setup_token: 'sk-ant-oat01-test-setup', ...data });
+const ageLogin = () => db.prepare('UPDATE accounts SET oauth_refreshed_at=?').run(Date.now() - 8 * 3600000);
 const select = (suffix = '') => request('/api/select' + suffix);
 before(async () => {
   await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
@@ -49,7 +50,7 @@ beforeEach(() => {
   db.exec('DELETE FROM accounts; DELETE FROM access_log'); hits = []; output.length = 0;
   delete process.env.AIGATE_CLAUDE_OAUTH_REFRESH_AHEAD_S;
   delete process.env.AIGATE_CLAUDE_OAUTH_CLIENT_ID;
-  handler = () => ({ body: { access_token: 'test-claude-access-rotated', refresh_token: 'test-claude-refresh-rotated', expires_in: 31320, refresh_token_expires_in: 27 * 86400, scope: scopes.join(' ') } });
+  handler = () => ({ body: { access_token: 'sk-ant-oat-test-rotated', refresh_token: 'sk-ant-ort-test-rotated', expires_in: 31320, refresh_token_expires_in: 27 * 86400, scope: scopes.join(' ') } });
 });
 after(() => { console.warn = realWarn; console.error = realError; server.close(); upstream.close(); db.close(); rmSync(dir, { recursive: true, force: true }); });
 
@@ -109,7 +110,7 @@ test('full login missing uses same ranked pick and setup token with a reason; ex
 });
 
 test('near-expiry refresh is single-flight, request matches binary, rotated login is durable before handout', async () => {
-  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) });
+  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); ageLogin();
   let release, enter;
   const entered = new Promise((r) => { enter = r; }); const released = new Promise((r) => { release = r; });
   const defaultHandler = handler;
@@ -121,7 +122,7 @@ test('near-expiry refresh is single-flight, request matches binary, rotated logi
   release();
   for (const r of await Promise.all([a, b])) {
     assert.equal(r.status, 200); const j = await r.json();
-    assert.equal(j.oauth_access_token, stored().accessToken); assert.equal(stored().refreshToken, 'test-claude-refresh-rotated');
+    assert.equal(j.oauth_access_token, stored().accessToken); assert.equal(stored().refreshToken, 'sk-ant-ort-test-rotated');
     assert.equal(row().oauth_refresh_unknown, 0); assert.ok(j.oauth_expires_at > Date.now() + 8 * 3600000);
   }
   assert.equal(hits.length, 1);
@@ -132,7 +133,7 @@ test('near-expiry refresh is single-flight, request matches binary, rotated logi
 });
 
 for (const status of [400, 401]) test(`${status} invalid_grant affects full login only and never retries`, async () => {
-  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); const setup = row().token_enc;
+  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); ageLogin(); const setup = row().token_enc;
   handler = () => ({ status, body: { error: 'invalid_grant', error_description: login().refreshToken } });
   for (let i = 0; i < 3; i++) assert.equal((await (await select('?full=1')).json()).full_unavailable, 'needs_reauth');
   await tickClaudeOauth(); assert.equal(hits.length, 1); assert.equal(row().reauth_needed, 0); assert.equal(row().oauth_reauth_needed, 1); assert.equal(row().token_enc, setup);
@@ -140,7 +141,7 @@ for (const status of [400, 401]) test(`${status} invalid_grant affects full logi
 });
 
 for (const reply of [{ status: 503, body: 'outage' }, { status: 200, body: 'bad JSON' }, { status: 200, body: { access_token: 'incomplete' } }, { drop: true }]) test(`uncertain ${JSON.stringify(reply)} halts refresh until reimport`, async () => {
-  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); handler = () => reply;
+  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); ageLogin(); handler = () => reply;
   assert.equal((await (await select('?full=1')).json()).full_unavailable, 'refresh_unknown');
   await select('?full=1'); await tickClaudeOauth(); assert.equal(hits.length, 1);
   assert.equal(row().oauth_refresh_unknown, 1); assert.equal(row().reauth_needed, 0);
@@ -153,37 +154,39 @@ test('maintenance refreshes idle login at least daily, including parked and disa
   await tickClaudeOauth(); assert.equal(hits.length, 0);
   db.exec("UPDATE accounts SET disabled=1,parked_until=datetime('now','+1 day'),oauth_refreshed_at=1 WHERE account='one'");
   await tickClaudeOauth(); assert.equal(hits.length, 1);
-  assert.equal(stored().refreshToken, 'test-claude-refresh-rotated');
+  assert.equal(stored().refreshToken, 'sk-ant-ort-test-rotated');
   await tickClaudeOauth(); assert.equal(hits.length, 1);
   db.exec("UPDATE accounts SET disabled=0,parked_until=NULL WHERE account='one'");
   process.env.AIGATE_CLAUDE_OAUTH_REFRESH_AHEAD_S = '40000';
   process.env.AIGATE_CLAUDE_OAUTH_CLIENT_ID = 'custom-client';
+  await select('?full=1'); assert.equal(hits.length, 1);
+  db.prepare('UPDATE accounts SET oauth_refreshed_at=?,oauth_attempted_at=0').run(Date.now() - 10 * 3600000);
   await select('?full=1'); assert.equal(hits.length, 2); assert.equal(hits[1].body.client_id, 'custom-client');
 });
 
 test('expired refresh token needs reauth without a request; metadata reports independent full-login health', async () => {
-  await add({ oauth_json: login({ expiresAt: 1, refreshTokenExpiresAt: 1 }) });
+  await add({ oauth_json: login({ expiresAt: 1e12, refreshTokenExpiresAt: 1e12 }) });
   assert.equal((await (await select('?full=1')).json()).full_unavailable, 'needs_reauth'); assert.equal(hits.length, 0);
   for (const path of ['/api/accounts', '/api/usage/claude']) {
     const [j] = await (await request(path)).json();
-    assert.equal(j.has_full_login, 1); assert.equal(j.oauth_expires_at, 1); assert.equal(j.oauth_reauth_needed, 1); assert.equal(j.oauth_refresh_unknown, 0);
+    assert.equal(j.has_full_login, 1); assert.equal(j.oauth_expires_at, 1e12); assert.equal(j.oauth_reauth_needed, 1); assert.equal(j.oauth_refresh_unknown, 0);
     if (j.status) assert.equal(j.status, 'ok');
   }
 });
 
 test('responses, access logs, broadcasts metadata and console output never contain refresh tokens', async () => {
-  const auth = login({ expiresAt: Date.now() + 3600000 }); await add({ oauth_json: auth });
+  const auth = login({ expiresAt: Date.now() + 3600000 }); await add({ oauth_json: auth }); ageLogin();
   const texts = [];
   for (const path of ['/api/select', '/api/select?full=1', '/api/accounts', '/api/usage', '/api/access']) texts.push(await (await request(path)).text());
   texts.push(JSON.stringify(db.prepare('SELECT * FROM access_log').all()), ...output);
   for (const text of texts) {
-    assert.ok(!text.includes(auth.refreshToken)); assert.ok(!text.includes('test-claude-refresh-rotated'));
+    assert.ok(!text.includes(auth.refreshToken)); assert.ok(!text.includes('sk-ant-ort-test-rotated'));
     assert.ok(!text.includes('refreshToken')); assert.ok(!text.includes('oauth_enc'));
   }
 });
 
 test('before-send failure permits retry; crash-pending state blocks refresh', async () => {
-  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) });
+  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); ageLogin();
   const realFetch = globalThis.fetch;
   globalThis.fetch = (url, ...args) => {
     if (String(url) === process.env.AIGATE_CLAUDE_OAUTH_TOKEN_URL)
@@ -193,6 +196,7 @@ test('before-send failure permits retry; crash-pending state blocks refresh', as
   try { assert.equal((await (await select('?full=1')).json()).full_unavailable, 'refresh_unreachable'); }
   finally { globalThis.fetch = realFetch; }
   assert.equal(row().oauth_refresh_unknown, 0);
+  db.exec('UPDATE accounts SET oauth_attempted_at=0');
   assert.ok((await (await select('?full=1')).json()).oauth_access_token); assert.equal(hits.length, 1);
   db.exec("UPDATE accounts SET oauth_refresh_unknown=1,oauth_expires_at=1 WHERE account='one'");
   assert.equal((await (await select('?full=1')).json()).full_unavailable, 'refresh_unknown');
@@ -200,11 +204,11 @@ test('before-send failure permits retry; crash-pending state blocks refresh', as
 });
 
 test('failed persistence never hands out rotated access and leaves refresh halted', async () => {
-  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) });
+  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); ageLogin();
   db.exec("CREATE TEMP TRIGGER fail_oauth_write BEFORE UPDATE OF oauth_enc ON accounts BEGIN SELECT RAISE(ABORT,'disk failure'); END");
   try {
     const j = await (await select('?full=1')).json();
-    assert.equal(j.full_unavailable, 'refresh_unknown'); assert.equal(j.oauth_access_token, undefined);
+    assert.equal(j.full_unavailable, 'refresh_unknown'); assert.equal(j.oauth_access_token, undefined); assert.ok(j.setup_token);
     assert.equal(row().oauth_refresh_unknown, 1); assert.equal(stored().refreshToken, login().refreshToken);
     await select('?full=1'); await tickClaudeOauth(); assert.equal(hits.length, 1);
   } finally { db.exec('DROP TRIGGER fail_oauth_write'); }
@@ -219,8 +223,153 @@ test('key rotation includes full-login ciphertext in the vault transaction', asy
   fixture.prepare('INSERT INTO accounts VALUES(?,?,?)').run('one', vault.encrypt('setup'), vault.encrypt(JSON.stringify(login())));
   const result = spawnSync(process.execPath, ['scripts/rotate-key.js', nextKey], { env: { ...process.env, AIGATE_DB: file }, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /1 full login\(s\)/);
   const rotated = fixture.prepare('SELECT * FROM accounts').get();
   assert.equal(JSON.parse(makeVault(Buffer.from(nextKey, 'hex')).decrypt(rotated.oauth_enc)).refreshToken, login().refreshToken);
   assert.throws(() => vault.decrypt(rotated.oauth_enc));
   fixture.close();
+});
+
+for (const reply of [
+  { status: 429, headers: { 'retry-after': '1200' }, body: {} },
+  { status: 429, headers: { 'retry-after': '99999999' }, body: {} },
+  { status: 429, headers: { 'retry-after': new Date(Date.now() + 1800000).toUTCString() }, body: {} },
+  { status: 400, body: { error: 'invalid_request' } },
+  { status: 400, body: { error: 'invalid_scope' } },
+]) test(`retryable refusal ${JSON.stringify(reply)} keeps login usable and backs off`, async () => {
+  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); ageLogin();
+  handler = () => reply;
+  const started = Date.now();
+  const j = await (await select('?full=1')).json();
+  assert.equal(j.oauth_access_token, login().accessToken);
+  assert.equal(row().oauth_refresh_unknown, 0); assert.equal(row().oauth_reauth_needed, 0);
+  const delay = row().oauth_retry_at - started;
+  assert.ok(delay >= 299000 && delay <= 3601000);
+  if (reply.headers?.['retry-after'] === '1200') assert.ok(delay >= 1200000 && delay < 1201000);
+  if (reply.headers?.['retry-after'] === '99999999') assert.ok(delay >= 3600000);
+  await select('?full=1'); await tickClaudeOauth(); assert.equal(hits.length, 1);
+  db.exec('UPDATE accounts SET oauth_retry_at=0,oauth_attempted_at=0');
+  await tickClaudeOauth(); assert.equal(hits.length, 2);
+});
+
+test('transient rotated-pair write failure retries without spending the refresh token again', async () => {
+  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); ageLogin();
+  const defaultHandler = handler;
+  handler = (hit) => {
+    db.exec("CREATE TEMP TRIGGER transient_oauth BEFORE UPDATE OF oauth_enc ON accounts BEGIN SELECT RAISE(ABORT,'SQLITE_BUSY'); END");
+    setTimeout(() => db.exec('DROP TRIGGER transient_oauth'), 150);
+    return defaultHandler(hit);
+  };
+  const response = await select('?full=1'); assert.equal(response.status, 200);
+  assert.equal((await response.json()).oauth_access_token, 'sk-ant-oat-test-rotated');
+  assert.equal(stored().refreshToken, 'sk-ant-ort-test-rotated');
+  assert.equal(hits.length, 1); assert.equal(row().oauth_refresh_unknown, 0);
+});
+
+test('failed pending-marker write preserves normal select response and setup token', async () => {
+  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); ageLogin();
+  db.exec("CREATE TEMP TRIGGER marker_fail BEFORE UPDATE OF oauth_refresh_unknown ON accounts BEGIN SELECT RAISE(ABORT,'disk failure'); END");
+  try {
+    const response = await select('?full=1'); assert.equal(response.status, 200);
+    const j = await response.json(); assert.ok(j.setup_token); assert.equal(j.full_unavailable, 'refresh_unknown');
+    assert.equal(hits.length, 0);
+  } finally { db.exec('DROP TRIGGER marker_fail'); }
+});
+
+test('losing pending-marker compare-and-set never sends a refresh', async () => {
+  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); ageLogin();
+  db.exec("CREATE TEMP TRIGGER marker_lost BEFORE UPDATE OF oauth_refresh_unknown ON accounts WHEN NEW.oauth_refresh_unknown=1 BEGIN SELECT RAISE(IGNORE); END");
+  try {
+    const j = await (await select('?full=1')).json();
+    assert.equal(j.full_unavailable, 'refresh_inflight'); assert.ok(j.setup_token);
+    assert.equal(hits.length, 0);
+  } finally { db.exec('DROP TRIGGER marker_lost'); }
+});
+
+test('handout wait is bounded for valid and expired access tokens while refresh continues', async () => {
+  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); ageLogin();
+  await add({ account: 'two', oauth_json: login({ expiresAt: Date.now() - 1000 }) });
+  let release;
+  const blocked = new Promise((r) => { release = r; });
+  const defaultHandler = handler;
+  handler = async (hit) => { await blocked; return defaultHandler(hit); };
+  const started = Date.now();
+  try {
+    const [valid, expired] = await Promise.all([select('?full=1&exclude=two'), select('?full=1&exclude=one')]);
+    assert.ok(Date.now() - started < 14000);
+    assert.equal((await valid.json()).oauth_access_token, login().accessToken);
+    const j = await expired.json(); assert.equal(j.full_unavailable, 'refresh_inflight'); assert.ok(j.setup_token);
+    assert.equal(hits.length, 2); assert.equal(row().oauth_refresh_unknown, 1);
+  } finally { release(); }
+  // tick shares the still-running owner; wait for both durable writes.
+  for (let i = 0; i < 100 && (row().oauth_refresh_unknown || row('two').oauth_refresh_unknown); i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(stored().refreshToken, 'sk-ant-ort-test-rotated');
+});
+
+test('refresh lead is capped at half lifetime and attempts have a ten-minute minimum gap', async () => {
+  await add({ oauth_json: login({ expiresAt: Date.now() + 60000 }) });
+  process.env.AIGATE_CLAUDE_OAUTH_REFRESH_AHEAD_S = '999999';
+  await select('?full=1'); await tickClaudeOauth(); assert.equal(hits.length, 0);
+  db.prepare('UPDATE accounts SET oauth_refreshed_at=?').run(Date.now() - 120000);
+  await select('?full=1'); assert.equal(hits.length, 1);
+  db.prepare('UPDATE accounts SET oauth_expires_at=?,oauth_refreshed_at=?').run(Date.now() + 1000, Date.now() - 120000);
+  await select('?full=1'); await tickClaudeOauth(); assert.equal(hits.length, 1);
+  db.prepare('UPDATE accounts SET oauth_attempted_at=?').run(Date.now() - 600001);
+  await tickClaudeOauth(); assert.equal(hits.length, 2);
+});
+
+test('intake rejects seconds, wrong token families and identical tokens', async () => {
+  for (const extra of [
+    { expiresAt: 1800000000 }, { refreshTokenExpiresAt: 1800000000 },
+    { accessToken: 'sk-ant-api03-test' }, { refreshToken: 'sk-ant-oat-test' },
+    { accessToken: 'sk-ant-ort-test' }, { accessToken: 'sk-ant-oat-same', refreshToken: 'sk-ant-oat-same' },
+  ]) {
+    assert.equal((await add({ oauth_json: login(extra) })).status, 400);
+    assert.equal(row(), undefined);
+  }
+});
+
+test('PATCH rename and full-login import roll back together on write failure', async () => {
+  await add();
+  db.exec("CREATE TEMP TRIGGER patch_fail BEFORE UPDATE OF oauth_enc ON accounts BEGIN SELECT RAISE(ABORT,'disk failure'); END");
+  try {
+    assert.equal((await request('/api/accounts/one', 'PATCH', { account: 'renamed', oauth_json: login() })).status, 500);
+    assert.ok(row()); assert.equal(row('renamed'), undefined); assert.equal(row().oauth_enc, null);
+  } finally { db.exec('DROP TRIGGER patch_fail'); }
+  assert.equal((await request('/api/accounts/one', 'PATCH', { account: 'renamed', oauth_json: login() })).status, 200);
+  assert.equal(row(), undefined); assert.equal(stored('renamed').accessToken, login().accessToken);
+});
+
+test('token endpoint timeout stays uncertain and is never retried', async () => {
+  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); ageLogin();
+  process.env.AIGATE_CLAUDE_OAUTH_TOKEN_TIMEOUT_MS = '30';
+  handler = async () => { await new Promise((r) => setTimeout(r, 100)); return { body: {} }; };
+  try {
+    const response = await select('?full=1'); assert.equal(response.status, 200);
+    assert.equal((await response.json()).full_unavailable, 'refresh_unknown');
+    assert.equal(row().oauth_refresh_unknown, 1);
+    await select('?full=1'); await tickClaudeOauth(); assert.equal(hits.length, 1);
+  } finally { delete process.env.AIGATE_CLAUDE_OAUTH_TOKEN_TIMEOUT_MS; }
+});
+
+for (const competingWrite of ['pending', 'ciphertext']) test(`compare-and-set rejects concurrent ${competingWrite} change after refresh read`, async () => {
+  await add({ oauth_json: login({ expiresAt: Date.now() + 3600000 }) }); ageLogin();
+  // Interleave a committed competing write between reading the login and claiming
+  // it. This exercises each SQL predicate, not just the same-process promise map.
+  const prototype = Object.getPrototypeOf(db.prepare('SELECT 1'));
+  const original = prototype.get;
+  let reads = 0;
+  prototype.get = function (...args) {
+    const result = original.apply(this, args);
+    if (result?.account === 'one' && Object.hasOwn(result, 'oauth_enc') && ++reads === 2) {
+      if (competingWrite === 'pending') db.exec("UPDATE accounts SET oauth_refresh_unknown=1 WHERE account='one'");
+      else db.prepare("UPDATE accounts SET oauth_enc=? WHERE account='one'").run(vault.encrypt(JSON.stringify(login())));
+    }
+    return result;
+  };
+  try {
+    const response = await select('?full=1'); assert.equal(response.status, 200);
+    const j = await response.json(); assert.equal(j.full_unavailable, 'refresh_inflight'); assert.ok(j.setup_token);
+    assert.equal(reads, 2); assert.equal(hits.length, 0);
+  } finally { prototype.get = original; }
 });

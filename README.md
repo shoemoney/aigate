@@ -230,32 +230,42 @@ organization policy/profile scopes from a full Claude login. A Claude account ca
 store both its setup token and an encrypted full login. Send `oauth_json` to
 `POST /api/accounts` or `PATCH /api/accounts/:name`: either the `claudeAiOauth`
 object, the whole credentials JSON containing it, or its JSON string.
-`accessToken`, `refreshToken`, and `expiresAt` (epoch milliseconds) are required;
-include the original `scopes` and `refreshTokenExpiresAt` when available. New
-accounts still need a `setup_token`; an existing Claude account can receive
+`accessToken`, `refreshToken`, and `expiresAt` (epoch milliseconds) are required.
+Token values must start with `sk-ant-oat` (access) and `sk-ant-ort` (refresh).
+Epoch millisecond fields must be at least 1e12. Include the original `scopes`
+and `refreshTokenExpiresAt` when available. New accounts still need a `setup_token`; an existing Claude account can receive
 `oauth_json` alone. Codex accounts reject `oauth_json`.
 
 Aigate must be the **only refresher** of this login. Retire the source login from
 other clients after importing it; clients receive only the access token, never
-the rotating refresh token. The server refreshes with less than six hours left,
-and checks every minute independently of usage polling, refreshing idle logins
+the rotating refresh token. The server refreshes with less than six hours left
+(capped at half the stored token lifetime), with at least ten minutes between attempts. It checks every
+minute independently of usage polling, refreshing idle logins
 at least daily (including parked/disabled accounts). Rotations are durably saved
-before handout. `invalid_grant` requires a new login; an uncertain request or a
-crash during refresh halts automatic refresh. Reimport a fresh login to recover.
+before handout, with four persistence attempts total and backoff on failure. Select
+waits at most ten seconds for refresh and can return the still-valid current
+access token while refresh continues in the background. A 429 or 400
+`invalid_request`/`invalid_scope` clears pending and backs off using Retry-After
+(seconds or HTTP date), defaulting to five minutes and capped at one hour; the
+ten-minute minimum attempt gap still applies. `invalid_grant` requires a new
+login; an uncertain request or a crash during refresh halts automatic refresh. Reimport a fresh login to recover.
 Neither flag changes setup-token health or normal account selection.
 
 `GET /api/select?full=1` uses the same account ranking and returns the normal
 response plus `oauth_access_token`, `oauth_expires_at` (milliseconds), and
 `oauth_scopes` when healthy. Otherwise it returns the normal setup token plus
 `full_unavailable` (`not_present`, `needs_reauth`, `refresh_unknown`,
-`refresh_unreachable`, `access_expired`, or `decrypt_failed`). Without `full=1`
+`refresh_unreachable`, `refresh_backoff`, `refresh_inflight`, `access_expired`,
+or `decrypt_failed`). Without `full=1`
 the selection response is unchanged; `dry=1` never refreshes or returns tokens.
 `GET /api/accounts` and `/api/usage` expose `has_full_login`, `oauth_expires_at`,
 `oauth_reauth_needed`, and `oauth_refresh_unknown`, without secrets.
 
 Set `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1` when running `clients/aigate-run.sh` to
 request the full access token as `CLAUDE_CODE_OAUTH_TOKEN`. If unavailable, the
-wrapper uses the setup token and warns once that Code Mode will not start.
+wrapper uses the setup token and warns once that Code Mode will not start. Full
+login launches print the access token expiry time and instruct you to relaunch
+with `--continue` after expiry to fetch a fresh token.
 
 Server configuration: `AIGATE_CLAUDE_OAUTH_REFRESH_AHEAD_S=21600` (six hours),
 `AIGATE_CLAUDE_OAUTH_TOKEN_TIMEOUT_MS=60000`,

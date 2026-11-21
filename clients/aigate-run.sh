@@ -43,6 +43,11 @@ code_mode_token(){
   local fulltok; fulltok="$(printf '%s' "$resp" | jget oauth_access_token)"
   if [ -n "$fulltok" ]; then
     tok="$fulltok"
+    printf '%s' "$resp" | python3 -c 'import sys,json,datetime
+d=json.load(sys.stdin); expiry=d.get("oauth_expires_at")
+when=datetime.datetime.fromtimestamp(expiry/1000,datetime.timezone.utc).isoformat() if isinstance(expiry,(int,float)) else "unknown"
+print("aigate: full-login access token expires at " + when + "; after expiry, relaunch this session with --continue to fetch a fresh token.",file=sys.stderr)'
+
   elif [ "$code_mode_warned" = 0 ]; then
     echo "aigate: full Claude login unavailable; using setup token. Code Mode will not start." >&2
     code_mode_warned=1
