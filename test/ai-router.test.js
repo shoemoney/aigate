@@ -121,6 +121,17 @@ test('env file is sourced and CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is unset', as
   assert.equal(readFileSync(join(sb.dir, 'env.out'), 'utf8').trim(), 'URL=http://from-envfile TEAMS=unset');
 });
 
+test('Code Mode: on for interactive claude, untouched for -p, caller value and AI_NO_CODE_MODE win', async (t) => {
+  const sb = sandbox(); t.after(sb.cleanup);
+  const out = join(sb.dir, 'cm.out');
+  writeFileSync(join(sb.ag, 'aigate-run.sh'), `#!/bin/bash\necho "CM=\${CLAUDE_CODE_EXPERIMENTAL_CODE_MODE-unset}" > "${out}"\n`);
+  const cm = async (args, env) => { await ai(sb, args, env); return readFileSync(out, 'utf8').trim(); };
+  assert.equal(await cm(['hi']), 'CM=1', 'interactive');
+  assert.equal(await cm(['-p', 'hi']), 'CM=unset', 'headless is left alone');
+  assert.equal(await cm(['hi'], { CLAUDE_CODE_EXPERIMENTAL_CODE_MODE: '0' }), 'CM=0', 'caller value wins');
+  assert.equal(await cm(['hi'], { AI_NO_CODE_MODE: '1' }), 'CM=unset', 'opt-out');
+});
+
 function startMock(handler) {
   const calls = [];
   const server = http.createServer((req, res) => {
