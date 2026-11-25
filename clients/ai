@@ -260,6 +260,15 @@ for a in ${rest[@]+"${rest[@]}"}; do case "$a" in
 esac; done
 skip=(); [ "$has_skip" = 0 ] && [ -z "${AI_SAFE:-}" ] && skip=(--dangerously-skip-permissions)
 
+# Code Mode (experimental) on by default for interactive sessions. Headless -p only takes it
+# from --settings and would just warn on stderr, so it is left alone there. A value the
+# caller already exported wins (0 turns it off); AI_NO_CODE_MODE=1 skips this entirely.
+if [ -z "${AI_NO_CODE_MODE:-}" ]; then
+  cm=1
+  for a in ${rest[@]+"${rest[@]}"}; do case "$a" in -p|--print) cm=0; break;; esac; done
+  [ "$cm" = 1 ] && export CLAUDE_CODE_EXPERIMENTAL_CODE_MODE="${CLAUDE_CODE_EXPERIMENTAL_CODE_MODE:-1}"
+fi
+
 if [ -x "$AG/aigate-run.sh" ] && [ -n "${AIGATE_URL:-}" ]; then
   exec "$AG/aigate-run.sh" ${skip[@]+"${skip[@]}"} ${chrome[@]+"${chrome[@]}"} ${rest[@]+"${rest[@]}"}
 fi

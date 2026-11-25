@@ -180,6 +180,26 @@ Earlier Codex routing went through CLIProxyAPI, a local OAuth-pooling proxy. Tha
 
 ---
 
+## 🧪 The prompt API
+
+`POST /api/prompt` (plus `GET /api/models`) is a **prompt-in, answer-out HTTP service that runs on your subscription credentials**. A caller sends text; aigate picks one of your vaulted accounts, spawns the official `claude` or `codex` binary with that account's login, and returns what the binary printed. Unlike the rest of aigate it is not a hand-out of a credential to a person's own machine: the request, and the answer, travel through aigate. Read it as that, not as "the same selector pattern".
+
+- **Only the official binaries.** aigate never calls `api.anthropic.com` or ChatGPT with a subscription credential itself and never crafts or forwards those requests. A missing binary is a `503`; there is no direct-request fallback.
+- **Off by default.** The routes do not exist unless the operator sets `AIGATE_PROMPT_API=1`; otherwise they answer like any unknown path (`404`).
+- **Who can use it.** The credential that unlocks it is the shared `AIGATE_TOKEN` (`Authorization: Bearer`; dashboard sessions and `x-api-key` are refused). There is no per-caller identity, so **anything or anyone holding that token can run prompts on your subscriptions**, and everything it can already do to the vault it can do here. It is for the owner's own automation, not for other people, teams or customers.
+- **A deliberate risk decision.** This is programmatic, unattended use of subscription accounts. A provider may treat that differently from a person at a keyboard, and aigate cannot tell you where the line is. Turning the flag on is the owner's own decision and risk.
+- **What the model can and cannot do.**
+  - *Claude:* every built-in tool is removed (`--tools ""`), permissions are `dontAsk` with prompts disabled, MCP, slash commands/skills, session files and Chrome are off.
+  - *Codex:* it has no tool-free flag. The runner passes `--disable` for every tool-bearing or ambient feature the installed binary lists (shell, unified exec, apps, plugins, browser/computer use, image tools, multi-agent, hooks, skills search, daemon auto-start and others), sets `web_search="disabled"`, uses a **read-only sandbox**, `--ephemeral`, and ignores user config and rules. **Not everything can be turned off**: on codex 0.167.0, for example, `unified_exec` stays effectively on after `--disable`. The startup log and `GET /api/models` (`codex_surface.still_on`) list what is still on for the installed binary. A read-only sandbox can still read files the server user can read.
+  - *The control that actually holds:* the runner reads Codex's event stream and **fails closed**. Any item other than an agent message, reasoning or an error (command execution, MCP call, file change, web search, anything new) makes the run a `502 tool use detected`, and the text is discarded and never returned. The run has still executed whatever it did before being refused.
+  - The Codex login sits in a directory the model's working directory does not contain, but a read-only sandbox does not prevent reading it if a tool ran; the parser refusal and the redaction below are the mitigations, not isolation.
+- **One Codex run per account.** At most one Codex run holds an account's refresh token at a time (a second gets `429`); aigate's own refresh is skipped for that account while it runs, and a login too close to expiry for the run is refreshed first. Claude runs have no such per-account limit; total runs are capped by `AIGATE_PROMPT_CONCURRENCY`. A login the binary rotated during a run is stored back through the same path as `/api/codex/sync`; if it cannot be stored the account is marked refresh-unknown (alerting), the file is kept and re-offered at the next boot.
+- **Plumbing.** The prompt goes to the binary on stdin and the system prompt (Claude) in a file in a private `0700` run directory, never in argv; the child gets an allowlisted environment (never the vault key or admin token) and its own throwaway home; the process group is killed on timeout; a Claude run is killed when its client disconnects, a Codex run is not.
+- **What the audit does and does not scrub.** The dashboard and `request_log` get the first 400 characters of the prompt, passed through aigate's prefix-based secret scrubber (it catches `sk-…`, `ghp…` and similar shapes, **not** arbitrary secrets you type into a prompt). The system prompt, the full prompt, the answer and every credential are never logged. Responses have the run's own credentials removed by exact value; other secrets the model might know are not touched.
+- **Heavy or multi-user work belongs on API keys.** Anything high-volume, spread across accounts to get around a weekly cap, or done for another person must use an [API key](https://platform.claude.com/) (aigate's `/v1` proxy exists for exactly that), not this endpoint.
+
+---
+
 ## 🔀 The non-Claude half (API keys are different)
 
 The prohibition above is about **Claude subscription OAuth**; the same no-relay rule is kept for ChatGPT subscription logins. Ordinary **API keys** (OpenAI, OpenRouter, Gemini, Groq, fal, …) are *meant* for programmatic use — so aigate's **secure proxy** (`POST /v1/messages`, `GET /v1/models`) injects those server-side freely. That's a normal API gateway and carries none of the subscription-OAuth restrictions.
